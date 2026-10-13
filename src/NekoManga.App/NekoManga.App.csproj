@@ -10,7 +10,7 @@
     <AssemblyName>NekoManga</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>0.1.1</Version>
+    <Version>0.1.2</Version>
     <StartupObject>NekoManga.App.Program</StartupObject>
   </PropertyGroup>
 
@@ -22,7 +22,9 @@
 
   <ItemGroup>
     <PackageReference Include="WPF-UI" Version="3.0.5" />
-    <PackageReference Include="Velopack" Version="0.0.*" />
+    <!-- vpk CLI(워크플로)와 메이저 버전을 반드시 맞출 것 — 0.0.x 라이브러리 + 1.x 패커 조합은
+         Setup.exe가 창도 로그도 없이 행업한다 (v0.1.1에서 실제 발생). -->
+    <PackageReference Include="Velopack" Version="1.2.161" />
     <ProjectReference Include="..\NekoManga.Core\NekoManga.Core.csproj" />
   </ItemGroup>
 

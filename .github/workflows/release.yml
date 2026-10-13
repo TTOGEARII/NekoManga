@@ -28,7 +28,8 @@ jobs:
         run: dotnet publish src/NekoManga.App/NekoManga.App.csproj -c Release -r win-x64 --self-contained -o publish /p:Version=${{ steps.ver.outputs.version }}
 
       - name: Install Velopack CLI
-        run: dotnet tool install -g vpk
+        # csproj의 Velopack PackageReference와 같은 버전으로 고정 — 어긋나면 Setup.exe가 행업한다.
+        run: dotnet tool install -g vpk --version 1.2.161
 
       - name: Download previous releases (for delta updates)
         run: vpk download github --repoUrl https://github.com/TTOGEARII/NekoManga --token ${{ secrets.GITHUB_TOKEN }}
