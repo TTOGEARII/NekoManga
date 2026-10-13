@@ -90,7 +90,28 @@
                     </DockPanel>
                     <TextBlock Style="{StaticResource HintText}" Text="0.5~0.9. 높을수록 많이 다시 그려요 (기본 0.75)."/>
 
-                    <TextBlock Style="{StaticResource SectionTitle}" Text="모자이크 감지"/>
+                    <TextBlock Style="{StaticResource SectionTitle}" Text="무엇을 검열로 볼까요"/>
+                    <StackPanel Orientation="Horizontal">
+                        <CheckBox x:Name="ChkFindMosaic" Content="모자이크(격자)" Foreground="{StaticResource NekoText}" Margin="0,0,18,0"/>
+                        <CheckBox x:Name="ChkFindWhiteBar" Content="흰색 막대" Foreground="{StaticResource NekoText}" Margin="0,0,18,0"/>
+                        <CheckBox x:Name="ChkFindBlackBar" Content="검은색 막대(먹줄)" Foreground="{StaticResource NekoText}"/>
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource HintText}"
+                               Text="막대 검열은 그림 위에 덮인 단색 직사각형을 찾아요. 말풍선·페이지 여백은 자동으로 제외됩니다."/>
+                    <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
+                        <DockPanel>
+                            <TextBlock Text="막대 최소 비율" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <TextBox x:Name="TxtBarAspect" Width="80" HorizontalAlignment="Left"/>
+                        </DockPanel>
+                        <DockPanel>
+                            <TextBlock Text="막대 최소 크기" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <TextBox x:Name="TxtBarMinArea" Width="80" HorizontalAlignment="Left"/>
+                        </DockPanel>
+                    </UniformGrid>
+                    <TextBlock Style="{StaticResource HintText}"
+                               Text="비율은 가로세로 길이의 비(1.8이면 긴 쪽이 짧은 쪽의 1.8배 이상). 정사각형에 가까운 검열도 잡으려면 1.2까지 낮춰보세요. 크기는 px² 단위."/>
+
+                    <TextBlock Style="{StaticResource SectionTitle}" Text="모자이크 감지 세부"/>
                     <DockPanel Margin="0,4">
                         <TextBlock Text="블록 크기 (px)" Style="{StaticResource FieldLabel}" Width="130"/>
                         <TextBox x:Name="TxtBlockSize" Width="90" HorizontalAlignment="Left"/>

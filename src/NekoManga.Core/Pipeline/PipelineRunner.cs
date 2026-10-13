@@ -77,8 +77,21 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                 {
                     progress.Report(new(name, "검열 영역 찾는 중", 45));
                     using var img = Cv2.ImRead(work, ImreadModes.Color);
-                    using var mask = MosaicDetector.BuildMask(img,
-                        settings.DecensorBlockSize, settings.DecensorThreshold, settings.DecensorMaskGrow);
+
+                    // 말풍선은 흰 막대로 오인되기 쉬우므로 감지된 글자 블록을 제외 영역으로 넘긴다.
+                    var exclude = blocks.Select(b =>
+                        new Rect(b.X1, b.Y1, Math.Max(1, b.X2 - b.X1), Math.Max(1, b.Y2 - b.Y1))).ToList();
+
+                    var mosaicMask = settings.DecensorFindMosaic
+                        ? MosaicDetector.BuildMask(img,
+                            settings.DecensorBlockSize, settings.DecensorThreshold, settings.DecensorMaskGrow)
+                        : null;
+                    var barMask = MosaicDetector.BuildBarMask(img,
+                        settings.DecensorFindWhiteBar, settings.DecensorFindBlackBar,
+                        settings.DecensorBarMinAspect, settings.DecensorBarMinArea,
+                        settings.DecensorMaskGrow, exclude);
+
+                    using var mask = MosaicDetector.Combine(mosaicMask, barMask);
                     if (mask != null)
                     {
                         if (!strongDecensor)

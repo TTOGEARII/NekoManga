@@ -44,6 +44,17 @@ public class AppSettings
     // ── 검열제거 (모자이크 감지 + LaMa/SDXL) ────────────────────
     /// <summary>"Basic"=내장 LaMa (빠름, 추가 설치 불필요), "Strong"=ComfyUI SDXL 인페인트 (고품질, ComfyUI 필요).</summary>
     public string DecensorMode { get; set; } = "Basic";
+    /// <summary>모자이크(격자) 검열을 찾는다.</summary>
+    public bool DecensorFindMosaic { get; set; } = true;
+    /// <summary>흰색 막대 검열을 찾는다.</summary>
+    public bool DecensorFindWhiteBar { get; set; } = true;
+    /// <summary>검은색 막대(먹줄) 검열을 찾는다.</summary>
+    public bool DecensorFindBlackBar { get; set; } = true;
+    /// <summary>막대로 인정할 최소 가로세로비. 낮출수록 정사각형에 가까운 것도 잡지만 오탐이 는다.</summary>
+    public double DecensorBarMinAspect { get; set; } = 1.8;
+    /// <summary>막대로 인정할 최소 면적(px²). 작은 글자·점 노이즈를 거른다.</summary>
+    public int DecensorBarMinArea { get; set; } = 600;
+
     /// <summary>모자이크 블록 크기(px). 이미지에 맞게 조절.</summary>
     public int DecensorBlockSize { get; set; } = 8;
     /// <summary>감지 민감도. 낮을수록 더 많은 영역을 모자이크로 판단.</summary>

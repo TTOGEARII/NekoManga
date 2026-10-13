@@ -56,18 +56,30 @@ public static class SelfTest
             // 4) 검열제거(기본) — 마스크가 잡히면
             sw.Restart();
             using (var img2 = Cv2.ImRead(imagePath, ImreadModes.Color))
-            using (var mask = MosaicDetector.BuildMask(img2, settings.DecensorBlockSize, settings.DecensorThreshold, settings.DecensorMaskGrow))
             {
+                var exclude = result.Blocks.Select(b =>
+                    new Rect(b.X1, b.Y1, Math.Max(1, b.X2 - b.X1), Math.Max(1, b.Y2 - b.Y1))).ToList();
+
+                var mo = settings.DecensorFindMosaic
+                    ? MosaicDetector.BuildMask(img2, settings.DecensorBlockSize, settings.DecensorThreshold, settings.DecensorMaskGrow)
+                    : null;
+                L($"모자이크 감지: {(mo == null ? "없음" : Cv2.CountNonZero(mo) + "px")}");
+                var bar = MosaicDetector.BuildBarMask(img2,
+                    settings.DecensorFindWhiteBar, settings.DecensorFindBlackBar,
+                    settings.DecensorBarMinAspect, settings.DecensorBarMinArea,
+                    settings.DecensorMaskGrow, exclude);
+                L($"막대 감지: {(bar == null ? "없음" : Cv2.CountNonZero(bar) + "px")}");
+
+                using var mask = MosaicDetector.Combine(mo, bar);
                 if (mask != null)
                 {
-                    L($"모자이크 마스크 픽셀: {Cv2.CountNonZero(mask)} / 컨투어 확인용 저장");
-                    Cv2.ImWrite(stem + ".selftest.mosaicmask.png", mask);
+                    Cv2.ImWrite(stem + ".selftest.censormask.png", mask);
                     using var maskCopy = mask.Clone(); // FindContours가 원본을 변형하므로 LaMa엔 복사본
                     new LamaInpainter(env).Inpaint(img2, maskCopy);
                     Cv2.ImWrite(stem + ".selftest.decensor.png", img2);
                     L($"검열제거(기본): {sw.ElapsedMilliseconds}ms");
                 }
-                else L("검열제거: 모자이크 미감지 (정상일 수 있음)");
+                else L("검열제거: 검열 미감지 (정상일 수 있음)");
             }
 
             L("SELFTEST OK");
