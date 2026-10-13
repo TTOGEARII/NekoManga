@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.IO.Compression;
 using Velopack;
 using Velopack.Sources;
 
@@ -30,16 +29,35 @@ public class UpdateService
 
     public async Task DownloadAndApplyAsync(UpdateInfo info, Action<int>? progress = null, Action? beforeRestart = null)
     {
+        Log("DownloadUpdatesAsync 시작");
         await _manager.DownloadUpdatesAsync(info, progress);
-        await PrewarmAntivirusScanAsync(info);
+        Log("다운로드 완료");
+
         beforeRestart?.Invoke();
         var version = info.TargetFullRelease.Version.ToString();
         StartRestartWatchdog(version);
         StartApplySplash(version);
-        // Velopack 기본 적용 다이얼로그는 이미지 커스텀이 불가능해(--splashImage는 Setup.exe 전용)
-        // silent로 적용하고, 그동안 위에서 띄운 자체 스플래시 창을 보여준다.
-        _manager.WaitExitThenApplyUpdates(info.TargetFullRelease, silent: true, restart: true);
-        Environment.Exit(0);
+
+        // Velopack 공식 권장 경로: ApplyUpdatesAndRestart가 Update.exe를 silent로 띄워 적용하고
+        // 현재 프로세스를 종료·재시작한다 (내부에서 Environment.Exit 처리).
+        // WaitExitThenApplyUpdates + 수동 Exit 조합은 1.x에서 적용이 시작되지 않는 문제가 있었다.
+        // 대용량 nupkg(ONNX 포함)를 통째로 푸는 백신 선적재는 지연·실패 소지가 커서 제거했다.
+        Log("ApplyUpdatesAndRestart 호출");
+        _manager.ApplyUpdatesAndRestart(info.TargetFullRelease);
+        Log("ApplyUpdatesAndRestart 반환(비정상 — 보통 여기 도달 전 종료)");
+    }
+
+    private static void Log(string msg)
+    {
+        try
+        {
+            var path = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "NekoManga", "update.log");
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.AppendAllText(path, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {msg}{Environment.NewLine}");
+        }
+        catch { }
     }
 
     /// <summary>--demo-splash 실행 인자용: 적용 스플래시를 10초간 미리 본다.</summary>
@@ -122,40 +140,6 @@ public class UpdateService
             });
         }
         catch { /* 스플래시 실패는 치명적이지 않음 — silent 적용은 그대로 진행된다 */ }
-    }
-
-    /// <summary>백신(V3 Lite 등)이 업데이트로 교체된 "처음 보는" 실행 파일의 실행을 몇 분씩 차단하는 문제가 있어,
-    /// 재시작 전에 새 버전 파일들을 임시 폴더에 미리 풀어 백신이 먼저 검사하도록 유도한다 (해시 캐시 선적재).</summary>
-    private static async Task PrewarmAntivirusScanAsync(UpdateInfo info)
-    {
-        try
-        {
-            var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".."));
-            var pkg = Path.Combine(root, "packages", info.TargetFullRelease.FileName);
-            if (!File.Exists(pkg)) return;
-
-            var dest = Path.Combine(Path.GetTempPath(), "NekoManga-prewarm");
-            if (Directory.Exists(dest)) Directory.Delete(dest, true);
-            Directory.CreateDirectory(dest);
-
-            await Task.Run(() =>
-            {
-                using var zip = System.IO.Compression.ZipFile.OpenRead(pkg);
-                foreach (var entry in zip.Entries)
-                {
-                    var name = entry.FullName.Replace('\\', '/');
-                    if (!name.StartsWith("lib/app/", StringComparison.OrdinalIgnoreCase) ||
-                        entry.Name.Length == 0) continue;
-                    var target = Path.Combine(dest, name["lib/app/".Length..].Replace('/', Path.DirectorySeparatorChar));
-                    Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                    entry.ExtractToFile(target, overwrite: true);
-                }
-            });
-
-            // 백신이 방금 쓴 파일들을 검사할 시간을 준다.
-            await Task.Delay(TimeSpan.FromSeconds(10));
-        }
-        catch { /* 사전 검사 유도는 실패해도 업데이트 자체에는 지장 없음 */ }
     }
 
     /// <summary>Update.exe의 자동 재시작이 "액세스 거부"로 실패하는 환경 대비 (velopack#198):
