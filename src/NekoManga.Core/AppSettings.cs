@@ -52,8 +52,9 @@ public class AppSettings
     public bool DecensorFindBlackBar { get; set; } = true;
     /// <summary>막대로 인정할 최소 가로세로비. 낮출수록 정사각형에 가까운 것도 잡지만 오탐이 는다.</summary>
     public double DecensorBarMinAspect { get; set; } = 1.8;
-    /// <summary>막대로 인정할 최소 면적(px²). 작은 글자·점 노이즈를 거른다.</summary>
-    public int DecensorBarMinArea { get; set; } = 600;
+    /// <summary>막대로 인정할 최소 면적(px²). 작은 글자·점 노이즈를 거른다.
+    /// 600은 실제 원고의 짧은 막대(13×40 정도, 약 530px²)를 놓쳐 350으로 낮췄다.</summary>
+    public int DecensorBarMinArea { get; set; } = 350;
 
     /// <summary>모자이크 블록 크기(px). 이미지에 맞게 조절.</summary>
     public int DecensorBlockSize { get; set; } = 8;

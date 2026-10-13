@@ -86,6 +86,10 @@ public static class MosaicDetector
     ///  ③ 가로세로비가 minAspect 이상 (막대는 길쭉하다)
     ///  ④ 이미지 가장자리에 닿지 않음 (페이지 여백·패널 사이 간격 제외) + 면적 상·하한
     ///
+    /// ②③은 '연결 성분 하나 = 막대 하나'를 가정한다. 원고에서는 막대 여러 개가 맞닿는 일이 잦아
+    /// (교차하거나 나란히 붙음) 뭉치면 직사각형도 길쭉하지도 않게 되어 통째로 탈락한다.
+    /// 그래서 조건에서 떨어진 덩어리는 <see cref="DecomposeBars"/>로 곧은 띠들로 쪼개 다시 판정한다.
+    ///
     /// excludeRects(말풍선 등)와 겹치는 후보는 버린다.</summary>
     public static Mat? BuildBarMask(Mat img, bool white, bool black,
         double minAspect, int minAreaPx, int grow, IReadOnlyList<Rect>? excludeRects = null)
@@ -121,10 +125,15 @@ public static class MosaicDetector
             using var centroids = new Mat();
             int n = Cv2.ConnectedComponentsWithStats(bin, labels, stats, centroids);
 
+            // 흰 막대는 원고 곳곳의 흰 띠(선 사이 여백·하이라이트·패널 사이)와 구분이 어렵다.
+            // 그래서 흰쪽은 v0.4.0 그대로 '통째로 직사각형'만 인정하고 최소 면적도 내리지 않는다
+            // (실측: 흰쪽에 띠 분해를 켜면 막대가 없는 깨끗한 페이지에서 오탐이 1613→5795px).
+            int areaFloor = isWhite ? Math.Max(minAreaPx, 600) : minAreaPx;
+
             for (int li = 1; li < n; li++) // 0 = 배경 레이블
             {
                 int area = stats.At<int>(li, (int)ConnectedComponentsTypes.Area);
-                if (area < minAreaPx || area > maxArea) continue;
+                if (area < areaFloor || area > maxArea) continue;
 
                 int bx = stats.At<int>(li, (int)ConnectedComponentsTypes.Left);
                 int by = stats.At<int>(li, (int)ConnectedComponentsTypes.Top);
@@ -150,12 +159,21 @@ public static class MosaicDetector
                 var rr = Cv2.MinAreaRect(pts);
                 double w = rr.Size.Width, h = rr.Size.Height;
                 if (w < 2 || h < 2) continue;
-                // ② 채워진 직사각형인가
-                if (area / (w * h) < 0.80) continue;
-                // ③ 길쭉한가
-                if (Math.Max(w, h) / Math.Min(w, h) < minAspect) continue;
 
-                mask.SetTo(Scalar.White, comp);
+                // ② 채워진 직사각형이고 ③ 길쭉하면 막대 하나다
+                if (area / (w * h) >= 0.80 && Math.Max(w, h) / Math.Min(w, h) >= minAspect)
+                {
+                    mask.SetTo(Scalar.White, comp);
+                    any = true;
+                    continue;
+                }
+
+                // 아니면 맞닿은 막대 뭉치일 수 있다 — 곧은 띠로 분해해 본다 (검은 막대만)
+                if (isWhite) continue;
+                using var bars = DecomposeBars(compRoi, area);
+                if (bars == null) continue;
+                using var dst = new Mat(mask, br);
+                Cv2.BitwiseOr(dst, bars, dst);
                 any = true;
             }
         }
@@ -164,6 +182,85 @@ public static class MosaicDetector
         if (grow > 0)
             Cv2.Dilate(mask, mask, Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(grow * 2 + 1, grow * 2 + 1)));
         return mask;
+    }
+
+    /// <summary>맞닿은 막대 뭉치를 '곧은 띠'들로 분해한다. 덩어리(comp, 성분 하나만 담긴 ROI)를
+    /// 여러 각도의 직선 커널로 열어(opening) 그 각도로 곧게 뻗은 띠만 남기고, 띠들의 합이
+    /// 덩어리를 거의 다 덮을 때만 막대로 인정한다.
+    ///
+    /// 각도별로 따로 라벨링해야 한다 — 전 각도 결과를 먼저 OR하면 교차한 막대가 도로 한 덩어리가 된다.
+    /// '띠들의 합으로 설명되는가'가 핵심 판별식이다: 검열 막대 뭉치는 곧은 띠 몇 개로 전부 덮이지만,
+    /// 머리카락·검은 옷·효과음 붓획은 휘고 굵기가 변해 덮이지 않는다.
+    /// (실측: 합성 원고에서 교차·짧은 막대 검출률 0% → 98%, 그림 손상 0px)</summary>
+    private static Mat? DecomposeBars(Mat comp, int area)
+    {
+        const int BandThick = 9;     // 띠로 인정할 최소 두께
+        const int BandLength = 26;   // 띠로 인정할 최소 길이
+        const double BandFill = 0.85;   // 띠 외접사각형이 이만큼 차 있어야 한다
+        const double BandAspect = 2.5;  // 띠는 길쭉하다
+        const double Cover = 0.88;      // 띠들의 합이 덩어리를 덮는 비율
+
+        var sub = new Mat(comp.Rows, comp.Cols, MatType.CV_8UC1, Scalar.Black);
+        using var roi = new Mat(comp.Rows, comp.Cols, MatType.CV_8UC1);
+
+        for (int deg = 0; deg < 180; deg += 10)
+        {
+            using var kernel = LineKernel(BandLength, BandThick, deg);
+            using var opened = new Mat();
+            Cv2.MorphologyEx(comp, opened, MorphTypes.Open, kernel);
+            if (Cv2.CountNonZero(opened) == 0) continue;
+
+            using var labels = new Mat();
+            using var stats = new Mat();
+            using var centroids = new Mat();
+            int n = Cv2.ConnectedComponentsWithStats(opened, labels, stats, centroids);
+            for (int li = 1; li < n; li++)
+            {
+                if (stats.At<int>(li, (int)ConnectedComponentsTypes.Area) < 60) continue;
+
+                using var band = new Mat();
+                Cv2.Compare(labels, li, band, CmpTypes.EQ);
+                using var pts = new Mat();
+                Cv2.FindNonZero(band, pts);
+                if (pts.Empty()) continue;
+
+                var rr = Cv2.MinAreaRect(pts);
+                double w = rr.Size.Width, h = rr.Size.Height;
+                if (w < 2 || h < 2) continue;
+                if (Math.Max(w, h) / Math.Min(w, h) < BandAspect) continue;
+
+                var box = Cv2.BoxPoints(rr).Select(p => (Point)p).ToArray();
+                roi.SetTo(Scalar.Black);
+                Cv2.FillConvexPoly(roi, box, Scalar.White);
+                int total = Cv2.CountNonZero(roi);
+                if (total == 0) continue;
+                using var inside = new Mat();
+                Cv2.BitwiseAnd(comp, roi, inside);
+                if ((double)Cv2.CountNonZero(inside) / total < BandFill) continue;
+
+                Cv2.FillConvexPoly(sub, box, Scalar.White);
+            }
+        }
+
+        using var covered = new Mat();
+        Cv2.BitwiseAnd(sub, comp, covered);
+        if ((double)Cv2.CountNonZero(covered) / Math.Max(1, area) < Cover)
+        {
+            sub.Dispose();
+            return null;
+        }
+        // 막대 끝의 안티에일리어싱까지 덮도록 띠 사각형 그대로(덩어리 밖은 제외하지 않고) 돌려준다.
+        return sub;
+    }
+
+    /// <summary>지정한 각도로 누운 length×thick 직사각형 구조요소.</summary>
+    private static Mat LineKernel(int length, int thick, double deg)
+    {
+        int size = (int)Math.Ceiling(Math.Sqrt(length * length + thick * thick)) | 1;
+        var k = new Mat(size, size, MatType.CV_8UC1, Scalar.Black);
+        var rr = new RotatedRect(new Point2f(size / 2f, size / 2f), new Size2f(length, thick), (float)deg);
+        Cv2.FillConvexPoly(k, Cv2.BoxPoints(rr).Select(p => (Point)p).ToArray(), Scalar.White);
+        return k;
     }
 
     /// <summary>두 마스크를 합친다 (한쪽이 null이면 나머지를 돌려준다). 둘 다 null이면 null.</summary>
