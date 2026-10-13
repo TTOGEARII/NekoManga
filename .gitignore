@@ -4,7 +4,9 @@ publish/
 *.user
 .vs/
 # 로컬 실데이터 (설정·작업 결과물) — 커밋 금지
+# 주의: Windows는 ignore가 대소문자 무시라 'runtime/'처럼 쓰면
+# src/NekoManga.Core/Runtime/ 소스까지 제외된다 — 반드시 루트 고정(/)으로 쓸 것.
 settings.json
-runtime/
-output/
-tmp/
+/runtime/
+/output/
+/tmp/
