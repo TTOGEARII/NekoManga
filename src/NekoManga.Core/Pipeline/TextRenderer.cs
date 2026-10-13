@@ -22,7 +22,7 @@ public static class TextRenderer
     public static void RenderBlocks(string imagePath, string sourceSizeRefPath,
         IReadOnlyList<TextBlockInfo> blocks, string outPath)
     {
-        using var mat = Cv2.ImRead(imagePath, ImreadModes.Color);
+        using var mat = ImgIo.Read(imagePath, ImreadModes.Color);
         if (mat.Empty())
             throw new InvalidDataException($"이미지를 읽지 못했어요: {Path.GetFileName(imagePath)}");
         using var bmp = ToBitmap(mat);
@@ -30,7 +30,7 @@ public static class TextRenderer
         double scaleX = 1, scaleY = 1;
         if (File.Exists(sourceSizeRefPath))
         {
-            using var src = Cv2.ImRead(sourceSizeRefPath, ImreadModes.Color);
+            using var src = ImgIo.Read(sourceSizeRefPath, ImreadModes.Color);
             if (!src.Empty())
             {
                 scaleX = (double)bmp.Width / src.Width;
@@ -57,7 +57,7 @@ public static class TextRenderer
 
         Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
         using var outMat = ToMat(bmp);
-        if (!Cv2.ImWrite(outPath, outMat))
+        if (!ImgIo.Write(outPath, outMat))
             throw new IOException($"결과 저장에 실패했어요: {outPath}");
     }
 

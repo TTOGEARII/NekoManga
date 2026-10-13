@@ -28,16 +28,16 @@ public static class SelfTest
             // 1) 감지
             var detector = new TextDetector(env);
             L($"models dir: {env.ModelsDir} / detector ready: {detector.IsReady}");
-            using var img = Cv2.ImRead(imagePath, ImreadModes.Color);
+            using var img = ImgIo.Read(imagePath, ImreadModes.Color);
             var det = detector.Detect(img);
             L($"감지: {det.Blocks.Count}개 블록, {sw.ElapsedMilliseconds}ms");
             using (var vis = img.Clone())
             {
                 foreach (var b in det.Blocks)
                     Cv2.Rectangle(vis, new Rect(b.X1, b.Y1, b.X2 - b.X1, b.Y2 - b.Y1), Scalar.Red, 3);
-                Cv2.ImWrite(stem + ".selftest.boxes.png", vis);
+                ImgIo.Write(stem + ".selftest.boxes.png", vis);
             }
-            Cv2.ImWrite(stem + ".selftest.mask.png", det.TextMask);
+            ImgIo.Write(stem + ".selftest.mask.png", det.TextMask);
 
             // 2) 전체 번역 파이프라인
             sw.Restart();
@@ -55,7 +55,7 @@ public static class SelfTest
 
             // 4) 검열제거(기본) — 마스크가 잡히면
             sw.Restart();
-            using (var img2 = Cv2.ImRead(imagePath, ImreadModes.Color))
+            using (var img2 = ImgIo.Read(imagePath, ImreadModes.Color))
             {
                 var exclude = result.Blocks.Select(b =>
                     new Rect(b.X1, b.Y1, Math.Max(1, b.X2 - b.X1), Math.Max(1, b.Y2 - b.Y1))).ToList();
@@ -73,10 +73,10 @@ public static class SelfTest
                 using var mask = MosaicDetector.Combine(mo, bar);
                 if (mask != null)
                 {
-                    Cv2.ImWrite(stem + ".selftest.censormask.png", mask);
+                    ImgIo.Write(stem + ".selftest.censormask.png", mask);
                     using var maskCopy = mask.Clone(); // FindContours가 원본을 변형하므로 LaMa엔 복사본
                     new LamaInpainter(env).Inpaint(img2, maskCopy);
-                    Cv2.ImWrite(stem + ".selftest.decensor.png", img2);
+                    ImgIo.Write(stem + ".selftest.decensor.png", img2);
                     L($"검열제거(기본): {sw.ElapsedMilliseconds}ms");
                 }
                 else L("검열제거: 검열 미감지 (정상일 수 있음)");

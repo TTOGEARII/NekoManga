@@ -76,7 +76,7 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                 if (settings.EnableDecensor)
                 {
                     progress.Report(new(name, "검열 영역 찾는 중", 45));
-                    using var img = Cv2.ImRead(work, ImreadModes.Color);
+                    using var img = ImgIo.Read(work, ImreadModes.Color);
 
                     // 말풍선은 흰 막대로 오인되기 쉬우므로 감지된 글자 블록을 제외 영역으로 넘긴다.
                     var exclude = blocks.Select(b =>
@@ -106,7 +106,7 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                         }
                         work = Path.Combine(workDir, Path.GetFileNameWithoutExtension(file) + ".decensored.png");
                         Directory.CreateDirectory(workDir);
-                        Cv2.ImWrite(work, img);
+                        ImgIo.Write(work, img);
                     }
                 }
 
@@ -136,10 +136,10 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                     // 결과는 항상 png로 저장한다 — 원본이 webp/avif여도 확장자만 png가 되지 않도록
                     // 그대로 복사하지 않고 OpenCV로 다시 인코딩한다.
                     Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
-                    using var done = Cv2.ImRead(work, ImreadModes.Color);
+                    using var done = ImgIo.Read(work, ImreadModes.Color);
                     if (done.Empty())
                         throw new InvalidDataException($"결과 이미지를 읽지 못했어요: {Path.GetFileName(work)}");
-                    Cv2.ImWrite(outPath, done);
+                    ImgIo.Write(outPath, done);
                 }
 
                 progress.Report(new(name, "완료", 100, Done: true));
@@ -180,7 +180,7 @@ public class PipelineRunner(AppSettings settings) : IDisposable
             var r = await client.WaitAsync(pid, comfyOutputDir, TimeSpan.FromMinutes(10), ct);
             if (r.OutputFiles.Count > 0)
             {
-                using var outImg = Cv2.ImRead(r.OutputFiles[^1], ImreadModes.Color);
+                using var outImg = ImgIo.Read(r.OutputFiles[^1], ImreadModes.Color);
                 if (!outImg.Empty())
                 {
                     using var resized = outImg.Width == roi.Width && outImg.Height == roi.Height

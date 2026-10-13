@@ -33,7 +33,7 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         if (!IsReady)
             throw new FileNotFoundException("내장 엔진 모델이 없어요. 설정 → 구성요소에서 설치해 주세요.");
 
-        using var img = Cv2.ImRead(imagePath, ImreadModes.Color);
+        using var img = ImgIo.Read(imagePath, ImreadModes.Color);
         if (img.Empty())
             throw new InvalidDataException($"이미지를 읽지 못했어요: {Path.GetFileName(imagePath)}");
 
@@ -105,7 +105,7 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
 
         Directory.CreateDirectory(workDir);
         var outPath = Path.Combine(workDir, Path.GetFileNameWithoutExtension(imagePath) + ".inpainted.png");
-        Cv2.ImWrite(outPath, img);
+        ImgIo.Write(outPath, img);
         return new PageTranslation(outPath, result);
     }
 
