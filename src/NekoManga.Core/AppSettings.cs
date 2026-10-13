@@ -54,12 +54,18 @@ public class AppSettings
     public double DecensorStrongDenoise { get; set; } = 0.75;
 
     // ── 번역 (내장 엔진: CTD + manga-ocr + LaMa) ────────────────
-    /// <summary>"Google"(무료, 기본) 또는 "DeepL"(API 키 필요).</summary>
+    /// <summary>"Google"(무료, 기본) · "DeepL" · "DeepSeek" · "Grok" (뒤 셋은 API 키 필요).</summary>
     public string TranslateEngine { get; set; } = "Google";
     /// <summary>언어 코드. OCR이 일본어 특화라 원본은 ja 고정 권장.</summary>
     public string TranslateSource { get; set; } = "ja";
     public string TranslateTarget { get; set; } = "ko";
     public string DeepLApiKey { get; set; } = "";
+    public string DeepSeekApiKey { get; set; } = "";
+    /// <summary>비우면 기본 모델(deepseek-chat).</summary>
+    public string DeepSeekModel { get; set; } = "";
+    public string GrokApiKey { get; set; } = "";
+    /// <summary>비우면 기본 모델(grok-4-fast).</summary>
+    public string GrokModel { get; set; } = "";
 
     // ── 기타 ──────────────────────────────────────────────────
     /// <summary>civitai 모델(채색 체크포인트) 다운로드용 API 키. 로그인 필요 모델 대비 (선택).</summary>
@@ -101,7 +107,8 @@ public class AppSettings
     {
         TranslateSource = TranslateSource switch { "日本語" => "ja", "English" => "en", "简体中文" => "zh", _ => TranslateSource };
         TranslateTarget = TranslateTarget switch { "한국어" => "ko", "English" => "en", _ => TranslateTarget };
-        if (TranslateEngine is not ("Google" or "DeepL")) TranslateEngine = "Google"; // Papago 등 구 엔진
+        // Papago 등 구 BT 엔진만 Google로 되돌린다 (DeepSeek·Grok은 유효).
+        if (TranslateEngine is not ("Google" or "DeepL" or "DeepSeek" or "Grok")) TranslateEngine = "Google";
         if (DecensorMode is not ("Basic" or "Strong")) DecensorMode = "Basic";
     }
 

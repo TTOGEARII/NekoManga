@@ -36,6 +36,11 @@ public partial class SettingsWindow
         SelectComboByTag(CmbSource, s.TranslateSource);
         SelectComboByTag(CmbTarget, s.TranslateTarget);
         TxtDeepLKey.Text = s.DeepLApiKey;
+        TxtDeepSeekKey.Text = s.DeepSeekApiKey;
+        TxtDeepSeekModel.Text = s.DeepSeekModel;
+        TxtGrokKey.Text = s.GrokApiKey;
+        TxtGrokModel.Text = s.GrokModel;
+        UpdateTranslatorPanels();
 
         TxtRuntimeRoot.Text = s.RuntimeRoot;
         TxtOutputRoot.Text = s.OutputRoot;
@@ -43,6 +48,8 @@ public partial class SettingsWindow
         TxtCivitaiKey.Text = s.CivitaiApiKey;
 
         TxtAboutVersion.Text = $"버전 v{new UpdateService().CurrentVersion}";
+        if ((Application.Current as App)?.DemoSettings == true)
+            SettingsTabs.SelectedIndex = 2; // 번역 탭 (UI 데모용)
         Closing += (_, _) => Apply();
     }
 
@@ -70,6 +77,10 @@ public partial class SettingsWindow
         s.TranslateSource = ComboTag(CmbSource, s.TranslateSource);
         s.TranslateTarget = ComboTag(CmbTarget, s.TranslateTarget);
         s.DeepLApiKey = TxtDeepLKey.Text.Trim();
+        s.DeepSeekApiKey = TxtDeepSeekKey.Text.Trim();
+        s.DeepSeekModel = TxtDeepSeekModel.Text.Trim();
+        s.GrokApiKey = TxtGrokKey.Text.Trim();
+        s.GrokModel = TxtGrokModel.Text.Trim();
 
         s.OutputRoot = TxtOutputRoot.Text.Trim();
         s.LinkedComfyRoot = TxtLinkedComfy.Text.Trim();
@@ -103,6 +114,19 @@ public partial class SettingsWindow
 
     private static string ComboText(ComboBox cmb, string fallback) =>
         (cmb.SelectedItem as ComboBoxItem)?.Content as string ?? (string.IsNullOrWhiteSpace(cmb.Text) ? fallback : cmb.Text);
+
+    private void CmbTranslator_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        => UpdateTranslatorPanels();
+
+    /// <summary>선택한 엔진에 해당하는 키 입력란만 보여준다.</summary>
+    private void UpdateTranslatorPanels()
+    {
+        if (PanelDeepL == null) return; // InitializeComponent 전 호출 방지
+        var engine = ComboTag(CmbTranslator, "Google");
+        PanelDeepL.Visibility = engine == "DeepL" ? Visibility.Visible : Visibility.Collapsed;
+        PanelDeepSeek.Visibility = engine == "DeepSeek" ? Visibility.Visible : Visibility.Collapsed;
+        PanelGrok.Visibility = engine == "Grok" ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     private void BtnPickOutput_Click(object sender, RoutedEventArgs e)
     {

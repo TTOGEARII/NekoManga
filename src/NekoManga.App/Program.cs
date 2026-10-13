@@ -28,7 +28,7 @@ public static class Program
             return;
         }
 
-        var app = new App();
+        var app = new App { DemoSettings = args.Contains("--demo-settings") };
         app.InitializeComponent();
         app.Run();
     }

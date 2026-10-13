@@ -68,12 +68,90 @@ public class DeepLTranslator(string apiKey) : ITranslator
     }
 }
 
+/// <summary>OpenAI 호환 chat completions API를 쓰는 LLM 번역기 (DeepSeek·Grok·기타 호환 엔드포인트).
+/// 만화 맥락을 살리려 한 페이지의 말풍선을 번호로 묶어 한 번에 번역하고 번호로 되돌린다.</summary>
+public class LlmTranslator(string endpoint, string apiKey, string model, string engineName) : ITranslator
+{
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(120) };
+
+    public async Task<IReadOnlyList<string>> TranslateAsync(IReadOnlyList<string> texts, string sourceLang, string targetLang, CancellationToken ct)
+    {
+        var nonEmpty = texts.Select((t, i) => (t, i)).Where(x => !string.IsNullOrWhiteSpace(x.t)).ToList();
+        if (nonEmpty.Count == 0) return texts.Select(_ => "").ToList();
+
+        var srcName = LangName(sourceLang);
+        var tgtName = LangName(targetLang);
+        var numbered = string.Join("\n", nonEmpty.Select((x, k) => $"[{k + 1}] {x.t.Replace("\n", " ")}"));
+        var sys = $"You are a professional manga/comic translator. Translate each numbered line from {srcName} to {tgtName}. " +
+                  "Keep the natural, casual tone of manga dialogue. Output ONLY the translations, each prefixed with its number in [n] form, one per line. Do not add notes.";
+
+        var body = new JsonObject
+        {
+            ["model"] = model,
+            ["temperature"] = 0.3,
+            ["messages"] = new JsonArray(
+                new JsonObject { ["role"] = "system", ["content"] = sys },
+                new JsonObject { ["role"] = "user", ["content"] = numbered }),
+        };
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, endpoint);
+        req.Headers.Add("Authorization", $"Bearer {apiKey}");
+        req.Content = new StringContent(body.ToJsonString(), System.Text.Encoding.UTF8, "application/json");
+        using var resp = await Http.SendAsync(req, ct);
+        var text = await resp.Content.ReadAsStringAsync(ct);
+        if (!resp.IsSuccessStatusCode)
+            throw new InvalidOperationException($"{engineName} 오류 (HTTP {(int)resp.StatusCode}) — 설정의 API 키를 확인해 주세요.");
+
+        var content = JsonNode.Parse(text)?["choices"]?[0]?["message"]?["content"]?.GetValue<string>() ?? "";
+        var parsed = ParseNumbered(content, nonEmpty.Count);
+
+        // 번호 매칭을 원래 인덱스에 되돌린다
+        var result = texts.Select(_ => "").ToArray();
+        for (int k = 0; k < nonEmpty.Count; k++)
+            result[nonEmpty[k].i] = string.IsNullOrWhiteSpace(parsed[k]) ? nonEmpty[k].t : parsed[k];
+        return result;
+    }
+
+    private static string[] ParseNumbered(string content, int count)
+    {
+        var outp = new string[count];
+        foreach (var raw in content.Split('\n'))
+        {
+            var line = raw.Trim();
+            var m = System.Text.RegularExpressions.Regex.Match(line, @"^\[?(\d+)\]?[\.\)\s]+(.*)$");
+            if (m.Success && int.TryParse(m.Groups[1].Value, out int n) && n >= 1 && n <= count)
+                outp[n - 1] = m.Groups[2].Value.Trim();
+        }
+        return outp;
+    }
+
+    private static string LangName(string code) => code switch
+    {
+        "ja" => "Japanese", "ko" => "Korean", "en" => "English", "zh" => "Chinese", _ => code,
+    };
+}
+
 public static class TranslatorFactory
 {
+    // OpenAI 호환 엔드포인트·기본 모델 (2026-10 기준, 설정에서 모델명 변경 가능)
+    public const string DeepSeekEndpoint = "https://api.deepseek.com/chat/completions";
+    public const string DeepSeekDefaultModel = "deepseek-chat";
+    public const string GrokEndpoint = "https://api.x.ai/v1/chat/completions";
+    public const string GrokDefaultModel = "grok-4-fast";
+
     /// <summary>설정에 따라 번역기를 만든다. 언어 코드: ja/ko/en 등.</summary>
     public static ITranslator Create(AppSettings s) => s.TranslateEngine switch
     {
         "DeepL" when !string.IsNullOrWhiteSpace(s.DeepLApiKey) => new DeepLTranslator(s.DeepLApiKey),
+        "DeepSeek" when !string.IsNullOrWhiteSpace(s.DeepSeekApiKey) =>
+            new LlmTranslator(DeepSeekEndpoint, s.DeepSeekApiKey,
+                Model(s.DeepSeekModel, DeepSeekDefaultModel), "DeepSeek"),
+        "Grok" when !string.IsNullOrWhiteSpace(s.GrokApiKey) =>
+            new LlmTranslator(GrokEndpoint, s.GrokApiKey,
+                Model(s.GrokModel, GrokDefaultModel), "Grok"),
         _ => new GoogleTranslator(),
     };
+
+    private static string Model(string configured, string fallback) =>
+        string.IsNullOrWhiteSpace(configured) ? fallback : configured.Trim();
 }

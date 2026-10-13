@@ -16,7 +16,7 @@
 
         <ui:TitleBar Grid.Row="0" Title="설정 ⚙ (창을 닫으면 저장돼요)" ShowMinimize="False" ShowMaximize="False"/>
 
-        <TabControl Grid.Row="1" Margin="16,4,16,16">
+        <TabControl x:Name="SettingsTabs" Grid.Row="1" Margin="16,4,16,16">
 
             <!-- ── 채색 ── -->
             <TabItem Header="🎨 채색">
@@ -114,16 +114,53 @@
             <TabItem Header="💬 번역">
                 <StackPanel Margin="8">
                     <TextBlock Style="{StaticResource SectionTitle}" Text="번역 엔진"/>
-                    <ComboBox x:Name="CmbTranslator" Width="260" HorizontalAlignment="Left">
+                    <ComboBox x:Name="CmbTranslator" Width="300" HorizontalAlignment="Left"
+                              SelectionChanged="CmbTranslator_SelectionChanged">
                         <ComboBoxItem Content="Google (무료, 키 불필요)" Tag="Google"/>
                         <ComboBoxItem Content="DeepL (API 키 필요)" Tag="DeepL"/>
+                        <ComboBoxItem Content="DeepSeek (AI 번역 · API 키 필요)" Tag="DeepSeek"/>
+                        <ComboBoxItem Content="Grok / xAI (AI 번역 · API 키 필요)" Tag="Grok"/>
                     </ComboBox>
-                    <DockPanel Margin="0,8,0,0">
-                        <TextBlock Text="DeepL API 키" Style="{StaticResource FieldLabel}" Width="110"/>
-                        <TextBox x:Name="TxtDeepLKey" Width="340" HorizontalAlignment="Left"/>
-                    </DockPanel>
-                    <TextBlock Style="{StaticResource HintText}"
-                               Text="deepl.com 무료 플랜 키(…:fx)도 돼요 (월 50만 자)."/>
+                    <TextBlock Style="{StaticResource HintText}" Margin="0,6,0,0"
+                               Text="DeepSeek·Grok은 문맥을 이해하는 AI 번역이라 말투·뉘앙스가 자연스러워요 (유료 API, 보통 저렴)."/>
+
+                    <!-- DeepL -->
+                    <StackPanel x:Name="PanelDeepL">
+                        <DockPanel Margin="0,8,0,0">
+                            <TextBlock Text="DeepL API 키" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <TextBox x:Name="TxtDeepLKey" Width="360" HorizontalAlignment="Left"/>
+                        </DockPanel>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="deepl.com 무료 플랜 키(…:fx)도 돼요 (월 50만 자)."/>
+                    </StackPanel>
+
+                    <!-- DeepSeek -->
+                    <StackPanel x:Name="PanelDeepSeek">
+                        <DockPanel Margin="0,8,0,0">
+                            <TextBlock Text="DeepSeek 키" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <TextBox x:Name="TxtDeepSeekKey" Width="360" HorizontalAlignment="Left"/>
+                        </DockPanel>
+                        <DockPanel Margin="0,4,0,0">
+                            <TextBlock Text="모델 (선택)" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <TextBox x:Name="TxtDeepSeekModel" Width="200" HorizontalAlignment="Left"/>
+                        </DockPanel>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="platform.deepseek.com에서 키 발급. 비우면 deepseek-chat 사용."/>
+                    </StackPanel>
+
+                    <!-- Grok -->
+                    <StackPanel x:Name="PanelGrok">
+                        <DockPanel Margin="0,8,0,0">
+                            <TextBlock Text="Grok(xAI) 키" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <TextBox x:Name="TxtGrokKey" Width="360" HorizontalAlignment="Left"/>
+                        </DockPanel>
+                        <DockPanel Margin="0,4,0,0">
+                            <TextBlock Text="모델 (선택)" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <TextBox x:Name="TxtGrokModel" Width="200" HorizontalAlignment="Left"/>
+                        </DockPanel>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="console.x.ai에서 키 발급. 비우면 grok-4-fast 사용."/>
+                    </StackPanel>
                     <UniformGrid Columns="2" Rows="1" Margin="0,8,0,0">
                         <DockPanel>
                             <TextBlock Text="원본 언어" Style="{StaticResource FieldLabel}" Width="90"/>

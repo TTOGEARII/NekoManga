@@ -9,6 +9,9 @@ public partial class App : Application
 {
     public static AppSettings Settings { get; private set; } = null!;
 
+    /// <summary>--demo-settings: 설정 창만 띄워 레이아웃을 확인한다 (UI 작업용).</summary>
+    public bool DemoSettings { get; set; }
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -23,6 +26,12 @@ public partial class App : Application
         // 기존 설치 자동 감지 — 이미 ComfyUI·BT를 쓰고 있으면 재다운로드 없이 연결한다.
         AutoLinkExistingInstalls();
         Settings.Save();
+
+        if (DemoSettings)
+        {
+            new SettingsWindow().Show();
+            return;
+        }
 
         var main = new MainWindow();
         MainWindow = main;
