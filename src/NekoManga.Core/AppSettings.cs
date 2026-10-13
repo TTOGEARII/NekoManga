@@ -57,6 +57,10 @@ public class AppSettings
     /// 600은 실제 원고의 짧은 막대(13×40 정도, 약 530px²)를 놓쳐 350으로 낮췄다.</summary>
     public int DecensorBarMinArea { get; set; } = 350;
 
+    /// <summary>강력(SDXL) 검열제거의 시드. 고정해야 같은 원고를 다시 돌려도 같은 그림이 나온다
+    /// (-1이면 매번 무작위 — 실행할 때마다 결과가 달라진다). 기본값은 실제 원고에서 결과가 좋았던 시드.</summary>
+    public long DecensorSeed { get; set; } = 3080993336;
+
     /// <summary>모자이크 블록 크기(px). 이미지에 맞게 조절.</summary>
     public int DecensorBlockSize { get; set; } = 8;
     /// <summary>감지 민감도. 낮을수록 더 많은 영역을 모자이크로 판단.</summary>

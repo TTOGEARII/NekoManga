@@ -101,9 +101,9 @@ public static class WorkflowBuilder
     /// 업로드 PNG의 알파 채널이 마스크다 (알파 0 = 재생성 영역, ComfyUI LoadImage 규약).
     /// SetLatentNoiseMask로 마스크 영역만 다시 그리고, 최종적으로 마스크 영역만 원본에 합성해
     /// 나머지 픽셀은 1비트도 바뀌지 않게 한다.</summary>
-    public static JsonObject BuildStrongDecensor(AppSettings s, string uploadedName, string filenamePrefix)
+    public static JsonObject BuildStrongDecensor(AppSettings s, string uploadedName, string filenamePrefix,
+        long seed)
     {
-        long seed = Random.Shared.NextInt64(0, uint.MaxValue);
         return new JsonObject
         {
             ["1"] = Node("LoadImage", new() { ["image"] = uploadedName }),

@@ -131,6 +131,18 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                     progress.Report(new(name, "식자 중", 92));
                     TextRenderer.RenderBlocks(work, file, blocks, outPath);
                 }
+                else if (work == file)
+                {
+                    // 아무것도 감지·수정되지 않았다 (work가 원본 그대로) — 다시 인코딩하지 않고
+                    // 원본을 확장자까지 그대로 내보낸다. 손댈 게 없는데 jpg를 png로 재인코딩하면
+                    // 파일만 커지고 화질에도 득이 없다.
+                    var asIs = Path.Combine(Path.GetDirectoryName(outPath)!, Path.GetFileName(file));
+                    Directory.CreateDirectory(Path.GetDirectoryName(asIs)!);
+                    if (!string.Equals(asIs, file, StringComparison.OrdinalIgnoreCase))
+                        File.Copy(file, asIs, overwrite: true);
+                    progress.Report(new(name, "검열 없음 — 원본 그대로", 100, Done: true));
+                    continue;
+                }
                 else
                 {
                     // 결과는 항상 png로 저장한다 — 원본이 webp/avif여도 확장자만 png가 되지 않도록
@@ -174,9 +186,15 @@ public class PipelineRunner(AppSettings settings) : IDisposable
             using var mcrop = new Mat(mask, roi);
             var maskedPng = MosaicDetector.ToMaskedPng(crop, mcrop);
 
+            // 시드를 고정해야 같은 원고를 다시 돌렸을 때 같은 그림이 나온다. ROI마다 다른 시드를 쓰되
+            // (영역마다 같은 노이즈면 비슷한 무늬가 반복된다) 순서가 정해져 있어 결과는 재현된다.
+            long seed = settings.DecensorSeed >= 0
+                ? (settings.DecensorSeed + ri) % uint.MaxValue
+                : Random.Shared.NextInt64(0, uint.MaxValue);
+
             var up = await client.UploadImageAsync(maskedPng, $"nm_sdc_{pageIdx}_{ri}.png", ct);
             var pid = await client.QueuePromptAsync(
-                WorkflowBuilder.BuildStrongDecensor(settings, up, $"nm_strong_{pageIdx}_{ri}"), ct);
+                WorkflowBuilder.BuildStrongDecensor(settings, up, $"nm_strong_{pageIdx}_{ri}", seed), ct);
             var r = await client.WaitAsync(pid, comfyOutputDir, TimeSpan.FromMinutes(10), ct);
             if (r.OutputFiles.Count > 0)
             {
@@ -206,11 +224,46 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                         lama.Inpaint(patched, mclone);
                         patched.CopyTo(crop, mcrop);
                     }
-                    else resized.CopyTo(crop, mcrop);
+                    else FeatherBlend(crop, resized, mcrop);
                 }
             }
             ri++;
         }
+    }
+
+    /// <summary>새로 그린 그림을 마스크 경계에서 부드럽게 섞어 넣는다.
+    /// 하드 마스크로 그대로 붙이면 경계선이 또렷하게 드러나 '덧붙인 티'가 난다 — 특히 SDXL 결과는
+    /// 주변과 밝기·질감이 미묘하게 달라서 네모난 자국으로 보인다. 마스크를 흐려 알파 블렌딩하면
+    /// 경계가 사라진다. 마스크 밖은 알파 0이라 원본 픽셀이 그대로 남는다.</summary>
+    private static void FeatherBlend(Mat dst, Mat generated, Mat mask)
+    {
+        using var soft = new Mat();
+        Cv2.GaussianBlur(mask, soft, new OpenCvSharp.Size(9, 9), 0);
+
+        using var alpha1 = new Mat();
+        soft.ConvertTo(alpha1, MatType.CV_32FC1, 1.0 / 255);
+        using var alpha = new Mat();
+        Cv2.CvtColor(alpha1, alpha, ColorConversionCodes.GRAY2BGR);
+
+        using var one = new Mat(alpha.Size(), MatType.CV_32FC3, Scalar.All(1));
+        using var inv = new Mat();
+        Cv2.Subtract(one, alpha, inv);
+
+        using var fDst = new Mat();
+        using var fGen = new Mat();
+        dst.ConvertTo(fDst, MatType.CV_32FC3);
+        generated.ConvertTo(fGen, MatType.CV_32FC3);
+
+        using var keep = new Mat();
+        using var add = new Mat();
+        Cv2.Multiply(fDst, inv, keep);
+        Cv2.Multiply(fGen, alpha, add);
+        using var mixed = new Mat();
+        Cv2.Add(keep, add, mixed);
+
+        using var result = new Mat();
+        mixed.ConvertTo(result, MatType.CV_8UC3);
+        result.CopyTo(dst);
     }
 
     public string OutputPathFor(string inputFile)

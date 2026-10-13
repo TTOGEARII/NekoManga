@@ -89,6 +89,12 @@
                         <TextBox x:Name="TxtStrongDenoise" Width="90" HorizontalAlignment="Left"/>
                     </DockPanel>
                     <TextBlock Style="{StaticResource HintText}" Text="0.5~0.9. 높을수록 많이 다시 그려요 (기본 0.75)."/>
+                    <DockPanel Margin="0,4">
+                        <TextBlock Text="강력 모드 시드" Style="{StaticResource FieldLabel}" Width="130"/>
+                        <TextBox x:Name="TxtDecensorSeed" Width="140" HorizontalAlignment="Left"/>
+                    </DockPanel>
+                    <TextBlock Style="{StaticResource HintText}"
+                               Text="같은 원고를 다시 돌려도 같은 그림이 나오게 하는 값이에요. -1로 두면 매번 다르게 그려져요. 마음에 드는 결과가 나오면 그 시드를 적어 두세요."/>
 
                     <TextBlock Style="{StaticResource SectionTitle}" Text="무엇을 검열로 볼까요"/>
                     <StackPanel Orientation="Horizontal">

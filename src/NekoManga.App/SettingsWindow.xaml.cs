@@ -37,6 +37,7 @@ public partial class SettingsWindow
         TxtMaskGrow.Text = s.DecensorMaskGrow.ToString();
         SelectComboByTag(CmbDecensorMode, s.DecensorMode);
         TxtStrongDenoise.Text = s.DecensorStrongDenoise.ToString(CultureInfo.InvariantCulture);
+        TxtDecensorSeed.Text = s.DecensorSeed.ToString(CultureInfo.InvariantCulture);
 
         SelectComboByTag(CmbTranslator, s.TranslateEngine);
         SelectComboByTag(CmbSource, s.TranslateSource);
@@ -83,6 +84,8 @@ public partial class SettingsWindow
         s.DecensorMaskGrow = ParseI(TxtMaskGrow.Text, s.DecensorMaskGrow, 0, 64);
         s.DecensorMode = ComboTag(CmbDecensorMode, s.DecensorMode);
         s.DecensorStrongDenoise = ParseD(TxtStrongDenoise.Text, s.DecensorStrongDenoise, 0.3, 1.0);
+        s.DecensorSeed = long.TryParse(TxtDecensorSeed.Text.Trim(), out var dseed) && dseed >= -1
+            ? dseed : s.DecensorSeed;
 
         s.TranslateEngine = ComboTag(CmbTranslator, s.TranslateEngine);
         s.TranslateSource = ComboTag(CmbSource, s.TranslateSource);
