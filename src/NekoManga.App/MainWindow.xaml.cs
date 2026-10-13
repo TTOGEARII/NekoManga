@@ -28,7 +28,9 @@ public class FileRow : INotifyPropertyChanged
 
 public partial class MainWindow
 {
-    private static readonly string[] ImageExts = [".png", ".jpg", ".jpeg", ".webp", ".bmp"];
+    /// <summary>OpenCV(ImRead)가 읽을 수 있는 포맷. 식자·검열 단계도 전부 OpenCV를 쓰므로 동일 목록이다.</summary>
+    private static readonly string[] ImageExts =
+        [".png", ".jpg", ".jpeg", ".jpe", ".webp", ".bmp", ".tif", ".tiff", ".jp2", ".ppm", ".pgm", ".pbm", ".pnm", ".avif"];
 
     private readonly ObservableCollection<FileRow> _rows = [];
     private readonly UpdateService _update = new();
@@ -80,7 +82,7 @@ public partial class MainWindow
         var dlg = new Microsoft.Win32.OpenFileDialog
         {
             Multiselect = true,
-            Filter = "만화 이미지|*.png;*.jpg;*.jpeg;*.webp;*.bmp",
+            Filter = "만화 이미지|" + string.Join(";", ImageExts.Select(e => "*" + e)) + "|모든 파일|*.*",
         };
         if (dlg.ShowDialog() == true) AddPaths(dlg.FileNames);
     }

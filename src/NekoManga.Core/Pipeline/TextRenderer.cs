@@ -2,26 +2,40 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Drawing.Text;
+using System.Runtime.InteropServices;
 using NekoManga.Core.Engine;
+using OpenCvSharp;
+using Point = System.Drawing.Point;
+using Rect = OpenCvSharp.Rect;
 
 namespace NekoManga.Core.Pipeline;
 
 /// <summary>번역문을 완성본(채색된 이미지) 위에 그린다.
-/// BT가 알려준 블록 좌표·폰트 크기를 쓰되, 좌표는 원본 크기 기준이므로
-/// 채색 과정에서 리사이즈된 비율만큼 환산한다. 넘치면 글자를 줄여서 맞춘다.</summary>
+/// 감지 단계가 알려준 블록 좌표·폰트 크기를 쓰되, 좌표는 원본 크기 기준이므로
+/// 채색 과정에서 리사이즈된 비율만큼 환산한다. 넘치면 글자를 줄여서 맞춘다.
+///
+/// 이미지 입출력은 OpenCV로 한다 — System.Drawing(GDI+)은 webp를 못 읽어
+/// `new Bitmap(webp)`가 "Parameter is not valid"로 터진다 (만화 파일에 webp가 흔하다).
+/// 글자 그리기만 GDI+를 쓰고, 픽셀은 메모리에서 주고받는다.</summary>
 public static class TextRenderer
 {
     public static void RenderBlocks(string imagePath, string sourceSizeRefPath,
         IReadOnlyList<TextBlockInfo> blocks, string outPath)
     {
-        using var bmp = new Bitmap(imagePath);
+        using var mat = Cv2.ImRead(imagePath, ImreadModes.Color);
+        if (mat.Empty())
+            throw new InvalidDataException($"이미지를 읽지 못했어요: {Path.GetFileName(imagePath)}");
+        using var bmp = ToBitmap(mat);
 
         double scaleX = 1, scaleY = 1;
         if (File.Exists(sourceSizeRefPath))
         {
-            using var src = new Bitmap(sourceSizeRefPath);
-            scaleX = (double)bmp.Width / src.Width;
-            scaleY = (double)bmp.Height / src.Height;
+            using var src = Cv2.ImRead(sourceSizeRefPath, ImreadModes.Color);
+            if (!src.Empty())
+            {
+                scaleX = (double)bmp.Width / src.Width;
+                scaleY = (double)bmp.Height / src.Height;
+            }
         }
 
         using var g = Graphics.FromImage(bmp);
@@ -42,7 +56,50 @@ public static class TextRenderer
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
-        bmp.Save(outPath, ImageFormat.Png);
+        using var outMat = ToMat(bmp);
+        if (!Cv2.ImWrite(outPath, outMat))
+            throw new IOException($"결과 저장에 실패했어요: {outPath}");
+    }
+
+    /// <summary>OpenCV Mat(BGR 8UC3) → GDI+ Bitmap(24bppRgb). 행 단위로 복사한다 (stride가 다름).</summary>
+    private static unsafe Bitmap ToBitmap(Mat mat)
+    {
+        using var bgr = mat.Channels() == 3 ? mat.Clone() : mat.CvtColor(ColorConversionCodes.GRAY2BGR);
+        var bmp = new Bitmap(bgr.Width, bgr.Height, PixelFormat.Format24bppRgb);
+        var data = bmp.LockBits(new Rectangle(0, 0, bmp.Width, bmp.Height), ImageLockMode.WriteOnly, PixelFormat.Format24bppRgb);
+        try
+        {
+            long srcStep = (long)bgr.Step();
+            int rowBytes = bgr.Width * 3;
+            for (int y = 0; y < bgr.Height; y++)
+            {
+                var src = bgr.DataPointer + y * srcStep;
+                var dst = data.Scan0 + y * data.Stride;
+                Buffer.MemoryCopy((void*)src, (void*)dst, rowBytes, rowBytes);
+            }
+        }
+        finally { bmp.UnlockBits(data); }
+        return bmp;
+    }
+
+    /// <summary>GDI+ Bitmap → OpenCV Mat(BGR 8UC3).</summary>
+    private static unsafe Mat ToMat(Bitmap bmp)
+    {
+        var mat = new Mat(bmp.Height, bmp.Width, MatType.CV_8UC3);
+        var data = bmp.LockBits(new Rectangle(0, 0, bmp.Width, bmp.Height), ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
+        try
+        {
+            long dstStep = (long)mat.Step();
+            int rowBytes = bmp.Width * 3;
+            for (int y = 0; y < bmp.Height; y++)
+            {
+                var src = data.Scan0 + y * data.Stride;
+                var dst = mat.DataPointer + y * dstStep;
+                Buffer.MemoryCopy((void*)src, (void*)dst, rowBytes, rowBytes);
+            }
+        }
+        finally { bmp.UnlockBits(data); }
+        return mat;
     }
 
     private static void DrawFitted(Graphics g, string text, RectangleF rect, float startSize, Color color)

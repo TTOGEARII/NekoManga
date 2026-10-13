@@ -120,8 +120,13 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                 }
                 else
                 {
+                    // 결과는 항상 png로 저장한다 — 원본이 webp/avif여도 확장자만 png가 되지 않도록
+                    // 그대로 복사하지 않고 OpenCV로 다시 인코딩한다.
                     Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
-                    File.Copy(work, outPath, overwrite: true);
+                    using var done = Cv2.ImRead(work, ImreadModes.Color);
+                    if (done.Empty())
+                        throw new InvalidDataException($"결과 이미지를 읽지 못했어요: {Path.GetFileName(work)}");
+                    Cv2.ImWrite(outPath, done);
                 }
 
                 progress.Report(new(name, "완료", 100, Done: true));
