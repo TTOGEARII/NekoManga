@@ -102,7 +102,7 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                         else
                         {
                             progress.Report(new(name, "검열 재생성 중 (강력·SDXL)", 50));
-                            await StrongDecensorAsync(client!, comfyOutputDir, img, mask, i, ct);
+                            await StrongDecensorAsync(client!, comfyOutputDir, img, mask, i, lama, ct);
                         }
                         work = Path.Combine(workDir, Path.GetFileNameWithoutExtension(file) + ".decensored.png");
                         Directory.CreateDirectory(workDir);
@@ -157,7 +157,7 @@ public class PipelineRunner(AppSettings settings) : IDisposable
     /// <summary>강력 검열제거: 검열 ROI를 잘라 SDXL 인페인트(ComfyUI)로 재생성하고 제자리에 붙인다.
     /// 전체 이미지를 통째로 샘플링하면 8GB VRAM이 터지므로 ROI 단위(최대 1024px)로 처리.</summary>
     private async Task StrongDecensorAsync(ComfyClient client, string comfyOutputDir,
-        Mat img, Mat mask, int pageIdx, CancellationToken ct)
+        Mat img, Mat mask, int pageIdx, LamaInpainter lama, CancellationToken ct)
     {
         using var forContours = mask.Clone(); // FindContours가 입력을 파괴하므로 복제본에서 찾는다
         Cv2.FindContours(forContours, out var contours, out _, RetrievalModes.External, ContourApproximationModes.ApproxSimple);
@@ -186,7 +186,27 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                     using var resized = outImg.Width == roi.Width && outImg.Height == roi.Height
                         ? outImg.Clone()
                         : outImg.Resize(new OpenCvSharp.Size(roi.Width, roi.Height));
-                    resized.CopyTo(crop, mcrop);
+
+                    // SDXL은 시드에 따라 지운 자리를 새카맣게 칠해 놓기도 한다 — 같은 원고를 두 번 돌렸을 때
+                    // 한 번은 멀쩡했고 한 번은 검은 타원이 생겼다. 검열을 지운 자리가 주변보다 극단적으로
+                    // 어두우면 실패로 보고 LaMa로 대신 메운다 (살짝 어두운 건 정상 — 음영일 수 있다).
+                    using var genGray = new Mat();
+                    using var srcGray = new Mat();
+                    Cv2.CvtColor(resized, genGray, ColorConversionCodes.BGR2GRAY);
+                    Cv2.CvtColor(crop, srcGray, ColorConversionCodes.BGR2GRAY);
+                    using var notMask = new Mat();
+                    Cv2.BitwiseNot(mcrop, notMask);
+                    double generated = Cv2.Mean(genGray, mcrop).Val0;
+                    double around = Cv2.Mean(srcGray, notMask).Val0;
+
+                    if (generated < around - 90 && lama.IsReady)
+                    {
+                        using var patched = crop.Clone();
+                        using var mclone = mcrop.Clone(); // LaMa 내부 FindContours가 마스크를 파괴한다
+                        lama.Inpaint(patched, mclone);
+                        patched.CopyTo(crop, mcrop);
+                    }
+                    else resized.CopyTo(crop, mcrop);
                 }
             }
             ri++;

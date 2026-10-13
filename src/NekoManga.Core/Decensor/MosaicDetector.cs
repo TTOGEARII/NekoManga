@@ -91,6 +91,8 @@ public static class MosaicDetector
     /// 그래서 조건에서 떨어진 덩어리는 <see cref="DecomposeBars"/>로 곧은 띠들로 쪼개 다시 판정한다.
     ///
     /// excludeRects(말풍선 등)와 겹치는 후보는 버린다.</summary>
+    // 주의: CTD 텍스트 마스크로 글자를 보호해 보려다 되돌렸다 — CTD가 검열 막대 자체를 글자 획으로
+    // 잡아내서, 보호를 켜면 진짜 막대 검출률이 100%→15%로 무너졌다 (실측).
     public static Mat? BuildBarMask(Mat img, bool white, bool black,
         double minAspect, int minAreaPx, int grow, IReadOnlyList<Rect>? excludeRects = null)
     {
@@ -160,8 +162,15 @@ public static class MosaicDetector
                 double w = rr.Size.Width, h = rr.Size.Height;
                 if (w < 2 || h < 2) continue;
 
-                // ② 채워진 직사각형이고 ③ 길쭉하면 막대 하나다
-                if (area / (w * h) >= 0.80 && Math.Max(w, h) / Math.Min(w, h) >= minAspect)
+                double fill = area / (w * h), aspect = Math.Max(w, h) / Math.Min(w, h);
+
+                // ② 채워진 직사각형이고 ③ 길쭉하면 막대 하나다.
+                // 짧고 뭉툭한 막대(실제 원고에 18×21 = 비율 1.17짜리가 있었다)도 있으므로 비율 조건을
+                // 낮추되 두 가지를 요구한다: '꽉 찬 사각형'(원의 채움비는 π/4 ≈ 0.785라 효과음 말줄임표
+                // 같은 점은 걸러진다)이고 '작을 것'. 크기 제한이 없으면 효과음의 굵은 붓획 토막
+                // (74×53, 채움비 0.9)까지 막대로 보고 글자를 지워 버린다 (실측으로 확인).
+                bool stubby = !isWhite && fill >= 0.90 && aspect >= 1.15 && Math.Max(w, h) <= 45;
+                if ((fill >= 0.80 && aspect >= minAspect) || stubby)
                 {
                     mask.SetTo(Scalar.White, comp);
                     any = true;

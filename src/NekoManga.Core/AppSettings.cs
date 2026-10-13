@@ -46,8 +46,9 @@ public class AppSettings
     public string DecensorMode { get; set; } = "Basic";
     /// <summary>모자이크(격자) 검열을 찾는다.</summary>
     public bool DecensorFindMosaic { get; set; } = true;
-    /// <summary>흰색 막대 검열을 찾는다.</summary>
-    public bool DecensorFindWhiteBar { get; set; } = true;
+    /// <summary>흰색 막대 검열을 찾는다. 기본 꺼짐 — 원고에는 흰 띠(선 사이 여백·하이라이트)가 널려 있어
+    /// 오탐이 많다. 실측: 흰 막대가 없는 페이지에서 흰 경로만 6600px을 잘못 잡아 효과음 옆을 지웠다.</summary>
+    public bool DecensorFindWhiteBar { get; set; } = false;
     /// <summary>검은색 막대(먹줄) 검열을 찾는다.</summary>
     public bool DecensorFindBlackBar { get; set; } = true;
     /// <summary>막대로 인정할 최소 가로세로비. 낮출수록 정사각형에 가까운 것도 잡지만 오탐이 는다.</summary>
