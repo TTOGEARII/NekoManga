@@ -91,10 +91,20 @@ public class ComfyClient(string baseUrl)
             if (status?["messages"] is JsonArray msgs)
                 foreach (var m in msgs)
                     if (m is JsonArray { Count: >= 2 } arr && arr[0]?.GetValue<string>() == "execution_error")
-                        return $"{arr[1]?["node_type"]} — {Truncate(arr[1]?["exception_message"]?.GetValue<string>() ?? "", 500)}";
+                    {
+                        var info = arr[1];
+                        // 예외 메시지만으로는 원인을 못 찾는 경우가 많다(예: KSampler "[Errno 22] Invalid argument").
+                        // 어느 파이썬 프레임에서 터졌는지가 결정적이라 트레이스백 마지막 줄들을 함께 보여준다.
+                        var tail = info?["traceback"] is JsonArray tb
+                            ? string.Join(" | ", tb.TakeLast(3).Select(t => t?.GetValue<string>()?.Trim()).Where(t => !string.IsNullOrEmpty(t)))
+                            : "";
+                        var msg = $"{info?["node_type"]} — {Truncate(info?["exception_message"]?.GetValue<string>() ?? "", 500)}";
+                        if (tail.Length > 0) msg += $"\n위치: {Truncate(tail, 600)}";
+                        return $"{msg}\n자세한 로그: {ComfyServer.LogPath}";
+                    }
         }
         catch { }
-        return "원인 미상 (ComfyUI 로그 확인 필요)";
+        return $"원인 미상 (로그 확인: {ComfyServer.LogPath})";
     }
 
     private static string Truncate(string s, int n) => s.Length <= n ? s : s[..n] + "…";

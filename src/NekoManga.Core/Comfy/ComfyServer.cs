@@ -12,6 +12,10 @@ public class ComfyServer(AppSettings settings) : IAsyncDisposable
     public string BaseUrl => $"http://127.0.0.1:{settings.ComfyPort}";
     public bool WeStartedIt => _proc != null;
 
+    /// <summary>ComfyUI의 stdout/stderr가 쌓이는 로그 (노드 오류의 파이썬 트레이스백이 여기 남는다).</summary>
+    public static string LogPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NekoManga", "comfy.log");
+
     public async Task<bool> IsAliveAsync()
     {
         try
@@ -34,28 +38,31 @@ public class ComfyServer(AppSettings settings) : IAsyncDisposable
             throw new FileNotFoundException("ComfyUI가 설치되어 있지 않아요. 설정 → 구성요소에서 설치해 주세요.", main);
 
         status?.Report("채색 엔진 깨우는 중... (첫 시작은 1~2분)");
+
+        // 출력은 cmd로 **로그 파일**에 리다이렉트한다 — RedirectStandardOutput(익명 파이프)을 쓰면 안 된다.
+        // 파이프의 읽는 쪽은 우리 프로세스가 쥐고 있어서, KeepComfyWarm으로 서버를 남긴 채 앱이 종료되면
+        // 고아가 된 ComfyUI의 stdout/stderr가 끊긴 파이프를 가리킨다. 다음 실행이 그 서버를 재사용하면
+        // 진행바(tqdm)를 쓰는 순간 파이썬이 OSError를 던져 **KSampler 노드에서 "[Errno 22] Invalid argument"**로
+        // 터진다 (실제 발생 — 단계마다 출력하는 노드가 KSampler라 늘 거기서 보인다).
+        // 파일 핸들은 부모와 무관하므로 앱을 닫아도 서버가 멀쩡하고, 로그도 남아 진단이 된다.
+        Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
+        var cmdline = $"\"{python}\" -s \"{main}\" --port {settings.ComfyPort} --disable-auto-launch";
         _proc = Process.Start(new ProcessStartInfo
         {
-            FileName = python,
-            Arguments = $"-s \"{main}\" --port {settings.ComfyPort} --disable-auto-launch",
+            FileName = "cmd.exe",
+            Arguments = $"/c \"{cmdline} > \"{LogPath}\" 2>&1\"",
             WorkingDirectory = root,
             UseShellExecute = false,
             CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
         })!;
-        // 출력 버퍼가 차서 프로세스가 멈추지 않게 흘려보낸다.
-        _proc.OutputDataReceived += (_, _) => { };
-        _proc.ErrorDataReceived += (_, _) => { };
-        _proc.BeginOutputReadLine();
-        _proc.BeginErrorReadLine();
 
         var deadline = DateTime.UtcNow + TimeSpan.FromMinutes(4);
         while (DateTime.UtcNow < deadline)
         {
             ct.ThrowIfCancellationRequested();
             if (_proc.HasExited)
-                throw new InvalidOperationException($"ComfyUI가 시작하자마자 종료됐어요 (exit {_proc.ExitCode}). 로그를 확인해 주세요.");
+                throw new InvalidOperationException(
+                    $"ComfyUI가 시작하자마자 종료됐어요 (exit {_proc.ExitCode}). 로그: {LogPath}");
             if (await IsAliveAsync()) return;
             await Task.Delay(1500, ct);
         }
