@@ -28,7 +28,13 @@ public static class Program
             return;
         }
 
-        var app = new App { DemoSettings = args.Contains("--demo-settings") };
+        // 결과 보기 창만 바로 띄운다 (UI 확인용): NekoManga.exe --result <이미지경로>
+        var resultIdx = Array.IndexOf(args, "--result");
+        var app = new App
+        {
+            DemoSettings = args.Contains("--demo-settings"),
+            ResultImage = resultIdx >= 0 && resultIdx + 1 < args.Length ? args[resultIdx + 1] : null,
+        };
         app.InitializeComponent();
         app.Run();
     }

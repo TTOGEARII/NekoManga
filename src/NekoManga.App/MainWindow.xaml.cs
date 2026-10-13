@@ -8,6 +8,7 @@ using Velopack;
 using DataFormats = System.Windows.DataFormats;
 using DragDropEffects = System.Windows.DragDropEffects;
 using DragEventArgs = System.Windows.DragEventArgs;
+using MouseButtonEventArgs = System.Windows.Input.MouseButtonEventArgs;
 
 namespace NekoManga.App;
 
@@ -209,6 +210,36 @@ public partial class MainWindow
         else
             TxtStatus.Text = "아직 결과물이 없어요";
     }
+
+    /// <summary>목록에서 고른 원고의 결과물을 띄운다. 자동 감지가 놓친 검열을 거기서 직접 지울 수 있다.
+    /// 결과 파일이 없으면(아직 안 돌렸거나 검열이 없어 원본이 그대로 나간 경우) 원본을 연다.</summary>
+    private void OpenResultFor(FileRow? row)
+    {
+        row ??= _rows.FirstOrDefault();
+        if (row == null)
+        {
+            TxtStatus.Text = "먼저 이미지를 올려주세요";
+            return;
+        }
+
+        using var runner = new PipelineRunner(App.Settings);
+        var outPath = runner.OutputPathFor(row.Path);
+        if (!File.Exists(outPath))
+        {
+            // 검열이 없던 페이지는 원본이 확장자 그대로 복사돼 있다
+            var sameName = Path.Combine(Path.GetDirectoryName(outPath)!, Path.GetFileName(row.Path));
+            outPath = File.Exists(sameName) ? sameName : row.Path;
+        }
+
+        var win = new ResultWindow(outPath) { Owner = this };
+        win.ShowDialog();
+    }
+
+    private void BtnViewResult_Click(object sender, RoutedEventArgs e)
+        => OpenResultFor(FileList.SelectedItem as FileRow);
+
+    private void FileList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        => OpenResultFor(FileList.SelectedItem as FileRow);
 
     private void BtnSettings_Click(object sender, RoutedEventArgs e)
     {

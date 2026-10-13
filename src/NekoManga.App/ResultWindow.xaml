@@ -1,0 +1,68 @@
+<ui:FluentWindow x:Class="NekoManga.App.ResultWindow"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 Title="결과 보기 — 놓친 검열 직접 지우기"
+                 Width="1180" Height="940" MinWidth="820" MinHeight="620"
+                 WindowStartupLocation="CenterOwner"
+                 Background="{StaticResource NekoBg}" ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="결과 보기" ShowMaximize="True"/>
+
+        <Border Grid.Row="1" Background="{StaticResource NekoCard}" CornerRadius="10" Margin="16,8,16,8" Padding="14,10">
+            <StackPanel>
+                <TextBlock x:Name="TxtFile" Foreground="{StaticResource NekoText}" FontWeight="SemiBold"/>
+                <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,8"
+                           Text="지우고 싶은 검열 위를 마우스로 드래그해 네모를 치세요. 여러 군데를 친 뒤 한 번에 지울 수 있어요. 휠로 확대/축소됩니다."/>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="지울 대상" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <RadioButton x:Name="RbDarkOnly" Content="네모 안의 검은 부분만" IsChecked="True"
+                                 Foreground="{StaticResource NekoText}" Margin="0,0,16,0"/>
+                    <RadioButton x:Name="RbWholeRect" Content="네모 전체"
+                                 Foreground="{StaticResource NekoText}" Margin="0,0,24,0"/>
+                    <TextBlock Text="여유(px)" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBox x:Name="TxtGrow" Text="6" Width="56" VerticalAlignment="Center"/>
+                    <TextBlock Text="확대" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="20,0,6,0"/>
+                    <Slider x:Name="SldZoom" Minimum="0.2" Maximum="4" Value="1" Width="160"
+                            VerticalAlignment="Center" ValueChanged="Zoom_Changed"/>
+                    <TextBlock x:Name="TxtZoom" Text="100%" Foreground="{StaticResource NekoText}"
+                               VerticalAlignment="Center" Margin="8,0,0,0"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="2" Background="#141014" CornerRadius="10" Margin="16,0" ClipToBounds="True">
+            <ScrollViewer x:Name="Scroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                          PreviewMouseWheel="Scroller_PreviewMouseWheel">
+                <Grid x:Name="ImageHost" HorizontalAlignment="Center" VerticalAlignment="Center"
+                      MouseLeftButtonDown="Host_MouseDown" MouseMove="Host_MouseMove" MouseLeftButtonUp="Host_MouseUp"
+                      Background="Transparent" Cursor="Cross">
+                    <Image x:Name="ImgView" Stretch="Fill" SnapsToDevicePixels="True"/>
+                    <Canvas x:Name="Overlay" IsHitTestVisible="False"/>
+                </Grid>
+            </ScrollViewer>
+        </Border>
+
+        <Border Grid.Row="3" Background="{StaticResource NekoCard}" CornerRadius="10" Margin="16,8,16,12" Padding="14,8">
+            <DockPanel>
+                <TextBlock x:Name="TxtStatus" DockPanel.Dock="Left" VerticalAlignment="Center"
+                           Foreground="{StaticResource NekoText}" Text="준비됐어요"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <ui:Button x:Name="BtnClearSel" Content="선택 지우기" Click="BtnClearSel_Click" Padding="14,6"/>
+                    <ui:Button x:Name="BtnUndo" Content="↩ 되돌리기" Click="BtnUndo_Click" Padding="14,6" Margin="8,0,0,0" IsEnabled="False"/>
+                    <ui:Button x:Name="BtnApply" Content="✨ 선택 영역 지우기" Click="BtnApply_Click"
+                               Appearance="Primary" Padding="16,6" Margin="8,0,0,0"/>
+                    <ui:Button x:Name="BtnSave" Content="💾 저장" Click="BtnSave_Click" Padding="14,6" Margin="8,0,0,0" IsEnabled="False"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+    </Grid>
+</ui:FluentWindow>

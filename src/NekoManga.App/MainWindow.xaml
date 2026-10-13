@@ -116,7 +116,8 @@
             </Border>
 
             <ListView x:Name="FileList" Visibility="Collapsed" Background="Transparent"
-                      BorderThickness="0" SelectionMode="Extended">
+                      BorderThickness="0" SelectionMode="Extended"
+                      MouseDoubleClick="FileList_MouseDoubleClick">
                 <ListView.View>
                     <GridView>
                         <GridViewColumn Header="파일" Width="420" DisplayMemberBinding="{Binding Name}"/>
@@ -141,6 +142,8 @@
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
                     <ui:Button Content="⚙ 설정" Click="BtnSettings_Click" Padding="14,6"/>
                     <ui:Button Content="📂 결과 폴더" Click="BtnOpenOutput_Click" Padding="14,6" Margin="8,0,0,0"/>
+                    <ui:Button x:Name="BtnViewResult" Content="🔍 결과 보기·수정" Click="BtnViewResult_Click"
+                               Padding="14,6" Margin="8,0,0,0"/>
                     <ui:Button x:Name="BtnClear" Content="목록 비우기" Click="BtnClear_Click" Padding="14,6" Margin="8,0,0,0"/>
                     <ui:Button x:Name="BtnUpdate" Content="🎀 새 버전!" Click="BtnUpdate_Click"
                                Appearance="Caution" Padding="14,6" Margin="8,0,0,0" Visibility="Collapsed"/>
