@@ -29,15 +29,17 @@ public partial class SettingsWindow
         TxtBlockSize.Text = s.DecensorBlockSize.ToString();
         TxtThreshold.Text = s.DecensorThreshold.ToString();
         TxtMaskGrow.Text = s.DecensorMaskGrow.ToString();
+        SelectComboByTag(CmbDecensorMode, s.DecensorMode);
+        TxtStrongDenoise.Text = s.DecensorStrongDenoise.ToString(CultureInfo.InvariantCulture);
 
-        SelectCombo(CmbTranslator, s.TranslateEngine);
-        SelectCombo(CmbSource, s.TranslateSource);
-        SelectCombo(CmbTarget, s.TranslateTarget);
+        SelectComboByTag(CmbTranslator, s.TranslateEngine);
+        SelectComboByTag(CmbSource, s.TranslateSource);
+        SelectComboByTag(CmbTarget, s.TranslateTarget);
+        TxtDeepLKey.Text = s.DeepLApiKey;
 
         TxtRuntimeRoot.Text = s.RuntimeRoot;
         TxtOutputRoot.Text = s.OutputRoot;
         TxtLinkedComfy.Text = s.LinkedComfyRoot;
-        TxtLinkedBallons.Text = s.LinkedBallonsRoot;
         TxtCivitaiKey.Text = s.CivitaiApiKey;
 
         TxtAboutVersion.Text = $"버전 v{new UpdateService().CurrentVersion}";
@@ -61,14 +63,16 @@ public partial class SettingsWindow
         s.DecensorBlockSize = ParseI(TxtBlockSize.Text, s.DecensorBlockSize, 2, 64);
         s.DecensorThreshold = ParseI(TxtThreshold.Text, s.DecensorThreshold, 1, 80);
         s.DecensorMaskGrow = ParseI(TxtMaskGrow.Text, s.DecensorMaskGrow, 0, 64);
+        s.DecensorMode = ComboTag(CmbDecensorMode, s.DecensorMode);
+        s.DecensorStrongDenoise = ParseD(TxtStrongDenoise.Text, s.DecensorStrongDenoise, 0.3, 1.0);
 
-        s.TranslateEngine = ComboText(CmbTranslator, s.TranslateEngine);
-        s.TranslateSource = ComboText(CmbSource, s.TranslateSource);
-        s.TranslateTarget = ComboText(CmbTarget, s.TranslateTarget);
+        s.TranslateEngine = ComboTag(CmbTranslator, s.TranslateEngine);
+        s.TranslateSource = ComboTag(CmbSource, s.TranslateSource);
+        s.TranslateTarget = ComboTag(CmbTarget, s.TranslateTarget);
+        s.DeepLApiKey = TxtDeepLKey.Text.Trim();
 
         s.OutputRoot = TxtOutputRoot.Text.Trim();
         s.LinkedComfyRoot = TxtLinkedComfy.Text.Trim();
-        s.LinkedBallonsRoot = TxtLinkedBallons.Text.Trim();
         s.CivitaiApiKey = TxtCivitaiKey.Text.Trim();
         s.Save();
     }
@@ -86,6 +90,16 @@ public partial class SettingsWindow
             if ((string)it.Content == value) { cmb.SelectedItem = it; return; }
         cmb.Text = value;
     }
+
+    private static void SelectComboByTag(ComboBox cmb, string tag)
+    {
+        foreach (ComboBoxItem it in cmb.Items)
+            if ((string?)it.Tag == tag) { cmb.SelectedItem = it; return; }
+        if (cmb.Items.Count > 0) cmb.SelectedIndex = 0;
+    }
+
+    private static string ComboTag(ComboBox cmb, string fallback) =>
+        (cmb.SelectedItem as ComboBoxItem)?.Tag as string ?? fallback;
 
     private static string ComboText(ComboBox cmb, string fallback) =>
         (cmb.SelectedItem as ComboBoxItem)?.Content as string ?? (string.IsNullOrWhiteSpace(cmb.Text) ? fallback : cmb.Text);

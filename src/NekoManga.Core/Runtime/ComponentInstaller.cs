@@ -24,18 +24,20 @@ public class ComponentInstaller(AppSettings settings)
 
     public bool IsInstalled(Component c)
     {
-        // 기존 설치가 연결돼 있으면 연결 경로에서 존재를 확인한다.
+        // 기존 ComfyUI 설치가 연결돼 있으면 연결 경로에서 존재를 확인한다.
         if (!string.IsNullOrWhiteSpace(settings.LinkedComfyRoot) &&
             c.Probe.StartsWith(ComponentCatalog.ComfyDirName, StringComparison.Ordinal))
             return File.Exists(Path.Combine(settings.LinkedComfyRoot,
                 c.Probe[(ComponentCatalog.ComfyDirName.Length + 1)..].Replace('/', Path.DirectorySeparatorChar)));
-        if (!string.IsNullOrWhiteSpace(settings.LinkedBallonsRoot) && c.Id == "ballons")
-            return File.Exists(Path.Combine(settings.LinkedBallonsRoot, "ballontranslator", "launch.py"));
         return File.Exists(Resolve(c.Probe));
     }
 
     public IReadOnlyList<Component> Missing() =>
         ComponentCatalog.All.Where(c => !IsInstalled(c)).ToList();
+
+    /// <summary>내장 기능(번역·기본 검열제거)에 필요한 것 중 빠진 것.</summary>
+    public IReadOnlyList<Component> MissingEngine() =>
+        ComponentCatalog.EngineComponents.Where(c => !IsInstalled(c)).ToList();
 
     public async Task InstallAsync(Component c, IProgress<InstallProgress> progress, CancellationToken ct)
     {

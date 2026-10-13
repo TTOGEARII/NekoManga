@@ -2,7 +2,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Drawing.Text;
-using NekoManga.Core.Ballons;
+using NekoManga.Core.Engine;
 
 namespace NekoManga.Core.Pipeline;
 

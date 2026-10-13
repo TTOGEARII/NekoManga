@@ -18,8 +18,6 @@ public class AppSettings
     public string OutputRoot { get; set; } = "";
     /// <summary>이미 설치된 ComfyUI portable 루트를 연결해 재다운로드를 피한다 (예: D:\ComfyUI\ComfyUI_windows_portable).</summary>
     public string LinkedComfyRoot { get; set; } = "";
-    /// <summary>이미 설치된 BallonsTranslator 루트를 연결한다 (예: 바탕화면\Ballonstranslator_win_minium).</summary>
-    public string LinkedBallonsRoot { get; set; } = "";
 
     // ── 자동채색 (ComfyUI) ─────────────────────────────────────
     /// <summary>리사이즈 상한 (메가픽셀). 8GB VRAM 기준 1.5가 안전, 원본 레시피는 2.3.</summary>
@@ -43,18 +41,25 @@ public class AppSettings
     public string ColorTaggerModel { get; set; } = "wd-eva02-large-tagger-v3";
     public double ColorTaggerThreshold { get; set; } = 0.35;
 
-    // ── 검열제거 (모자이크 감지 + LaMa) ─────────────────────────
+    // ── 검열제거 (모자이크 감지 + LaMa/SDXL) ────────────────────
+    /// <summary>"Basic"=내장 LaMa (빠름, 추가 설치 불필요), "Strong"=ComfyUI SDXL 인페인트 (고품질, ComfyUI 필요).</summary>
+    public string DecensorMode { get; set; } = "Basic";
     /// <summary>모자이크 블록 크기(px). 이미지에 맞게 조절.</summary>
     public int DecensorBlockSize { get; set; } = 8;
     /// <summary>감지 민감도. 낮을수록 더 많은 영역을 모자이크로 판단.</summary>
     public int DecensorThreshold { get; set; } = 15;
     /// <summary>감지된 마스크 확장(px).</summary>
     public int DecensorMaskGrow { get; set; } = 8;
+    /// <summary>강력 모드 재생성 강도 (denoise).</summary>
+    public double DecensorStrongDenoise { get; set; } = 0.75;
 
-    // ── 번역 (BallonsTranslator) ───────────────────────────────
-    public string TranslateEngine { get; set; } = "Papago";
-    public string TranslateSource { get; set; } = "日本語";
-    public string TranslateTarget { get; set; } = "한국어";
+    // ── 번역 (내장 엔진: CTD + manga-ocr + LaMa) ────────────────
+    /// <summary>"Google"(무료, 기본) 또는 "DeepL"(API 키 필요).</summary>
+    public string TranslateEngine { get; set; } = "Google";
+    /// <summary>언어 코드. OCR이 일본어 특화라 원본은 ja 고정 권장.</summary>
+    public string TranslateSource { get; set; } = "ja";
+    public string TranslateTarget { get; set; } = "ko";
+    public string DeepLApiKey { get; set; } = "";
 
     // ── 기타 ──────────────────────────────────────────────────
     /// <summary>civitai 모델(채색 체크포인트) 다운로드용 API 키. 로그인 필요 모델 대비 (선택).</summary>
@@ -81,10 +86,23 @@ public class AppSettings
         try
         {
             if (File.Exists(SettingsPath))
-                return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsPath), JsonOpts) ?? new();
+            {
+                var s = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsPath), JsonOpts) ?? new();
+                s.MigrateLegacy();
+                return s;
+            }
         }
         catch { /* 손상된 설정은 기본값으로 */ }
         return new AppSettings();
+    }
+
+    /// <summary>v0.1.x(BallonsTranslator 연동 시절) 설정값을 내장 엔진 형식으로 변환한다.</summary>
+    private void MigrateLegacy()
+    {
+        TranslateSource = TranslateSource switch { "日本語" => "ja", "English" => "en", "简体中文" => "zh", _ => TranslateSource };
+        TranslateTarget = TranslateTarget switch { "한국어" => "ko", "English" => "en", _ => TranslateTarget };
+        if (TranslateEngine is not ("Google" or "DeepL")) TranslateEngine = "Google"; // Papago 등 구 엔진
+        if (DecensorMode is not ("Basic" or "Strong")) DecensorMode = "Basic";
     }
 
     public void Save()
@@ -116,9 +134,9 @@ public class AppSettings
         !string.IsNullOrWhiteSpace(LinkedComfyRoot) ? LinkedComfyRoot
         : Path.Combine(RuntimeRoot, "ComfyUI_windows_portable");
 
-    /// <summary>실제 사용할 BallonsTranslator 루트 (연결된 기존 설치 우선).</summary>
+    /// <summary>ComfyUI가 사용 가능한가 (채색·강력 검열제거의 전제조건).</summary>
     [JsonIgnore]
-    public string BallonsRoot =>
-        !string.IsNullOrWhiteSpace(LinkedBallonsRoot) ? LinkedBallonsRoot
-        : Path.Combine(RuntimeRoot, "BallonsTranslator");
+    public bool ComfyAvailable =>
+        File.Exists(Path.Combine(ComfyRoot, "ComfyUI", "main.py")) &&
+        File.Exists(Path.Combine(ComfyRoot, "python_embeded", "python.exe"));
 }

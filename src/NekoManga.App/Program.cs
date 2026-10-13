@@ -19,6 +19,15 @@ public static class Program
             return;
         }
 
+        // 내장 엔진 자가진단: 감지→OCR→번역→글자지움을 창 없이 돌려 결과 파일을 남긴다.
+        // 사용: NekoManga.exe --selftest <이미지경로>  (결과: <이미지>.selftest.* + selftest.log)
+        var selftestIdx = Array.IndexOf(args, "--selftest");
+        if (selftestIdx >= 0 && selftestIdx + 1 < args.Length)
+        {
+            SelfTest.Run(args[selftestIdx + 1]);
+            return;
+        }
+
         var app = new App();
         app.InitializeComponent();
         app.Run();

@@ -42,7 +42,14 @@
                     <ui:ToggleSwitch x:Name="SwColor" DockPanel.Dock="Right" VerticalAlignment="Center"
                                      Checked="Feature_Changed" Unchecked="Feature_Changed"/>
                     <StackPanel>
-                        <TextBlock Style="{StaticResource CardTitle}" Text="🎨 자동 채색"/>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource CardTitle}" Text="🎨 자동 채색"/>
+                            <Border x:Name="BadgeColor" Background="#33FFB020" CornerRadius="6"
+                                    Padding="6,1" Margin="8,0,0,0" Visibility="Collapsed"
+                                    ToolTip="이 기능은 ComfyUI가 필요해요 — 설정 → 구성요소에서 설치해 주세요 (약 11GB)">
+                                <TextBlock Text="⚠ ComfyUI 설치 필요" FontSize="10.5" Foreground="#FFCF6E"/>
+                            </Border>
+                        </StackPanel>
                         <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,0"
                                    Text="흑백 원고를 AI가 풀컬러로"/>
                     </StackPanel>
@@ -54,8 +61,15 @@
                     <ui:ToggleSwitch x:Name="SwDecensor" DockPanel.Dock="Right" VerticalAlignment="Center"
                                      Checked="Feature_Changed" Unchecked="Feature_Changed"/>
                     <StackPanel>
-                        <TextBlock Style="{StaticResource CardTitle}" Text="🙈 검열 제거"/>
-                        <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,0"
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource CardTitle}" Text="🙈 검열 제거"/>
+                            <Border x:Name="BadgeDecensor" Background="#33FFB020" CornerRadius="6"
+                                    Padding="6,1" Margin="8,0,0,0" Visibility="Collapsed"
+                                    ToolTip="강력 모드는 ComfyUI가 필요해요 — 기본 모드는 바로 쓸 수 있어요">
+                                <TextBlock Text="⚠ 강력 모드: ComfyUI 필요" FontSize="10.5" Foreground="#FFCF6E"/>
+                            </Border>
+                        </StackPanel>
+                        <TextBlock x:Name="HintDecensor" Style="{StaticResource HintText}" Margin="0,4,0,0"
                                    Text="모자이크를 찾아 자연스럽게 복원"/>
                     </StackPanel>
                 </DockPanel>
@@ -68,7 +82,7 @@
                     <StackPanel>
                         <TextBlock Style="{StaticResource CardTitle}" Text="💬 번역"/>
                         <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,0"
-                                   Text="말풍선을 읽고 한국어로 식자까지"/>
+                                   Text="말풍선을 읽고 한국어로 식자까지 · 내장 AI"/>
                     </StackPanel>
                 </DockPanel>
             </Border>

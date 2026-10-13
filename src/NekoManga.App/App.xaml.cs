@@ -27,10 +27,10 @@ public partial class App : Application
         var main = new MainWindow();
         MainWindow = main;
 
-        // 빠진 구성요소가 있으면 먼저 준비 마법사를 보여준다.
-        // 건너뛰어도 창은 열어준다 — 설정 → 구성요소에서 언제든 다시 설치할 수 있다.
+        // 내장 엔진(번역·기본 검열제거)에 필요한 모델이 빠져 있으면 준비 마법사를 보여준다.
+        // ComfyUI(채색·강력 검열)는 선택 — 마법사에서도 선택으로 표시된다.
         var installer = new ComponentInstaller(Settings);
-        if (installer.Missing().Count > 0)
+        if (installer.MissingEngine().Count > 0)
             new SetupWindow().ShowDialog();
 
         main.Show();
@@ -50,13 +50,6 @@ public partial class App : Application
                     App.Settings.LinkedComfyRoot = cand;
                     break;
                 }
-        }
-        if (string.IsNullOrWhiteSpace(App.Settings.LinkedBallonsRoot))
-        {
-            var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-            var cand = System.IO.Path.Combine(desktop, "Ballonstranslator_win_minium");
-            if (System.IO.File.Exists(System.IO.Path.Combine(cand, "ballontranslator", "launch.py")))
-                App.Settings.LinkedBallonsRoot = cand;
         }
     }
 }

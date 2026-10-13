@@ -97,24 +97,45 @@ public static class WorkflowBuilder
         return p;
     }
 
-    /// <summary>검열(모자이크·먹줄) 영역을 LaMa로 메우는 워크플로.
-    /// 업로드 PNG의 알파 채널이 마스크다 (알파 0 = 지울 영역, ComfyUI LoadImage 규약).</summary>
-    public static JsonObject BuildDecensor(AppSettings s, string uploadedName, string filenamePrefix)
+    /// <summary>강력 검열제거: 검열 영역을 SDXL 인페인트로 재생성한다 (ComfyUI 필요).
+    /// 업로드 PNG의 알파 채널이 마스크다 (알파 0 = 재생성 영역, ComfyUI LoadImage 규약).
+    /// SetLatentNoiseMask로 마스크 영역만 다시 그리고, 최종적으로 마스크 영역만 원본에 합성해
+    /// 나머지 픽셀은 1비트도 바뀌지 않게 한다.</summary>
+    public static JsonObject BuildStrongDecensor(AppSettings s, string uploadedName, string filenamePrefix)
     {
+        long seed = Random.Shared.NextInt64(0, uint.MaxValue);
         return new JsonObject
         {
             ["1"] = Node("LoadImage", new() { ["image"] = uploadedName }),
-            ["2"] = Node("LayerUtility: LaMa", new()
+            ["2"] = Node("CheckpointLoaderSimple", new() { ["ckpt_name"] = "waiIllustriousSDXL_v170.safetensors" }),
+            ["3"] = Node("CLIPTextEncode", new()
             {
-                ["image"] = Link("1", 0),
-                ["mask"] = Link("1", 1),
-                ["lama_model"] = "lama",
-                ["device"] = "cuda",
-                ["invert_mask"] = false,
-                ["mask_grow"] = s.DecensorMaskGrow,
-                ["mask_blur"] = 8,
+                ["clip"] = Link("2", 1),
+                ["text"] = "anime, high quality, detailed, clean, best quality, uncensored",
             }),
-            ["3"] = Node("SaveImage", new() { ["images"] = Link("2", 0), ["filename_prefix"] = filenamePrefix }),
+            ["4"] = Node("CLIPTextEncode", new()
+            {
+                ["clip"] = Link("2", 1),
+                ["text"] = "mosaic, pixelated, blurry, censored, bar censor, low quality, worst quality",
+            }),
+            ["5"] = Node("VAEEncode", new() { ["pixels"] = Link("1", 0), ["vae"] = Link("2", 2) }),
+            ["6"] = Node("SetLatentNoiseMask", new() { ["samples"] = Link("5", 0), ["mask"] = Link("1", 1) }),
+            ["7"] = Node("KSampler", new()
+            {
+                ["model"] = Link("2", 0), ["positive"] = Link("3", 0), ["negative"] = Link("4", 0),
+                ["latent_image"] = Link("6", 0),
+                ["seed"] = seed, ["steps"] = 24, ["cfg"] = 6.0,
+                ["sampler_name"] = "dpmpp_2m", ["scheduler"] = "karras",
+                ["denoise"] = s.DecensorStrongDenoise,
+            }),
+            ["8"] = Node("VAEDecode", new() { ["samples"] = Link("7", 0), ["vae"] = Link("2", 2) }),
+            ["9"] = Node("GrowMask", new() { ["mask"] = Link("1", 1), ["expand"] = 4, ["tapered_corners"] = true }),
+            ["10"] = Node("ImageCompositeMasked", new()
+            {
+                ["destination"] = Link("1", 0), ["source"] = Link("8", 0),
+                ["x"] = 0, ["y"] = 0, ["resize_source"] = false, ["mask"] = Link("9", 0),
+            }),
+            ["11"] = Node("SaveImage", new() { ["images"] = Link("10", 0), ["filename_prefix"] = filenamePrefix }),
         };
     }
 

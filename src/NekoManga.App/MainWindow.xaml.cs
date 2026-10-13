@@ -47,7 +47,20 @@ public partial class MainWindow
         SwTranslate.IsChecked = s.EnableTranslate;
 
         TxtVersion.Text = $"v{_update.CurrentVersion}";
+        RefreshComfyBadges();
         Loaded += async (_, _) => await CheckUpdateAsync();
+    }
+
+    /// <summary>ComfyUI가 필요한 기능(채색·강력 검열) 카드에 설치 필요 배지를 띄운다.</summary>
+    private void RefreshComfyBadges()
+    {
+        var comfyOk = App.Settings.ComfyAvailable;
+        BadgeColor.Visibility = comfyOk ? Visibility.Collapsed : Visibility.Visible;
+        var strong = App.Settings.DecensorMode == "Strong";
+        BadgeDecensor.Visibility = !comfyOk && strong ? Visibility.Visible : Visibility.Collapsed;
+        HintDecensor.Text = strong
+            ? "모자이크를 SDXL로 재생성 (강력 모드)"
+            : "모자이크를 찾아 자연스럽게 복원 (기본·내장 AI)";
     }
 
     // ── 파일 추가 ──────────────────────────────────────────────
@@ -135,12 +148,20 @@ public partial class MainWindow
             return;
         }
 
+        // ComfyUI가 필요한 조합인데 미설치면 바로 안내
+        bool needComfy = s.EnableAutoColor || (s.EnableDecensor && s.DecensorMode == "Strong");
+        if (needComfy && !s.ComfyAvailable)
+        {
+            TxtStatus.Text = "채색/강력 검열은 ComfyUI가 필요해요 — 설정 → 구성요소에서 설치해 주세요";
+            return;
+        }
+
         _cts = new CancellationTokenSource();
         BtnRun.IsEnabled = false;
         BtnStop.IsEnabled = true;
         TxtStatus.Text = "작업 중... (ฅ'ω'ฅ)";
 
-        var runner = new PipelineRunner(s);
+        using var runner = new PipelineRunner(s);
         var files = _rows.Select(r => r.Path).ToList();
         _lastOutputDir = Path.GetDirectoryName(runner.OutputPathFor(files[0]));
 
@@ -190,11 +211,12 @@ public partial class MainWindow
     private void BtnSettings_Click(object sender, RoutedEventArgs e)
     {
         new SettingsWindow { Owner = this }.ShowDialog();
-        // 설정 창에서 토글이 바뀌었을 수 있다
+        // 설정 창에서 토글·검열 모드·구성요소가 바뀌었을 수 있다
         var s = App.Settings;
         SwColor.IsChecked = s.EnableAutoColor;
         SwDecensor.IsChecked = s.EnableDecensor;
         SwTranslate.IsChecked = s.EnableTranslate;
+        RefreshComfyBadges();
     }
 
     // ── 업데이트 ──────────────────────────────────────────────

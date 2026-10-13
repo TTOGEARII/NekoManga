@@ -9,7 +9,7 @@ namespace NekoManga.App;
 public class ComponentRow : INotifyPropertyChanged
 {
     public required Component Component { get; init; }
-    public string Name => Component.DisplayName;
+    public string Name => Component.ForComfy ? Component.DisplayName + "  · 채색용(선택)" : Component.DisplayName;
 
     private string _status = "대기";
     public string Status { get => _status; set { _status = value; Notify(nameof(Status)); } }

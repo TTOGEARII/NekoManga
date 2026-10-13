@@ -4,11 +4,20 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- ONNX 텐서 채우기용 포인터 연산 (Engine/*) -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- 검열(모자이크) 마스크 감지용 픽셀 연산 — Windows 전용 앱이므로 System.Drawing 사용 -->
+    <!-- 검열(모자이크) 마스크 감지·식자 렌더링 — Windows 전용 앱이므로 System.Drawing 사용 -->
     <PackageReference Include="System.Drawing.Common" Version="8.0.6" />
+    <!-- 내장 번역 엔진: 텍스트 감지(CTD)·OCR(manga-ocr)·인페인트(LaMa)를 ONNX로 직접 실행.
+         DirectML이라 NVIDIA 외 GPU에서도 돌고 CUDA 설치가 필요 없다. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.24.4" />
+    <!-- 말풍선 식별(Canny+컨투어)·이미지 전처리 — BT의 OpenCV 휴리스틱 이식.
+         메타패키지(.Windows)는 WpfExtensions가 System.Drawing 10.x를 끌고 와 충돌하므로 관리+네이티브만 직접 참조 -->
+    <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260627" />
+    <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.13.0.20260627" />
   </ItemGroup>
 
 </Project>
