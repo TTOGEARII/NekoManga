@@ -10,7 +10,7 @@
     <AssemblyName>NekoManga</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>0.3.2</Version>
+    <Version>0.3.3</Version>
     <StartupObject>NekoManga.App.Program</StartupObject>
   </PropertyGroup>
 

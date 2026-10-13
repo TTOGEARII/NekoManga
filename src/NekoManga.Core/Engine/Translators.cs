@@ -133,11 +133,13 @@ public class LlmTranslator(string endpoint, string apiKey, string model, string 
 
 public static class TranslatorFactory
 {
-    // OpenAI 호환 엔드포인트·기본 모델 (2026-10 기준, 설정에서 모델명 변경 가능)
+    // OpenAI 호환 엔드포인트·기본 모델 (2026-10 공식 문서 기준, 설정에서 변경 가능)
     public const string DeepSeekEndpoint = "https://api.deepseek.com/chat/completions";
-    public const string DeepSeekDefaultModel = "deepseek-chat";
+    /// <summary>저렴하고 빠른 기본 모델. (구 deepseek-chat은 폐기됨)</summary>
+    public const string DeepSeekDefaultModel = "deepseek-flash";
     public const string GrokEndpoint = "https://api.x.ai/v1/chat/completions";
-    public const string GrokDefaultModel = "grok-4-fast";
+    /// <summary>번역엔 저비용 모델로 충분하다. 더 좋은 품질은 grok-4.7.</summary>
+    public const string GrokDefaultModel = "grok-4.3";
 
     /// <summary>설정에 따라 번역기를 만든다. 언어 코드: ja/ko/en 등.</summary>
     public static ITranslator Create(AppSettings s) => s.TranslateEngine switch

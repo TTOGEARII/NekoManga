@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Windows;
+using NekoManga.Core.Engine;
 using ComboBox = System.Windows.Controls.ComboBox;
 using ComboBoxItem = System.Windows.Controls.ComboBoxItem;
 using MessageBox = System.Windows.MessageBox;
@@ -37,9 +38,9 @@ public partial class SettingsWindow
         SelectComboByTag(CmbTarget, s.TranslateTarget);
         TxtDeepLKey.Text = s.DeepLApiKey;
         TxtDeepSeekKey.Text = s.DeepSeekApiKey;
-        TxtDeepSeekModel.Text = s.DeepSeekModel;
+        SetComboText(CmbDeepSeekModel, s.DeepSeekModel, TranslatorFactory.DeepSeekDefaultModel);
         TxtGrokKey.Text = s.GrokApiKey;
-        TxtGrokModel.Text = s.GrokModel;
+        SetComboText(CmbGrokModel, s.GrokModel, TranslatorFactory.GrokDefaultModel);
         UpdateTranslatorPanels();
 
         TxtRuntimeRoot.Text = s.RuntimeRoot;
@@ -78,9 +79,9 @@ public partial class SettingsWindow
         s.TranslateTarget = ComboTag(CmbTarget, s.TranslateTarget);
         s.DeepLApiKey = TxtDeepLKey.Text.Trim();
         s.DeepSeekApiKey = TxtDeepSeekKey.Text.Trim();
-        s.DeepSeekModel = TxtDeepSeekModel.Text.Trim();
+        s.DeepSeekModel = (CmbDeepSeekModel.Text ?? "").Trim();
         s.GrokApiKey = TxtGrokKey.Text.Trim();
-        s.GrokModel = TxtGrokModel.Text.Trim();
+        s.GrokModel = (CmbGrokModel.Text ?? "").Trim();
 
         s.OutputRoot = TxtOutputRoot.Text.Trim();
         s.LinkedComfyRoot = TxtLinkedComfy.Text.Trim();
@@ -101,6 +102,11 @@ public partial class SettingsWindow
             if ((string)it.Content == value) { cmb.SelectedItem = it; return; }
         cmb.Text = value;
     }
+
+    /// <summary>편집 가능 콤보에 값을 넣는다. 저장된 값이 비어 있으면 기본 모델명을 미리 채워 준다
+    /// (직접 입력해야 해서 헷갈린다는 피드백 반영).</summary>
+    private static void SetComboText(ComboBox cmb, string value, string fallback)
+        => cmb.Text = string.IsNullOrWhiteSpace(value) ? fallback : value;
 
     private static void SelectComboByTag(ComboBox cmb, string tag)
     {
