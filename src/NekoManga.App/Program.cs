@@ -28,12 +28,16 @@ public static class Program
             return;
         }
 
-        // 결과 보기 창만 바로 띄운다 (UI 확인용): NekoManga.exe --result <이미지경로>
+        // UI 확인용 진입점
+        //   --result <이미지…>     결과 보기 창만 띄운다 (여러 장을 주면 창 안에서 넘겨볼 수 있다)
+        //   --demo-files <폴더>    메인 창 목록에 그 폴더의 이미지를 미리 올려 둔다
         var resultIdx = Array.IndexOf(args, "--result");
+        var filesIdx = Array.IndexOf(args, "--demo-files");
         var app = new App
         {
             DemoSettings = args.Contains("--demo-settings"),
-            ResultImage = resultIdx >= 0 && resultIdx + 1 < args.Length ? args[resultIdx + 1] : null,
+            ResultImages = resultIdx >= 0 ? args.Skip(resultIdx + 1).TakeWhile(a => !a.StartsWith("--")).ToList() : null,
+            PreloadDir = filesIdx >= 0 && filesIdx + 1 < args.Length ? args[filesIdx + 1] : null,
         };
         app.InitializeComponent();
         app.Run();

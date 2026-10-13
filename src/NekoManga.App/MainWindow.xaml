@@ -115,24 +115,58 @@
                 </StackPanel>
             </Border>
 
-            <ListView x:Name="FileList" Visibility="Collapsed" Background="Transparent"
-                      BorderThickness="0" SelectionMode="Extended"
-                      MouseDoubleClick="FileList_MouseDoubleClick">
-                <ListView.View>
-                    <GridView>
-                        <GridViewColumn Header="파일" Width="420" DisplayMemberBinding="{Binding Name}"/>
-                        <GridViewColumn Header="상태" Width="300" DisplayMemberBinding="{Binding Stage}"/>
-                        <GridViewColumn Header="진행" Width="140">
-                            <GridViewColumn.CellTemplate>
-                                <DataTemplate>
-                                    <ProgressBar Value="{Binding Percent}" Minimum="0" Maximum="100"
-                                                 Height="8" Width="120" Foreground="{StaticResource NekoPink}"/>
-                                </DataTemplate>
-                            </GridViewColumn.CellTemplate>
-                        </GridViewColumn>
-                    </GridView>
-                </ListView.View>
-            </ListView>
+            <!-- 목록(썸네일 포함) + 고른 장의 큰 미리보기 -->
+            <Grid x:Name="ListPane" Visibility="Collapsed">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MinWidth="420"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="380" MinWidth="220"/>
+                </Grid.ColumnDefinitions>
+
+                <ListView x:Name="FileList" Grid.Column="0" Background="Transparent"
+                          BorderThickness="0" SelectionMode="Extended"
+                          SelectionChanged="FileList_SelectionChanged"
+                          MouseDoubleClick="FileList_MouseDoubleClick">
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="" Width="64">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border Background="#201A20" CornerRadius="4" Width="52" Height="68">
+                                            <Image Source="{Binding Thumb}" Stretch="Uniform"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="파일" Width="190" DisplayMemberBinding="{Binding Name}"/>
+                            <GridViewColumn Header="상태" Width="190" DisplayMemberBinding="{Binding Stage}"/>
+                            <GridViewColumn Header="진행" Width="100">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <ProgressBar Value="{Binding Percent}" Minimum="0" Maximum="100"
+                                                     Height="8" Width="84" Foreground="{StaticResource NekoPink}"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+
+                <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch"
+                              Background="Transparent"/>
+
+                <Border Grid.Column="2" Background="#141014" CornerRadius="10" Padding="8">
+                    <DockPanel>
+                        <TextBlock x:Name="TxtPreviewName" DockPanel.Dock="Top" Margin="2,0,2,6"
+                                   Foreground="{StaticResource NekoText}" TextTrimming="CharacterEllipsis"
+                                   Text="미리보기"/>
+                        <ui:Button x:Name="BtnEditThis" DockPanel.Dock="Bottom" Content="✏ 이 장 수정하기"
+                                   Click="BtnViewResult_Click" Margin="0,8,0,0" HorizontalAlignment="Stretch"
+                                   HorizontalContentAlignment="Center" Padding="10,6"/>
+                        <Image x:Name="ImgPreview" Stretch="Uniform" SnapsToDevicePixels="True"/>
+                    </DockPanel>
+                </Border>
+            </Grid>
         </Grid>
 
         <!-- ── 하단 바 ── -->

@@ -166,6 +166,31 @@ public class PipelineRunner(AppSettings settings) : IDisposable
         await _server.DisposeAsync();
     }
 
+    /// <summary>결과 보기 창에서 사용자가 손으로 고른 영역을 지운다 (자동 감지가 놓친 검열용).
+    /// 파이프라인과 같은 복원 경로를 쓰므로 결과물의 성격이 일관된다.</summary>
+    public async Task ManualDecensorAsync(Mat img, Mat mask, bool strong,
+        IProgress<string>? status, CancellationToken ct)
+    {
+        var lama = new LamaInpainter(_onnx);
+
+        if (!strong)
+        {
+            if (!lama.IsReady)
+                throw new InvalidOperationException("복원 모델(LaMa)이 없어요 — 설정 → 구성요소에서 설치해 주세요.");
+            status?.Report("복원 중...");
+            using var m = mask.Clone(); // LaMa 내부 FindContours가 마스크를 파괴한다
+            lama.Inpaint(img, m);
+            return;
+        }
+
+        await _server.EnsureRunningAsync(status, ct);
+        var client = new ComfyClient(_server.BaseUrl);
+        var outDir = Path.Combine(settings.ComfyRoot, "ComfyUI", "output");
+        status?.Report("SDXL로 다시 그리는 중... (수십 초)");
+        // 페이지 번호는 파일 이름 충돌만 피하면 되므로 손수정 전용 번호를 쓴다
+        await StrongDecensorAsync(client, outDir, img, mask, 900, lama, ct);
+    }
+
     /// <summary>강력 검열제거: 검열 ROI를 잘라 SDXL 인페인트(ComfyUI)로 재생성하고 제자리에 붙인다.
     /// 전체 이미지를 통째로 샘플링하면 8GB VRAM이 터지므로 ROI 단위(최대 1024px)로 처리.</summary>
     private async Task StrongDecensorAsync(ComfyClient client, string comfyOutputDir,

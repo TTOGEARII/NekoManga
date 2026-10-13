@@ -12,8 +12,11 @@ public partial class App : Application
     /// <summary>--demo-settings: 설정 창만 띄워 레이아웃을 확인한다 (UI 작업용).</summary>
     public bool DemoSettings { get; set; }
 
-    /// <summary>--result &lt;경로&gt;: 결과 보기 창만 띄운다 (UI 확인용).</summary>
-    public string? ResultImage { get; set; }
+    /// <summary>--result &lt;경로…&gt;: 결과 보기 창만 띄운다 (UI 확인용).</summary>
+    public List<string>? ResultImages { get; set; }
+
+    /// <summary>--demo-files &lt;폴더&gt;: 메인 창 목록을 미리 채운다 (UI 확인용).</summary>
+    public string? PreloadDir { get; set; }
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -36,9 +39,9 @@ public partial class App : Application
             return;
         }
 
-        if (ResultImage != null)
+        if (ResultImages is { Count: > 0 })
         {
-            new ResultWindow(ResultImage).Show();
+            new ResultWindow(ResultImages, 0).Show();
             return;
         }
 

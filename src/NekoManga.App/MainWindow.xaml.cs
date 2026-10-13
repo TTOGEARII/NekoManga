@@ -7,8 +7,10 @@ using NekoManga.Core.Pipeline;
 using Velopack;
 using DataFormats = System.Windows.DataFormats;
 using DragDropEffects = System.Windows.DragDropEffects;
+using System.Windows.Media.Imaging;
 using DragEventArgs = System.Windows.DragEventArgs;
 using MouseButtonEventArgs = System.Windows.Input.MouseButtonEventArgs;
+using SelectionChangedEventArgs = System.Windows.Controls.SelectionChangedEventArgs;
 
 namespace NekoManga.App;
 
@@ -22,6 +24,14 @@ public class FileRow : INotifyPropertyChanged
 
     private double _percent;
     public double Percent { get => _percent; set { _percent = value; Notify(nameof(Percent)); } }
+
+    /// <summary>목록에 띄우는 작은 그림. 결과물이 있으면 결과물을, 없으면 원본을 보여준다.</summary>
+    private BitmapSource? _thumb;
+    public BitmapSource? Thumb { get => _thumb; set { _thumb = value; Notify(nameof(Thumb)); } }
+
+    /// <summary>미리보기·수정 대상 경로 (결과물이 나오면 그쪽을 가리킨다).</summary>
+    private string? _viewPath;
+    public string ViewPath { get => _viewPath ?? Path; set { _viewPath = value; Notify(nameof(ViewPath)); } }
 
     public event PropertyChangedEventHandler? PropertyChanged;
     private void Notify(string n) => PropertyChanged?.Invoke(this, new(n));
@@ -51,7 +61,12 @@ public partial class MainWindow
 
         TxtVersion.Text = $"v{_update.CurrentVersion}";
         RefreshComfyBadges();
-        Loaded += async (_, _) => await CheckUpdateAsync();
+        Loaded += async (_, _) =>
+        {
+            if (((App)System.Windows.Application.Current).PreloadDir is { } dir && Directory.Exists(dir))
+                AddPaths([dir]);   // --demo-files: UI 확인용 미리 채우기
+            await CheckUpdateAsync();
+        };
     }
 
     /// <summary>ComfyUI가 필요한 기능(채색·강력 검열) 카드에 설치 필요 배지를 띄운다.</summary>
@@ -108,15 +123,73 @@ public partial class MainWindow
     private void AddFile(string path)
     {
         if (_rows.Any(r => string.Equals(r.Path, path, StringComparison.OrdinalIgnoreCase))) return;
-        _rows.Add(new FileRow { Path = path });
+        var row = new FileRow { Path = path };
+        _rows.Add(row);
+        _ = LoadThumbAsync(row);
     }
 
     private void UpdateDropHint()
     {
         var has = _rows.Count > 0;
         DropHint.Visibility = has ? Visibility.Collapsed : Visibility.Visible;
-        FileList.Visibility = has ? Visibility.Visible : Visibility.Collapsed;
+        ListPane.Visibility = has ? Visibility.Visible : Visibility.Collapsed;
         TxtStatus.Text = has ? $"{_rows.Count}장 준비됨 ♪" : "준비 완료 ♪";
+        if (has && FileList.SelectedIndex < 0) FileList.SelectedIndex = 0;
+    }
+
+    /// <summary>목록 썸네일을 백그라운드에서 만든다. DecodePixelHeight로 축소 디코딩해
+    /// 원고 수십 장을 올려도 메모리·시간이 튀지 않는다.</summary>
+    private static async Task LoadThumbAsync(FileRow row)
+    {
+        var path = row.ViewPath;
+        var thumb = await Task.Run(() => LoadBitmap(path, 160));
+        row.Thumb = thumb;
+    }
+
+    private static BitmapSource? LoadBitmap(string path, int decodeHeight)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+            var bmp = new BitmapImage();
+            bmp.BeginInit();
+            bmp.CacheOption = BitmapCacheOption.OnLoad;      // 파일 잠금을 남기지 않는다
+            bmp.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
+            bmp.UriSource = new Uri(path);
+            if (decodeHeight > 0) bmp.DecodePixelHeight = decodeHeight;
+            bmp.EndInit();
+            bmp.Freeze();
+            return bmp;
+        }
+        catch { return null; }   // webp 등 WPF가 못 읽는 포맷은 썸네일 없이 간다
+    }
+
+    /// <summary>작업이 끝난 뒤 결과물 쪽을 보도록 경로를 바꾸고 썸네일·미리보기를 갱신한다.</summary>
+    private void RefreshResultViews(PipelineRunner runner)
+    {
+        foreach (var row in _rows)
+        {
+            var outPath = runner.OutputPathFor(row.Path);
+            if (!File.Exists(outPath))
+            {
+                // 검열이 없던 장은 원본이 확장자 그대로 복사된다
+                var sameName = Path.Combine(Path.GetDirectoryName(outPath)!, Path.GetFileName(row.Path));
+                outPath = File.Exists(sameName) ? sameName : row.Path;
+            }
+            row.ViewPath = outPath;
+            _ = LoadThumbAsync(row);
+        }
+        ShowPreview(FileList.SelectedItem as FileRow ?? _rows.FirstOrDefault());
+    }
+
+    private void FileList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        => ShowPreview(FileList.SelectedItem as FileRow);
+
+    private void ShowPreview(FileRow? row)
+    {
+        if (row == null) { ImgPreview.Source = null; TxtPreviewName.Text = "미리보기"; return; }
+        TxtPreviewName.Text = Path.GetFileName(row.ViewPath);
+        ImgPreview.Source = LoadBitmap(row.ViewPath, 1400);
     }
 
     private void BtnClear_Click(object sender, RoutedEventArgs e)
@@ -179,6 +252,7 @@ public partial class MainWindow
         try
         {
             await Task.Run(() => runner.RunAsync(files, progress, _cts.Token));
+            RefreshResultViews(runner);   // 목록 썸네일·미리보기를 결과물로 바꿔 바로 확인할 수 있게
             var failed = _rows.Count(r => r.Stage.StartsWith("실패"));
             TxtStatus.Text = failed == 0
                 ? $"전부 완료! 총 {_rows.Count}장 (ﾉ´ヮ`)ﾉ*:･ﾟ✧"
@@ -222,17 +296,14 @@ public partial class MainWindow
             return;
         }
 
-        using var runner = new PipelineRunner(App.Settings);
-        var outPath = runner.OutputPathFor(row.Path);
-        if (!File.Exists(outPath))
-        {
-            // 검열이 없던 페이지는 원본이 확장자 그대로 복사돼 있다
-            var sameName = Path.Combine(Path.GetDirectoryName(outPath)!, Path.GetFileName(row.Path));
-            outPath = File.Exists(sameName) ? sameName : row.Path;
-        }
-
-        var win = new ResultWindow(outPath) { Owner = this };
+        // 창 안에서 ◀ ▶로 넘겨볼 수 있게 목록 전체를 넘긴다
+        var pages = _rows.Select(r => r.ViewPath).ToList();
+        var win = new ResultWindow(pages, Math.Max(0, _rows.IndexOf(row))) { Owner = this };
         win.ShowDialog();
+
+        // 창에서 고친 내용이 목록에도 바로 보이게
+        foreach (var r in _rows) _ = LoadThumbAsync(r);
+        ShowPreview(FileList.SelectedItem as FileRow ?? row);
     }
 
     private void BtnViewResult_Click(object sender, RoutedEventArgs e)
