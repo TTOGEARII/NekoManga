@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>NekoManga</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <Version>0.1.0</Version>
+    <StartupObject>NekoManga.App.Program</StartupObject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="app.ico" />
+    <!-- 업데이트 적용 중 자체 스플래시 창이 쓰는 이미지 (UpdateService.StartApplySplash) -->
+    <Content Include="..\..\assets\splash.gif" Link="assets\splash.gif" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WPF-UI" Version="3.0.5" />
+    <PackageReference Include="Velopack" Version="0.0.*" />
+    <ProjectReference Include="..\NekoManga.Core\NekoManga.Core.csproj" />
+  </ItemGroup>
+
+</Project>

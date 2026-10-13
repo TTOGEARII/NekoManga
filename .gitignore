@@ -1,0 +1,10 @@
+bin/
+obj/
+publish/
+*.user
+.vs/
+# 로컬 실데이터 (설정·작업 결과물) — 커밋 금지
+settings.json
+runtime/
+output/
+tmp/

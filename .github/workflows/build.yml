@@ -1,0 +1,17 @@
+name: Build
+
+# main 푸시·PR마다 빌드가 깨지지 않는지 확인한다.
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: dotnet build NekoManga.sln -c Release

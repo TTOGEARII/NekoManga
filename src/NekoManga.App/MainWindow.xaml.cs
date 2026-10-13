@@ -1,0 +1,230 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
+using System.Windows;
+using NekoManga.Core.Pipeline;
+using Velopack;
+using DataFormats = System.Windows.DataFormats;
+using DragDropEffects = System.Windows.DragDropEffects;
+using DragEventArgs = System.Windows.DragEventArgs;
+
+namespace NekoManga.App;
+
+public class FileRow : INotifyPropertyChanged
+{
+    public required string Path { get; init; }
+    public string Name => System.IO.Path.GetFileName(Path);
+
+    private string _stage = "대기";
+    public string Stage { get => _stage; set { _stage = value; Notify(nameof(Stage)); } }
+
+    private double _percent;
+    public double Percent { get => _percent; set { _percent = value; Notify(nameof(Percent)); } }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    private void Notify(string n) => PropertyChanged?.Invoke(this, new(n));
+}
+
+public partial class MainWindow
+{
+    private static readonly string[] ImageExts = [".png", ".jpg", ".jpeg", ".webp", ".bmp"];
+
+    private readonly ObservableCollection<FileRow> _rows = [];
+    private readonly UpdateService _update = new();
+    private UpdateInfo? _pendingUpdate;
+    private CancellationTokenSource? _cts;
+    private string? _lastOutputDir;
+
+    public MainWindow()
+    {
+        InitializeComponent();
+        FileList.ItemsSource = _rows;
+
+        var s = App.Settings;
+        SwColor.IsChecked = s.EnableAutoColor;
+        SwDecensor.IsChecked = s.EnableDecensor;
+        SwTranslate.IsChecked = s.EnableTranslate;
+
+        TxtVersion.Text = $"v{_update.CurrentVersion}";
+        Loaded += async (_, _) => await CheckUpdateAsync();
+    }
+
+    // ── 파일 추가 ──────────────────────────────────────────────
+    private void Window_DragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void Window_Drop(object sender, DragEventArgs e)
+    {
+        if (e.Data.GetData(DataFormats.FileDrop) is string[] paths) AddPaths(paths);
+    }
+
+    private void BtnPick_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new Microsoft.Win32.OpenFileDialog
+        {
+            Multiselect = true,
+            Filter = "만화 이미지|*.png;*.jpg;*.jpeg;*.webp;*.bmp",
+        };
+        if (dlg.ShowDialog() == true) AddPaths(dlg.FileNames);
+    }
+
+    private void AddPaths(IEnumerable<string> paths)
+    {
+        foreach (var p in paths)
+        {
+            if (Directory.Exists(p))
+            {
+                foreach (var f in Directory.EnumerateFiles(p, "*", SearchOption.AllDirectories)
+                         .Where(f => ImageExts.Contains(Path.GetExtension(f).ToLowerInvariant()))
+                         .OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+                    AddFile(f);
+            }
+            else if (File.Exists(p) && ImageExts.Contains(Path.GetExtension(p).ToLowerInvariant()))
+                AddFile(p);
+        }
+        UpdateDropHint();
+    }
+
+    private void AddFile(string path)
+    {
+        if (_rows.Any(r => string.Equals(r.Path, path, StringComparison.OrdinalIgnoreCase))) return;
+        _rows.Add(new FileRow { Path = path });
+    }
+
+    private void UpdateDropHint()
+    {
+        var has = _rows.Count > 0;
+        DropHint.Visibility = has ? Visibility.Collapsed : Visibility.Visible;
+        FileList.Visibility = has ? Visibility.Visible : Visibility.Collapsed;
+        TxtStatus.Text = has ? $"{_rows.Count}장 준비됨 ♪" : "준비 완료 ♪";
+    }
+
+    private void BtnClear_Click(object sender, RoutedEventArgs e)
+    {
+        if (_cts != null) return;
+        _rows.Clear();
+        UpdateDropHint();
+    }
+
+    // ── 실행 ──────────────────────────────────────────────────
+    private void Feature_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        var s = App.Settings;
+        s.EnableAutoColor = SwColor.IsChecked == true;
+        s.EnableDecensor = SwDecensor.IsChecked == true;
+        s.EnableTranslate = SwTranslate.IsChecked == true;
+        s.Save();
+    }
+
+    private async void BtnRun_Click(object sender, RoutedEventArgs e)
+    {
+        if (_rows.Count == 0)
+        {
+            TxtStatus.Text = "먼저 이미지를 올려주세요 (・ω・`)";
+            return;
+        }
+        var s = App.Settings;
+        if (!s.EnableAutoColor && !s.EnableDecensor && !s.EnableTranslate)
+        {
+            TxtStatus.Text = "켜진 기능이 없어요 — 위 토글을 하나 이상 켜주세요";
+            return;
+        }
+
+        _cts = new CancellationTokenSource();
+        BtnRun.IsEnabled = false;
+        BtnStop.IsEnabled = true;
+        TxtStatus.Text = "작업 중... (ฅ'ω'ฅ)";
+
+        var runner = new PipelineRunner(s);
+        var files = _rows.Select(r => r.Path).ToList();
+        _lastOutputDir = Path.GetDirectoryName(runner.OutputPathFor(files[0]));
+
+        var progress = new Progress<PageProgress>(p =>
+        {
+            var row = _rows.FirstOrDefault(r => r.Name == p.File);
+            if (row == null) return;
+            row.Stage = p.Error != null ? $"실패 — {p.Error}" : p.Stage;
+            row.Percent = p.Percent;
+        });
+
+        try
+        {
+            await Task.Run(() => runner.RunAsync(files, progress, _cts.Token));
+            var failed = _rows.Count(r => r.Stage.StartsWith("실패"));
+            TxtStatus.Text = failed == 0
+                ? $"전부 완료! 총 {_rows.Count}장 (ﾉ´ヮ`)ﾉ*:･ﾟ✧"
+                : $"완료 — 성공 {_rows.Count - failed}장 / 실패 {failed}장";
+        }
+        catch (OperationCanceledException)
+        {
+            TxtStatus.Text = "멈췄어요";
+        }
+        catch (Exception ex)
+        {
+            TxtStatus.Text = "오류: " + ex.Message;
+        }
+        finally
+        {
+            _cts = null;
+            BtnRun.IsEnabled = true;
+            BtnStop.IsEnabled = false;
+        }
+    }
+
+    private void BtnStop_Click(object sender, RoutedEventArgs e) => _cts?.Cancel();
+
+    private void BtnOpenOutput_Click(object sender, RoutedEventArgs e)
+    {
+        var dir = !string.IsNullOrWhiteSpace(App.Settings.OutputRoot) ? App.Settings.OutputRoot : _lastOutputDir;
+        if (dir != null && Directory.Exists(dir))
+            Process.Start(new ProcessStartInfo("explorer.exe", $"\"{dir}\"") { UseShellExecute = true });
+        else
+            TxtStatus.Text = "아직 결과물이 없어요";
+    }
+
+    private void BtnSettings_Click(object sender, RoutedEventArgs e)
+    {
+        new SettingsWindow { Owner = this }.ShowDialog();
+        // 설정 창에서 토글이 바뀌었을 수 있다
+        var s = App.Settings;
+        SwColor.IsChecked = s.EnableAutoColor;
+        SwDecensor.IsChecked = s.EnableDecensor;
+        SwTranslate.IsChecked = s.EnableTranslate;
+    }
+
+    // ── 업데이트 ──────────────────────────────────────────────
+    private async Task CheckUpdateAsync()
+    {
+        try
+        {
+            _pendingUpdate = await _update.CheckAsync();
+            if (_pendingUpdate != null)
+            {
+                BtnUpdate.Visibility = Visibility.Visible;
+                BtnUpdate.Content = $"🎀 v{_pendingUpdate.TargetFullRelease.Version} 업데이트!";
+            }
+        }
+        catch { /* 오프라인 등 — 조용히 넘어간다 */ }
+    }
+
+    private async void BtnUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        if (_pendingUpdate == null) return;
+        BtnUpdate.IsEnabled = false;
+        try
+        {
+            await _update.DownloadAndApplyAsync(_pendingUpdate,
+                p => Dispatcher.Invoke(() => TxtStatus.Text = $"업데이트 다운로드 {p}%"));
+        }
+        catch (Exception ex)
+        {
+            TxtStatus.Text = "업데이트 실패: " + ex.Message;
+            BtnUpdate.IsEnabled = true;
+        }
+    }
+}

@@ -1,0 +1,185 @@
+<ui:FluentWindow x:Class="NekoManga.App.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="설정" Height="640" Width="760"
+        WindowStartupLocation="CenterOwner"
+        ExtendsContentIntoTitleBar="True"
+        WindowBackdropType="None"
+        WindowCornerPreference="Round"
+        Background="{StaticResource NekoBg}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="설정 ⚙ (창을 닫으면 저장돼요)" ShowMinimize="False" ShowMaximize="False"/>
+
+        <TabControl Grid.Row="1" Margin="16,4,16,16">
+
+            <!-- ── 채색 ── -->
+            <TabItem Header="🎨 채색">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="8">
+                        <TextBlock Style="{StaticResource SectionTitle}" Text="품질 · 속도"/>
+                        <UniformGrid Columns="2" Rows="4">
+                            <DockPanel Margin="0,4">
+                                <TextBlock Text="해상도 상한 (MP)" Style="{StaticResource FieldLabel}" Width="130"/>
+                                <TextBox x:Name="TxtMegapixels" Width="90" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                            <DockPanel Margin="0,4">
+                                <TextBlock Text="스텝 수" Style="{StaticResource FieldLabel}" Width="130"/>
+                                <TextBox x:Name="TxtSteps" Width="90" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                            <DockPanel Margin="0,4">
+                                <TextBlock Text="CFG" Style="{StaticResource FieldLabel}" Width="130"/>
+                                <TextBox x:Name="TxtCfg" Width="90" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                            <DockPanel Margin="0,4">
+                                <TextBlock Text="Denoise" Style="{StaticResource FieldLabel}" Width="130"/>
+                                <TextBox x:Name="TxtDenoise" Width="90" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                            <DockPanel Margin="0,4">
+                                <TextBlock Text="샘플러" Style="{StaticResource FieldLabel}" Width="130"/>
+                                <ComboBox x:Name="CmbSampler" Width="190" HorizontalAlignment="Left">
+                                    <ComboBoxItem Content="dpmpp_sde_gpu"/>
+                                    <ComboBoxItem Content="dpmpp_2m"/>
+                                    <ComboBoxItem Content="euler_ancestral"/>
+                                </ComboBox>
+                            </DockPanel>
+                            <DockPanel Margin="0,4">
+                                <TextBlock Text="선화 합성 %" Style="{StaticResource FieldLabel}" Width="130"/>
+                                <TextBox x:Name="TxtLineart" Width="90" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                            <DockPanel Margin="0,4">
+                                <TextBlock Text="시드 (-1=랜덤)" Style="{StaticResource FieldLabel}" Width="130"/>
+                                <TextBox x:Name="TxtSeed" Width="130" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                            <Border/>
+                        </UniformGrid>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="샘플러 dpmpp_sde_gpu는 품질 우선(페이지당 ~90초), dpmpp_2m은 속도 우선(~55초). 8GB VRAM이면 해상도 1.5MP를 넘기지 마세요."/>
+
+                        <TextBlock Style="{StaticResource SectionTitle}" Text="캐릭터 태그 (수동)"/>
+                        <TextBox x:Name="TxtManualTags" AcceptsReturn="True" Height="54" TextWrapping="Wrap"/>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="예: blonde hair, amber eyes, navy sailor uniform — 캐릭터 머리·눈 색을 적어주면 채색이 일관돼요."/>
+
+                        <TextBlock Style="{StaticResource SectionTitle}" Text="자동 태그에서 뺄 태그"/>
+                        <TextBox x:Name="TxtExcludeTags"/>
+                        <TextBlock Style="{StaticResource SectionTitle}" Text="부정 프롬프트"/>
+                        <TextBox x:Name="TxtNegative" AcceptsReturn="True" Height="54" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ── 검열 제거 ── -->
+            <TabItem Header="🙈 검열 제거">
+                <StackPanel Margin="8">
+                    <TextBlock Style="{StaticResource SectionTitle}" Text="모자이크 감지"/>
+                    <DockPanel Margin="0,4">
+                        <TextBlock Text="블록 크기 (px)" Style="{StaticResource FieldLabel}" Width="130"/>
+                        <TextBox x:Name="TxtBlockSize" Width="90" HorizontalAlignment="Left"/>
+                    </DockPanel>
+                    <TextBlock Style="{StaticResource HintText}" Text="모자이크 격자 한 칸의 픽셀 크기. 이미지를 확대해서 재보세요 (보통 4~16)."/>
+                    <DockPanel Margin="0,4">
+                        <TextBlock Text="감지 민감도" Style="{StaticResource FieldLabel}" Width="130"/>
+                        <TextBox x:Name="TxtThreshold" Width="90" HorizontalAlignment="Left"/>
+                    </DockPanel>
+                    <TextBlock Style="{StaticResource HintText}" Text="낮을수록 더 많은 영역을 모자이크로 판단해요 (기본 15)."/>
+                    <DockPanel Margin="0,4">
+                        <TextBlock Text="마스크 확장 (px)" Style="{StaticResource FieldLabel}" Width="130"/>
+                        <TextBox x:Name="TxtMaskGrow" Width="90" HorizontalAlignment="Left"/>
+                    </DockPanel>
+                    <TextBlock Style="{StaticResource HintText}"
+                               Text="감지된 영역 둘레를 조금 더 넓게 지워 경계를 자연스럽게 해요."/>
+                </StackPanel>
+            </TabItem>
+
+            <!-- ── 번역 ── -->
+            <TabItem Header="💬 번역">
+                <StackPanel Margin="8">
+                    <TextBlock Style="{StaticResource SectionTitle}" Text="번역 엔진"/>
+                    <ComboBox x:Name="CmbTranslator" Width="220" HorizontalAlignment="Left">
+                        <ComboBoxItem Content="Papago"/>
+                        <ComboBoxItem Content="google"/>
+                        <ComboBoxItem Content="DeepL"/>
+                    </ComboBox>
+                    <TextBlock Style="{StaticResource HintText}"
+                               Text="DeepL 등 API 키가 필요한 엔진은 BallonsTranslator 설정에서 키를 넣어야 해요."/>
+                    <UniformGrid Columns="2" Rows="1" Margin="0,8,0,0">
+                        <DockPanel>
+                            <TextBlock Text="원본 언어" Style="{StaticResource FieldLabel}" Width="90"/>
+                            <ComboBox x:Name="CmbSource" Width="150" HorizontalAlignment="Left">
+                                <ComboBoxItem Content="日本語"/>
+                                <ComboBoxItem Content="English"/>
+                                <ComboBoxItem Content="简体中文"/>
+                            </ComboBox>
+                        </DockPanel>
+                        <DockPanel>
+                            <TextBlock Text="번역 언어" Style="{StaticResource FieldLabel}" Width="90"/>
+                            <ComboBox x:Name="CmbTarget" Width="150" HorizontalAlignment="Left">
+                                <ComboBoxItem Content="한국어"/>
+                                <ComboBoxItem Content="English"/>
+                            </ComboBox>
+                        </DockPanel>
+                    </UniformGrid>
+                </StackPanel>
+            </TabItem>
+
+            <!-- ── 구성요소 ── -->
+            <TabItem Header="📦 구성요소">
+                <StackPanel Margin="8">
+                    <TextBlock Style="{StaticResource SectionTitle}" Text="설치 경로"/>
+                    <DockPanel Margin="0,4">
+                        <TextBlock Text="구성요소 위치" Style="{StaticResource FieldLabel}" Width="130"/>
+                        <TextBox x:Name="TxtRuntimeRoot" IsReadOnly="True"/>
+                    </DockPanel>
+                    <DockPanel Margin="0,4">
+                        <TextBlock Text="결과물 저장" Style="{StaticResource FieldLabel}" Width="130"/>
+                        <ui:Button DockPanel.Dock="Right" Content="선택" Click="BtnPickOutput_Click" Padding="12,4" Margin="8,0,0,0"/>
+                        <TextBox x:Name="TxtOutputRoot"/>
+                    </DockPanel>
+                    <TextBlock Style="{StaticResource HintText}" Text="비워두면 원본 폴더 옆에 '폴더명_neko'로 저장돼요."/>
+
+                    <TextBlock Style="{StaticResource SectionTitle}" Text="기존 설치 연결"/>
+                    <DockPanel Margin="0,4">
+                        <TextBlock Text="ComfyUI 경로" Style="{StaticResource FieldLabel}" Width="130"/>
+                        <TextBox x:Name="TxtLinkedComfy"/>
+                    </DockPanel>
+                    <DockPanel Margin="0,4">
+                        <TextBlock Text="BallonsTranslator" Style="{StaticResource FieldLabel}" Width="130"/>
+                        <TextBox x:Name="TxtLinkedBallons"/>
+                    </DockPanel>
+                    <TextBlock Style="{StaticResource HintText}"
+                               Text="이미 설치해 둔 ComfyUI portable / BallonsTranslator가 있으면 경로를 넣어 재다운로드를 건너뛰어요."/>
+
+                    <TextBlock Style="{StaticResource SectionTitle}" Text="civitai API 키 (선택)"/>
+                    <TextBox x:Name="TxtCivitaiKey"/>
+                    <TextBlock Style="{StaticResource HintText}"
+                               Text="채색 모델 다운로드가 로그인 오류로 실패할 때만 필요해요. civitai.com → 계정 설정 → API Keys."/>
+
+                    <ui:Button Content="구성요소 설치 창 열기" Click="BtnOpenSetup_Click" Margin="0,14,0,0" Padding="16,8"/>
+                </StackPanel>
+            </TabItem>
+
+            <!-- ── 정보 ── -->
+            <TabItem Header="ℹ 정보">
+                <StackPanel Margin="8">
+                    <TextBlock Text="NekoManga (=^･ω･^=)" FontSize="22" FontWeight="Bold"
+                               Foreground="{StaticResource NekoPinkSoft}" Margin="0,12,0,4"/>
+                    <TextBlock x:Name="TxtAboutVersion" Style="{StaticResource HintText}"/>
+                    <TextBlock Style="{StaticResource HintText}" Margin="0,8,0,0"
+                               Text="흑백 만화 자동 채색 + 검열 제거 + 번역 식자 올인원. ComfyUI와 BallonsTranslator를 엔진으로 써요."/>
+                    <ui:Button Content="GitHub 열기" Click="BtnGitHub_Click" Margin="0,16,0,0" Padding="16,8" HorizontalAlignment="Left"/>
+                    <TextBlock Style="{StaticResource SectionTitle}" Text="프로그램 삭제"/>
+                    <TextBlock Style="{StaticResource HintText}"
+                               Text="앱과 바로가기를 제거해요. 내려받은 구성요소 폴더는 용량이 커서 자동으로 지우지 않아요 — 삭제 후 직접 지워주세요."/>
+                    <ui:Button x:Name="BtnUninstall" Content="🗑 NekoManga 삭제하기" Click="BtnUninstall_Click"
+                               Appearance="Danger" Margin="0,8,0,0" Padding="16,8" HorizontalAlignment="Left"/>
+                </StackPanel>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</ui:FluentWindow>

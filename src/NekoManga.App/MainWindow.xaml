@@ -1,0 +1,140 @@
+<ui:FluentWindow x:Class="NekoManga.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="NekoManga" Height="700" Width="980"
+        WindowStartupLocation="CenterScreen"
+        ExtendsContentIntoTitleBar="True"
+        WindowBackdropType="None"
+        WindowCornerPreference="Round"
+        Icon="pack://application:,,,/app.ico"
+        Background="{StaticResource NekoBg}"
+        AllowDrop="True" Drop="Window_Drop" DragOver="Window_DragOver">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="NekoManga (=^･ω･^=)">
+            <ui:TitleBar.Icon>
+                <ui:ImageIcon Source="pack://application:,,,/app.ico"/>
+            </ui:TitleBar.Icon>
+            <ui:TitleBar.Header>
+                <TextBlock x:Name="TxtVersion" VerticalAlignment="Center" Margin="8,0"
+                           Foreground="{StaticResource NekoHint}" FontSize="12"/>
+            </ui:TitleBar.Header>
+        </ui:TitleBar>
+
+        <!-- ── 기능 토글 카드 3장 + 실행 버튼 ── -->
+        <Grid Grid.Row="1" Margin="16,8,16,4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Style="{StaticResource NekoFeatureCard}" Margin="0,0,8,0">
+                <DockPanel>
+                    <ui:ToggleSwitch x:Name="SwColor" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                     Checked="Feature_Changed" Unchecked="Feature_Changed"/>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource CardTitle}" Text="🎨 자동 채색"/>
+                        <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,0"
+                                   Text="흑백 원고를 AI가 풀컬러로"/>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <Border Grid.Column="1" Style="{StaticResource NekoFeatureCard}" Margin="0,0,8,0">
+                <DockPanel>
+                    <ui:ToggleSwitch x:Name="SwDecensor" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                     Checked="Feature_Changed" Unchecked="Feature_Changed"/>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource CardTitle}" Text="🙈 검열 제거"/>
+                        <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,0"
+                                   Text="모자이크를 찾아 자연스럽게 복원"/>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <Border Grid.Column="2" Style="{StaticResource NekoFeatureCard}" Margin="0,0,8,0">
+                <DockPanel>
+                    <ui:ToggleSwitch x:Name="SwTranslate" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                     Checked="Feature_Changed" Unchecked="Feature_Changed"/>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource CardTitle}" Text="💬 번역"/>
+                        <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,0"
+                                   Text="말풍선을 읽고 한국어로 식자까지"/>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <StackPanel Grid.Column="3" VerticalAlignment="Center">
+                <ui:Button x:Name="BtnRun" Click="BtnRun_Click" Appearance="Primary"
+                           FontWeight="Bold" FontSize="15" Padding="22,12"
+                           Content="✦ 시작! (ﾉ´ヮ`)ﾉ*:･ﾟ✧"/>
+                <ui:Button x:Name="BtnStop" Click="BtnStop_Click" IsEnabled="False"
+                           Margin="0,6,0,0" Padding="22,6" HorizontalAlignment="Stretch"
+                           Content="멈추기"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- ── 파일 목록 / 드롭존 ── -->
+        <Grid Grid.Row="2" Margin="16,8">
+            <Border x:Name="DropHint" Background="{StaticResource NekoCard}"
+                    BorderBrush="{StaticResource NekoStroke}" BorderThickness="2"
+                    CornerRadius="16" Visibility="Visible">
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <TextBlock Text="(=^･ω･^=)つ" FontSize="44" HorizontalAlignment="Center"
+                               Foreground="{StaticResource NekoPinkSoft}"/>
+                    <TextBlock Text="만화 이미지나 폴더를 여기에 끌어다 놓으세요" FontSize="16"
+                               Margin="0,14,0,0" HorizontalAlignment="Center"
+                               Foreground="{StaticResource NekoText}"/>
+                    <TextBlock Text="png · jpg · webp 지원" Style="{StaticResource HintText}"
+                               Margin="0,6,0,0" HorizontalAlignment="Center"/>
+                    <ui:Button Content="파일 고르기" Click="BtnPick_Click" Margin="0,16,0,0"
+                               HorizontalAlignment="Center" Padding="18,8"/>
+                </StackPanel>
+            </Border>
+
+            <ListView x:Name="FileList" Visibility="Collapsed" Background="Transparent"
+                      BorderThickness="0" SelectionMode="Extended">
+                <ListView.View>
+                    <GridView>
+                        <GridViewColumn Header="파일" Width="420" DisplayMemberBinding="{Binding Name}"/>
+                        <GridViewColumn Header="상태" Width="300" DisplayMemberBinding="{Binding Stage}"/>
+                        <GridViewColumn Header="진행" Width="140">
+                            <GridViewColumn.CellTemplate>
+                                <DataTemplate>
+                                    <ProgressBar Value="{Binding Percent}" Minimum="0" Maximum="100"
+                                                 Height="8" Width="120" Foreground="{StaticResource NekoPink}"/>
+                                </DataTemplate>
+                            </GridViewColumn.CellTemplate>
+                        </GridViewColumn>
+                    </GridView>
+                </ListView.View>
+            </ListView>
+        </Grid>
+
+        <!-- ── 하단 바 ── -->
+        <Border Grid.Row="3" Padding="16,10" BorderThickness="0,1,0,0"
+                BorderBrush="{StaticResource NekoStroke}">
+            <DockPanel>
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                    <ui:Button Content="⚙ 설정" Click="BtnSettings_Click" Padding="14,6"/>
+                    <ui:Button Content="📂 결과 폴더" Click="BtnOpenOutput_Click" Padding="14,6" Margin="8,0,0,0"/>
+                    <ui:Button x:Name="BtnClear" Content="목록 비우기" Click="BtnClear_Click" Padding="14,6" Margin="8,0,0,0"/>
+                    <ui:Button x:Name="BtnUpdate" Content="🎀 새 버전!" Click="BtnUpdate_Click"
+                               Appearance="Caution" Padding="14,6" Margin="8,0,0,0" Visibility="Collapsed"/>
+                </StackPanel>
+                <TextBlock x:Name="TxtStatus" DockPanel.Dock="Right" VerticalAlignment="Center"
+                           Foreground="{StaticResource NekoHint}" Text="준비 완료 ♪"/>
+                <Border/>
+            </DockPanel>
+        </Border>
+    </Grid>
+</ui:FluentWindow>
