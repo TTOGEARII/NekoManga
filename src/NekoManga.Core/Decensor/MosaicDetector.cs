@@ -143,8 +143,11 @@ public static class MosaicDetector
                 int bh = stats.At<int>(li, (int)ConnectedComponentsTypes.Height);
                 var br = new Rect(bx, by, bw, bh);
 
-                // ④ 가장자리에 닿으면 페이지 여백·패널 간격이다
-                if (br.X <= 1 || br.Y <= 1 || br.Right >= img.Cols - 1 || br.Bottom >= img.Rows - 1) continue;
+                // ④ 가장자리에 닿아도 작으면 봐준다 — 페이지 여백·패널 간격은 이미지의 거의 전체
+                // 폭/높이를 차지하지만, 화면 끝에 걸친 검열 막대는 한 조각일 뿐이다
+                // (실측: 하단 끝까지 이어진 흰 줄무늬 검열이 이 규칙에 걸려 하나만 남았었다).
+                bool edge = br.X <= 1 || br.Y <= 1 || br.Right >= img.Cols - 1 || br.Bottom >= img.Rows - 1;
+                if (edge && (bw >= img.Cols * 0.4 || bh >= img.Rows * 0.4)) continue;
 
                 // 말풍선 등 제외 영역과 겹치면 버린다
                 if (excludeRects != null && excludeRects.Any(e => (e & br).Width > 0 && (e & br).Height > 0))
