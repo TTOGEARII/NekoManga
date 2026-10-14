@@ -107,20 +107,30 @@
             </DockPanel>
         </Border>
 
+        <!-- 원고 작업대: 격자 작업판 위에 원고(그림자·먹선)를 올려 둔 느낌 -->
         <Border Background="{DynamicResource NekoCanvas}" CornerRadius="0" Margin="16,0,16,0" ClipToBounds="True"
                 BorderBrush="{StaticResource NekoStroke}" BorderThickness="2">
-            <ScrollViewer x:Name="Scroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
-                          PreviewMouseWheel="Scroller_PreviewMouseWheel">
-                <Grid x:Name="ImageHost" HorizontalAlignment="Center" VerticalAlignment="Center"
-                      MouseLeftButtonDown="Host_LeftClick" MouseRightButtonDown="Host_RightClick"
-                      MouseDown="Host_MouseDown" MouseUp="Host_MouseUp"
-                      MouseMove="Host_MouseMove" Background="Transparent" Cursor="Cross">
-                    <Image x:Name="ImgView" Stretch="Fill" SnapsToDevicePixels="True"/>
-                    <Canvas x:Name="Overlay" IsHitTestVisible="False"/>
-                    <!-- 식자 탭 WYSIWYG: 말풍선 자리에 실제 편집 가능한 텍스트박스를 띄운다 -->
-                    <Canvas x:Name="EditLayer" Visibility="Collapsed"/>
-                </Grid>
-            </ScrollViewer>
+            <Grid>
+                <Rectangle Fill="{DynamicResource MangaGrid}" IsHitTestVisible="False"/>
+                <ScrollViewer x:Name="Scroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                              PreviewMouseWheel="Scroller_PreviewMouseWheel" Padding="20">
+                    <!-- 원고 그림자 + 먹선 틀. 안쪽 ImageHost는 좌표 기준이라 구조를 안 바꾼다 -->
+                    <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Border Background="{DynamicResource NekoStroke}" Opacity="0.22" Margin="7,7,-7,-7"/>
+                        <Border BorderBrush="{DynamicResource NekoStroke}" BorderThickness="1.5" Background="{DynamicResource NekoBg}">
+                            <Grid x:Name="ImageHost" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                  MouseLeftButtonDown="Host_LeftClick" MouseRightButtonDown="Host_RightClick"
+                                  MouseDown="Host_MouseDown" MouseUp="Host_MouseUp"
+                                  MouseMove="Host_MouseMove" Background="Transparent" Cursor="Cross">
+                                <Image x:Name="ImgView" Stretch="Fill" SnapsToDevicePixels="True"/>
+                                <Canvas x:Name="Overlay" IsHitTestVisible="False"/>
+                                <!-- 식자 탭 WYSIWYG: 말풍선 자리에 실제 편집 가능한 텍스트박스를 띄운다 -->
+                                <Canvas x:Name="EditLayer" Visibility="Collapsed"/>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </ScrollViewer>
+            </Grid>
         </Border>
     </DockPanel>
 </ui:FluentWindow>

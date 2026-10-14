@@ -108,30 +108,53 @@
                 <Setter Property="HorizontalContentAlignment" Value="Left"/>
             </Style>
 
-            <!-- 설정 탭 (WPF-UI 다크에서 BasedOn 쓰면 밝은 테마가 끌려오므로 직접 템플릿) -->
+            <!-- 설정 탭 (WPF-UI 다크에서 BasedOn 쓰면 밝은 테마가 끌려오므로 직접 템플릿).
+                 탭 줄(헤더)과 내용 영역을 시각적으로 분리 — 내용은 먹선 두른 원고 패널 안에. -->
             <Style TargetType="TabControl">
                 <Setter Property="Background" Value="Transparent"/>
                 <Setter Property="BorderThickness" Value="0"/>
-                <Setter Property="Padding" Value="0,8,0,0"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="TabControl">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <!-- 탭 줄 -->
+                                <TabPanel Grid.Row="0" IsItemsHost="True" Margin="0,0,0,-2" Panel.ZIndex="1"/>
+                                <!-- 내용 패널: 탭과 붙어 보이게 위 테두리까지 먹선, 안쪽은 종이 -->
+                                <Border Grid.Row="1" Background="{DynamicResource NekoCard}"
+                                        BorderBrush="{DynamicResource NekoStroke}" BorderThickness="2"
+                                        CornerRadius="0">
+                                    <ContentPresenter ContentSource="SelectedContent" Margin="6"/>
+                                </Border>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
             </Style>
+            <!-- 서류철 탭: 평소 흰 바탕+먹선, 선택 시 먹색으로 채워 '뽑혀 나온 탭'처럼 보인다 -->
             <Style TargetType="TabItem">
-                <Setter Property="Foreground" Value="{DynamicResource NekoHint}"/>
+                <Setter Property="Foreground" Value="{DynamicResource NekoText}"/>
                 <Setter Property="FontSize" Value="13.5"/>
+                <Setter Property="Margin" Value="0,0,4,0"/>
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="TabItem">
-                            <Border x:Name="Bd" Background="Transparent" CornerRadius="0" Margin="2,0" Padding="18,8">
+                            <Border x:Name="Bd" Background="{DynamicResource NekoBg}"
+                                    BorderBrush="{DynamicResource NekoStroke}" BorderThickness="2"
+                                    CornerRadius="0" Padding="16,7">
                                 <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="Bd" Property="Background" Value="#20808080"/>
-                                    <Setter Property="Foreground" Value="{DynamicResource NekoPinkSoft}"/>
+                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource NekoCardHover}"/>
                                 </Trigger>
                                 <Trigger Property="IsSelected" Value="True">
-                                    <Setter TargetName="Bd" Property="Background" Value="#2E808080"/>
-                                    <Setter Property="Foreground" Value="{DynamicResource NekoPinkSoft}"/>
-                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource NekoStroke}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource NekoBg}"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
                                 </Trigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>
