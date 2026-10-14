@@ -19,11 +19,20 @@
 [Releases](https://github.com/TTOGEARII/NekoManga/releases/latest)에서 `NekoManga-win-Setup.exe`를 받아 실행하세요.
 설치 후 앱이 새 버전을 자동으로 감지해 업데이트 버튼을 띄웁니다.
 
-### 요구 사항
+### PC 사양
 
-- Windows 10/11 64비트
-- NVIDIA GPU (VRAM 8GB 권장)
-- 디스크 여유 공간 15GB (AI 모델)
+| | 최소 (번역·식자·기본 검열제거) | 권장 (채색·강력 검열제거까지) |
+|---|---|---|
+| OS | Windows 10 64비트 | Windows 10/11 64비트 |
+| CPU | 쿼드코어 이상 | 6코어 이상 |
+| RAM | 8GB | **32GB** (엔진 모델 캐시가 최대 ~17GB — 16GB면 설정 → 엔진에서 "꺼두지 않기" 해제) |
+| GPU | 없어도 동작 (DirectX 12 GPU 있으면 가속) | **NVIDIA VRAM 8GB 이상** (RTX 2070 SUPER에서 검증) |
+| 디스크 | 2GB (내장 모델 0.8GB) | **25GB 이상** (ComfyUI + SDXL·ControlNet·IPAdapter 모델 약 20GB) |
+| 인터넷 | 최초 모델 다운로드 시 필요 | 최초 약 15GB 다운로드 |
+
+실측 처리 속도 (RTX 2070 SUPER, 1.5MP 기준): 번역+식자 페이지당 ~15초,
+검열제거(엔진 LaMa) ~15초, 자동 채색 ~2분 30초.
+VRAM 8GB에서는 해상도 상한 1.5MP를 유지하세요 (설정 기본값).
 
 ## 사용법
 
