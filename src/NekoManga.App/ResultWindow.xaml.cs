@@ -20,6 +20,8 @@ using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using TextRenderer = NekoManga.Core.Pipeline.TextRenderer;
 using TextBox = System.Windows.Controls.TextBox;
 using FontFamily = System.Windows.Media.FontFamily;
+using Cursors = System.Windows.Input.Cursors;
+using HorizontalAlignment = System.Windows.HorizontalAlignment;
 using MessageBox = System.Windows.MessageBox;
 
 namespace NekoManga.App;
@@ -179,10 +181,12 @@ public partial class ResultWindow
         if (_syncingBlockUi || CmbBlocks.SelectedIndex < 0) return;
         int i = CmbBlocks.SelectedIndex;
         _letterBlocks[i] = _letterBlocks[i] with { Translation = TxtBlockText.Text };
-        // 캔버스 위 텍스트박스에도 즉시 반영
+        // 캔버스 위 텍스트박스에도 즉시 반영 (박스는 Grid 컨테이너 안에 있다)
         foreach (var child in EditLayer.Children)
-            if (child is TextBox tb && tb.Tag is int idx && idx == i && tb.Text != TxtBlockText.Text)
-            { _syncingBlockUi = true; tb.Text = TxtBlockText.Text; _syncingBlockUi = false; }
+            if (child is Grid host && host.Tag is int idx && idx == i)
+                foreach (var inner in host.Children)
+                    if (inner is TextBox tb && tb.Text != TxtBlockText.Text)
+                    { _syncingBlockUi = true; tb.Text = TxtBlockText.Text; _syncingBlockUi = false; }
     }
 
     private void BtnBlockHide_Click(object sender, RoutedEventArgs e)
@@ -293,28 +297,24 @@ public partial class ResultWindow
         double bs = (double)_baseImg.Width / Math.Max(1, _sidecar.SrcW);   // 원본 → 결과 좌표
         var style = LetterStyle();
         var family = new FontFamily(style.LetterFontFamily);
+        // 파이프라인과 동일: 페이지 공통 글자 크기 (중앙값)
+        float px = TextRenderer.UniformSize(_letterBlocks, bs, style);
 
         for (int i = 0; i < _letterBlocks.Count; i++)
         {
             var b = _letterBlocks[i];
-            double w = (b.X2 - b.X1) * bs * _scale, h = (b.Y2 - b.Y1) * bs * _scale;
-            if (w < 8 || h < 8) continue;
 
-            // 파이프라인과 같은 규칙으로 풍선 폭·글자 크기를 추정한다 (높이 넘침 축소는 근사 생략)
+            // 자동 폭 넓히기(세로 블록)는 렌더와 같은 규칙으로 — 손으로 잡은 블록은 그대로
             var rect = new System.Drawing.RectangleF(
                 (float)(b.X1 * bs), (float)(b.Y1 * bs),
                 (float)((b.X2 - b.X1) * bs), (float)((b.Y2 - b.Y1) * bs));
-            if (b.Vertical) rect = TextRenderer.WidenToBubble(_baseImg, rect);
-            float px = TextRenderer.StartSize(b, rect,
-                (float)(b.FontSize * bs * Math.Clamp(style.LetterSizeScale, 0.3, 3.0)));
-            w = rect.Width * _scale;
-            h = rect.Height * _scale;
+            if (b.Vertical && !b.ManualRect) rect = TextRenderer.WidenToBubble(_baseImg, rect);
+            double w = rect.Width * _scale, h = rect.Height * _scale;
+            if (w < 8 || h < 8) continue;
 
             var tb = new TextBox
             {
-                Width = w, Height = h,
                 Text = b.Translation,
-                Tag = i,
                 TextWrapping = TextWrapping.Wrap,
                 TextAlignment = TextAlignment.Center,
                 VerticalContentAlignment = VerticalAlignment.Center,
@@ -329,17 +329,67 @@ public partial class ResultWindow
                 Padding = new Thickness(0),
             };
             tb.TextChanged += LetterBox_TextChanged;
+
+            // 포토샵처럼 옮기고(위 손잡이) 늘리는(오른쪽 아래 모서리) 컨테이너
+            var host = new Grid { Width = w, Height = h, Tag = i };
+            host.Children.Add(tb);
+
+            var move = new System.Windows.Controls.Primitives.Thumb
+            {
+                Height = 10, VerticalAlignment = VerticalAlignment.Top,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Cursor = Cursors.SizeAll, Opacity = 0.55,
+                Background = Brushes.DeepSkyBlue,
+            };
+            move.DragDelta += (s, a) =>
+            {
+                Canvas.SetLeft(host, Canvas.GetLeft(host) + a.HorizontalChange);
+                Canvas.SetTop(host, Canvas.GetTop(host) + a.VerticalChange);
+            };
+            move.DragCompleted += (s, a) => CommitBoxRect(host);
+            host.Children.Add(move);
+
+            var size = new System.Windows.Controls.Primitives.Thumb
+            {
+                Width = 12, Height = 12,
+                VerticalAlignment = VerticalAlignment.Bottom, HorizontalAlignment = HorizontalAlignment.Right,
+                Cursor = Cursors.SizeNWSE, Opacity = 0.75,
+                Background = Brushes.HotPink,
+            };
+            size.DragDelta += (s, a) =>
+            {
+                host.Width = Math.Max(24, host.Width + a.HorizontalChange);
+                host.Height = Math.Max(20, host.Height + a.VerticalChange);
+            };
+            size.DragCompleted += (s, a) => CommitBoxRect(host);
+            host.Children.Add(size);
+
+            tb.Tag = i;
             tb.GotKeyboardFocus += (s, _) =>
             {
                 if (s is TextBox box && box.Tag is int idx && idx < CmbBlocks.Items.Count)
                 { _syncingBlockUi = true; CmbBlocks.SelectedIndex = idx; TxtBlockText.Text = box.Text; _syncingBlockUi = false; }
             };
-            tb.Width = w;
-            tb.Height = h;
-            Canvas.SetLeft(tb, rect.X * _scale);
-            Canvas.SetTop(tb, rect.Y * _scale);
-            EditLayer.Children.Add(tb);
+
+            Canvas.SetLeft(host, rect.X * _scale);
+            Canvas.SetTop(host, rect.Y * _scale);
+            EditLayer.Children.Add(host);
         }
+    }
+
+    /// <summary>옮기거나 늘린 박스의 화면 좌표를 원본 좌표로 되돌려 블록에 저장한다.
+    /// ManualRect가 켜져 이후 렌더에서 자동 폭 넓히기를 건너뛰고 이 좌표 그대로 식자된다.</summary>
+    private void CommitBoxRect(Grid host)
+    {
+        if (_sidecar == null || _baseImg == null || host.Tag is not int i || i >= _letterBlocks.Count) return;
+        double bs = (double)_baseImg.Width / Math.Max(1, _sidecar.SrcW);
+        double toSrc = 1.0 / (bs * _scale);
+        int x1 = (int)Math.Round(Canvas.GetLeft(host) * toSrc);
+        int y1 = (int)Math.Round(Canvas.GetTop(host) * toSrc);
+        int x2 = x1 + (int)Math.Round(host.Width * toSrc);
+        int y2 = y1 + (int)Math.Round(host.Height * toSrc);
+        _letterBlocks[i] = _letterBlocks[i] with { X1 = x1, Y1 = y1, X2 = x2, Y2 = y2, ManualRect = true };
+        TxtStatus.Text = "블록 위치·크기를 조정했어요 — [다시 식자]로 반영하세요";
     }
 
     private void LetterBox_TextChanged(object sender, TextChangedEventArgs e)

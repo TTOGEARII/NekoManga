@@ -2,14 +2,17 @@ using OpenCvSharp;
 
 namespace NekoManga.Core.Engine;
 
-/// <summary>번역된 말풍선 하나 (원본 이미지 좌표).</summary>
+/// <summary>번역된 말풍선 하나 (원본 이미지 좌표).
+/// ManualRect: 결과 보기 창에서 사용자가 위치·크기를 손으로 조정했음 —
+/// 식자 때 말풍선 폭 자동 측정(WidenToBubble)을 건너뛰고 이 좌표를 그대로 쓴다.</summary>
 public record TextBlockInfo(
     int X1, int Y1, int X2, int Y2,
     string SourceText,
     string Translation,
     double FontSize,
     bool Vertical,
-    string FontColorHex);
+    string FontColorHex,
+    bool ManualRect = false);
 
 public record PageTranslation(string InpaintedPath, IReadOnlyList<TextBlockInfo> Blocks);
 

@@ -43,6 +43,10 @@ public static class TextRenderer
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
 
+        // 페이지 안 모든 말풍선은 같은 글자 크기를 쓴다 — 풍선마다 제각각이면 지저분해 보인다.
+        // 블록별로는 넘칠 때만 DrawFitted가 그 블록에 한해 줄인다.
+        float uniformSize = UniformSize(blocks, Math.Min(scaleX, scaleY), settings);
+
         foreach (var b in blocks)
         {
             var rect = new RectangleF(
@@ -53,7 +57,8 @@ public static class TextRenderer
             // 세로쓰기 블록은 CTD가 '글자 기둥'만 잡아 폭이 아주 좁다(실측 26px짜리도 있다).
             // 그 폭 안에서는 한국어를 가로로 눕힐 수 없으므로, 원고에서 말풍선의 실제 흰 폭을
             // 재서 블록을 가로로 넓힌다 — 그래야 "진짜네..."가 세로 한 자씩이 아니라 가로로 읽힌다.
-            if (b.Vertical) rect = WidenToBubble(mat, rect);
+            // 단, 사용자가 결과 보기 창에서 손으로 잡은 블록(ManualRect)은 그 좌표를 존중한다.
+            if (b.Vertical && !b.ManualRect) rect = WidenToBubble(mat, rect);
 
             // 말풍선은 대개 타원이라 블록(사각형) 가장자리까지 글자를 채우면 테두리에 닿는다 — 약간 안쪽으로.
             rect.Inflate(-rect.Width * 0.05f, -rect.Height * 0.03f);
@@ -62,9 +67,7 @@ public static class TextRenderer
             var color = string.IsNullOrWhiteSpace(settings.LetterColorHex)
                 ? ParseColor(b.FontColorHex)
                 : ParseColor(settings.LetterColorHex);
-            float scaledOcr = (float)(b.FontSize * Math.Min(scaleX, scaleY)
-                * Math.Clamp(settings.LetterSizeScale, 0.3, 3.0));
-            DrawFitted(g, b.Translation, rect, StartSize(b, rect, scaledOcr), color, settings);
+            DrawFitted(g, b.Translation, rect, uniformSize, color, settings);
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
@@ -105,18 +108,14 @@ public static class TextRenderer
         return new RectangleF(nx, r.Y, Math.Min(newW, img.Cols - nx), r.Height);
     }
 
-    /// <summary>말풍선별 시작 글자 크기 — 풍선 모양에 맞춰 각자 정해진다 (DrawFitted가 넘치면 더 줄인다).
-    ///
-    /// 일본식 세로 말풍선(원문이 세로쓰기)은 좁고 길어서, 원문 크기 그대로 한국어를 가로로 넣으면
-    /// 한 줄에 1자씩 세로로 쌓여 가독성이 나쁘다. 그래서 세로 풍선은 **풍선 폭을 상한**으로 쓴다:
-    /// 한 줄에 두 글자 이상 들어가는 크기(폭/2.2)를 넘지 않는다 — 짧은 대사든 긴 대사든 가로로 읽힌다.
-    /// 가로 풍선은 원문 크기 추정이 믿을 만해 그대로 쓴다. OCR 크기도 풍선 폭도 블록마다 다르므로
-    /// 결과적으로 말풍선마다 글자 크기가 제각각으로 맞춰진다.</summary>
-    public static float StartSize(TextBlockInfo b, RectangleF rect, float scaledOcrSize)
+    /// <summary>페이지 공통 글자 크기 — 블록별 OCR 추정 크기의 **중앙값** × 사용자 배율.
+    /// 평균 대신 중앙값: 효과음같이 유난히 큰/작은 블록 하나가 전체 크기를 끌고 가지 않게.</summary>
+    public static float UniformSize(IReadOnlyList<TextBlockInfo> blocks, double scale, AppSettings settings)
     {
-        if (b.Vertical)
-            return Math.Max(9, Math.Min(rect.Width / 2.2f, scaledOcrSize));
-        return Math.Max(9, scaledOcrSize);
+        if (blocks.Count == 0) return 16;
+        var sizes = blocks.Select(b => b.FontSize).OrderBy(s => s).ToList();
+        double median = sizes[sizes.Count / 2];
+        return (float)Math.Max(9, median * scale * Math.Clamp(settings.LetterSizeScale, 0.3, 3.0));
     }
 
     /// <summary>OpenCV Mat(BGR 8UC3) → GDI+ Bitmap(24bppRgb). 행 단위로 복사한다 (stride가 다름).</summary>
