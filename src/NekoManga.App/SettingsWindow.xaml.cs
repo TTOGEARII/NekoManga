@@ -40,6 +40,16 @@ public partial class SettingsWindow
         SelectComboByTag(CmbTranslator, s.TranslateEngine);
         SelectComboByTag(CmbSource, s.TranslateSource);
         SelectComboByTag(CmbTarget, s.TranslateTarget);
+
+        // 식자 글꼴: 설치된 글꼴 목록을 채우고 현재 값을 고른다 (편집 가능 — 직접 입력도 됨)
+        foreach (var f in System.Drawing.FontFamily.Families.Select(f => f.Name).OrderBy(n => n))
+            CmbLetterFont.Items.Add(f);
+        CmbLetterFont.Text = s.LetterFontFamily;
+        ChkLetterBold.IsChecked = s.LetterBold;
+        TxtLetterSize.Text = s.LetterSizeScale.ToString(CultureInfo.InvariantCulture);
+        TxtLetterColor.Text = s.LetterColorHex;
+        TxtLetterOutline.Text = s.LetterOutlineScale.ToString(CultureInfo.InvariantCulture);
+        TxtLetterOutlineColor.Text = s.LetterOutlineColorHex;
         TxtDeepLKey.Text = s.DeepLApiKey;
         TxtDeepSeekKey.Text = s.DeepSeekApiKey;
         SetComboText(CmbDeepSeekModel, s.DeepSeekModel, TranslatorFactory.DeepSeekDefaultModel);
@@ -92,6 +102,13 @@ public partial class SettingsWindow
         s.GrokApiKey = TxtGrokKey.Text.Trim();
         s.GrokModel = (CmbGrokModel.Text ?? "").Trim();
 
+        if (!string.IsNullOrWhiteSpace(CmbLetterFont.Text)) s.LetterFontFamily = CmbLetterFont.Text.Trim();
+        s.LetterBold = ChkLetterBold.IsChecked == true;
+        s.LetterSizeScale = ParseD(TxtLetterSize.Text, s.LetterSizeScale, 0.3, 3.0);
+        s.LetterColorHex = NormalizeHex(TxtLetterColor.Text);
+        s.LetterOutlineScale = ParseD(TxtLetterOutline.Text, s.LetterOutlineScale, 0, 4.0);
+        s.LetterOutlineColorHex = NormalizeHex(TxtLetterOutlineColor.Text, "#FFFFFF");
+
         s.OutputRoot = TxtOutputRoot.Text.Trim();
         s.LinkedComfyRoot = TxtLinkedComfy.Text.Trim();
         s.CivitaiApiKey = TxtCivitaiKey.Text.Trim();
@@ -122,6 +139,15 @@ public partial class SettingsWindow
         foreach (ComboBoxItem it in cmb.Items)
             if ((string?)it.Tag == tag) { cmb.SelectedItem = it; return; }
         if (cmb.Items.Count > 0) cmb.SelectedIndex = 0;
+    }
+
+    /// <summary>"#RRGGBB"만 통과시키고 아니면 fallback (빈 값 허용 = 자동).</summary>
+    private static string NormalizeHex(string text, string fallback = "")
+    {
+        var t = text.Trim();
+        if (t.Length == 0) return fallback == "" ? "" : fallback;
+        if (!t.StartsWith('#')) t = "#" + t;
+        return t.Length == 7 && t[1..].All(Uri.IsHexDigit) ? t.ToUpperInvariant() : fallback;
     }
 
     private static string ComboTag(ComboBox cmb, string fallback) =>

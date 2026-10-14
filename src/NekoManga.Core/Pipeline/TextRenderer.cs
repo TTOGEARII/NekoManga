@@ -20,8 +20,9 @@ namespace NekoManga.Core.Pipeline;
 public static class TextRenderer
 {
     public static void RenderBlocks(string imagePath, string sourceSizeRefPath,
-        IReadOnlyList<TextBlockInfo> blocks, string outPath)
+        IReadOnlyList<TextBlockInfo> blocks, string outPath, AppSettings? settings = null)
     {
+        settings ??= new AppSettings();
         using var mat = ImgIo.Read(imagePath, ImreadModes.Color);
         if (mat.Empty())
             throw new InvalidDataException($"이미지를 읽지 못했어요: {Path.GetFileName(imagePath)}");
@@ -49,10 +50,14 @@ public static class TextRenderer
                 (float)((b.X2 - b.X1) * scaleX), (float)((b.Y2 - b.Y1) * scaleY));
             if (rect.Width < 4 || rect.Height < 4) continue;
 
-            var color = ParseColor(b.FontColorHex);
-            float fontSize = (float)Math.Max(9, b.FontSize * Math.Min(scaleX, scaleY));
+            // 글자 색: 설정에 지정돼 있으면 그 색, 비어 있으면 원문 색을 따라간다
+            var color = string.IsNullOrWhiteSpace(settings.LetterColorHex)
+                ? ParseColor(b.FontColorHex)
+                : ParseColor(settings.LetterColorHex);
+            float fontSize = (float)Math.Max(9,
+                b.FontSize * Math.Min(scaleX, scaleY) * Math.Clamp(settings.LetterSizeScale, 0.3, 3.0));
 
-            DrawFitted(g, b.Translation, rect, fontSize, color);
+            DrawFitted(g, b.Translation, rect, fontSize, color, settings);
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
@@ -102,7 +107,8 @@ public static class TextRenderer
         return mat;
     }
 
-    private static void DrawFitted(Graphics g, string text, RectangleF rect, float startSize, Color color)
+    private static void DrawFitted(Graphics g, string text, RectangleF rect, float startSize, Color color,
+        AppSettings s)
     {
         var fmt = new StringFormat
         {
@@ -111,24 +117,49 @@ public static class TextRenderer
             Trimming = StringTrimming.None,
         };
 
+        var style = s.LetterBold ? FontStyle.Bold : FontStyle.Regular;
+        var family = ResolveFamily(s.LetterFontFamily, style);
+        // 일부 글꼴은 Regular/Bold 중 한쪽만 있다 — 없는 스타일로 Font를 만들면 던지므로 보정한다
+        if (!family.IsStyleAvailable(style))
+            style = family.IsStyleAvailable(FontStyle.Bold) ? FontStyle.Bold : FontStyle.Regular;
+
         // 세로쓰기 원문도 한국어는 가로로 그린다 (국내 식자 관행).
         for (float size = startSize; size >= 9; size -= 1.5f)
         {
-            using var font = new Font("Malgun Gothic", size, FontStyle.Bold, GraphicsUnit.Pixel);
+            using var font = new Font(family, size, style, GraphicsUnit.Pixel);
             var measured = g.MeasureString(text, font, (int)rect.Width, fmt);
             if (measured.Height <= rect.Height + 2 || size <= 9)
             {
-                // 흰 외곽선(halo)으로 어떤 배경에서도 읽히게 한다.
+                // 외곽선(halo)으로 어떤 배경에서도 읽히게 한다.
                 using var path = new GraphicsPath();
-                path.AddString(text, font.FontFamily, (int)font.Style, size, rect, fmt);
-                using var halo = new Pen(Color.White, Math.Max(2.5f, size / 7f)) { LineJoin = LineJoin.Round };
-                g.DrawPath(halo, path);
+                path.AddString(text, family, (int)style, size, rect, fmt);
+                if (s.LetterOutlineScale > 0)
+                {
+                    float w = (float)(Math.Max(2.5f, size / 7f) * Math.Clamp(s.LetterOutlineScale, 0, 4));
+                    using var halo = new Pen(ParseColor(s.LetterOutlineColorHex, Color.White), w)
+                        { LineJoin = LineJoin.Round };
+                    g.DrawPath(halo, path);
+                }
                 using var brush = new SolidBrush(color);
                 g.FillPath(brush, path);
                 return;
             }
         }
     }
+
+    /// <summary>설정의 글꼴 이름을 FontFamily로. 미설치 이름이면 Malgun Gothic → GenericSansSerif 순으로 대체.</summary>
+    private static FontFamily ResolveFamily(string name, FontStyle style)
+    {
+        try { return new FontFamily(name); }
+        catch
+        {
+            try { return new FontFamily("Malgun Gothic"); }
+            catch { return FontFamily.GenericSansSerif; }
+        }
+    }
+
+    private static Color ParseColor(string hex, Color fallback) =>
+        hex.StartsWith('#') && hex.Length == 7 ? ParseColor(hex) : fallback;
 
     private static Color ParseColor(string hex)
     {

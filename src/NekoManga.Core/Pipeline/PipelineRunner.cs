@@ -128,7 +128,7 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                 if (blocks.Count > 0)
                 {
                     progress.Report(new(name, "식자 중", 92));
-                    TextRenderer.RenderBlocks(work, file, blocks, outPath);
+                    TextRenderer.RenderBlocks(work, file, blocks, outPath, settings);
                 }
                 else if (work == file)
                 {

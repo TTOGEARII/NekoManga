@@ -82,6 +82,20 @@ public class AppSettings
     /// <summary>비우면 기본 모델(grok-4-fast).</summary>
     public string GrokModel { get; set; } = "";
 
+    // ── 식자 (말풍선에 그리는 번역문 — BT의 lettering 설정에서 핵심만) ──
+    /// <summary>글꼴 이름. 설치 안 된 이름이면 GDI+가 기본 글꼴로 대체한다.</summary>
+    public string LetterFontFamily { get; set; } = "Malgun Gothic";
+    /// <summary>굵게.</summary>
+    public bool LetterBold { get; set; } = true;
+    /// <summary>글자 크기 배율. OCR이 추정한 원문 크기에 곱한다 (1.0 = 원문 크기 그대로).</summary>
+    public double LetterSizeScale { get; set; } = 1.0;
+    /// <summary>글자 색 "#RRGGBB". 비우면 자동 — 원문 글자 색을 따라간다.</summary>
+    public string LetterColorHex { get; set; } = "";
+    /// <summary>외곽선(halo) 색. 어떤 배경에서도 읽히게 글자 둘레에 두른다.</summary>
+    public string LetterOutlineColorHex { get; set; } = "#FFFFFF";
+    /// <summary>외곽선 두께 배율. 0이면 외곽선 없음 (1.0 = 글자 크기의 1/7 정도).</summary>
+    public double LetterOutlineScale { get; set; } = 1.0;
+
     // ── 기타 ──────────────────────────────────────────────────
     /// <summary>civitai 모델(채색 체크포인트) 다운로드용 API 키. 로그인 필요 모델 대비 (선택).</summary>
     public string CivitaiApiKey { get; set; } = "";

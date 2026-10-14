@@ -50,7 +50,7 @@ public static class SelfTest
             File.Copy(result.InpaintedPath, stem + ".selftest.inpainted.png", true);
 
             // 3) 식자
-            TextRenderer.RenderBlocks(result.InpaintedPath, imagePath, result.Blocks, stem + ".selftest.final.png");
+            TextRenderer.RenderBlocks(result.InpaintedPath, imagePath, result.Blocks, stem + ".selftest.final.png", settings);
             L("식자 완료 → .selftest.final.png");
 
             // 4) 검열제거(기본) — 마스크가 잡히면

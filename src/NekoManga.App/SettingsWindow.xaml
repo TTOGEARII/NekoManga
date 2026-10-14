@@ -139,6 +139,7 @@
 
             <!-- ── 번역 ── -->
             <TabItem Header="💬 번역">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="8">
                     <TextBlock Style="{StaticResource SectionTitle}" Text="번역 엔진"/>
                     <ComboBox x:Name="CmbTranslator" Width="300" HorizontalAlignment="Left"
@@ -212,7 +213,38 @@
                     </UniformGrid>
                     <TextBlock Style="{StaticResource HintText}" Margin="0,8,0,0"
                                Text="글자 인식(manga-ocr)이 일본어 특화라 원본 언어는 일본어만 지원해요. 감지→인식→번역→글자 지우기 전부 내장 AI로 처리돼서 따로 설치할 게 없어요."/>
+
+                    <TextBlock Style="{StaticResource SectionTitle}" Text="식자 — 말풍선 글자 모양"/>
+                    <DockPanel Margin="0,4">
+                        <TextBlock Text="글꼴" Style="{StaticResource FieldLabel}" Width="110"/>
+                        <ComboBox x:Name="CmbLetterFont" Width="240" HorizontalAlignment="Left" IsEditable="True"/>
+                        <CheckBox x:Name="ChkLetterBold" Content="굵게" Foreground="{StaticResource NekoText}"
+                                  VerticalAlignment="Center" Margin="14,0,0,0"/>
+                    </DockPanel>
+                    <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
+                        <DockPanel>
+                            <TextBlock Text="크기 배율" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <TextBox x:Name="TxtLetterSize" Width="70" HorizontalAlignment="Left"/>
+                        </DockPanel>
+                        <DockPanel>
+                            <TextBlock Text="글자 색" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <TextBox x:Name="TxtLetterColor" Width="110" HorizontalAlignment="Left"/>
+                        </DockPanel>
+                    </UniformGrid>
+                    <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
+                        <DockPanel>
+                            <TextBlock Text="외곽선 두께" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <TextBox x:Name="TxtLetterOutline" Width="70" HorizontalAlignment="Left"/>
+                        </DockPanel>
+                        <DockPanel>
+                            <TextBlock Text="외곽선 색" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <TextBox x:Name="TxtLetterOutlineColor" Width="110" HorizontalAlignment="Left"/>
+                        </DockPanel>
+                    </UniformGrid>
+                    <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,0"
+                               Text="크기 배율 1.0 = 원문 글자 크기 그대로 (말풍선을 넘치면 자동으로 줄어요). 글자 색은 #RRGGBB — 비우면 원문 색을 따라가요. 외곽선 두께 1.0 = 기본, 0 = 외곽선 없음. 외곽선 덕에 어두운 배경에서도 글자가 읽혀요."/>
                 </StackPanel>
+                </ScrollViewer>
             </TabItem>
 
             <!-- ── 구성요소 ── -->
