@@ -44,6 +44,24 @@ public static class Program
             return;
         }
 
+        // 워크플로 덤프 (원본 ComfyUI 셋팅과 대조 검증용): NekoManga.exe --dumpwf <출력.json>
+        var dumpIdx = Array.IndexOf(args, "--dumpwf");
+        if (dumpIdx >= 0 && dumpIdx + 1 < args.Length)
+        {
+            var s = NekoManga.Core.AppSettings.Load();
+            var all = new System.Text.Json.Nodes.JsonObject
+            {
+                ["autocolor"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildAutoColor(s, "IN.png", "OUT"),
+                ["autocolor_with_ref"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildAutoColor(s, "IN.png", "OUT", "REF.png"),
+                ["lama_decensor"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildLamaDecensor("IN.png", "OUT"),
+                ["strong_decensor"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildStrongDecensor(s, "IN.png", "OUT", 1234),
+                ["tag_extract"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildTagExtract(s, "IN.png"),
+            };
+            File.WriteAllText(args[dumpIdx + 1], all.ToJsonString(
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+            return;
+        }
+
         // 표지 색 태그 추출 확인용: NekoManga.exe --colorref <이미지> → <이미지>.colorref.txt
         var colorrefIdx = Array.IndexOf(args, "--colorref");
         if (colorrefIdx >= 0 && colorrefIdx + 1 < args.Length)
