@@ -8,7 +8,7 @@
         WindowBackdropType="None"
         WindowCornerPreference="Round"
         Icon="pack://application:,,,/app.ico"
-        Background="{StaticResource NekoBg}"
+        Background="{DynamicResource NekoBg}"
         AllowDrop="True" Drop="Window_Drop" DragOver="Window_DragOver">
     <Grid>
         <Grid.RowDefinitions>
@@ -17,10 +17,12 @@
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
+        <!-- 창 전체에 깔리는 은은한 톤망점 (원고 질감) -->
+        <Rectangle Fill="{DynamicResource MangaDots}" Grid.RowSpan="4" IsHitTestVisible="False"/>
 
-        <ui:TitleBar Grid.Row="0" Title="NekoManga (=^･ω･^=)">
+        <ui:TitleBar Grid.Row="0" Title="NekoManga">
             <ui:TitleBar.Icon>
-                <ui:ImageIcon Source="pack://application:,,,/app.ico"/>
+                <ui:ImageIcon Source="{StaticResource NekoLogo}"/>
             </ui:TitleBar.Icon>
             <ui:TitleBar.Header>
                 <TextBlock x:Name="TxtVersion" VerticalAlignment="Center" Margin="8,0"
@@ -44,7 +46,7 @@
                     <StackPanel>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Style="{StaticResource CardTitle}" Text="🎨 자동 채색"/>
-                            <Border x:Name="BadgeColor" Background="#33FFB020" CornerRadius="6"
+                            <Border x:Name="BadgeColor" Background="#33FFB020" CornerRadius="0"
                                     Padding="6,1" Margin="8,0,0,0" Visibility="Collapsed"
                                     ToolTip="이 기능은 ComfyUI가 필요해요 — 설정 → 구성요소에서 설치해 주세요 (약 11GB)">
                                 <TextBlock Text="⚠ ComfyUI 설치 필요" FontSize="10.5" Foreground="#FFCF6E"/>
@@ -63,7 +65,7 @@
                     <StackPanel>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Style="{StaticResource CardTitle}" Text="🙈 검열 제거"/>
-                            <Border x:Name="BadgeDecensor" Background="#33FFB020" CornerRadius="6"
+                            <Border x:Name="BadgeDecensor" Background="#33FFB020" CornerRadius="0"
                                     Padding="6,1" Margin="8,0,0,0" Visibility="Collapsed"
                                     ToolTip="강력 모드는 ComfyUI가 필요해요 — 기본 모드는 바로 쓸 수 있어요">
                                 <TextBlock Text="⚠ 강력 모드: ComfyUI 필요" FontSize="10.5" Foreground="#FFCF6E"/>
@@ -99,20 +101,24 @@
 
         <!-- ── 파일 목록 / 드롭존 ── -->
         <Grid Grid.Row="2" Margin="16,8">
-            <Border x:Name="DropHint" Background="{StaticResource NekoCard}"
+            <Border x:Name="DropHint" Background="{DynamicResource NekoCard}"
                     BorderBrush="{StaticResource NekoStroke}" BorderThickness="2"
-                    CornerRadius="16" Visibility="Visible">
-                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                    <TextBlock Text="(=^･ω･^=)つ" FontSize="44" HorizontalAlignment="Center"
-                               Foreground="{StaticResource NekoPinkSoft}"/>
-                    <TextBlock Text="만화 이미지나 폴더를 여기에 끌어다 놓으세요" FontSize="16"
-                               Margin="0,14,0,0" HorizontalAlignment="Center"
-                               Foreground="{StaticResource NekoText}"/>
-                    <TextBlock Text="png · jpg · webp 지원" Style="{StaticResource HintText}"
-                               Margin="0,6,0,0" HorizontalAlignment="Center"/>
-                    <ui:Button Content="파일 고르기" Click="BtnPick_Click" Margin="0,16,0,0"
-                               HorizontalAlignment="Center" Padding="18,8"/>
-                </StackPanel>
+                    CornerRadius="0" Visibility="Visible">
+                <Grid>
+                    <!-- 만화 원고 격자 + 톤망점 질감 (은은하게 겹침) -->
+                    <Rectangle Fill="{DynamicResource MangaDots}"/>
+                    <Rectangle Fill="{DynamicResource MangaGrid}"/>
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <Image Source="{StaticResource NekoLogo}" Width="96" Height="96" HorizontalAlignment="Center"/>
+                        <TextBlock Text="만화 이미지나 폴더를 여기에 끌어다 놓으세요" FontSize="16"
+                                   Margin="0,16,0,0" HorizontalAlignment="Center" FontWeight="SemiBold"
+                                   Foreground="{StaticResource NekoText}"/>
+                        <TextBlock Text="png · jpg · webp 지원" Style="{StaticResource HintText}"
+                                   Margin="0,6,0,0" HorizontalAlignment="Center"/>
+                        <ui:Button Content="파일 고르기" Click="BtnPick_Click" Margin="0,16,0,0"
+                                   HorizontalAlignment="Center" Padding="18,8"/>
+                    </StackPanel>
+                </Grid>
             </Border>
 
             <!-- 목록(썸네일 포함) + 고른 장의 큰 미리보기 -->
@@ -132,7 +138,7 @@
                             <GridViewColumn Header="" Width="64">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
-                                        <Border Background="#201A20" CornerRadius="4" Width="52" Height="68">
+                                        <Border Background="{StaticResource NekoCanvas}" CornerRadius="0" Width="52" Height="68">
                                             <Image Source="{Binding Thumb}" Stretch="Uniform"/>
                                         </Border>
                                     </DataTemplate>
@@ -155,7 +161,7 @@
                 <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch"
                               Background="Transparent"/>
 
-                <Border Grid.Column="2" Background="#141014" CornerRadius="10" Padding="8">
+                <Border Grid.Column="2" Background="{StaticResource NekoCanvas}" CornerRadius="0" Padding="8">
                     <DockPanel>
                         <TextBlock x:Name="TxtPreviewName" DockPanel.Dock="Top" Margin="2,0,2,6"
                                    Foreground="{StaticResource NekoText}" TextTrimming="CharacterEllipsis"

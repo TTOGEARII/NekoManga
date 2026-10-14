@@ -44,6 +44,14 @@ public static class Program
             return;
         }
 
+        // 로고 아이콘 재생성 (디자인 변경 시): NekoManga.exe --render-logo <출력.ico>
+        var logoIdx = Array.IndexOf(args, "--render-logo");
+        if (logoIdx >= 0 && logoIdx + 1 < args.Length)
+        {
+            LogoArt.WriteIco(args[logoIdx + 1]);
+            return;
+        }
+
         // 워크플로 덤프 (원본 ComfyUI 셋팅과 대조 검증용): NekoManga.exe --dumpwf <출력.json>
         var dumpIdx = Array.IndexOf(args, "--dumpwf");
         if (dumpIdx >= 0 && dumpIdx + 1 < args.Length)

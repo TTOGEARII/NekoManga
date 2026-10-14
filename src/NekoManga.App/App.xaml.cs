@@ -25,12 +25,15 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
-        // 액센트를 네코핑크로 — 토글·Primary 버튼·포커스 링이 모두 따라온다.
-        Wpf.Ui.Appearance.ApplicationAccentColorManager.Apply(
-            System.Windows.Media.Color.FromRgb(0xFF, 0x77, 0xA8),
-            Wpf.Ui.Appearance.ApplicationTheme.Dark);
-
         Settings = AppSettings.Load();
+
+        // 일본 흑백 만화풍 테마 (화이트 기본 / 다크 반전) — 창이 뜨기 전에 적용해야 한다
+        AppTheme.Apply(Settings.Theme);
+        MangaTextures.Refresh();   // 원고 격자·톤망점 타일 (테마 색 반영)
+
+        // 만화 선화 고양이 로고 — 테마 브러시로 그려서 다크/화이트를 따라간다
+        Resources["NekoLogo"] = new System.Windows.Media.DrawingImage(
+            LogoArt.Build(AppTheme.GetBrush("NekoStroke"), AppTheme.GetBrush("NekoBg")));
 
         // 기존 설치 자동 감지 — 이미 ComfyUI·BT를 쓰고 있으면 재다운로드 없이 연결한다.
         AutoLinkExistingInstalls();

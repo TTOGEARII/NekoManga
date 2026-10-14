@@ -21,18 +21,19 @@
             <SolidColorBrush x:Key="NekoText" Color="#F2EDF7"/>
             <SolidColorBrush x:Key="NekoHint" Color="#9A8FA8"/>
             <SolidColorBrush x:Key="NekoStroke" Color="#332A40"/>
+            <SolidColorBrush x:Key="NekoCanvas" Color="#1A1A1A"/>
 
             <!-- 기능 토글 카드 -->
             <Style TargetType="Border" x:Key="NekoFeatureCard">
-                <Setter Property="Background" Value="{StaticResource NekoCard}"/>
-                <Setter Property="BorderBrush" Value="{StaticResource NekoStroke}"/>
-                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Background" Value="{DynamicResource NekoCard}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource NekoStroke}"/>
+                <Setter Property="BorderThickness" Value="2"/>
                 <Setter Property="CornerRadius" Value="14"/>
                 <Setter Property="Padding" Value="16,12"/>
                 <Style.Triggers>
                     <Trigger Property="IsMouseOver" Value="True">
-                        <Setter Property="Background" Value="{StaticResource NekoCardHover}"/>
-                        <Setter Property="BorderBrush" Value="{StaticResource NekoPink}"/>
+                        <Setter Property="Background" Value="{DynamicResource NekoCardHover}"/>
+                        <Setter Property="BorderBrush" Value="{DynamicResource NekoPink}"/>
                     </Trigger>
                 </Style.Triggers>
             </Style>
@@ -40,49 +41,49 @@
             <Style TargetType="TextBlock" x:Key="CardTitle">
                 <Setter Property="FontSize" Value="15"/>
                 <Setter Property="FontWeight" Value="SemiBold"/>
-                <Setter Property="Foreground" Value="{StaticResource NekoText}"/>
+                <Setter Property="Foreground" Value="{DynamicResource NekoText}"/>
             </Style>
             <Style TargetType="TextBlock" x:Key="HintText">
-                <Setter Property="Foreground" Value="{StaticResource NekoHint}"/>
+                <Setter Property="Foreground" Value="{DynamicResource NekoHint}"/>
                 <Setter Property="FontSize" Value="11.5"/>
                 <Setter Property="TextWrapping" Value="Wrap"/>
             </Style>
             <Style TargetType="TextBlock" x:Key="SectionTitle">
                 <Setter Property="FontWeight" Value="SemiBold"/>
                 <Setter Property="FontSize" Value="15"/>
-                <Setter Property="Foreground" Value="{StaticResource NekoPinkSoft}"/>
+                <Setter Property="Foreground" Value="{DynamicResource NekoPinkSoft}"/>
                 <Setter Property="Margin" Value="0,16,0,8"/>
             </Style>
             <Style TargetType="TextBlock" x:Key="FieldLabel">
                 <Setter Property="VerticalAlignment" Value="Center"/>
                 <Setter Property="Margin" Value="0,0,10,0"/>
-                <Setter Property="Foreground" Value="{StaticResource NekoText}"/>
+                <Setter Property="Foreground" Value="{DynamicResource NekoText}"/>
             </Style>
 
             <!-- 목록: WPF-UI 다크에서 기본 ListView 글자가 액센트색으로 끌려와 읽기 어렵다.
                  BasedOn 없이 직접 지정 (FanboxUpdater에서 확인된 함정). -->
             <Style TargetType="ListView">
-                <Setter Property="Foreground" Value="{StaticResource NekoText}"/>
+                <Setter Property="Foreground" Value="{DynamicResource NekoText}"/>
             </Style>
             <Style TargetType="ListViewItem">
-                <Setter Property="Foreground" Value="{StaticResource NekoText}"/>
+                <Setter Property="Foreground" Value="{DynamicResource NekoText}"/>
                 <Setter Property="Background" Value="Transparent"/>
                 <Setter Property="BorderThickness" Value="0"/>
                 <Setter Property="Padding" Value="4,6"/>
                 <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                 <Style.Triggers>
                     <Trigger Property="IsMouseOver" Value="True">
-                        <Setter Property="Background" Value="#14FF77A8"/>
+                        <Setter Property="Background" Value="#18808080"/>
                     </Trigger>
                     <Trigger Property="IsSelected" Value="True">
-                        <Setter Property="Background" Value="#22FF77A8"/>
+                        <Setter Property="Background" Value="#20808080"/>
                     </Trigger>
                 </Style.Triggers>
             </Style>
             <Style TargetType="GridViewColumnHeader">
-                <Setter Property="Foreground" Value="{StaticResource NekoPinkSoft}"/>
+                <Setter Property="Foreground" Value="{DynamicResource NekoPinkSoft}"/>
                 <Setter Property="Background" Value="Transparent"/>
-                <Setter Property="BorderBrush" Value="{StaticResource NekoStroke}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource NekoStroke}"/>
                 <Setter Property="BorderThickness" Value="0,0,0,1"/>
                 <Setter Property="Padding" Value="6,6"/>
                 <Setter Property="HorizontalContentAlignment" Value="Left"/>
@@ -95,22 +96,22 @@
                 <Setter Property="Padding" Value="0,8,0,0"/>
             </Style>
             <Style TargetType="TabItem">
-                <Setter Property="Foreground" Value="{StaticResource NekoHint}"/>
+                <Setter Property="Foreground" Value="{DynamicResource NekoHint}"/>
                 <Setter Property="FontSize" Value="13.5"/>
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="TabItem">
-                            <Border x:Name="Bd" Background="Transparent" CornerRadius="8" Margin="2,0" Padding="18,8">
+                            <Border x:Name="Bd" Background="Transparent" CornerRadius="0" Margin="2,0" Padding="18,8">
                                 <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="Bd" Property="Background" Value="#22FF77A8"/>
-                                    <Setter Property="Foreground" Value="{StaticResource NekoPinkSoft}"/>
+                                    <Setter TargetName="Bd" Property="Background" Value="#20808080"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource NekoPinkSoft}"/>
                                 </Trigger>
                                 <Trigger Property="IsSelected" Value="True">
-                                    <Setter TargetName="Bd" Property="Background" Value="#33FF77A8"/>
-                                    <Setter Property="Foreground" Value="{StaticResource NekoPinkSoft}"/>
+                                    <Setter TargetName="Bd" Property="Background" Value="#2E808080"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource NekoPinkSoft}"/>
                                     <Setter Property="FontWeight" Value="SemiBold"/>
                                 </Trigger>
                             </ControlTemplate.Triggers>

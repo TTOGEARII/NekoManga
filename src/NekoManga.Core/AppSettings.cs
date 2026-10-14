@@ -115,6 +115,9 @@ public class AppSettings
     /// <summary>외곽선 두께 배율. 0이면 외곽선 없음 (1.0 = 글자 크기의 1/7 정도).</summary>
     public double LetterOutlineScale { get; set; } = 1.0;
 
+    /// <summary>UI 테마 — "Light"(기본, 만화 원고풍 흑백) / "Dark"(반전).</summary>
+    public string Theme { get; set; } = "Light";
+
     // ── 기타 ──────────────────────────────────────────────────
     /// <summary>civitai 모델(채색 체크포인트) 다운로드용 API 키. 로그인 필요 모델 대비 (선택).</summary>
     public string CivitaiApiKey { get; set; } = "";

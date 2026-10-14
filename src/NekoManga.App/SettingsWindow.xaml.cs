@@ -29,6 +29,7 @@ public partial class SettingsWindow
         TxtColorRefTags.Text = s.ColorRefTags;
         TxtRefStrength.Text = s.ColorRefStrength.ToString(CultureInfo.InvariantCulture);
         LoadEngineTab(s);
+        if (s.Theme == "Dark") RbThemeDark.IsChecked = true; else RbThemeLight.IsChecked = true;
         TxtExcludeTags.Text = s.ColorExcludeTags;
         TxtNegative.Text = s.ColorNegative;
 
@@ -152,6 +153,16 @@ public partial class SettingsWindow
         foreach (ComboBoxItem it in cmb.Items)
             if ((string?)it.Tag == tag) { cmb.SelectedItem = it; return; }
         if (cmb.Items.Count > 0) cmb.SelectedIndex = 0;
+    }
+
+    private void Theme_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        var theme = RbThemeDark.IsChecked == true ? "Dark" : "Light";
+        App.Settings.Theme = theme;
+        App.Settings.Save();
+        AppTheme.Apply(theme);       // 열려 있는 모든 창에 즉시 반영
+        MangaTextures.Refresh();     // 격자·톤망점도 새 테마 색으로 (DynamicResource라 자동 갱신)
     }
 
     // ── 엔진 탭 ──────────────────────────────────────────────

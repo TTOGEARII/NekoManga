@@ -65,7 +65,7 @@
                         <DockPanel Margin="0,4">
                             <!-- 미리보기 겸 드롭존 — 표지를 여기에 끌어다 놓으면 등록된다 -->
                             <Border x:Name="RefDropZone" DockPanel.Dock="Left" Width="96" Height="128"
-                                    Background="#201A20" CornerRadius="8" Margin="0,0,10,0"
+                                    Background="{StaticResource NekoCanvas}" CornerRadius="0" Margin="0,0,10,0"
                                     BorderBrush="{StaticResource NekoStroke}" BorderThickness="1"
                                     AllowDrop="True" Drop="RefDropZone_Drop" DragOver="RefDropZone_DragOver">
                                 <Grid>
@@ -286,7 +286,7 @@
                     <TextBlock Style="{StaticResource SectionTitle}" Text="채색 엔진"/>
                     <TextBlock Style="{StaticResource HintText}"
                                Text="채색과 강력 검열제거를 담당하는 엔진이에요. 창 없이 뒤에서 돌아가고, 앱이 알아서 켜고 꺼요 — 직접 실행할 일이 없어요."/>
-                    <Border Background="{StaticResource NekoCard}" CornerRadius="10" Padding="14,10" Margin="0,8,0,0">
+                    <Border Background="{StaticResource NekoCard}" BorderBrush="{StaticResource NekoStroke}" BorderThickness="2" CornerRadius="0" Padding="14,10" Margin="0,8,0,0">
                         <StackPanel>
                             <DockPanel>
                                 <Ellipse x:Name="DotEngine" Width="12" Height="12" Fill="Gray" VerticalAlignment="Center"/>
@@ -365,12 +365,27 @@
             <!-- ── 정보 ── -->
             <TabItem Header="ℹ 정보">
                 <StackPanel Margin="8">
-                    <TextBlock Text="NekoManga (=^･ω･^=)" FontSize="22" FontWeight="Bold"
-                               Foreground="{StaticResource NekoPinkSoft}" Margin="0,12,0,4"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,4">
+                        <Image Source="{StaticResource NekoLogo}" Width="46" Height="46" Margin="0,0,12,0"/>
+                        <TextBlock Text="NekoManga" FontSize="24" FontWeight="ExtraBold"
+                                   Foreground="{StaticResource NekoText}" VerticalAlignment="Center"/>
+                    </StackPanel>
                     <TextBlock x:Name="TxtAboutVersion" Style="{StaticResource HintText}"/>
                     <TextBlock Style="{StaticResource HintText}" Margin="0,8,0,0"
-                               Text="흑백 만화 자동 채색 + 검열 제거 + 번역 식자 올인원. ComfyUI와 BallonsTranslator를 엔진으로 써요."/>
+                               Text="흑백 만화 자동 채색 + 검열 제거 + 번역 식자 올인원."/>
                     <ui:Button Content="GitHub 열기" Click="BtnGitHub_Click" Margin="0,16,0,0" Padding="16,8" HorizontalAlignment="Left"/>
+
+                    <TextBlock Style="{StaticResource SectionTitle}" Text="화면 테마"/>
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton x:Name="RbThemeLight" Content="☀ 화이트 (원고지)" IsChecked="True"
+                                     Foreground="{StaticResource NekoText}" Margin="0,0,18,0"
+                                     Checked="Theme_Changed"/>
+                        <RadioButton x:Name="RbThemeDark" Content="🌙 다크 (먹지)"
+                                     Foreground="{StaticResource NekoText}"
+                                     Checked="Theme_Changed"/>
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,0"
+                               Text="고르는 즉시 모든 창에 적용돼요."/>
                     <TextBlock Style="{StaticResource SectionTitle}" Text="프로그램 삭제"/>
                     <TextBlock Style="{StaticResource HintText}"
                                Text="앱과 바로가기를 제거해요. 내려받은 구성요소 폴더는 용량이 커서 자동으로 지우지 않아요 — 삭제 후 직접 지워주세요."/>
