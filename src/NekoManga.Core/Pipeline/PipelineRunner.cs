@@ -30,11 +30,12 @@ public class PipelineRunner(AppSettings settings) : IDisposable
         var lama = new LamaInpainter(_onnx);
 
         bool strongDecensor = settings.EnableDecensor && settings.DecensorMode == "Strong";
-        bool needComfy = settings.EnableAutoColor || strongDecensor;
+        bool comfyLama = settings.EnableDecensor && settings.DecensorMode == "ComfyLama";
+        bool needComfy = settings.EnableAutoColor || strongDecensor || comfyLama;
 
         if (translator is { IsReady: false })
             throw new FileNotFoundException("번역 엔진 모델이 아직 설치되지 않았어요 — 설정 → 구성요소에서 받아주세요.");
-        if (settings.EnableDecensor && !strongDecensor && !lama.IsReady)
+        if (settings.EnableDecensor && !strongDecensor && !comfyLama && !lama.IsReady)
             throw new FileNotFoundException("검열제거(기본) 모델(LaMa)이 아직 설치되지 않았어요 — 설정 → 구성요소에서 받아주세요.");
         if (needComfy && !settings.ComfyAvailable)
             throw new FileNotFoundException(
@@ -119,15 +120,20 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                             settings.DecensorMaskGrow, exclude);
                     if (mask != null)
                     {
-                        if (!strongDecensor)
-                        {
-                            progress.Report(new(name, "검열 지우는 중 (기본·LaMa)", 50));
-                            await Task.Run(() => lama.Inpaint(img, mask), ct);
-                        }
-                        else
+                        if (strongDecensor)
                         {
                             progress.Report(new(name, "검열 재생성 중 (강력·SDXL)", 50));
                             await StrongDecensorAsync(client!, comfyOutputDir, img, mask, i, lama, ct);
+                        }
+                        else if (comfyLama)
+                        {
+                            progress.Report(new(name, "검열 지우는 중 (엔진 LaMa·GPU)", 50));
+                            await ComfyLamaDecensorAsync(client!, comfyOutputDir, img, mask, i, ct);
+                        }
+                        else
+                        {
+                            progress.Report(new(name, "검열 지우는 중 (기본·LaMa)", 50));
+                            await Task.Run(() => lama.Inpaint(img, mask), ct);
                         }
                         work = Path.Combine(workDir, Path.GetFileNameWithoutExtension(file) + ".decensored.png");
                         Directory.CreateDirectory(workDir);
@@ -206,12 +212,12 @@ public class PipelineRunner(AppSettings settings) : IDisposable
 
     /// <summary>결과 보기 창에서 사용자가 손으로 고른 영역을 지운다 (자동 감지가 놓친 검열용).
     /// 파이프라인과 같은 복원 경로를 쓰므로 결과물의 성격이 일관된다.</summary>
-    public async Task ManualDecensorAsync(Mat img, Mat mask, bool strong,
+    public async Task ManualDecensorAsync(Mat img, Mat mask, string mode,
         IProgress<string>? status, CancellationToken ct)
     {
         var lama = new LamaInpainter(_onnx);
 
-        if (!strong)
+        if (mode == "Basic")
         {
             if (!lama.IsReady)
                 throw new InvalidOperationException("복원 모델(LaMa)이 없어요 — 설정 → 구성요소에서 설치해 주세요.");
@@ -224,9 +230,39 @@ public class PipelineRunner(AppSettings settings) : IDisposable
         await _server.EnsureRunningAsync(status, ct);
         var client = new ComfyClient(_server.BaseUrl);
         var outDir = Path.Combine(settings.ComfyRoot, "ComfyUI", "output");
-        status?.Report("SDXL로 다시 그리는 중... (수십 초)");
         // 페이지 번호는 파일 이름 충돌만 피하면 되므로 손수정 전용 번호를 쓴다
-        await StrongDecensorAsync(client, outDir, img, mask, 900, lama, ct);
+        if (mode == "ComfyLama")
+        {
+            status?.Report("엔진 LaMa로 복원 중...");
+            await ComfyLamaDecensorAsync(client, outDir, img, mask, 900, ct);
+        }
+        else
+        {
+            status?.Report("SDXL로 다시 그리는 중... (수십 초)");
+            await StrongDecensorAsync(client, outDir, img, mask, 900, lama, ct);
+        }
+    }
+
+    /// <summary>엔진 LaMa 검열제거 — 사용자의 원본 ComfyUI 파이프라인(LayerUtility: LaMa, GPU,
+    /// 확장 8·블러 8) 그대로. 전체 이미지를 통째로 보내므로 ROI 분할이 필요 없다.</summary>
+    private async Task ComfyLamaDecensorAsync(ComfyClient client, string comfyOutputDir,
+        Mat img, Mat mask, int pageIdx, CancellationToken ct)
+    {
+        var maskedPng = MosaicDetector.ToMaskedPng(img, mask);
+        var up = await client.UploadImageAsync(maskedPng, $"nm_lama_{pageIdx}.png", ct);
+        var pid = await client.QueuePromptAsync(
+            WorkflowBuilder.BuildLamaDecensor(up, $"nm_lamaout_{pageIdx}"), ct);
+        var r = await client.WaitAsync(pid, comfyOutputDir, TimeSpan.FromMinutes(10), ct);
+        if (r.OutputFiles.Count == 0)
+            throw new InvalidOperationException("엔진 LaMa 결과 파일이 없어요.");
+
+        using var outImg = ImgIo.Read(r.OutputFiles[^1], ImreadModes.Color);
+        if (outImg.Empty()) throw new InvalidDataException("엔진 LaMa 결과를 읽지 못했어요.");
+        using var resized = outImg.Width == img.Width && outImg.Height == img.Height
+            ? outImg.Clone()
+            : outImg.Resize(new OpenCvSharp.Size(img.Width, img.Height));
+        // 마스크 영역만 받아들인다 — 나머지 픽셀은 원본 그대로 보존
+        resized.CopyTo(img, mask);
     }
 
     /// <summary>강력 검열제거: 검열 ROI를 잘라 SDXL 인페인트(ComfyUI)로 재생성하고 제자리에 붙인다.

@@ -605,7 +605,7 @@ public partial class ResultWindow
         var tone = RbDarkOnly.IsChecked == true ? MaskTone.Dark
                  : RbWhiteOnly.IsChecked == true ? MaskTone.White
                  : MaskTone.All;
-        bool strong = (CmbEngine.SelectedItem as ComboBoxItem)?.Tag as string == "Strong";
+        string engineMode = (CmbEngine.SelectedItem as ComboBoxItem)?.Tag as string ?? "Basic";
 
         using var mask = BuildMask(tone, grow);
         int px = Cv2.CountNonZero(mask);
@@ -632,7 +632,7 @@ public partial class ResultWindow
             await Task.Run(async () =>
             {
                 using var runner = new PipelineRunner(App.Settings);
-                await runner.ManualDecensorAsync(img, mask, strong, status, CancellationToken.None);
+                await runner.ManualDecensorAsync(img, mask, engineMode, status, CancellationToken.None);
             });
 
             _undo.Push(before);

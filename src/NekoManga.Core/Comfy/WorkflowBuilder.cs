@@ -161,6 +161,21 @@ public static class WorkflowBuilder
         };
     }
 
+    /// <summary>엔진 LaMa 검열제거 — 사용자가 ComfyUI에서 직접 쓰던 원본 파이프라인의 노드 그대로
+    /// (LayerUtility: LaMa, 'lama' 모델, CUDA, 마스크 확장 8·블러 8).
+    /// 업로드 PNG의 알파 0 영역이 마스크다 (ComfyUI LoadImage 규약 — 강력 모드와 동일).</summary>
+    public static JsonObject BuildLamaDecensor(string uploadedName, string filenamePrefix) => new()
+    {
+        ["1"] = Node("LoadImage", new() { ["image"] = uploadedName }),
+        ["2"] = Node("LayerUtility: LaMa", new()
+        {
+            ["image"] = Link("1", 0), ["mask"] = Link("1", 1),
+            ["lama_model"] = "lama", ["device"] = "cuda",
+            ["invert_mask"] = false, ["mask_grow"] = 8, ["mask_blur"] = 8,
+        }),
+        ["3"] = Node("SaveImage", new() { ["images"] = Link("2", 0), ["filename_prefix"] = filenamePrefix }),
+    };
+
     /// <summary>표지/참고 일러스트에서 WD14 태그만 뽑는 미니 워크플로 (ShowText로 결과 수거).</summary>
     public static JsonObject BuildTagExtract(AppSettings s, string uploadedName) => new()
     {

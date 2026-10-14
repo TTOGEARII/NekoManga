@@ -23,7 +23,7 @@ public class AppSettings
     /// <summary>리사이즈 상한 (메가픽셀). 8GB VRAM 기준 1.5가 안전, 원본 레시피는 2.3.</summary>
     public double ColorMegapixels { get; set; } = 1.5;
     public int ColorSteps { get; set; } = 25;
-    public double ColorCfg { get; set; } = 5.0;
+    public double ColorCfg { get; set; } = 5.5;   // 원본 워크플로 값
     /// <summary>img2img 강도. 높을수록 원고 명암을 참고해 새로 그린다.</summary>
     public double ColorDenoise { get; set; } = 0.90;
     public string ColorSampler { get; set; } = "dpmpp_sde_gpu"; // 품질 우선. 속도 우선은 dpmpp_2m
@@ -31,7 +31,7 @@ public class AppSettings
     /// <summary>캐릭터 머리색·눈색 등 수동 태그. 페이지 공통으로 프롬프트 앞에 붙는다.</summary>
     public string ColorManualTags { get; set; } = "";
     public string ColorBaseTags { get; set; } = "masterpiece, best quality, full color, colored";
-    public string ColorExcludeTags { get; set; } = "monochrome, greyscale, censored";
+    public string ColorExcludeTags { get; set; } = "monochrome, greyscale, censored, yuri, multiple girls, 2girls";   // 원본 워크플로 값
     public string ColorNegative { get; set; } =
         "lowres, worst quality, bad anatomy, bad hands, monochrome, greyscale, text, watermark, signature";
     /// <summary>선화 합성(luminosity) 불투명도 %. 0이면 합성 안 함.</summary>
@@ -157,7 +157,7 @@ public class AppSettings
         TranslateTarget = TranslateTarget switch { "한국어" => "ko", "English" => "en", _ => TranslateTarget };
         // Papago 등 구 BT 엔진만 Google로 되돌린다 (DeepSeek·Grok은 유효).
         if (TranslateEngine is not ("Google" or "DeepL" or "DeepSeek" or "Grok")) TranslateEngine = "Google";
-        if (DecensorMode is not ("Basic" or "Strong")) DecensorMode = "Basic";
+        if (DecensorMode is not ("Basic" or "ComfyLama" or "Strong")) DecensorMode = "Basic";
     }
 
     public void Save()

@@ -225,7 +225,8 @@ public partial class MainWindow
         }
 
         // ComfyUI가 필요한 조합인데 미설치면 바로 안내
-        bool needComfy = s.EnableAutoColor || (s.EnableDecensor && s.DecensorMode == "Strong");
+        bool needComfy = s.EnableAutoColor
+            || (s.EnableDecensor && s.DecensorMode is "Strong" or "ComfyLama");
         if (needComfy && !s.ComfyAvailable)
         {
             TxtStatus.Text = "채색/강력 검열은 ComfyUI가 필요해요 — 설정 → 구성요소에서 설치해 주세요";
