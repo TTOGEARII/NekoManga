@@ -16,10 +16,10 @@ public record TextBlockInfo(
     string FontColorHex,
     bool ManualRect = false,
     double StyleScale = 1.0,       // 블록별 크기 배율 (1 = 페이지 공통 크기 그대로)
-    string Align = "Center",       // Left / Center / Right
+    string Align = "",             // Left/Center/Right — 비면 페이지 기본(LetterAlign) 따름
     int BoldOverride = -1,         // -1=페이지 설정 따름, 0=보통, 1=굵게
-    bool Italic = false,
-    double LineSpacing = 1.0,      // 줄간격 배율
+    bool Italic = false,           // 페이지 기본(LetterItalic)에 더해 켠다
+    double LineSpacing = 0,        // 줄간격 배율 — 0이면 페이지 기본(LetterLineSpacing) 따름
     string ColorOverride = "",     // 블록별 글자색 #RRGGBB (비면 전역 규칙)
     double RotationDeg = 0);       // 글자 기울이기(회전, 도)
 

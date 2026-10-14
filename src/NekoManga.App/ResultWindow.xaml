@@ -41,7 +41,7 @@
                         <StackPanel Margin="0,8,0,0">
                             <TextBlock Style="{StaticResource HintText}" Margin="0,0,0,6"
                                        Text="지울 검열의 꼭짓점을 클릭해 주세요. 네 점이면 사각형 완성 (기울어진 막대도 감쌀 수 있어요). 우클릭=마지막 점 취소, Enter=3점 이상 닫기, Esc=취소, 휠=확대."/>
-                            <StackPanel Orientation="Horizontal">
+                            <WrapPanel>
                                 <TextBlock Text="지울 대상" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,10,0"/>
                                 <RadioButton x:Name="RbDarkOnly" Content="검은 부분만" IsChecked="True"
                                              Foreground="{StaticResource NekoText}" Margin="0,0,14,0"/>
@@ -57,7 +57,7 @@
                                     <ComboBoxItem Tag="ComfyLama" Content="엔진 LaMa (GPU·원본 레시피)"/>
                                     <ComboBoxItem Tag="Strong" Content="강력 SDXL (느림·재생성)"/>
                                 </ComboBox>
-                            </StackPanel>
+                            </WrapPanel>
                         </StackPanel>
                     </TabItem>
 
@@ -65,7 +65,7 @@
                         <StackPanel Margin="0,8,0,0">
                             <TextBlock x:Name="TxtLetterHint" Style="{StaticResource HintText}" Margin="0,0,0,6"
                                        Text="말풍선 위 텍스트박스를 클릭해 바로 고치세요 — 타이핑이 즉시 보여요. 다 고치면 [다시 식자]가 최종 화질로 렌더링해요 (미리보기에서 그림을 클릭하면 다시 편집)."/>
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <WrapPanel Margin="0,0,0,6">
                                 <TextBlock Text="글꼴" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                 <ComboBox x:Name="CmbLFont" Width="190" IsEditable="True" VerticalAlignment="Center"/>
                                 <CheckBox x:Name="ChkLBold" Content="굵게" Foreground="{StaticResource NekoText}"
@@ -77,7 +77,7 @@
                                 <TextBlock Text="외곽선" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="16,0,6,0"/>
                                 <TextBox x:Name="TxtLOutScale" Width="52" VerticalAlignment="Center"/>
                                 <TextBox x:Name="TxtLOutColor" Width="86" VerticalAlignment="Center" Margin="6,0,0,0"/>
-                            </StackPanel>
+                            </WrapPanel>
                             <DockPanel>
                                 <TextBlock Text="블록" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                 <ComboBox x:Name="CmbBlocks" Width="230" VerticalAlignment="Center"
@@ -87,35 +87,37 @@
                                 <TextBox x:Name="TxtBlockText" Margin="8,0,0,0" VerticalAlignment="Center"
                                          TextChanged="TxtBlockText_Changed"/>
                             </DockPanel>
-                            <!-- 선택한 풍선만 적용되는 세부 스타일 (BT급 디테일 편집) -->
-                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                            <!-- 선택한 풍선만 적용되는 세부 스타일 (BT급 디테일 편집).
+                                 WrapPanel: 창이 좁아도 잘리지 않고 다음 줄로 흐른다 -->
+                            <WrapPanel Margin="0,6,0,0">
                                 <TextBlock Text="이 풍선만" Foreground="{StaticResource NekoPink}" FontWeight="SemiBold"
-                                           VerticalAlignment="Center" Margin="0,0,10,0"/>
-                                <TextBlock Text="크기×" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                                <TextBox x:Name="TxtBScale" Width="46" VerticalAlignment="Center" TextChanged="BlockStyle_Changed"/>
-                                <TextBlock Text="정렬" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="12,0,4,0"/>
-                                <ComboBox x:Name="CmbBAlign" Width="86" VerticalAlignment="Center" SelectionChanged="BlockStyle_Changed">
+                                           VerticalAlignment="Center" Margin="0,2,10,2"/>
+                                <TextBlock Text="크기×" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,2,4,2"/>
+                                <TextBox x:Name="TxtBScale" Width="48" VerticalAlignment="Center" Margin="0,2,0,2" TextChanged="BlockStyle_Changed"/>
+                                <TextBlock Text="정렬" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
+                                <ComboBox x:Name="CmbBAlign" Width="126" VerticalAlignment="Center" Margin="0,2,0,2" SelectionChanged="BlockStyle_Changed">
+                                    <ComboBoxItem Tag="" Content="페이지 설정" IsSelected="True"/>
                                     <ComboBoxItem Tag="Left" Content="왼쪽"/>
-                                    <ComboBoxItem Tag="Center" Content="가운데" IsSelected="True"/>
+                                    <ComboBoxItem Tag="Center" Content="가운데"/>
                                     <ComboBoxItem Tag="Right" Content="오른쪽"/>
                                 </ComboBox>
-                                <TextBlock Text="굵기" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="12,0,4,0"/>
-                                <ComboBox x:Name="CmbBBold" Width="96" VerticalAlignment="Center" SelectionChanged="BlockStyle_Changed">
+                                <TextBlock Text="굵기" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
+                                <ComboBox x:Name="CmbBBold" Width="124" VerticalAlignment="Center" Margin="0,2,0,2" SelectionChanged="BlockStyle_Changed">
                                     <ComboBoxItem Tag="-1" Content="페이지 설정" IsSelected="True"/>
                                     <ComboBoxItem Tag="1" Content="굵게"/>
                                     <ComboBoxItem Tag="0" Content="보통"/>
                                 </ComboBox>
                                 <CheckBox x:Name="ChkBItalic" Content="기울임" Foreground="{StaticResource NekoText}"
-                                          VerticalAlignment="Center" Margin="12,0,0,0"
+                                          VerticalAlignment="Center" Margin="12,2,0,2"
                                           Checked="BlockStyle_Changed" Unchecked="BlockStyle_Changed"/>
-                                <TextBlock Text="줄간격" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="12,0,4,0"/>
-                                <TextBox x:Name="TxtBLineSp" Width="46" VerticalAlignment="Center" TextChanged="BlockStyle_Changed"/>
-                                <TextBlock Text="색" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="12,0,4,0"/>
-                                <TextBox x:Name="TxtBColor" Width="78" VerticalAlignment="Center" TextChanged="BlockStyle_Changed"
+                                <TextBlock Text="줄간격" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
+                                <TextBox x:Name="TxtBLineSp" Width="48" VerticalAlignment="Center" Margin="0,2,0,2" TextChanged="BlockStyle_Changed"/>
+                                <TextBlock Text="색" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
+                                <TextBox x:Name="TxtBColor" Width="90" VerticalAlignment="Center" Margin="0,2,0,2" TextChanged="BlockStyle_Changed"
                                          ToolTip="#RRGGBB — 비우면 전역 설정"/>
-                                <TextBlock Text="회전°" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="12,0,4,0"/>
-                                <TextBox x:Name="TxtBRot" Width="46" VerticalAlignment="Center" TextChanged="BlockStyle_Changed"/>
-                            </StackPanel>
+                                <TextBlock Text="회전°" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
+                                <TextBox x:Name="TxtBRot" Width="48" VerticalAlignment="Center" Margin="0,2,0,2" TextChanged="BlockStyle_Changed"/>
+                            </WrapPanel>
                         </StackPanel>
                     </TabItem>
                 </TabControl>

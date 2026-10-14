@@ -346,6 +346,22 @@
                             <TextBox x:Name="TxtLetterOutlineColor" Width="110" HorizontalAlignment="Left"/>
                         </DockPanel>
                     </UniformGrid>
+                    <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
+                        <DockPanel>
+                            <TextBlock Text="정렬" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <ComboBox x:Name="CmbLetterAlign" Width="110" HorizontalAlignment="Left">
+                                <ComboBoxItem Tag="Left" Content="왼쪽"/>
+                                <ComboBoxItem Tag="Center" Content="가운데" IsSelected="True"/>
+                                <ComboBoxItem Tag="Right" Content="오른쪽"/>
+                            </ComboBox>
+                        </DockPanel>
+                        <DockPanel>
+                            <TextBlock Text="줄간격" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <TextBox x:Name="TxtLetterLineSp" Width="70" HorizontalAlignment="Left"/>
+                            <CheckBox x:Name="ChkLetterItalic" Content="기울임" Foreground="{StaticResource NekoText}"
+                                      VerticalAlignment="Center" Margin="14,0,0,0"/>
+                        </DockPanel>
+                    </UniformGrid>
                     <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,0"
                                Text="크기 배율 1.0 = 원문 글자 크기 그대로 (말풍선을 넘치면 자동으로 줄어요). 글자 색은 #RRGGBB — 비우면 원문 색을 따라가요. 외곽선 두께 1.0 = 기본, 0 = 외곽선 없음. 외곽선 덕에 어두운 배경에서도 글자가 읽혀요."/>
                 </StackPanel>
@@ -498,6 +514,7 @@
 
             <!-- ── 정보 ── -->
             <TabItem Header="ℹ 정보">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="8">
                     <StackPanel Orientation="Horizontal" Margin="0,12,0,4">
                         <Image Source="{DynamicResource NekoLogo}" Width="46" Height="46" Margin="0,0,12,0"/>
@@ -508,6 +525,15 @@
                     <TextBlock Style="{StaticResource HintText}" Margin="0,8,0,0"
                                Text="흑백 만화 자동 채색 + 검열 제거 + 번역 식자 올인원."/>
                     <ui:Button Content="GitHub 열기" Click="BtnGitHub_Click" Margin="0,16,0,0" Padding="16,8" HorizontalAlignment="Left"/>
+
+                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="내장 AI 모듈"/></Border>
+                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,2,0,0" Text="• 텍스트 감지 — comictextdetector: 말풍선과 글자 위치를 찾아요 (BT와 같은 모델)."/>
+                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 글자 인식 — manga-ocr: 일본어 세로쓰기·후리가나 특화 OCR."/>
+                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 글자 지움·기본 검열 제거 — LaMa: 지운 자리를 주변과 어울리게 메워요. '엔진 LaMa'는 ComfyUI 원본 레시피(GPU)로 같은 일을 해요."/>
+                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 번역 — Google(무료) / DeepL / DeepSeek / Grok 중 선택."/>
+                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 자동 채색 — SDXL(WAI-illustrious) + ControlNet 2단: 원고의 선을 따라 컬러로 그려요. WD14 태거가 장면 태그를 뽑아 프롬프트를 만들어요."/>
+                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 강력 검열 제거 — SDXL 인페인트: 검열 자리를 아예 다시 그려요 (면적이 넓을 때)."/>
+                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 식자 — 내장 렌더러(GDI+): 번역문을 말풍선에 어절 단위 줄바꿈·외곽선과 함께 그려요."/>
 
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="화면 테마"/></Border>
                     <StackPanel Orientation="Horizontal">
@@ -526,6 +552,7 @@
                     <ui:Button x:Name="BtnUninstall" Content="🗑 NekoManga 삭제하기" Click="BtnUninstall_Click"
                                Appearance="Danger" Margin="0,8,0,0" Padding="16,8" HorizontalAlignment="Left"/>
                 </StackPanel>
+                </ScrollViewer>
             </TabItem>
         </TabControl>
     </Grid>

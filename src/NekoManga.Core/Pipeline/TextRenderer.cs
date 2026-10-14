@@ -228,9 +228,9 @@ public static class TextRenderer
     {
         string text = b.Translation;
 
-        // 블록별 스타일: 굵기(페이지 설정/보통/굵게) + 기울임
+        // 블록별 스타일: 굵기(페이지 설정/보통/굵게) + 기울임 (페이지 기본에 블록이 더한다)
         var style = b.BoldOverride switch { 0 => FontStyle.Regular, 1 => FontStyle.Bold, _ => s.LetterBold ? FontStyle.Bold : FontStyle.Regular };
-        if (b.Italic) style |= FontStyle.Italic;
+        if (b.Italic || s.LetterItalic) style |= FontStyle.Italic;
         var family = ResolveFamily(s.LetterFontFamily);
         // 일부 글꼴은 일부 스타일만 있다 — 없는 스타일로 Font를 만들면 던지므로 가능한 것으로 보정
         if (!family.IsStyleAvailable(style))
@@ -239,8 +239,10 @@ public static class TextRenderer
                 if (family.IsStyleAvailable(cand)) { style = cand; break; }
         }
 
-        var align = b.Align switch { "Left" => StringAlignment.Near, "Right" => StringAlignment.Far, _ => StringAlignment.Center };
-        float spacing = (float)Math.Clamp(b.LineSpacing, 0.6, 3.0);
+        // 블록별 지정이 없으면(빈 문자열/0) 페이지 기본 설정을 따른다
+        var alignName = string.IsNullOrEmpty(b.Align) ? s.LetterAlign : b.Align;
+        var align = alignName switch { "Left" => StringAlignment.Near, "Right" => StringAlignment.Far, _ => StringAlignment.Center };
+        float spacing = (float)Math.Clamp(b.LineSpacing > 0 ? b.LineSpacing : s.LetterLineSpacing, 0.6, 3.0);
 
         // 세로쓰기 원문도 한국어는 가로로 그린다 (국내 식자 관행).
         // 줄바꿈은 GDI+ 기본 래핑에 맡기지 않는다 — CJK는 글자 아무 데서나 꺾여
@@ -249,6 +251,9 @@ public static class TextRenderer
         // 크기 통일: 1차 시도는 페이지 공통 크기의 75%까지만 줄여 본다(어절 보존).
         // 안 들어가면 2차로 긴 어절을 글자 단위로 꺾는 것을 허용하고 다시 공통 크기부터 —
         // '크기 제각각'보다 '아주 좁은 풍선에서만 어절이 꺾이는' 쪽이 덜 눈에 띈다 (사용자 피드백).
+        // 줄 폭을 풍선 폭의 1.3배로 잡는다 — 말풍선을 살짝 벗어나더라도 어절이 통째로 남아
+        // "회사 끝날 / 때까지 이 / 근처에서 / 기다리고 / 있을게요!"처럼 읽힌다 (사용자가 고른 모양).
+        float wrapWidth = rect.Width * WordOverflowAllow;
         for (int pass = 0; pass < 2; pass++)
         {
             bool allowBreak = pass == 1;
@@ -256,12 +261,12 @@ public static class TextRenderer
             for (float size = startSize; size >= floor; size -= 1.5f)
             {
                 using var font = new Font(family, size, style, GraphicsUnit.Pixel);
-                string wrapped = WrapByWords(g, text, font, rect.Width, out bool brokeWord);
+                string wrapped = WrapByWords(g, text, font, wrapWidth, out bool brokeWord);
                 var lines = wrapped.Split('\n');
                 float lineH = font.GetHeight(g);
                 float totalH = lines.Length == 0 ? 0 : lineH * (1 + (lines.Length - 1) * spacing);
                 float maxW = lines.Max(l => l.Length == 0 ? 0 : g.MeasureString(l, font).Width);
-                bool fits = totalH <= rect.Height + 2 && maxW <= rect.Width + 2 && (allowBreak || !brokeWord);
+                bool fits = totalH <= rect.Height + 2 && maxW <= wrapWidth * 1.1f + 2 && (allowBreak || !brokeWord);
                 if (fits || (allowBreak && size <= 9))
                 {
                     DrawLines(g, lines, family, style, size, lineH * spacing, rect, align, color, s, (float)b.RotationDeg);
@@ -281,11 +286,23 @@ public static class TextRenderer
         float y = rect.Y + Math.Max(0, (rect.Height - totalH) / 2);
 
         using var path = new GraphicsPath();
-        var fmt = new StringFormat { Alignment = align, LineAlignment = StringAlignment.Near, Trimming = StringTrimming.None };
+        // NoWrap 필수: 풍선보다 넓게 허용된 통짜 어절 줄을 AddString이 레이아웃 사각형 안에서
+        // 또 꺾으면, 반토막이 다음 줄 위치에 겹쳐 그려진다 (실측 — '서'가 '기다' 위에 겹침).
+        var fmt = new StringFormat(StringFormatFlags.NoWrap)
+            { Alignment = align, LineAlignment = StringAlignment.Near, Trimming = StringTrimming.None };
+        // 레이아웃 폭은 넉넉히 3배 — 정렬 기준(가운데/왼쪽/오른쪽)만 원래 사각형에 맞춘다.
+        float wide = rect.Width * 3;
+        float lx = align switch
+        {
+            StringAlignment.Near => rect.X,
+            StringAlignment.Far => rect.Right - wide,
+            _ => rect.X + rect.Width / 2 - wide / 2,
+        };
         foreach (var line in lines)
         {
             if (line.Length > 0)
-                path.AddString(line, family, (int)style, size, new RectangleF(rect.X, y, rect.Width, lineH * 1.5f), fmt);
+                path.AddString(line, family, (int)style, size,
+                    new RectangleF(lx, y, wide, lineH * 2f), fmt);
             y += lineAdvance;
         }
 
@@ -327,12 +344,22 @@ public static class TextRenderer
                 if (line.Length > 0) { lines.Add(line); line = ""; }
                 if (W(word) <= maxWidth) { line = word; continue; }
 
-                // 어절 하나가 줄보다 길다 — 글자 단위로 쪼갠다 (호출부가 이를 보고 크기를 더 줄인다)
+                // 어절 하나가 줄보다 길다 — 풍선을 살짝 벗어나더라도(35%까지) 통째로 둔다.
+                // "근처에/서"처럼 어절이 꺾이는 것보다 가독성이 낫다 (사용자 요청: 벗어나도 됨).
+                if (W(word) <= maxWidth * WordOverflowAllow) { lines.Add(word); continue; }
+
+                // 그래도 너무 길면 글자 단위로 쪼개되, 이어지는 조각 줄은 들여쓰기로 표시한다.
                 brokeWord = true;
                 string piece = "";
+                bool first = true;
                 foreach (var ch in word)
                 {
-                    if (W(piece + ch) > maxWidth && piece.Length > 0) { lines.Add(piece); piece = ""; }
+                    if (W(piece + ch) > maxWidth && piece.Length > (first ? 0 : BreakIndent.Length))
+                    {
+                        lines.Add(piece);
+                        piece = BreakIndent;    // 들여쓰기 — 이 줄이 앞 어절의 연속임을 보여준다
+                        first = false;
+                    }
                     piece += ch;
                 }
                 line = piece;
@@ -341,6 +368,12 @@ public static class TextRenderer
         }
         return string.Join("\n", lines);
     }
+
+    /// <summary>긴 어절을 통째로 둘 때 허용하는 줄 폭 초과 배율 — 말풍선을 살짝 벗어나는 건
+    /// 어절이 중간에 꺾이는 것보다 읽기 좋다 (사용자 피드백). DrawFitted의 폭 검사도 같이 쓴다.</summary>
+    public const float WordOverflowAllow = 1.3f;
+    /// <summary>쪼개진 어절의 이어지는 줄 앞에 붙이는 들여쓰기 — 일반 공백 2칸 (EN SPACE는 경로 렌더에서 □로 나온다, 실측).</summary>
+    private const string BreakIndent = "  ";
 
     /// <summary>설정의 글꼴 이름을 FontFamily로. 미설치 이름이면 Malgun Gothic → GenericSansSerif 순으로 대체.</summary>
     private static FontFamily ResolveFamily(string name)

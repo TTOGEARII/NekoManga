@@ -145,6 +145,12 @@ public class AppSettings
     public string LetterOutlineColorHex { get; set; } = "#FFFFFF";
     /// <summary>외곽선 두께 배율. 0이면 외곽선 없음 (1.0 = 글자 크기의 1/7 정도).</summary>
     public double LetterOutlineScale { get; set; } = 1.0;
+    /// <summary>식자 기본 정렬 — "Left"/"Center"/"Right". 블록별 지정이 없을 때 쓰인다.</summary>
+    public string LetterAlign { get; set; } = "Center";
+    /// <summary>식자 기본 기울임(이탤릭).</summary>
+    public bool LetterItalic { get; set; } = false;
+    /// <summary>식자 기본 줄간격 배율.</summary>
+    public double LetterLineSpacing { get; set; } = 1.0;
 
     /// <summary>UI 테마 — "Light"(기본, 만화 원고풍 흑백) / "Dark"(반전).</summary>
     public string Theme { get; set; } = "Light";
@@ -208,6 +214,8 @@ public class AppSettings
         PreprocResolution = Math.Clamp(PreprocResolution, 256, 4096);
         ScribbleXdogThreshold = Math.Clamp(ScribbleXdogThreshold, 1, 128);
         IpaEndAt = Math.Clamp(IpaEndAt, 0, 1);
+        if (LetterAlign is not ("Left" or "Center" or "Right")) LetterAlign = "Center";
+        LetterLineSpacing = Math.Clamp(LetterLineSpacing, 0.6, 3.0);
     }
 
     public void Save()

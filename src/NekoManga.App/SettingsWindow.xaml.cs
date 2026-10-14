@@ -78,6 +78,9 @@ public partial class SettingsWindow
         TxtLetterColor.Text = s.LetterColorHex;
         TxtLetterOutline.Text = s.LetterOutlineScale.ToString(CultureInfo.InvariantCulture);
         TxtLetterOutlineColor.Text = s.LetterOutlineColorHex;
+        SelectComboByTag(CmbLetterAlign, s.LetterAlign);
+        TxtLetterLineSp.Text = s.LetterLineSpacing.ToString(CultureInfo.InvariantCulture);
+        ChkLetterItalic.IsChecked = s.LetterItalic;
         TxtDeepLKey.Text = s.DeepLApiKey;
         TxtDeepSeekKey.Text = s.DeepSeekApiKey;
         SetComboText(CmbDeepSeekModel, s.DeepSeekModel, TranslatorFactory.DeepSeekDefaultModel);
@@ -166,6 +169,9 @@ public partial class SettingsWindow
         s.LetterColorHex = NormalizeHex(TxtLetterColor.Text);
         s.LetterOutlineScale = ParseD(TxtLetterOutline.Text, s.LetterOutlineScale, 0, 4.0);
         s.LetterOutlineColorHex = NormalizeHex(TxtLetterOutlineColor.Text, "#FFFFFF");
+        s.LetterAlign = ComboTag(CmbLetterAlign, s.LetterAlign);
+        s.LetterLineSpacing = ParseD(TxtLetterLineSp.Text, s.LetterLineSpacing, 0.6, 3.0);
+        s.LetterItalic = ChkLetterItalic.IsChecked == true;
 
         s.OutputRoot = TxtOutputRoot.Text.Trim();
         s.LinkedComfyRoot = TxtLinkedComfy.Text.Trim();

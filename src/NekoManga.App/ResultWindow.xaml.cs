@@ -191,7 +191,8 @@ public partial class ResultWindow
         foreach (ComboBoxItem it in CmbBBold.Items)
             if ((string?)it.Tag == b.BoldOverride.ToString()) { CmbBBold.SelectedItem = it; break; }
         ChkBItalic.IsChecked = b.Italic;
-        TxtBLineSp.Text = b.LineSpacing.ToString("0.##", CultureInfo.InvariantCulture);
+        // 0 = 페이지 기본 따름 — 빈 칸으로 표시
+        TxtBLineSp.Text = b.LineSpacing <= 0 ? "" : b.LineSpacing.ToString("0.##", CultureInfo.InvariantCulture);
         TxtBColor.Text = b.ColorOverride;
         TxtBRot.Text = b.RotationDeg.ToString("0.#", CultureInfo.InvariantCulture);
     }
@@ -213,7 +214,7 @@ public partial class ResultWindow
             Align = (CmbBAlign.SelectedItem as ComboBoxItem)?.Tag as string ?? b.Align,
             BoldOverride = int.TryParse((CmbBBold.SelectedItem as ComboBoxItem)?.Tag as string, out var bo) ? bo : b.BoldOverride,
             Italic = ChkBItalic.IsChecked == true,
-            LineSpacing = D(TxtBLineSp.Text, b.LineSpacing, 0.6, 3.0),
+            LineSpacing = string.IsNullOrWhiteSpace(TxtBLineSp.Text) ? 0 : D(TxtBLineSp.Text, b.LineSpacing, 0.6, 3.0),
             ColorOverride = TxtBColor.Text.Trim(),
             RotationDeg = D(TxtBRot.Text, b.RotationDeg, -45, 45),
         };
@@ -261,6 +262,10 @@ public partial class ResultWindow
             LetterColorHex = Hex(TxtLColor.Text, ""),
             LetterOutlineScale = double.TryParse(TxtLOutScale.Text, out var os) ? Math.Clamp(os, 0, 4) : 1.0,
             LetterOutlineColorHex = Hex(TxtLOutColor.Text, "#FFFFFF"),
+            // 페이지 기본 정렬·기울임·줄간격은 설정 전역을 따른다 (블록별 지정이 우선)
+            LetterAlign = App.Settings.LetterAlign,
+            LetterItalic = App.Settings.LetterItalic,
+            LetterLineSpacing = App.Settings.LetterLineSpacing,
         };
     }
 
@@ -369,16 +374,17 @@ public partial class ResultWindow
             var fg = !string.IsNullOrWhiteSpace(b.ColorOverride)
                 ? ToMedia(b.ColorOverride, b.FontColorHex)
                 : ToMedia(style.LetterColorHex, b.FontColorHex);
+            var alignName = string.IsNullOrEmpty(b.Align) ? style.LetterAlign : b.Align;
             var tb = new TextBox
             {
                 Text = b.Translation,
                 TextWrapping = TextWrapping.Wrap,
-                TextAlignment = b.Align switch { "Left" => TextAlignment.Left, "Right" => TextAlignment.Right, _ => TextAlignment.Center },
+                TextAlignment = alignName switch { "Left" => TextAlignment.Left, "Right" => TextAlignment.Right, _ => TextAlignment.Center },
                 VerticalContentAlignment = VerticalAlignment.Center,
                 AcceptsReturn = true,
                 FontFamily = family,
                 FontWeight = bold ? FontWeights.Bold : FontWeights.Normal,
-                FontStyle = b.Italic ? FontStyles.Italic : FontStyles.Normal,
+                FontStyle = b.Italic || style.LetterItalic ? FontStyles.Italic : FontStyles.Normal,
                 FontSize = Math.Max(6, px * Math.Clamp(b.StyleScale, 0.3, 3.0) * _scale),
                 Foreground = new SolidColorBrush(fg),
                 Background = new SolidColorBrush(Color.FromArgb(70, 255, 255, 255)),
