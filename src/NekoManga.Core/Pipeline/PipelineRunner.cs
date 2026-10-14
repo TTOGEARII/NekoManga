@@ -128,6 +128,19 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                 if (blocks.Count > 0)
                 {
                     progress.Report(new(name, "식자 중", 92));
+                    Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
+
+                    // 식자 전 원고와 블록을 남겨 둔다 — 결과 보기 창의 식자 탭이
+                    // 글꼴·색·번역문을 바꿔 다시 식자할 때 쓴다 (없으면 번역부터 다시 돌려야 한다).
+                    using (var baseImg = ImgIo.Read(work))
+                    using (var srcImg = ImgIo.Read(file))
+                        if (!baseImg.Empty() && !srcImg.Empty())
+                        {
+                            ImgIo.Write(LetterSidecar.BasePathFor(outPath), baseImg);
+                            new LetterSidecar(file, srcImg.Width, srcImg.Height,
+                                LetterSidecar.BasePathFor(outPath), [.. blocks]).Save(outPath);
+                        }
+
                     TextRenderer.RenderBlocks(work, file, blocks, outPath, settings);
                 }
                 else if (work == file)

@@ -50,7 +50,17 @@ public static class SelfTest
             File.Copy(result.InpaintedPath, stem + ".selftest.inpainted.png", true);
 
             // 3) 식자
-            TextRenderer.RenderBlocks(result.InpaintedPath, imagePath, result.Blocks, stem + ".selftest.final.png", settings);
+            var finalPath = stem + ".selftest.final.png";
+            // 파이프라인과 동일하게 식자 사이드카도 남긴다 — 결과 보기 창의 식자 탭 테스트용
+            using (var baseImg = ImgIo.Read(result.InpaintedPath))
+            using (var srcImg = ImgIo.Read(imagePath))
+                if (!baseImg.Empty() && !srcImg.Empty())
+                {
+                    ImgIo.Write(LetterSidecar.BasePathFor(finalPath), baseImg);
+                    new LetterSidecar(imagePath, srcImg.Width, srcImg.Height,
+                        LetterSidecar.BasePathFor(finalPath), [.. result.Blocks]).Save(finalPath);
+                }
+            TextRenderer.RenderBlocks(result.InpaintedPath, imagePath, result.Blocks, finalPath, settings);
             L("식자 완료 → .selftest.final.png");
 
             // 4) 검열제거(기본) — 마스크가 잡히면

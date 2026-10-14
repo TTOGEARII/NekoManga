@@ -20,12 +20,15 @@ public static class ImgIo
         return Cv2.ImDecode(bytes, mode);
     }
 
-    /// <summary>확장자에 맞춰 인코딩해 경로에 쓴다. 인코딩 실패 시 false(Cv2.ImWrite와 동일 계약).</summary>
+    /// <summary>확장자에 맞춰 인코딩해 경로에 쓴다. 인코딩 실패 시 false(Cv2.ImWrite와 동일 계약).
+    /// 부모 폴더가 없으면 만들어 준다 (사이드카 폴더 등 — 없어서 실제로 터진 적 있음).</summary>
     public static bool Write(string path, Mat img)
     {
         var ext = Path.GetExtension(path);
         if (string.IsNullOrEmpty(ext)) ext = ".png";
         if (!Cv2.ImEncode(ext, img, out var buf)) return false;
+        var dir = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
         File.WriteAllBytes(path, buf);
         return true;
     }

@@ -23,30 +23,72 @@
                     <ComboBox x:Name="CmbPages" SelectionChanged="CmbPages_Changed" MaxWidth="560" HorizontalAlignment="Left"/>
                 </DockPanel>
 
-                <TextBlock x:Name="TxtFile" Foreground="{StaticResource NekoText}" FontWeight="SemiBold"/>
-                <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,8"
-                           Text="지울 검열의 꼭짓점을 클릭해 주세요. 네 점을 찍으면 사각형이 완성됩니다 (기울어진 막대도 그대로 감쌀 수 있어요). 오른쪽 클릭=마지막 점 취소, Enter=3점 이상이면 바로 닫기, Esc=현재 도형 취소. 휠로 확대/축소."/>
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="지울 대상" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                    <RadioButton x:Name="RbDarkOnly" Content="검은 부분만" IsChecked="True"
-                                 Foreground="{StaticResource NekoText}" Margin="0,0,14,0"/>
-                    <RadioButton x:Name="RbWhiteOnly" Content="흰 부분만"
-                                 Foreground="{StaticResource NekoText}" Margin="0,0,14,0"/>
-                    <RadioButton x:Name="RbWholeRect" Content="도형 전체"
-                                 Foreground="{StaticResource NekoText}" Margin="0,0,24,0"/>
-                    <TextBlock Text="여유(px)" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                    <TextBox x:Name="TxtGrow" Text="6" Width="56" VerticalAlignment="Center"/>
-                    <TextBlock Text="모델" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="20,0,6,0"/>
-                    <ComboBox x:Name="CmbEngine" Width="210" VerticalAlignment="Center">
-                        <ComboBoxItem Tag="Basic" Content="기본 LaMa (빠름·항상 같은 결과)" IsSelected="True"/>
-                        <ComboBoxItem Tag="Strong" Content="강력 SDXL (느림·ComfyUI 필요)"/>
-                    </ComboBox>
-                    <TextBlock Text="확대" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="20,0,6,0"/>
-                    <Slider x:Name="SldZoom" Minimum="0.2" Maximum="4" Value="1" Width="160"
-                            VerticalAlignment="Center" ValueChanged="Zoom_Changed"/>
-                    <TextBlock x:Name="TxtZoom" Text="100%" Foreground="{StaticResource NekoText}"
-                               VerticalAlignment="Center" Margin="8,0,0,0"/>
-                </StackPanel>
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="확대" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <Slider x:Name="SldZoom" Minimum="0.2" Maximum="4" Value="1" Width="150"
+                                VerticalAlignment="Center" ValueChanged="Zoom_Changed"/>
+                        <TextBlock x:Name="TxtZoom" Text="100%" Foreground="{StaticResource NekoText}"
+                                   VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    </StackPanel>
+                    <TextBlock x:Name="TxtFile" Foreground="{StaticResource NekoText}" FontWeight="SemiBold"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                </DockPanel>
+
+                <TabControl x:Name="TabMode" Background="Transparent" BorderThickness="0" Margin="0,6,0,0"
+                            SelectionChanged="TabMode_Changed">
+                    <TabItem Header="🙈 검열 지우기">
+                        <StackPanel Margin="0,8,0,0">
+                            <TextBlock Style="{StaticResource HintText}" Margin="0,0,0,6"
+                                       Text="지울 검열의 꼭짓점을 클릭해 주세요. 네 점이면 사각형 완성 (기울어진 막대도 감쌀 수 있어요). 우클릭=마지막 점 취소, Enter=3점 이상 닫기, Esc=취소, 휠=확대."/>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="지울 대상" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <RadioButton x:Name="RbDarkOnly" Content="검은 부분만" IsChecked="True"
+                                             Foreground="{StaticResource NekoText}" Margin="0,0,14,0"/>
+                                <RadioButton x:Name="RbWhiteOnly" Content="흰 부분만"
+                                             Foreground="{StaticResource NekoText}" Margin="0,0,14,0"/>
+                                <RadioButton x:Name="RbWholeRect" Content="도형 전체"
+                                             Foreground="{StaticResource NekoText}" Margin="0,0,24,0"/>
+                                <TextBlock Text="여유(px)" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBox x:Name="TxtGrow" Text="6" Width="56" VerticalAlignment="Center"/>
+                                <TextBlock Text="모델" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="20,0,6,0"/>
+                                <ComboBox x:Name="CmbEngine" Width="210" VerticalAlignment="Center">
+                                    <ComboBoxItem Tag="Basic" Content="기본 LaMa (빠름·항상 같은 결과)" IsSelected="True"/>
+                                    <ComboBoxItem Tag="Strong" Content="강력 SDXL (느림·ComfyUI 필요)"/>
+                                </ComboBox>
+                            </StackPanel>
+                        </StackPanel>
+                    </TabItem>
+
+                    <TabItem x:Name="TabLetter" Header="💬 식자 다시 하기">
+                        <StackPanel Margin="0,8,0,0">
+                            <TextBlock x:Name="TxtLetterHint" Style="{StaticResource HintText}" Margin="0,0,0,6"
+                                       Text="글꼴·색·번역문을 바꾸고 [다시 식자]를 누르면 이 장의 글자를 전부 새로 그려요. 그림의 말풍선을 클릭해도 블록이 선택돼요."/>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                <TextBlock Text="글꼴" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <ComboBox x:Name="CmbLFont" Width="190" IsEditable="True" VerticalAlignment="Center"/>
+                                <CheckBox x:Name="ChkLBold" Content="굵게" Foreground="{StaticResource NekoText}"
+                                          VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                <TextBlock Text="크기" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="16,0,6,0"/>
+                                <TextBox x:Name="TxtLSize" Width="52" VerticalAlignment="Center"/>
+                                <TextBlock Text="글자 색" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="16,0,6,0"/>
+                                <TextBox x:Name="TxtLColor" Width="86" VerticalAlignment="Center" ToolTip="#RRGGBB — 비우면 원문 색 자동"/>
+                                <TextBlock Text="외곽선" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="16,0,6,0"/>
+                                <TextBox x:Name="TxtLOutScale" Width="52" VerticalAlignment="Center"/>
+                                <TextBox x:Name="TxtLOutColor" Width="86" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                            </StackPanel>
+                            <DockPanel>
+                                <TextBlock Text="블록" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <ComboBox x:Name="CmbBlocks" Width="230" VerticalAlignment="Center"
+                                          SelectionChanged="CmbBlocks_Changed"/>
+                                <ui:Button x:Name="BtnBlockHide" DockPanel.Dock="Right" Content="이 블록 숨기기"
+                                           Click="BtnBlockHide_Click" Padding="10,4" Margin="8,0,0,0"/>
+                                <TextBox x:Name="TxtBlockText" Margin="8,0,0,0" VerticalAlignment="Center"
+                                         TextChanged="TxtBlockText_Changed"/>
+                            </DockPanel>
+                        </StackPanel>
+                    </TabItem>
+                </TabControl>
             </StackPanel>
         </Border>
 

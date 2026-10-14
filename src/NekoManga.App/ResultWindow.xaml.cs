@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using NekoManga.Core;
+using NekoManga.Core.Engine;
 using NekoManga.Core.Pipeline;
 using OpenCvSharp;
 // UseWindowsForms가 켜져 있어 Brush·MouseEventArgs 등이 WinForms와 겹친다 — 별칭을 유지할 것.
@@ -16,6 +17,7 @@ using Color = System.Windows.Media.Color;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
 using MouseButtonEventArgs = System.Windows.Input.MouseButtonEventArgs;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
+using TextRenderer = NekoManga.Core.Pipeline.TextRenderer;
 using MessageBox = System.Windows.MessageBox;
 
 namespace NekoManga.App;
@@ -44,6 +46,11 @@ public partial class ResultWindow
 
     public ResultWindow(string imagePath) : this([imagePath], 0) { }
 
+    // ── 식자 탭 상태 ─────────────────────────────────────────
+    private LetterSidecar? _sidecar;              // 현재 페이지의 식자 사이드카 (없으면 탭 비활성)
+    private List<TextBlockInfo> _letterBlocks = [];
+    private bool _syncingBlockUi;                 // 콤보/텍스트박스 동기화 중 재진입 방지
+
     public ResultWindow(IReadOnlyList<string> pages, int startIndex)
     {
         InitializeComponent();
@@ -51,6 +58,17 @@ public partial class ResultWindow
         _index = Math.Clamp(startIndex, 0, _pages.Count - 1);
 
         foreach (var p in _pages) CmbPages.Items.Add(Path.GetFileName(p));
+
+        foreach (var f in System.Drawing.FontFamily.Families.Select(f => f.Name).OrderBy(n => n))
+            CmbLFont.Items.Add(f);
+        var s = App.Settings;
+        CmbLFont.Text = s.LetterFontFamily;
+        ChkLBold.IsChecked = s.LetterBold;
+        TxtLSize.Text = s.LetterSizeScale.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        TxtLColor.Text = s.LetterColorHex;
+        TxtLOutScale.Text = s.LetterOutlineScale.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        TxtLOutColor.Text = s.LetterOutlineColorHex;
+
         Loaded += (_, _) => LoadPage(_index, fit: true);
     }
 
@@ -82,9 +100,113 @@ public partial class ResultWindow
             Overlay.Children.Clear();
             return;
         }
+        // 식자 사이드카 로드 — 번역을 돌린 페이지에만 있다
+        _sidecar = LetterSidecar.Load(_pages[_index]);
+        _letterBlocks = _sidecar?.Blocks.ToList() ?? [];
+        TabLetter.IsEnabled = _sidecar != null;
+        if (_sidecar == null && TabMode.SelectedItem == TabLetter) TabMode.SelectedIndex = 0;
+        RefreshBlockCombo();
+
         if (fit) FitToWindow();
         Redraw();
         TxtStatus.Text = "지울 검열의 꼭짓점을 클릭하세요";
+    }
+
+    // ── 식자 탭 ─────────────────────────────────────────────
+    private bool LetterMode => TabMode.SelectedItem == TabLetter;
+
+    private void TabMode_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        BtnApply.Content = LetterMode ? "✍ 다시 식자" : "✨ 선택 영역 지우기";
+        BtnClearSel.Visibility = LetterMode ? Visibility.Collapsed : Visibility.Visible;
+        _pending.Clear();
+        DrawShapes();
+        if (LetterMode)
+            TxtStatus.Text = _letterBlocks.Count > 0
+                ? $"번역 블록 {_letterBlocks.Count}개 — 스타일·번역문을 바꾸고 [다시 식자]를 누르세요"
+                : "이 장은 숨기지 않은 블록이 없어요";
+    }
+
+    private void RefreshBlockCombo()
+    {
+        _syncingBlockUi = true;
+        CmbBlocks.Items.Clear();
+        for (int i = 0; i < _letterBlocks.Count; i++)
+        {
+            var t = _letterBlocks[i].Translation;
+            CmbBlocks.Items.Add($"{i + 1}. {(t.Length > 22 ? t[..22] + "…" : t)}");
+        }
+        if (_letterBlocks.Count > 0) CmbBlocks.SelectedIndex = 0;
+        TxtBlockText.Text = _letterBlocks.Count > 0 ? _letterBlocks[0].Translation : "";
+        _syncingBlockUi = false;
+    }
+
+    private void CmbBlocks_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncingBlockUi || CmbBlocks.SelectedIndex < 0) return;
+        _syncingBlockUi = true;
+        TxtBlockText.Text = _letterBlocks[CmbBlocks.SelectedIndex].Translation;
+        _syncingBlockUi = false;
+        DrawShapes();
+    }
+
+    private void TxtBlockText_Changed(object sender, TextChangedEventArgs e)
+    {
+        if (_syncingBlockUi || CmbBlocks.SelectedIndex < 0) return;
+        int i = CmbBlocks.SelectedIndex;
+        _letterBlocks[i] = _letterBlocks[i] with { Translation = TxtBlockText.Text };
+    }
+
+    private void BtnBlockHide_Click(object sender, RoutedEventArgs e)
+    {
+        if (CmbBlocks.SelectedIndex < 0) return;
+        _letterBlocks.RemoveAt(CmbBlocks.SelectedIndex);
+        RefreshBlockCombo();
+        DrawShapes();
+        TxtStatus.Text = $"블록을 숨겼어요 — [다시 식자]를 눌러야 그림에 반영돼요 (남은 {_letterBlocks.Count}개)";
+    }
+
+    /// <summary>식자 탭의 스타일 값들로 재식자 전용 설정을 만든다 (전역 설정은 건드리지 않는다).</summary>
+    private AppSettings LetterStyle()
+    {
+        static string Hex(string t, string fb)
+        {
+            t = t.Trim();
+            if (t.Length == 0) return fb;
+            if (!t.StartsWith('#')) t = "#" + t;
+            return t.Length == 7 && t[1..].All(Uri.IsHexDigit) ? t : fb;
+        }
+        return new AppSettings
+        {
+            LetterFontFamily = string.IsNullOrWhiteSpace(CmbLFont.Text) ? "Malgun Gothic" : CmbLFont.Text.Trim(),
+            LetterBold = ChkLBold.IsChecked == true,
+            LetterSizeScale = double.TryParse(TxtLSize.Text, out var sz) ? Math.Clamp(sz, 0.3, 3.0) : 1.0,
+            LetterColorHex = Hex(TxtLColor.Text, ""),
+            LetterOutlineScale = double.TryParse(TxtLOutScale.Text, out var os) ? Math.Clamp(os, 0, 4) : 1.0,
+            LetterOutlineColorHex = Hex(TxtLOutColor.Text, "#FFFFFF"),
+        };
+    }
+
+    /// <summary>식자 전 원고(base)에 현재 블록·스타일로 글자를 다시 그린다.</summary>
+    private void ApplyLettering()
+    {
+        if (_sidecar == null) return;
+        var tmp = Path.Combine(Path.GetTempPath(), $"neko-relett-{Guid.NewGuid():N}.png");
+        try
+        {
+            TextRenderer.RenderBlocks(_sidecar.BasePath, _sidecar.Source, _letterBlocks, tmp, LetterStyle());
+            var rendered = ImgIo.Read(tmp);
+            if (rendered.Empty()) { rendered.Dispose(); TxtStatus.Text = "다시 식자에 실패했어요"; return; }
+            _undo.Push(_img);
+            _img = rendered;
+            BtnUndo.IsEnabled = true;
+            _dirty = true;
+            BtnSave.IsEnabled = true;
+            Redraw();
+            TxtStatus.Text = $"다시 식자했어요 (블록 {_letterBlocks.Count}개) — 마음에 들면 [저장]을 눌러주세요";
+        }
+        finally { try { File.Delete(tmp); } catch { } }
     }
 
     private void BtnPrev_Click(object sender, RoutedEventArgs e) => LoadPage(_index - 1, fit: true);
@@ -143,6 +265,29 @@ public partial class ResultWindow
     private void DrawShapes()
     {
         Overlay.Children.Clear();
+
+        // 식자 모드: 번역 블록 위치를 네모로 보여준다 (선택된 블록은 금색)
+        if (LetterMode)
+        {
+            if (_sidecar == null || _img.Empty()) return;
+            double bs = (double)_img.Width / Math.Max(1, _sidecar.SrcW);
+            for (int i = 0; i < _letterBlocks.Count; i++)
+            {
+                var b = _letterBlocks[i];
+                var box = new System.Windows.Shapes.Rectangle
+                {
+                    Width = Math.Max(1, (b.X2 - b.X1) * bs * _scale),
+                    Height = Math.Max(1, (b.Y2 - b.Y1) * bs * _scale),
+                    Stroke = i == CmbBlocks.SelectedIndex ? Brushes.Gold : Brushes.DeepSkyBlue,
+                    StrokeThickness = i == CmbBlocks.SelectedIndex ? 3 : 1.5,
+                };
+                Canvas.SetLeft(box, b.X1 * bs * _scale);
+                Canvas.SetTop(box, b.Y1 * bs * _scale);
+                Overlay.Children.Add(box);
+            }
+            return;
+        }
+
         foreach (var s in _shapes) Overlay.Children.Add(MakePolygon(s, finished: true));
 
         if (_pending.Count > 0)
@@ -188,6 +333,26 @@ public partial class ResultWindow
     private void Host_LeftClick(object sender, MouseButtonEventArgs e)
     {
         if (_img.Empty() || _busy) return;
+
+        // 식자 모드: 클릭한 자리의 번역 블록을 선택한다
+        if (LetterMode)
+        {
+            if (_sidecar == null) return;
+            var p = ToImage(e.GetPosition(ImageHost));
+            double bs = (double)_img.Width / Math.Max(1, _sidecar.SrcW);
+            int sx = (int)(p.X / bs), sy = (int)(p.Y / bs);
+            for (int i = 0; i < _letterBlocks.Count; i++)
+            {
+                var b = _letterBlocks[i];
+                if (sx >= b.X1 && sx <= b.X2 && sy >= b.Y1 && sy <= b.Y2)
+                {
+                    CmbBlocks.SelectedIndex = i;
+                    return;
+                }
+            }
+            return;
+        }
+
         _pending.Add(ToImage(e.GetPosition(ImageHost)));
 
         // 네 점이면 사각형 완성 — 막대는 사각형이라 네 점이면 충분하다
@@ -201,6 +366,7 @@ public partial class ResultWindow
 
     private void Host_RightClick(object sender, MouseButtonEventArgs e)
     {
+        if (LetterMode) return;
         if (_pending.Count > 0)
         {
             _pending.RemoveAt(_pending.Count - 1);
@@ -217,7 +383,7 @@ public partial class ResultWindow
 
     private void Host_MouseMove(object sender, MouseEventArgs e)
     {
-        if (_pending.Count == 0 || _img.Empty()) return;
+        if (LetterMode || _pending.Count == 0 || _img.Empty()) return;
         _hover = e.GetPosition(ImageHost);
         DrawShapes();
     }
@@ -256,6 +422,9 @@ public partial class ResultWindow
     private async void BtnApply_Click(object sender, RoutedEventArgs e)
     {
         if (_img.Empty() || _busy) return;
+
+        if (LetterMode) { ApplyLettering(); return; }
+
         if (_pending.Count >= 3) CloseShape();   // 찍다 만 도형도 살려 준다
         if (_shapes.Count == 0)
         {
