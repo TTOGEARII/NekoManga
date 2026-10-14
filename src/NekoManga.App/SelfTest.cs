@@ -35,6 +35,15 @@ public static class SelfTest
             {
                 foreach (var b in det.Blocks)
                     Cv2.Rectangle(vis, new Rect(b.X1, b.Y1, b.X2 - b.X1, b.Y2 - b.Y1), Scalar.Red, 3);
+                // 파랑 = 말풍선 분할 결과 (빨강 블록이 여러 풍선에 걸치면 나뉜다)
+                foreach (var raw in det.Blocks)
+                {
+                    var parts = BubbleSplitter.Split(img, det.TextMask, raw);
+                    if (parts.Count < 2) continue;
+                    L($"  분할: [{raw.X1},{raw.Y1},{raw.X2},{raw.Y2}] → {parts.Count}개 풍선");
+                    foreach (var p in parts)
+                        Cv2.Rectangle(vis, new Rect(p.X1 + 4, p.Y1 + 4, p.X2 - p.X1 - 8, p.Y2 - p.Y1 - 8), Scalar.Blue, 2);
+                }
                 ImgIo.Write(stem + ".selftest.boxes.png", vis);
             }
             ImgIo.Write(stem + ".selftest.mask.png", det.TextMask);

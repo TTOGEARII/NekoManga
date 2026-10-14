@@ -302,15 +302,18 @@ public partial class ResultWindow
         // 파이프라인과 동일: 페이지 공통 글자 크기 (중앙값)
         float px = TextRenderer.UniformSize(_letterBlocks, bs, style);
 
+        var allRects = _letterBlocks.Select(lb => new System.Drawing.RectangleF(
+            (float)(lb.X1 * bs), (float)(lb.Y1 * bs),
+            (float)((lb.X2 - lb.X1) * bs), (float)((lb.Y2 - lb.Y1) * bs))).ToList();
+
         for (int i = 0; i < _letterBlocks.Count; i++)
         {
             var b = _letterBlocks[i];
 
             // 자동 폭 넓히기(세로 블록)는 렌더와 같은 규칙으로 — 손으로 잡은 블록은 그대로
-            var rect = new System.Drawing.RectangleF(
-                (float)(b.X1 * bs), (float)(b.Y1 * bs),
-                (float)((b.X2 - b.X1) * bs), (float)((b.Y2 - b.Y1) * bs));
-            if (b.Vertical && !b.ManualRect) rect = TextRenderer.WidenToBubble(_baseImg, rect);
+            var rect = allRects[i];
+            if (b.Vertical && !b.ManualRect)
+                rect = TextRenderer.WidenToBubble(_baseImg, rect, allRects.Where((_, j) => j != i).ToList());
             double w = rect.Width * _scale, h = rect.Height * _scale;
             if (w < 8 || h < 8) continue;
 

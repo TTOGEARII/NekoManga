@@ -44,12 +44,20 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         var det = await Task.Run(() => _detector.Detect(img), ct);
         using var textMask = det.TextMask;
 
+        // 맞닿은 말풍선 묶음이 한 블록으로 잡히면 풍선별로 나눈다 — 안 나누면
+        // 여러 풍선의 대사가 한 번에 OCR·번역돼 풍선 경계를 무시한 식자가 된다.
+        var detBlocks = new List<DetectedBlock>();
+        foreach (var b in det.Blocks)
+            detBlocks.AddRange(await Task.Run(() => BubbleSplitter.Split(img, textMask, b), ct));
+        if (detBlocks.Count > det.Blocks.Count) // 읽기 순서 복원 (위→아래, 오른→왼)
+            detBlocks.Sort((a, b2) => a.Y1 != b2.Y1 ? a.Y1.CompareTo(b2.Y1) : b2.X1.CompareTo(a.X1));
+
         // ── OCR ──
         var blocks = new List<(DetectedBlock Box, string Text)>();
-        foreach (var b in det.Blocks)
+        foreach (var b in detBlocks)
         {
             ct.ThrowIfCancellationRequested();
-            status?.Report($"글자 읽는 중 ({blocks.Count + 1}/{det.Blocks.Count})");
+            status?.Report($"글자 읽는 중 ({blocks.Count + 1}/{detBlocks.Count})");
             var pad = BubbleSolver.Enlarge(new Rect(b.X1, b.Y1, b.X2 - b.X1, b.Y2 - b.Y1), 1.1, img.Width, img.Height);
             using var crop = new Mat(img, pad);
             var text = await Task.Run(() => _ocr.Recognize(crop), ct);

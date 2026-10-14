@@ -47,18 +47,23 @@ public static class TextRenderer
         // 블록별로는 넘칠 때만 DrawFitted가 그 블록에 한해 줄인다.
         float uniformSize = UniformSize(blocks, Math.Min(scaleX, scaleY), settings);
 
-        foreach (var b in blocks)
+        var allRects = blocks.Select(b => new RectangleF(
+            (float)(b.X1 * scaleX), (float)(b.Y1 * scaleY),
+            (float)((b.X2 - b.X1) * scaleX), (float)((b.Y2 - b.Y1) * scaleY))).ToList();
+
+        for (int bi = 0; bi < blocks.Count; bi++)
         {
-            var rect = new RectangleF(
-                (float)(b.X1 * scaleX), (float)(b.Y1 * scaleY),
-                (float)((b.X2 - b.X1) * scaleX), (float)((b.Y2 - b.Y1) * scaleY));
+            var b = blocks[bi];
+            var rect = allRects[bi];
             if (rect.Width < 4 || rect.Height < 4) continue;
 
             // 세로쓰기 블록은 CTD가 '글자 기둥'만 잡아 폭이 아주 좁다(실측 26px짜리도 있다).
             // 그 폭 안에서는 한국어를 가로로 눕힐 수 없으므로, 원고에서 말풍선의 실제 흰 폭을
             // 재서 블록을 가로로 넓힌다 — 그래야 "진짜네..."가 세로 한 자씩이 아니라 가로로 읽힌다.
             // 단, 사용자가 결과 보기 창에서 손으로 잡은 블록(ManualRect)은 그 좌표를 존중한다.
-            if (b.Vertical && !b.ManualRect) rect = WidenToBubble(mat, rect);
+            // 다른 블록 영역은 벽으로 — 결합 풍선은 내부가 이어져 흰 폭 측정이 이웃 풍선까지 샌다.
+            if (b.Vertical && !b.ManualRect)
+                rect = WidenToBubble(mat, rect, allRects.Where((_, i) => i != bi).ToList());
 
             // 말풍선은 대개 타원이라 블록(사각형) 가장자리까지 글자를 채우면 테두리에 닿는다 — 약간 안쪽으로.
             rect.Inflate(-rect.Width * 0.05f, -rect.Height * 0.03f);
@@ -79,8 +84,11 @@ public static class TextRenderer
     /// <summary>세로쓰기 블록을 말풍선의 실제 흰 폭까지 가로로 넓힌다.
     /// 블록 세로 25%/50%/75% 세 줄에서 중심으로부터 밝은 픽셀(≥225)이 이어지는 구간을 재고,
     /// 꼬리 등으로 한 줄만 비정상적으로 넓게 새는 것을 막으려 **셋 중 최소 폭**을 쓴다.
-    /// 과확장 방지로 한쪽 최대 2.5배, 테두리 여유로 측정 폭의 86%만 쓴다.</summary>
-    public static RectangleF WidenToBubble(Mat img, RectangleF r)
+    /// 과확장 방지로 한쪽 최대 2.5배, 테두리 여유로 측정 폭의 86%만 쓴다.
+    /// avoid(다른 블록 영역)에 들어가면 측정을 멈춘다 — 결합 풍선은 테두리 없이 내부가
+    /// 이어져 흰 구간이 이웃 풍선까지 이어지는데, 거기로 넓히면 글이 풍선 밖/남의 풍선에 겹친다
+    /// (실측: 07p '집에서 기다려'가 좁은 풍선을 넘어 바지 위까지 식자됨).</summary>
+    public static RectangleF WidenToBubble(Mat img, RectangleF r, IReadOnlyList<RectangleF>? avoid = null)
     {
         int cx = Math.Clamp((int)(r.X + r.Width / 2), 0, img.Cols - 1);
         int capL = (int)Math.Max(8, r.Width * 2.5f);
@@ -91,14 +99,23 @@ public static class TextRenderer
             return (p.Item0 + p.Item1 + p.Item2) / 3 >= 225;
         }
 
+        bool Blocked(int x, int y)
+        {
+            if (avoid == null) return false;
+            foreach (var a in avoid)
+                if (x >= a.Left - 4 && x <= a.Right + 4 && y >= a.Top - 4 && y <= a.Bottom + 4)
+                    return true;
+            return false;
+        }
+
         float minRun = float.MaxValue;
         foreach (var fy in new[] { 0.25f, 0.5f, 0.75f })
         {
             int y = Math.Clamp((int)(r.Y + r.Height * fy), 0, img.Rows - 1);
             if (!Bright(cx, y)) { minRun = Math.Min(minRun, r.Width); continue; }
             int xl = cx, xr = cx;
-            while (xl - 1 >= 0 && cx - xl < capL && Bright(xl - 1, y)) xl--;
-            while (xr + 1 < img.Cols && xr - cx < capL && Bright(xr + 1, y)) xr++;
+            while (xl - 1 >= 0 && cx - xl < capL && Bright(xl - 1, y) && !Blocked(xl - 1, y)) xl--;
+            while (xr + 1 < img.Cols && xr - cx < capL && Bright(xr + 1, y) && !Blocked(xr + 1, y)) xr++;
             minRun = Math.Min(minRun, xr - xl);
         }
 
