@@ -25,7 +25,24 @@ public class LamaInpainter(OnnxEnv env)
 
         var rois = MergeRois(contours.Select(Cv2.BoundingRect).ToList(), img.Width, img.Height);
         foreach (var roi in rois)
-            InpaintRoi(img, mask, roi);
+        {
+            // 큰 ROI를 통째로 512에 욱여넣으면 복원 패치가 업스케일로 뭉개져
+            // 주변의 또렷한 망점과 티가 난다 (수기로 넓게 지운 영역에서 실측).
+            // 512 타일(겹침 64)로 나눠 원본 해상도에 가깝게 복원한다.
+            if (Math.Max(roi.Width, roi.Height) <= 560) { InpaintRoi(img, mask, roi); continue; }
+            const int T = 512, Stride = 448;
+            for (int ty = roi.Y; ty < roi.Bottom; ty += Stride)
+            for (int tx = roi.X; tx < roi.Right; tx += Stride)
+            {
+                int x = tx, y = ty;
+                if (x + T > roi.Right) x = Math.Max(roi.X, roi.Right - T);
+                if (y + T > roi.Bottom) y = Math.Max(roi.Y, roi.Bottom - T);
+                var tile = new Rect(x, y, Math.Min(T, img.Width - x), Math.Min(T, img.Height - y));
+                using var mt = new Mat(mask, tile);
+                if (Cv2.CountNonZero(mt) == 0) continue;
+                InpaintRoi(img, mask, tile);
+            }
+        }
     }
 
     private void InpaintRoi(Mat img, Mat mask, Rect roi)
@@ -80,10 +97,30 @@ public class LamaInpainter(OnnxEnv env)
             }
         }
 
-        // 원본 크기로 되돌려 마스크 부분만 교체.
-        // new Mat(img, roi)는 데이터 공유 뷰라 여기에 CopyTo하면 img 원본이 바뀐다.
+        // 원본 크기로 되돌려 마스크 부분만 교체 — 하드 마스크 대신 **페더 블렌딩**:
+        // 경계를 안쪽으로 몇 px 부드럽게 섞어 '덧붙인 티'를 없앤다 (수기 제거가 부자연하다는
+        // 피드백). 마스크를 살짝 침식한 뒤 블러 → 알파가 마스크 밖으로 번지지 않아
+        // 바깥의 멀쩡한 그림에는 손대지 않는다.
+        // new Mat(img, roi)는 데이터 공유 뷰라 여기에 쓰면 img 원본이 바뀐다.
         using var outFull = outMat.Resize(new Size(roi.Width, roi.Height), interpolation: InterpolationFlags.Linear);
-        outFull.CopyTo(crop, mcrop);
+        using var alpha = new Mat();
+        Cv2.Erode(mcrop, alpha, Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(5, 5)));
+        alpha.ConvertTo(alpha, MatType.CV_32F, 1.0 / 255);
+        Cv2.GaussianBlur(alpha, alpha, new Size(7, 7), 0);
+        using var a3 = new Mat();
+        Cv2.Merge([alpha, alpha, alpha], a3);
+        using var cropF = new Mat();
+        crop.ConvertTo(cropF, MatType.CV_32FC3);
+        using var outF = new Mat();
+        outFull.ConvertTo(outF, MatType.CV_32FC3);
+        using var ones = new Mat(a3.Size(), a3.Type(), Scalar.All(1));
+        using var inv = new Mat();
+        Cv2.Subtract(ones, a3, inv);
+        using var p1 = cropF.Mul(inv).ToMat();
+        using var p2 = outF.Mul(a3).ToMat();
+        using var blended = new Mat();
+        Cv2.Add(p1, p2, blended);
+        blended.ConvertTo(crop, MatType.CV_8UC3);
     }
 
     /// <summary>겹치거나 가까운 박스를 합치고, 모델 처리에 적당하도록 사방 여백을 준 ROI 목록.

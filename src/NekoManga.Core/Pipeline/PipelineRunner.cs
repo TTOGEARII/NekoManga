@@ -109,15 +109,10 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                     var exclude = blocks.Select(b =>
                         new Rect(b.X1, b.Y1, Math.Max(1, b.X2 - b.X1), Math.Max(1, b.Y2 - b.Y1))).ToList();
 
-                    // 검열 추적은 한 번에 한 종류만 — 여러 경로를 섞으면 서로의 오탐이 결과를 오염시킨다.
-                    using var mask = settings.DecensorTarget == "Mosaic"
-                        ? MosaicDetector.BuildMask(img,
-                            settings.DecensorBlockSize, settings.DecensorThreshold, settings.DecensorMaskGrow)
-                        : MosaicDetector.BuildBarMask(img,
-                            white: settings.DecensorTarget == "WhiteBar",
-                            black: settings.DecensorTarget == "BlackBar",
-                            settings.DecensorBarMinAspect, settings.DecensorBarMinArea,
-                            settings.DecensorMaskGrow, exclude);
+                    // 검열 추적은 한 번에 한 종류만 — Auto면 페이지를 분석해 종류 선택까지 맡긴다.
+                    using var mask = MosaicDetector.BuildMaskForTarget(settings, img, exclude, out var kindUsed);
+                    if (settings.DecensorTarget == "Auto")
+                        progress.Report(new(name, $"검열 분석: {kindUsed}", 46));
                     if (mask != null)
                     {
                         if (strongDecensor)

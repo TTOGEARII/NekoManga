@@ -39,9 +39,18 @@
                             SelectionChanged="TabMode_Changed">
                     <TabItem Header="🙈 검열 지우기">
                         <StackPanel Margin="0,8,0,0">
-                            <TextBlock Style="{StaticResource HintText}" Margin="0,0,0,6"
-                                       Text="지울 검열의 꼭짓점을 클릭해 주세요. 네 점이면 사각형 완성 (기울어진 막대도 감쌀 수 있어요). 우클릭=마지막 점 취소, Enter=3점 이상 닫기, Esc=취소, 휠=확대."/>
+                            <TextBlock x:Name="TxtDecensorHint" Style="{StaticResource HintText}" Margin="0,0,0,6"
+                                       Text="점 찍기: 꼭짓점을 클릭하고 더블클릭(또는 Enter)으로 도형을 닫아요 — 점 수 제한 없음. 브러시: 누른 채 칠해요. 우클릭=마지막 점/획 취소, Esc=취소, 휠=확대, 휠 드래그=이동."/>
                             <WrapPanel>
+                                <TextBlock Text="도구" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <RadioButton x:Name="RbToolPoly" Content="✏ 점 찍기" IsChecked="True" GroupName="Tool"
+                                             Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,10,0"
+                                             Checked="Tool_Changed"/>
+                                <RadioButton x:Name="RbToolBrush" Content="🖌 브러시" GroupName="Tool"
+                                             Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,8,0"
+                                             Checked="Tool_Changed"/>
+                                <TextBlock Text="브러시 크기" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                <TextBox x:Name="TxtBrushSize" Text="24" Width="52" VerticalAlignment="Center" Margin="0,0,18,0"/>
                                 <TextBlock Text="지울 대상" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,10,0"/>
                                 <RadioButton x:Name="RbDarkOnly" Content="검은 부분만" IsChecked="True"
                                              Foreground="{StaticResource NekoText}" Margin="0,0,14,0"/>

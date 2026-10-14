@@ -132,7 +132,8 @@
                 <ListView x:Name="FileList" Grid.Column="0" Background="Transparent"
                           BorderThickness="0" SelectionMode="Extended"
                           SelectionChanged="FileList_SelectionChanged"
-                          MouseDoubleClick="FileList_MouseDoubleClick">
+                          MouseDoubleClick="FileList_MouseDoubleClick"
+                          KeyDown="FileList_KeyDown">
                     <ListView.View>
                         <GridView>
                             <GridViewColumn Header="" Width="64">
@@ -212,6 +213,9 @@
                     <ui:Button Content="📂 결과 폴더" Click="BtnOpenOutput_Click" Padding="14,6" Margin="8,0,0,0"/>
                     <ui:Button x:Name="BtnViewResult" Content="🔍 결과 보기·수정" Click="BtnViewResult_Click"
                                Padding="14,6" Margin="8,0,0,0"/>
+                    <ui:Button x:Name="BtnSort" Content="이름순 정렬" Click="BtnSort_Click" Padding="14,6" Margin="8,0,0,0"/>
+                    <ui:Button x:Name="BtnRemoveSel" Content="선택 삭제" Click="BtnRemoveSel_Click" Padding="14,6" Margin="8,0,0,0"
+                               ToolTip="목록에서만 빠져요 (파일은 그대로) — Delete 키로도 돼요"/>
                     <ui:Button x:Name="BtnClear" Content="목록 비우기" Click="BtnClear_Click" Padding="14,6" Margin="8,0,0,0"/>
                     <ui:Button x:Name="BtnUpdate" Content="🎀 새 버전!" Click="BtnUpdate_Click"
                                Appearance="Caution" Padding="14,6" Margin="8,0,0,0" Visibility="Collapsed"/>

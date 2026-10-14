@@ -79,7 +79,23 @@ public static class TextRenderer
                 : string.IsNullOrWhiteSpace(settings.LetterColorHex) ? ParseColor(b.FontColorHex)
                 : ParseColor(settings.LetterColorHex);
             float startSize = uniformSize * (float)Math.Clamp(b.StyleScale, 0.3, 3.0);
-            DrawFitted(g, b, rect, startSize, color, settings);
+
+            // 줄 폭 넘침(1.3배) 허용치를 이웃 블록까지의 여유로 깎는다 — 결합 풍선에서 분할된
+            // 형제 블록들이 바로 옆에 붙어 있으면 넘침이 서로의 글 위에 겹쳐 그려졌다 (실측 22p).
+            float maxWrap = rect.Width * WordOverflowAllow;
+            float sideFree = float.MaxValue;
+            foreach (var o in allRects)
+            {
+                if (o.Equals(rect)) continue;
+                if (o.Bottom <= rect.Top || o.Top >= rect.Bottom) continue;   // 세로 안 겹침
+                if (o.Right <= rect.Left) sideFree = Math.Min(sideFree, rect.Left - o.Right);
+                else if (o.Left >= rect.Right) sideFree = Math.Min(sideFree, o.Left - rect.Right);
+                else sideFree = 0;   // 가로로도 겹침 — 넘침 금지
+            }
+            if (sideFree != float.MaxValue)
+                maxWrap = Math.Min(maxWrap, rect.Width + 2 * Math.Max(0, sideFree - 4));
+
+            DrawFitted(g, b, rect, startSize, color, settings, maxWrap);
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
@@ -224,7 +240,7 @@ public static class TextRenderer
     }
 
     private static void DrawFitted(Graphics g, TextBlockInfo b, RectangleF rect, float startSize, Color color,
-        AppSettings s)
+        AppSettings s, float maxWrapWidth = 0)
     {
         string text = b.Translation;
 
@@ -253,7 +269,9 @@ public static class TextRenderer
         // '크기 제각각'보다 '아주 좁은 풍선에서만 어절이 꺾이는' 쪽이 덜 눈에 띈다 (사용자 피드백).
         // 줄 폭을 풍선 폭의 1.3배로 잡는다 — 말풍선을 살짝 벗어나더라도 어절이 통째로 남아
         // "회사 끝날 / 때까지 이 / 근처에서 / 기다리고 / 있을게요!"처럼 읽힌다 (사용자가 고른 모양).
+        // 호출부가 이웃 블록 여유로 깎은 상한(maxWrapWidth)이 있으면 그걸 넘지 않는다 (겹침 방지).
         float wrapWidth = rect.Width * WordOverflowAllow;
+        if (maxWrapWidth > 0) wrapWidth = Math.Min(wrapWidth, Math.Max(rect.Width, maxWrapWidth));
         for (int pass = 0; pass < 2; pass++)
         {
             bool allowBreak = pass == 1;
@@ -266,7 +284,7 @@ public static class TextRenderer
                 float lineH = font.GetHeight(g);
                 float totalH = lines.Length == 0 ? 0 : lineH * (1 + (lines.Length - 1) * spacing);
                 float maxW = lines.Max(l => l.Length == 0 ? 0 : g.MeasureString(l, font).Width);
-                bool fits = totalH <= rect.Height + 2 && maxW <= wrapWidth * 1.1f + 2 && (allowBreak || !brokeWord);
+                bool fits = totalH <= rect.Height + 2 && maxW <= wrapWidth * 1.05f + 2 && (allowBreak || !brokeWord);
                 if (fits || (allowBreak && size <= 9))
                 {
                     DrawLines(g, lines, family, style, size, lineH * spacing, rect, align, color, s, (float)b.RotationDeg);

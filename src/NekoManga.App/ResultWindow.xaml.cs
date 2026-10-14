@@ -98,6 +98,7 @@ public partial class ResultWindow
         while (_undo.Count > 0) _undo.Pop().Dispose();
         _shapes.Clear();
         _pending.Clear();
+        _brushStrokes.Clear();
         _dirty = false;
         BtnSave.IsEnabled = false;
         BtnUndo.IsEnabled = false;
@@ -502,6 +503,7 @@ public partial class ResultWindow
         if (LetterMode) return;
 
         foreach (var s in _shapes) Overlay.Children.Add(MakePolygon(s, finished: true));
+        foreach (var (pts, r) in _brushStrokes) Overlay.Children.Add(MakeStroke(pts, r));
 
         if (_pending.Count > 0)
         {
@@ -525,6 +527,30 @@ public partial class ResultWindow
         };
         foreach (var p in pts) poly.Points.Add(new WinPoint(p.X * _scale, p.Y * _scale));
         return poly;
+    }
+
+    /// <summary>브러시 획 미리보기 — 실제 마스크와 같은 두께의 반투명 선.</summary>
+    private System.Windows.Shapes.Shape MakeStroke(List<CvPoint> pts, int r)
+    {
+        var brush = new SolidColorBrush(Color.FromArgb(80, 255, 70, 40));
+        if (pts.Count == 1)
+        {
+            var dot = new System.Windows.Shapes.Ellipse
+            { Width = r * 2 * _scale, Height = r * 2 * _scale, Fill = brush };
+            Canvas.SetLeft(dot, (pts[0].X - r) * _scale);
+            Canvas.SetTop(dot, (pts[0].Y - r) * _scale);
+            return dot;
+        }
+        var line = new System.Windows.Shapes.Polyline
+        {
+            Stroke = brush,
+            StrokeThickness = r * 2 * _scale,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            StrokeLineJoin = PenLineJoin.Round,
+        };
+        foreach (var p in pts) line.Points.Add(new WinPoint(p.X * _scale, p.Y * _scale));
+        return line;
     }
 
     private System.Windows.Shapes.Ellipse MakeDot(CvPoint p)
@@ -561,10 +587,34 @@ public partial class ResultWindow
 
     private void Host_MouseUp(object sender, MouseButtonEventArgs e)
     {
+        if (e.ChangedButton == MouseButton.Left && _brushing)
+        {
+            _brushing = false;
+            ImageHost.ReleaseMouseCapture();
+            TxtStatus.Text = $"획 {_brushStrokes.Count}개 — [선택 영역 지우기]를 누르거나 계속 칠하세요";
+            e.Handled = true;
+            return;
+        }
         if (e.ChangedButton != MouseButton.Middle || !_panning) return;
         _panning = false;
         ImageHost.ReleaseMouseCapture();
         e.Handled = true;
+    }
+
+    // ── 브러시 도구 ─────────────────────────────────────────
+    private readonly List<(List<CvPoint> Pts, int R)> _brushStrokes = [];
+    private bool _brushing;
+    private bool BrushMode => RbToolBrush.IsChecked == true;
+    private int BrushRadius => int.TryParse(TxtBrushSize.Text.Trim(), out var r) ? Math.Clamp(r, 3, 200) : 24;
+
+    private void Tool_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        _pending.Clear();
+        DrawShapes();
+        TxtStatus.Text = BrushMode
+            ? "브러시 — 지울 곳을 누른 채 칠하세요 (우클릭=마지막 획 취소)"
+            : "점 찍기 — 꼭짓점을 클릭하고 더블클릭으로 닫으세요";
     }
 
     private void Host_LeftClick(object sender, MouseButtonEventArgs e)
@@ -583,23 +633,39 @@ public partial class ResultWindow
             return;
         }
 
-        _pending.Add(ToImage(e.GetPosition(ImageHost)));
-        if (_pending.Count >= 4) CloseShape();   // 막대는 사각형이라 네 점이면 충분하다
-        else
+        if (BrushMode)
         {
+            _brushing = true;
+            _brushStrokes.Add(([ToImage(e.GetPosition(ImageHost))], BrushRadius));
+            ImageHost.CaptureMouse();
             DrawShapes();
-            TxtStatus.Text = $"{_pending.Count}/4 점 — 꼭짓점을 더 찍어주세요 (Enter로 3점에서 닫기)";
+            e.Handled = true;
+            return;
         }
+
+        // 더블클릭 = 도형 닫기 (첫 클릭이 이미 점을 추가했으므로 여기선 닫기만)
+        if (e.ClickCount >= 2) { CloseShape(); return; }
+
+        _pending.Add(ToImage(e.GetPosition(ImageHost)));
+        DrawShapes();
+        TxtStatus.Text = $"{_pending.Count}점 — 계속 찍고, 더블클릭(또는 Enter)으로 도형을 닫으세요";
     }
 
     private void Host_RightClick(object sender, MouseButtonEventArgs e)
     {
         if (LetterMode) return;
+        if (BrushMode && _brushStrokes.Count > 0)
+        {
+            _brushStrokes.RemoveAt(_brushStrokes.Count - 1);
+            DrawShapes();
+            TxtStatus.Text = $"획을 취소했어요 — 남은 획 {_brushStrokes.Count}개";
+            return;
+        }
         if (_pending.Count > 0)
         {
             _pending.RemoveAt(_pending.Count - 1);
             DrawShapes();
-            TxtStatus.Text = _pending.Count == 0 ? "점을 취소했어요" : $"{_pending.Count}/4 점";
+            TxtStatus.Text = _pending.Count == 0 ? "점을 취소했어요" : $"{_pending.Count}점";
         }
         else if (_shapes.Count > 0)
         {
@@ -617,6 +683,16 @@ public partial class ResultWindow
             var p = e.GetPosition(Scroller);
             Scroller.ScrollToHorizontalOffset(_panStartH - (p.X - _panStartScreen.X));
             Scroller.ScrollToVerticalOffset(_panStartV - (p.Y - _panStartScreen.Y));
+            return;
+        }
+
+        // 브러시 칠하는 중 — 2px 이상 움직였을 때만 점 추가 (과밀 방지)
+        if (_brushing && e.LeftButton == MouseButtonState.Pressed && _brushStrokes.Count > 0)
+        {
+            var p = ToImage(e.GetPosition(ImageHost));
+            var pts = _brushStrokes[^1].Pts;
+            var last = pts[^1];
+            if (Math.Abs(p.X - last.X) + Math.Abs(p.Y - last.Y) >= 2) { pts.Add(p); DrawShapes(); }
             return;
         }
 
@@ -652,6 +728,7 @@ public partial class ResultWindow
     {
         _shapes.Clear();
         _pending.Clear();
+        _brushStrokes.Clear();
         DrawShapes();
         TxtStatus.Text = "선택을 지웠어요";
     }
@@ -664,9 +741,9 @@ public partial class ResultWindow
         if (LetterMode) { ApplyLettering(); return; }
 
         if (_pending.Count >= 3) CloseShape();   // 찍다 만 도형도 살려 준다
-        if (_shapes.Count == 0)
+        if (_shapes.Count == 0 && _brushStrokes.Count == 0)
         {
-            TxtStatus.Text = "먼저 지울 곳의 꼭짓점을 클릭해 주세요";
+            TxtStatus.Text = "먼저 지울 곳을 점으로 찍거나 브러시로 칠해 주세요";
             return;
         }
 
@@ -710,6 +787,7 @@ public partial class ResultWindow
             _dirty = true;
             BtnSave.IsEnabled = true;
             _shapes.Clear();
+            _brushStrokes.Clear();
             Redraw();
             TxtStatus.Text = $"지웠어요 ({px:N0}px) — 마음에 들면 [저장]을 눌러주세요";
         }
@@ -734,6 +812,13 @@ public partial class ResultWindow
     {
         var mask = new Mat(_img.Rows, _img.Cols, MatType.CV_8UC1, Scalar.Black);
         Cv2.FillPoly(mask, _shapes, Scalar.White);
+        // 브러시 획: 두꺼운 선 + 각 점에 원(끝/꺾임이 둥글게) — 미리보기와 같은 모양으로 래스터
+        foreach (var (pts, r) in _brushStrokes)
+        {
+            for (int i = 1; i < pts.Count; i++)
+                Cv2.Line(mask, pts[i - 1], pts[i], Scalar.White, r * 2, LineTypes.Link8);
+            foreach (var p in pts) Cv2.Circle(mask, p, r, Scalar.White, -1);
+        }
 
         if (tone != MaskTone.All)
         {

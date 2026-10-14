@@ -78,6 +78,63 @@ public static class MosaicDetector
         return mask;
     }
 
+    /// <summary>설정의 DecensorTarget("Auto"/"BlackBar"/"WhiteBar"/"Mosaic")에 맞는 검열 마스크.
+    /// Auto는 세 경로를 가볍게 돌려 '가장 그럴듯한 한 종류'를 고른다 — 한 번에 한 종류 원칙은
+    /// 유지하고 선택만 대신한다. 우선순위는 오탐이 적은 순서: 검은 막대 → 모자이크 → 흰 막대
+    /// (흰색은 원고의 흰 띠와 혼동이 가장 잦다). kindUsed로 어떤 종류를 썼는지 알려준다.</summary>
+    public static Mat? BuildMaskForTarget(AppSettings s, Mat img, IReadOnlyList<Rect>? excludeRects, out string kindUsed)
+    {
+        kindUsed = s.DecensorTarget;
+        if (s.DecensorTarget == "Mosaic")
+            return BuildMask(img, s.DecensorBlockSize, s.DecensorThreshold, s.DecensorMaskGrow);
+        if (s.DecensorTarget is "BlackBar" or "WhiteBar")
+            return BuildBarMask(img,
+                white: s.DecensorTarget == "WhiteBar", black: s.DecensorTarget == "BlackBar",
+                s.DecensorBarMinAspect, s.DecensorBarMinArea, s.DecensorMaskGrow, excludeRects);
+
+        // Auto — 각 후보를 실제로 만들어 보고 판정 기준을 넘는 첫 종류를 쓴다.
+        // 기준은 총 픽셀이 아니라 **가장 큰 단일 성분** — 효과음 붓획 조각들은 작게 흩어져
+        // 총합만 크다 (실측 p20: 붓획 오탐 47k px이지만 최대 성분 5.2k vs 진짜 막대 12k+).
+        // 수용 기준: 큰 단일 막대(최대 성분 ≥6000px) + 성분 수 ≤8.
+        // 효과음 붓획·굵은 효과선은 막대와 기하학적으로 구분이 안 되지만(실측 p20·p22),
+        // 검열 페이지는 막대 몇 개뿐이고 효과음 페이지는 조각이 많다는 점으로 가른다.
+        static (int Largest, int Count) CompStats(Mat m)
+        {
+            using var lab = new Mat();
+            using var st = new Mat();
+            using var ce = new Mat();
+            int n = Cv2.ConnectedComponentsWithStats(m, lab, st, ce);
+            int best = 0, cnt = 0;
+            for (int i = 1; i < n; i++)
+            {
+                int a = st.At<int>(i, (int)ConnectedComponentsTypes.Area);
+                if (a < 60) continue;   // 먼지 조각은 개수에 안 센다
+                cnt++;
+                best = Math.Max(best, a);
+            }
+            return (best, cnt);
+        }
+        const int BigBar = 6000;
+        static bool BarLike(Mat m) { var (l, c) = CompStats(m); return l >= BigBar && c <= 8; }
+
+        var blackM = BuildBarMask(img, white: false, black: true,
+            s.DecensorBarMinAspect, s.DecensorBarMinArea, s.DecensorMaskGrow, excludeRects);
+        if (blackM != null && BarLike(blackM)) { kindUsed = "BlackBar"; return blackM; }
+        blackM?.Dispose();
+
+        var mosaicM = BuildMask(img, s.DecensorBlockSize, s.DecensorThreshold, s.DecensorMaskGrow);
+        if (mosaicM != null && Cv2.CountNonZero(mosaicM) >= 1500) { kindUsed = "Mosaic"; return mosaicM; }
+        mosaicM?.Dispose();
+
+        var whiteM = BuildBarMask(img, white: true, black: false,
+            s.DecensorBarMinAspect, s.DecensorBarMinArea, s.DecensorMaskGrow, excludeRects);
+        if (whiteM != null && BarLike(whiteM)) { kindUsed = "WhiteBar"; return whiteM; }
+        whiteM?.Dispose();
+
+        kindUsed = "없음";
+        return null;
+    }
+
     /// <summary>흰색·검은색 막대(바) 검열을 찾는다. 그림 위에 덮인 단색 직사각형이 특징이다.
     ///
     /// 판정 조건 — 네 개를 모두 만족해야 한다 (말풍선·여백·패널 테두리 오탐 방지):
@@ -106,6 +163,7 @@ public static class MosaicDetector
 
         var mask = new Mat(img.Rows, img.Cols, MatType.CV_8UC1, Scalar.Black);
         bool any = false;
+        var whiteAccepted = new List<(Mat Comp, Rect Br)>();   // 흰 후보는 모아서 장식 줄무늬 검사 후 반영
 
         foreach (var isWhite in new[] { true, false })
         {
@@ -175,8 +233,18 @@ public static class MosaicDetector
                 bool stubby = !isWhite && fill >= 0.90 && aspect >= 1.15 && Math.Max(w, h) <= 45;
                 if ((fill >= 0.80 && aspect >= minAspect) || stubby)
                 {
-                    mask.SetTo(Scalar.White, comp);
-                    any = true;
+                    if (isWhite)
+                    {
+                        // 흰 막대는 얇다 — 짧은 변이 두꺼우면 문짝·벽 같은 흰 그림 면이다
+                        // (실측: 348px짜리 문 패널이 막대로 잡혀 통째로 지워질 뻔했다)
+                        if (Math.Min(w, h) > Math.Max(45, img.Cols * 0.045)) continue;
+                        whiteAccepted.Add((comp.Clone(), br));
+                    }
+                    else
+                    {
+                        mask.SetTo(Scalar.White, comp);
+                        any = true;
+                    }
                     continue;
                 }
 
@@ -189,6 +257,74 @@ public static class MosaicDetector
                 any = true;
             }
         }
+
+        // ── 흰 후보 반영: 장식 줄무늬 그룹을 걸러낸 뒤에 ──
+        // 겹겹이 쌓인 평행 띠(≥3, x겹침, 가까운 간격)는 ① 빗금 검열(띠 사이에 그림이 있다)이거나
+        // ② 장식 줄무늬 패널(띠 사이가 밋밋한 톤이다). 사이 영역의 표준편차로 가른다
+        // (실측 22p: 장식 패널 3묶음 147k px가 검열로 잡혀 그림이 지워질 뻔했다 — 톤 사이 std 낮음).
+        if (whiteAccepted.Count > 0)
+        {
+            var drop = new bool[whiteAccepted.Count];
+            var sortedIdx = Enumerable.Range(0, whiteAccepted.Count)
+                .OrderBy(i => whiteAccepted[i].Br.Y).ToList();
+            for (int a = 0; a < sortedIdx.Count; a++)
+            {
+                var grp = new List<int> { sortedIdx[a] };
+                for (int b = a + 1; b < sortedIdx.Count; b++)
+                {
+                    var p = whiteAccepted[grp[^1]].Br;
+                    var q = whiteAccepted[sortedIdx[b]].Br;
+                    int xov = Math.Min(p.Right, q.Right) - Math.Max(p.X, q.X);
+                    if (xov < Math.Min(p.Width, q.Width) * 0.5) continue;
+                    int gap = q.Y - p.Bottom;
+                    if (gap < 0 || gap > Math.Max(p.Height, q.Height) * 2.5) continue;
+                    grp.Add(sortedIdx[b]);
+                }
+                if (grp.Count < 3) continue;
+                // 띠 사이 영역이 밋밋하면 장식
+                var flats = new List<bool>();
+                for (int k = 1; k < grp.Count; k++)
+                {
+                    var p = whiteAccepted[grp[k - 1]].Br;
+                    var q = whiteAccepted[grp[k]].Br;
+                    int gx = Math.Max(p.X, q.X), gr = Math.Min(p.Right, q.Right);
+                    int gy = p.Bottom + 2, gb = q.Y - 2;
+                    if (gr - gx < 8 || gb - gy < 4) continue;
+                    using var gapRoi = new Mat(gray, new Rect(gx, gy, gr - gx, gb - gy));
+                    // 망점 톤은 픽셀 std가 높다 — 블러로 뭉개면 평탄한 톤은 std가 낮아지고
+                    // 진짜 그림(선화)은 블러 후에도 구조가 남아 std가 높다.
+                    // 가로 3등분 중 '한 구간이라도' 밋밋하면 장식 — 줄무늬 패널 위에 인물이
+                    // 걸쳐 있어도 옆 구간은 톤이 이어진다 (빗금 검열은 전 구간이 그림이다).
+                    using var gapBlur = new Mat();
+                    Cv2.GaussianBlur(gapRoi, gapBlur, new Size(7, 7), 0);
+                    int third = Math.Max(4, gapBlur.Cols / 3);
+                    double minStd = double.MaxValue;
+                    for (int tx3 = 0; tx3 + third <= gapBlur.Cols; tx3 += third)
+                    {
+                        using var part = new Mat(gapBlur, new Rect(tx3, 0, third, gapBlur.Rows));
+                        Cv2.MeanStdDev(part, out _, out var stdP);
+                        minStd = Math.Min(minStd, stdP.Val0);
+                    }
+                    flats.Add(minStd < 26);
+                }
+                if (flats.Count > 0 && flats.Count(f => f) >= flats.Count * 0.6)
+                    foreach (var gi in grp) drop[gi] = true;
+            }
+            for (int i = 0; i < whiteAccepted.Count; i++)
+            {
+                if (!drop[i])
+                {
+                    mask.SetTo(Scalar.White, whiteAccepted[i].Comp);
+                    any = true;
+                }
+                whiteAccepted[i].Comp.Dispose();
+            }
+        }
+
+        // 회전 흰 스트립 추가 — 여백·흰 그림과 이어진 막대는 연결 성분으로 못 잡는다
+        // (WhiteStripDetector 주석 참조: 직선 테두리 기반 + 보수 정책으로 장식 오탐 0 확인).
+        if (white && WhiteStripDetector.AddToMask(img, mask, grow: 0) > 0)
+            any = true;
 
         if (!any) { mask.Dispose(); return null; }
         if (grow > 0)

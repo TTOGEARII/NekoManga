@@ -134,12 +134,13 @@
 
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="무엇을 검열로 볼까요"/></Border>
                     <ComboBox x:Name="CmbDecensorTarget" Width="300" HorizontalAlignment="Left">
+                        <ComboBoxItem Tag="Auto" Content="자동 — 이미지를 분석해 결정"/>
                         <ComboBoxItem Tag="BlackBar" Content="검은색 막대 (먹줄)"/>
                         <ComboBoxItem Tag="WhiteBar" Content="흰색 막대"/>
                         <ComboBoxItem Tag="Mosaic" Content="모자이크 (격자)"/>
                     </ComboBox>
                     <TextBlock Style="{StaticResource HintText}"
-                               Text="정확성을 위해 한 번에 한 종류만 추적해요 — 여러 종류를 섞으면 서로의 오탐이 결과를 망가뜨려요. 원고의 검열 방식에 맞게 골라주세요. 흰색 막대는 주변 흰 살결과 붙어 자동으로는 놓치기 쉬워요 — 놓친 건 [결과 보기·수정]에서 '흰 부분만'으로 직접 지울 수 있어요."/>
+                               Text="정확성을 위해 한 번에 한 종류만 추적해요 — 자동은 장마다 이미지를 분석해 종류 선택(검은 막대 → 모자이크 → 흰 막대 순)을 대신해 줘요. 원고의 검열 방식을 알면 직접 고르는 게 더 정확해요. 흰색 막대는 주변 흰 살결과 붙어 자동으로는 놓치기 쉬워요 — 놓친 건 [결과 보기·수정]에서 '흰 부분만'이나 브러시로 직접 지울 수 있어요."/>
                     <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
                         <DockPanel>
                             <TextBlock Text="막대 최소 비율" Style="{StaticResource FieldLabel}" Width="110"/>

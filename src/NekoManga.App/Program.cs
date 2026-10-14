@@ -44,6 +44,64 @@ public static class Program
             return;
         }
 
+        // 흰 막대 마스크 단독 테스트: --bartest <이미지...> → <이미지>.barmask.png + bartest.log
+        var btIdx = Array.IndexOf(args, "--bartest");
+        if (btIdx >= 0)
+        {
+            foreach (var p in args.Skip(btIdx + 1).Where(File.Exists))
+            {
+                using var im1 = NekoManga.Core.ImgIo.Read(p);
+                var sw1 = System.Diagnostics.Stopwatch.StartNew();
+                using var mk = NekoManga.Core.Decensor.MosaicDetector.BuildBarMask(
+                    im1, white: true, black: false, minAspect: 1.8, minAreaPx: 350, grow: 0);
+                int px1 = mk == null ? 0 : OpenCvSharp.Cv2.CountNonZero(mk);
+                File.AppendAllLines(Path.Combine(Path.GetDirectoryName(p)!, "bartest.log"),
+                    [$"{Path.GetFileName(p)}: {px1}px ({sw1.ElapsedMilliseconds}ms)"]);
+                if (mk != null) NekoManga.Core.ImgIo.Write(Path.ChangeExtension(p, null) + ".barmask.png", mk);
+            }
+            return;
+        }
+
+        // 기본 LaMa 수동 복원 테스트: --lamatest <이미지> <x> <y> <w> <h> → <이미지>.lama.png
+        var ltIdx = Array.IndexOf(args, "--lamatest");
+        if (ltIdx >= 0 && ltIdx + 5 < args.Length)
+        {
+            var settings0 = NekoManga.Core.AppSettings.Load();
+            using var env0 = new NekoManga.Core.Engine.OnnxEnv(settings0);
+            var lama = new NekoManga.Core.Engine.LamaInpainter(env0);
+            using var im0 = NekoManga.Core.ImgIo.Read(args[ltIdx + 1]);
+            using var m0 = new OpenCvSharp.Mat(im0.Rows, im0.Cols, OpenCvSharp.MatType.CV_8UC1, OpenCvSharp.Scalar.Black);
+            var r0 = new OpenCvSharp.Rect(int.Parse(args[ltIdx + 2]), int.Parse(args[ltIdx + 3]),
+                int.Parse(args[ltIdx + 4]), int.Parse(args[ltIdx + 5]));
+            OpenCvSharp.Cv2.Rectangle(m0, r0, OpenCvSharp.Scalar.White, -1);
+            OpenCvSharp.Cv2.Dilate(m0, m0, OpenCvSharp.Cv2.GetStructuringElement(OpenCvSharp.MorphShapes.Ellipse, new OpenCvSharp.Size(13, 13)));
+            lama.Inpaint(im0, m0);
+            NekoManga.Core.ImgIo.Write(Path.ChangeExtension(args[ltIdx + 1], null) + ".lama.png", im0);
+            return;
+        }
+
+        // 흰 스트립 검출 단독 테스트: NekoManga.exe --striptest <이미지...> → <이미지>.strips.png + 콘솔
+        var stIdx = Array.IndexOf(args, "--striptest");
+        if (stIdx >= 0)
+        {
+            foreach (var p in args.Skip(stIdx + 1).Where(File.Exists))
+            {
+                using var img = NekoManga.Core.ImgIo.Read(p);
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                var strips = NekoManga.Core.Decensor.WhiteStripDetector.Detect(img);
+                var lines = new List<string> { $"{Path.GetFileName(p)}: strips={strips.Count} ({sw.ElapsedMilliseconds}ms)" };
+                foreach (var st in strips)
+                {
+                    lines.Add($"  c=({st.Center.X:F0},{st.Center.Y:F0}) {st.Size.Width:F0}x{st.Size.Height:F0} ang={st.AngleDeg:F1}");
+                    var rr = new OpenCvSharp.RotatedRect(st.Center, st.Size, st.AngleDeg);
+                    OpenCvSharp.Cv2.Polylines(img, new[] { rr.Points().Select(q => new OpenCvSharp.Point((int)q.X, (int)q.Y)) }, true, OpenCvSharp.Scalar.Red, 8);
+                }
+                NekoManga.Core.ImgIo.Write(Path.ChangeExtension(p, null) + ".strips.png", img);
+                File.AppendAllLines(Path.Combine(Path.GetDirectoryName(p)!, "striptest.log"), lines);
+            }
+            return;
+        }
+
         // 로고 아이콘 재생성 (디자인 변경 시): NekoManga.exe --render-logo <출력.ico>
         var logoIdx = Array.IndexOf(args, "--render-logo");
         if (logoIdx >= 0 && logoIdx + 1 < args.Length)

@@ -199,6 +199,37 @@ public partial class MainWindow
         UpdateDropHint();
     }
 
+    [System.Runtime.InteropServices.DllImport("shlwapi.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern int StrCmpLogicalW(string a, string b);
+
+    /// <summary>탐색기와 같은 자연 정렬 — "2.png"가 "10.png"보다 앞에 온다.</summary>
+    private void BtnSort_Click(object sender, RoutedEventArgs e)
+    {
+        if (_cts != null || _rows.Count < 2) return;
+        var sorted = _rows.OrderBy(r => r.Name, Comparer<string>.Create(StrCmpLogicalW)).ToList();
+        _rows.Clear();
+        foreach (var r in sorted) _rows.Add(r);   // 같은 Row 객체 재사용 — 썸네일·상태 유지
+        TxtStatus.Text = "이름순으로 정렬했어요";
+    }
+
+    /// <summary>선택한 항목을 목록에서 뺀다 (디스크의 파일은 건드리지 않는다). Delete 키와 공용.</summary>
+    private void RemoveSelected()
+    {
+        if (_cts != null || FileList.SelectedItems.Count == 0) return;
+        int idx = FileList.SelectedIndex;
+        foreach (var row in FileList.SelectedItems.Cast<FileRow>().ToList())
+            _rows.Remove(row);
+        if (_rows.Count > 0) FileList.SelectedIndex = Math.Min(idx, _rows.Count - 1);
+        UpdateDropHint();
+    }
+
+    private void BtnRemoveSel_Click(object sender, RoutedEventArgs e) => RemoveSelected();
+
+    private void FileList_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == System.Windows.Input.Key.Delete) { RemoveSelected(); e.Handled = true; }
+    }
+
     // ── 실행 ──────────────────────────────────────────────────
     private void Feature_Changed(object sender, RoutedEventArgs e)
     {
@@ -239,7 +270,17 @@ public partial class MainWindow
         TxtStatus.Text = "작업 중... (ฅ'ω'ฅ)";
 
         using var runner = new PipelineRunner(s);
-        var files = _rows.Select(r => r.Path).ToList();
+        // 멈췄다 재시작하면 이미 끝난 장은 건너뛴다 (상태가 "완료"인 행 — 이번 세션에서 끝난 것)
+        var pending = _rows.Where(r => r.Stage != "완료").ToList();
+        int skipped = _rows.Count - pending.Count;
+        if (pending.Count == 0)
+        {
+            TxtStatus.Text = "모든 장이 이미 완료됐어요 — 다시 돌리려면 목록을 비우고 새로 올려주세요";
+            _cts = null; BtnRun.IsEnabled = true; BtnStop.IsEnabled = false;
+            return;
+        }
+        if (skipped > 0) TxtStatus.Text = $"완료된 {skipped}장은 건너뛰고 {pending.Count}장 작업 중...";
+        var files = pending.Select(r => r.Path).ToList();
         _lastOutputDir = Path.GetDirectoryName(runner.OutputPathFor(files[0]));
 
         var progress = new Progress<PageProgress>(p =>
