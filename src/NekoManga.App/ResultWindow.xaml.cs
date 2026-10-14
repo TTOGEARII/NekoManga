@@ -264,16 +264,21 @@ public partial class ResultWindow
         }
 
         int grow = int.TryParse(TxtGrow.Text.Trim(), out var g) ? Math.Clamp(g, 0, 40) : 6;
-        bool darkOnly = RbDarkOnly.IsChecked == true;
+        var tone = RbDarkOnly.IsChecked == true ? MaskTone.Dark
+                 : RbWhiteOnly.IsChecked == true ? MaskTone.White
+                 : MaskTone.All;
         bool strong = (CmbEngine.SelectedItem as ComboBoxItem)?.Tag as string == "Strong";
 
-        using var mask = BuildMask(darkOnly, grow);
+        using var mask = BuildMask(tone, grow);
         int px = Cv2.CountNonZero(mask);
         if (px == 0)
         {
-            TxtStatus.Text = darkOnly
-                ? "도형 안에서 검은 부분을 찾지 못했어요 — [도형 전체]로 바꿔 보세요"
-                : "지울 영역이 비어 있어요";
+            TxtStatus.Text = tone switch
+            {
+                MaskTone.Dark => "도형 안에서 검은 부분을 찾지 못했어요 — [흰 부분만]이나 [도형 전체]로 바꿔 보세요",
+                MaskTone.White => "도형 안에서 흰 부분을 찾지 못했어요 — [도형 전체]로 바꿔 보세요",
+                _ => "지울 영역이 비어 있어요",
+            };
             return;
         }
 
@@ -312,22 +317,25 @@ public partial class ResultWindow
         }
     }
 
+    private enum MaskTone { Dark, White, All }
+
     /// <summary>찍은 도형들로 복원 마스크를 만든다.
-    /// '검은 부분만'이면 도형 안에서 어두운 픽셀만 골라 — 넉넉히 감싸도 주변 그림이 함께 뭉개지지 않는다.
-    /// 가장자리 안티에일리어싱까지 덮도록 grow만큼 부풀린다.</summary>
-    private Mat BuildMask(bool darkOnly, int grow)
+    /// '검은/흰 부분만'이면 도형 안에서 그 톤의 픽셀만 골라 — 넉넉히 감싸도 주변 그림이 함께
+    /// 뭉개지지 않는다. 가장자리 안티에일리어싱까지 덮도록 grow만큼 부풀린다.</summary>
+    private Mat BuildMask(MaskTone tone, int grow)
     {
         var mask = new Mat(_img.Rows, _img.Cols, MatType.CV_8UC1, Scalar.Black);
         Cv2.FillPoly(mask, _shapes, Scalar.White);
 
-        if (darkOnly)
+        if (tone != MaskTone.All)
         {
             using var gray = new Mat();
             Cv2.CvtColor(_img, gray, ColorConversionCodes.BGR2GRAY);
-            using var dark = new Mat();
-            // 막대는 거의 순흑이지만 스캔본은 들쑥날쑥하다 — 120까지 넉넉히 잡는다.
-            Cv2.Threshold(gray, dark, 120, 255, ThresholdTypes.BinaryInv);
-            Cv2.BitwiseAnd(mask, dark, mask);
+            using var picked = new Mat();
+            // 막대는 거의 순흑/순백이지만 스캔본은 들쑥날쑥하다 — 양쪽 다 넉넉히 잡는다.
+            if (tone == MaskTone.Dark) Cv2.Threshold(gray, picked, 120, 255, ThresholdTypes.BinaryInv);
+            else Cv2.Threshold(gray, picked, 200, 255, ThresholdTypes.Binary);
+            Cv2.BitwiseAnd(mask, picked, mask);
         }
 
         if (grow > 0)

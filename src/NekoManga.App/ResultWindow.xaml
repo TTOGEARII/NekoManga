@@ -28,8 +28,10 @@
                            Text="지울 검열의 꼭짓점을 클릭해 주세요. 네 점을 찍으면 사각형이 완성됩니다 (기울어진 막대도 그대로 감쌀 수 있어요). 오른쪽 클릭=마지막 점 취소, Enter=3점 이상이면 바로 닫기, Esc=현재 도형 취소. 휠로 확대/축소."/>
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="지울 대상" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                    <RadioButton x:Name="RbDarkOnly" Content="도형 안의 검은 부분만" IsChecked="True"
-                                 Foreground="{StaticResource NekoText}" Margin="0,0,16,0"/>
+                    <RadioButton x:Name="RbDarkOnly" Content="검은 부분만" IsChecked="True"
+                                 Foreground="{StaticResource NekoText}" Margin="0,0,14,0"/>
+                    <RadioButton x:Name="RbWhiteOnly" Content="흰 부분만"
+                                 Foreground="{StaticResource NekoText}" Margin="0,0,14,0"/>
                     <RadioButton x:Name="RbWholeRect" Content="도형 전체"
                                  Foreground="{StaticResource NekoText}" Margin="0,0,24,0"/>
                     <TextBlock Text="여유(px)" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,6,0"/>

@@ -103,7 +103,7 @@
                         <CheckBox x:Name="ChkFindBlackBar" Content="검은색 막대(먹줄)" Foreground="{StaticResource NekoText}"/>
                     </StackPanel>
                     <TextBlock Style="{StaticResource HintText}"
-                               Text="막대 검열은 그림 위에 덮인 단색 직사각형을 찾아요. 말풍선·페이지 여백은 자동으로 제외됩니다."/>
+                               Text="막대 검열은 그림 위에 덮인 단색 직사각형을 찾아요. 말풍선·페이지 여백은 자동으로 제외됩니다. 흰색 막대는 주변 흰 살결·배경과 한 덩어리로 붙어 자동으로는 거의 못 찾아요 — [결과 보기·수정]에서 '흰 부분만'으로 직접 지우는 걸 권해요."/>
                     <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
                         <DockPanel>
                             <TextBlock Text="막대 최소 비율" Style="{StaticResource FieldLabel}" Width="110"/>
