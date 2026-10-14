@@ -18,6 +18,8 @@ using MouseEventArgs = System.Windows.Input.MouseEventArgs;
 using MouseButtonEventArgs = System.Windows.Input.MouseButtonEventArgs;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using TextRenderer = NekoManga.Core.Pipeline.TextRenderer;
+using TextBox = System.Windows.Controls.TextBox;
+using FontFamily = System.Windows.Media.FontFamily;
 using MessageBox = System.Windows.MessageBox;
 
 namespace NekoManga.App;
@@ -50,6 +52,8 @@ public partial class ResultWindow
     private LetterSidecar? _sidecar;              // 현재 페이지의 식자 사이드카 (없으면 탭 비활성)
     private List<TextBlockInfo> _letterBlocks = [];
     private bool _syncingBlockUi;                 // 콤보/텍스트박스 동기화 중 재진입 방지
+    private Mat? _baseImg;                        // 식자 전 원고 — 편집 모드에서 이 위에 텍스트박스를 띄운다
+    private bool _letterPreview;                  // true면 [다시 식자] 결과(_img)를 보여준다
 
     public ResultWindow(IReadOnlyList<string> pages, int startIndex)
     {
@@ -68,6 +72,14 @@ public partial class ResultWindow
         TxtLColor.Text = s.LetterColorHex;
         TxtLOutScale.Text = s.LetterOutlineScale.ToString(System.Globalization.CultureInfo.InvariantCulture);
         TxtLOutColor.Text = s.LetterOutlineColorHex;
+
+        // 스타일 입력이 바뀌면 WYSIWYG 텍스트박스에 즉시 반영
+        CmbLFont.SelectionChanged += (s, e) => LetterStyle_Changed(s, e);
+        CmbLFont.LostFocus += LetterStyle_Changed;
+        ChkLBold.Checked += (s, e) => LetterStyle_Changed(s, e);
+        ChkLBold.Unchecked += (s, e) => LetterStyle_Changed(s, e);
+        TxtLSize.TextChanged += (s, e) => LetterStyle_Changed(s, e);
+        TxtLColor.TextChanged += (s, e) => LetterStyle_Changed(s, e);
 
         Loaded += (_, _) => LoadPage(_index, fit: true);
     }
@@ -103,8 +115,12 @@ public partial class ResultWindow
         // 식자 사이드카 로드 — 번역을 돌린 페이지에만 있다
         _sidecar = LetterSidecar.Load(_pages[_index]);
         _letterBlocks = _sidecar?.Blocks.ToList() ?? [];
-        TabLetter.IsEnabled = _sidecar != null;
-        if (_sidecar == null && TabMode.SelectedItem == TabLetter) TabMode.SelectedIndex = 0;
+        _baseImg?.Dispose();
+        _baseImg = _sidecar != null ? ImgIo.Read(_sidecar.BasePath) : null;
+        if (_baseImg is { } bm && bm.Empty()) { bm.Dispose(); _baseImg = null; }
+        _letterPreview = false;
+        TabLetter.IsEnabled = _sidecar != null && _baseImg != null;
+        if (!TabLetter.IsEnabled && TabMode.SelectedItem == TabLetter) TabMode.SelectedIndex = 0;
         RefreshBlockCombo();
 
         if (fit) FitToWindow();
@@ -121,11 +137,18 @@ public partial class ResultWindow
         BtnApply.Content = LetterMode ? "✍ 다시 식자" : "✨ 선택 영역 지우기";
         BtnClearSel.Visibility = LetterMode ? Visibility.Collapsed : Visibility.Visible;
         _pending.Clear();
-        DrawShapes();
+        _letterPreview = false;      // 탭에 들어오면 항상 편집 모드부터
+        Redraw();
         if (LetterMode)
             TxtStatus.Text = _letterBlocks.Count > 0
-                ? $"번역 블록 {_letterBlocks.Count}개 — 스타일·번역문을 바꾸고 [다시 식자]를 누르세요"
-                : "이 장은 숨기지 않은 블록이 없어요";
+                ? $"번역 블록 {_letterBlocks.Count}개 — 말풍선의 텍스트박스를 바로 고치세요"
+                : "이 장은 보일 블록이 없어요";
+    }
+
+    /// <summary>스타일 입력(글꼴·크기·색 등)이 바뀌면 편집 중인 텍스트박스에 즉시 반영한다.</summary>
+    private void LetterStyle_Changed(object? sender, EventArgs e)
+    {
+        if (IsLoaded && LetterMode && !_letterPreview) RebuildLetterBoxes();
     }
 
     private void RefreshBlockCombo()
@@ -156,6 +179,10 @@ public partial class ResultWindow
         if (_syncingBlockUi || CmbBlocks.SelectedIndex < 0) return;
         int i = CmbBlocks.SelectedIndex;
         _letterBlocks[i] = _letterBlocks[i] with { Translation = TxtBlockText.Text };
+        // 캔버스 위 텍스트박스에도 즉시 반영
+        foreach (var child in EditLayer.Children)
+            if (child is TextBox tb && tb.Tag is int idx && idx == i && tb.Text != TxtBlockText.Text)
+            { _syncingBlockUi = true; tb.Text = TxtBlockText.Text; _syncingBlockUi = false; }
     }
 
     private void BtnBlockHide_Click(object sender, RoutedEventArgs e)
@@ -163,8 +190,8 @@ public partial class ResultWindow
         if (CmbBlocks.SelectedIndex < 0) return;
         _letterBlocks.RemoveAt(CmbBlocks.SelectedIndex);
         RefreshBlockCombo();
-        DrawShapes();
-        TxtStatus.Text = $"블록을 숨겼어요 — [다시 식자]를 눌러야 그림에 반영돼요 (남은 {_letterBlocks.Count}개)";
+        if (LetterMode && !_letterPreview) RebuildLetterBoxes();
+        TxtStatus.Text = $"블록을 숨겼어요 (남은 {_letterBlocks.Count}개) — 창을 다시 열면 복구돼요";
     }
 
     /// <summary>식자 탭의 스타일 값들로 재식자 전용 설정을 만든다 (전역 설정은 건드리지 않는다).</summary>
@@ -203,8 +230,9 @@ public partial class ResultWindow
             BtnUndo.IsEnabled = true;
             _dirty = true;
             BtnSave.IsEnabled = true;
+            _letterPreview = true;   // 최종 렌더 결과를 보여준다 — 그림 클릭으로 편집 복귀
             Redraw();
-            TxtStatus.Text = $"다시 식자했어요 (블록 {_letterBlocks.Count}개) — 마음에 들면 [저장]을 눌러주세요";
+            TxtStatus.Text = $"최종 렌더링 미리보기 (블록 {_letterBlocks.Count}개) — [저장] 또는 그림 클릭으로 다시 편집";
         }
         finally { try { File.Delete(tmp); } catch { } }
     }
@@ -242,11 +270,96 @@ public partial class ResultWindow
     private void Redraw()
     {
         if (_img.Empty()) return;
-        ImgView.Source = ToBitmap(_img);
-        ImageHost.Width = ImgView.Width = Overlay.Width = _img.Width * _scale;
-        ImageHost.Height = ImgView.Height = Overlay.Height = _img.Height * _scale;
+        // 식자 편집 모드에서는 글자가 안 구워진 원고(base)를 깔고 그 위에 텍스트박스를 띄운다
+        bool editView = LetterMode && !_letterPreview && _baseImg != null;
+        var shown = editView ? _baseImg! : _img;
+        ImgView.Source = ToBitmap(shown);
+        ImageHost.Width = ImgView.Width = Overlay.Width = EditLayer.Width = shown.Width * _scale;
+        ImageHost.Height = ImgView.Height = Overlay.Height = EditLayer.Height = shown.Height * _scale;
         TxtZoom.Text = $"{_scale * 100:0}%";
+        EditLayer.Visibility = editView ? Visibility.Visible : Visibility.Collapsed;
+        if (editView) RebuildLetterBoxes();
         DrawShapes();
+    }
+
+    /// <summary>말풍선 자리마다 편집 가능한 텍스트박스를 띄운다 (포토샵식 WYSIWYG).
+    /// 글꼴·크기·색은 현재 스타일 값을 따르므로 타이핑·스타일 변경이 즉시 보인다.
+    /// 최종 화질(외곽선 포함)은 [다시 식자]의 GDI+ 렌더가 책임진다.</summary>
+    private void RebuildLetterBoxes()
+    {
+        EditLayer.Children.Clear();
+        if (_sidecar == null || _baseImg == null) return;
+
+        double bs = (double)_baseImg.Width / Math.Max(1, _sidecar.SrcW);   // 원본 → 결과 좌표
+        var style = LetterStyle();
+        var family = new FontFamily(style.LetterFontFamily);
+
+        for (int i = 0; i < _letterBlocks.Count; i++)
+        {
+            var b = _letterBlocks[i];
+            double w = (b.X2 - b.X1) * bs * _scale, h = (b.Y2 - b.Y1) * bs * _scale;
+            if (w < 8 || h < 8) continue;
+
+            // 파이프라인과 같은 규칙으로 풍선 폭·글자 크기를 추정한다 (높이 넘침 축소는 근사 생략)
+            var rect = new System.Drawing.RectangleF(
+                (float)(b.X1 * bs), (float)(b.Y1 * bs),
+                (float)((b.X2 - b.X1) * bs), (float)((b.Y2 - b.Y1) * bs));
+            if (b.Vertical) rect = TextRenderer.WidenToBubble(_baseImg, rect);
+            float px = TextRenderer.StartSize(b, rect,
+                (float)(b.FontSize * bs * Math.Clamp(style.LetterSizeScale, 0.3, 3.0)));
+            w = rect.Width * _scale;
+            h = rect.Height * _scale;
+
+            var tb = new TextBox
+            {
+                Width = w, Height = h,
+                Text = b.Translation,
+                Tag = i,
+                TextWrapping = TextWrapping.Wrap,
+                TextAlignment = TextAlignment.Center,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                AcceptsReturn = true,
+                FontFamily = family,
+                FontWeight = style.LetterBold ? FontWeights.Bold : FontWeights.Normal,
+                FontSize = Math.Max(6, px * _scale),
+                Foreground = new SolidColorBrush(ToMedia(style.LetterColorHex, b.FontColorHex)),
+                Background = new SolidColorBrush(Color.FromArgb(70, 255, 255, 255)),
+                BorderBrush = Brushes.DeepSkyBlue,
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(0),
+            };
+            tb.TextChanged += LetterBox_TextChanged;
+            tb.GotKeyboardFocus += (s, _) =>
+            {
+                if (s is TextBox box && box.Tag is int idx && idx < CmbBlocks.Items.Count)
+                { _syncingBlockUi = true; CmbBlocks.SelectedIndex = idx; TxtBlockText.Text = box.Text; _syncingBlockUi = false; }
+            };
+            tb.Width = w;
+            tb.Height = h;
+            Canvas.SetLeft(tb, rect.X * _scale);
+            Canvas.SetTop(tb, rect.Y * _scale);
+            EditLayer.Children.Add(tb);
+        }
+    }
+
+    private void LetterBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (sender is not TextBox tb || tb.Tag is not int i || i >= _letterBlocks.Count) return;
+        _letterBlocks[i] = _letterBlocks[i] with { Translation = tb.Text };
+        if (!_syncingBlockUi && CmbBlocks.SelectedIndex == i)
+        { _syncingBlockUi = true; TxtBlockText.Text = tb.Text; _syncingBlockUi = false; }
+    }
+
+    private static Color ToMedia(string hex, string fallbackHex)
+    {
+        var h = string.IsNullOrWhiteSpace(hex) ? fallbackHex : hex;
+        if (h.StartsWith('#') && h.Length == 7)
+            try
+            {
+                return Color.FromRgb(Convert.ToByte(h[1..3], 16), Convert.ToByte(h[3..5], 16), Convert.ToByte(h[5..7], 16));
+            }
+            catch { }
+        return Colors.Black;
     }
 
     /// <summary>Mat(BGR) → WPF 비트맵. OpenCvSharp.Extensions 없이 직접 옮긴다.</summary>
@@ -266,27 +379,8 @@ public partial class ResultWindow
     {
         Overlay.Children.Clear();
 
-        // 식자 모드: 번역 블록 위치를 네모로 보여준다 (선택된 블록은 금색)
-        if (LetterMode)
-        {
-            if (_sidecar == null || _img.Empty()) return;
-            double bs = (double)_img.Width / Math.Max(1, _sidecar.SrcW);
-            for (int i = 0; i < _letterBlocks.Count; i++)
-            {
-                var b = _letterBlocks[i];
-                var box = new System.Windows.Shapes.Rectangle
-                {
-                    Width = Math.Max(1, (b.X2 - b.X1) * bs * _scale),
-                    Height = Math.Max(1, (b.Y2 - b.Y1) * bs * _scale),
-                    Stroke = i == CmbBlocks.SelectedIndex ? Brushes.Gold : Brushes.DeepSkyBlue,
-                    StrokeThickness = i == CmbBlocks.SelectedIndex ? 3 : 1.5,
-                };
-                Canvas.SetLeft(box, b.X1 * bs * _scale);
-                Canvas.SetTop(box, b.Y1 * bs * _scale);
-                Overlay.Children.Add(box);
-            }
-            return;
-        }
+        // 식자 모드의 블록 표시는 EditLayer의 텍스트박스 자체가 담당한다
+        if (LetterMode) return;
 
         foreach (var s in _shapes) Overlay.Children.Add(MakePolygon(s, finished: true));
 
@@ -334,21 +428,15 @@ public partial class ResultWindow
     {
         if (_img.Empty() || _busy) return;
 
-        // 식자 모드: 클릭한 자리의 번역 블록을 선택한다
+        // 식자 모드: 미리보기 중이면 그림 클릭으로 편집 모드로 돌아간다
+        // (편집 모드의 클릭은 텍스트박스가 직접 받으므로 여기로 안 온다)
         if (LetterMode)
         {
-            if (_sidecar == null) return;
-            var p = ToImage(e.GetPosition(ImageHost));
-            double bs = (double)_img.Width / Math.Max(1, _sidecar.SrcW);
-            int sx = (int)(p.X / bs), sy = (int)(p.Y / bs);
-            for (int i = 0; i < _letterBlocks.Count; i++)
+            if (_letterPreview)
             {
-                var b = _letterBlocks[i];
-                if (sx >= b.X1 && sx <= b.X2 && sy >= b.Y1 && sy <= b.Y2)
-                {
-                    CmbBlocks.SelectedIndex = i;
-                    return;
-                }
+                _letterPreview = false;
+                Redraw();
+                TxtStatus.Text = "편집 모드 — 텍스트박스를 바로 고치세요";
             }
             return;
         }
@@ -405,8 +493,9 @@ public partial class ResultWindow
         {
             case Key.Enter: CloseShape(); break;
             case Key.Escape: _pending.Clear(); DrawShapes(); TxtStatus.Text = "찍던 점을 취소했어요"; break;
-            case Key.Left when !_busy: LoadPage(_index - 1, fit: true); break;
-            case Key.Right when !_busy: LoadPage(_index + 1, fit: true); break;
+            // 텍스트박스에서 타이핑 중일 땐 방향키로 페이지를 넘기지 않는다 (커서 이동용)
+            case Key.Left when !_busy && Keyboard.FocusedElement is not TextBox: LoadPage(_index - 1, fit: true); break;
+            case Key.Right when !_busy && Keyboard.FocusedElement is not TextBox: LoadPage(_index + 1, fit: true); break;
         }
     }
 
@@ -541,6 +630,7 @@ public partial class ResultWindow
         if (!ConfirmDiscard()) { e.Cancel = true; return; }
         base.OnClosing(e);
         _img.Dispose();
+        _baseImg?.Dispose();
         while (_undo.Count > 0) _undo.Pop().Dispose();
     }
 

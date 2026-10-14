@@ -50,6 +50,11 @@ public static class TextRenderer
                 (float)((b.X2 - b.X1) * scaleX), (float)((b.Y2 - b.Y1) * scaleY));
             if (rect.Width < 4 || rect.Height < 4) continue;
 
+            // 세로쓰기 블록은 CTD가 '글자 기둥'만 잡아 폭이 아주 좁다(실측 26px짜리도 있다).
+            // 그 폭 안에서는 한국어를 가로로 눕힐 수 없으므로, 원고에서 말풍선의 실제 흰 폭을
+            // 재서 블록을 가로로 넓힌다 — 그래야 "진짜네..."가 세로 한 자씩이 아니라 가로로 읽힌다.
+            if (b.Vertical) rect = WidenToBubble(mat, rect);
+
             // 말풍선은 대개 타원이라 블록(사각형) 가장자리까지 글자를 채우면 테두리에 닿는다 — 약간 안쪽으로.
             rect.Inflate(-rect.Width * 0.05f, -rect.Height * 0.03f);
 
@@ -57,24 +62,61 @@ public static class TextRenderer
             var color = string.IsNullOrWhiteSpace(settings.LetterColorHex)
                 ? ParseColor(b.FontColorHex)
                 : ParseColor(settings.LetterColorHex);
-            float fontSize = (float)Math.Max(9,
-                b.FontSize * Math.Min(scaleX, scaleY) * Math.Clamp(settings.LetterSizeScale, 0.3, 3.0));
-
-            // 일본식 세로 말풍선(원문이 세로쓰기)은 폭이 좁아, 원문 글자 크기 그대로 넣으면
-            // 가로쓰기 한국어가 한 줄에 1자씩 세로로 쌓인다. 긴 대사만 한 줄에 두 글자 이상
-            // 들어가게 풍선 폭 기준으로 글자 크기를 묶는다 (한글 글자 폭 ≈ 글자 크기).
-            // 짧은 대사(7자 이하)는 건드리지 않는다 — 좁은 풍선에 큰 글씨 1자/줄이 국내 식자 관행이고,
-            // 폭 기준으로 줄이면 글자가 너무 작아진다 (실측으로 확인).
-            if (b.Vertical && b.Translation.Length >= 8)
-                fontSize = Math.Max(9, Math.Min(fontSize, rect.Width / 2.2f));
-
-            DrawFitted(g, b.Translation, rect, fontSize, color, settings);
+            float scaledOcr = (float)(b.FontSize * Math.Min(scaleX, scaleY)
+                * Math.Clamp(settings.LetterSizeScale, 0.3, 3.0));
+            DrawFitted(g, b.Translation, rect, StartSize(b, rect, scaledOcr), color, settings);
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
         using var outMat = ToMat(bmp);
         if (!ImgIo.Write(outPath, outMat))
             throw new IOException($"결과 저장에 실패했어요: {outPath}");
+    }
+
+    /// <summary>세로쓰기 블록을 말풍선의 실제 흰 폭까지 가로로 넓힌다.
+    /// 블록 세로 25%/50%/75% 세 줄에서 중심으로부터 밝은 픽셀(≥225)이 이어지는 구간을 재고,
+    /// 꼬리 등으로 한 줄만 비정상적으로 넓게 새는 것을 막으려 **셋 중 최소 폭**을 쓴다.
+    /// 과확장 방지로 한쪽 최대 2.5배, 테두리 여유로 측정 폭의 86%만 쓴다.</summary>
+    public static RectangleF WidenToBubble(Mat img, RectangleF r)
+    {
+        int cx = Math.Clamp((int)(r.X + r.Width / 2), 0, img.Cols - 1);
+        int capL = (int)Math.Max(8, r.Width * 2.5f);
+
+        bool Bright(int x, int y)
+        {
+            var p = img.At<Vec3b>(y, x);
+            return (p.Item0 + p.Item1 + p.Item2) / 3 >= 225;
+        }
+
+        float minRun = float.MaxValue;
+        foreach (var fy in new[] { 0.25f, 0.5f, 0.75f })
+        {
+            int y = Math.Clamp((int)(r.Y + r.Height * fy), 0, img.Rows - 1);
+            if (!Bright(cx, y)) { minRun = Math.Min(minRun, r.Width); continue; }
+            int xl = cx, xr = cx;
+            while (xl - 1 >= 0 && cx - xl < capL && Bright(xl - 1, y)) xl--;
+            while (xr + 1 < img.Cols && xr - cx < capL && Bright(xr + 1, y)) xr++;
+            minRun = Math.Min(minRun, xr - xl);
+        }
+
+        float newW = minRun * 0.86f;
+        if (newW <= r.Width) return r;
+        float nx = Math.Max(0, cx - newW / 2);
+        return new RectangleF(nx, r.Y, Math.Min(newW, img.Cols - nx), r.Height);
+    }
+
+    /// <summary>말풍선별 시작 글자 크기 — 풍선 모양에 맞춰 각자 정해진다 (DrawFitted가 넘치면 더 줄인다).
+    ///
+    /// 일본식 세로 말풍선(원문이 세로쓰기)은 좁고 길어서, 원문 크기 그대로 한국어를 가로로 넣으면
+    /// 한 줄에 1자씩 세로로 쌓여 가독성이 나쁘다. 그래서 세로 풍선은 **풍선 폭을 상한**으로 쓴다:
+    /// 한 줄에 두 글자 이상 들어가는 크기(폭/2.2)를 넘지 않는다 — 짧은 대사든 긴 대사든 가로로 읽힌다.
+    /// 가로 풍선은 원문 크기 추정이 믿을 만해 그대로 쓴다. OCR 크기도 풍선 폭도 블록마다 다르므로
+    /// 결과적으로 말풍선마다 글자 크기가 제각각으로 맞춰진다.</summary>
+    public static float StartSize(TextBlockInfo b, RectangleF rect, float scaledOcrSize)
+    {
+        if (b.Vertical)
+            return Math.Max(9, Math.Min(rect.Width / 2.2f, scaledOcrSize));
+        return Math.Max(9, scaledOcrSize);
     }
 
     /// <summary>OpenCV Mat(BGR 8UC3) → GDI+ Bitmap(24bppRgb). 행 단위로 복사한다 (stride가 다름).</summary>

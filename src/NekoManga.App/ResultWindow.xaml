@@ -63,7 +63,7 @@
                     <TabItem x:Name="TabLetter" Header="💬 식자 다시 하기">
                         <StackPanel Margin="0,8,0,0">
                             <TextBlock x:Name="TxtLetterHint" Style="{StaticResource HintText}" Margin="0,0,0,6"
-                                       Text="글꼴·색·번역문을 바꾸고 [다시 식자]를 누르면 이 장의 글자를 전부 새로 그려요. 그림의 말풍선을 클릭해도 블록이 선택돼요."/>
+                                       Text="말풍선 위 텍스트박스를 클릭해 바로 고치세요 — 타이핑이 즉시 보여요. 다 고치면 [다시 식자]가 최종 화질로 렌더링해요 (미리보기에서 그림을 클릭하면 다시 편집)."/>
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                 <TextBlock Text="글꼴" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                 <ComboBox x:Name="CmbLFont" Width="190" IsEditable="True" VerticalAlignment="Center"/>
@@ -114,6 +114,8 @@
                       MouseMove="Host_MouseMove" Background="Transparent" Cursor="Cross">
                     <Image x:Name="ImgView" Stretch="Fill" SnapsToDevicePixels="True"/>
                     <Canvas x:Name="Overlay" IsHitTestVisible="False"/>
+                    <!-- 식자 탭 WYSIWYG: 말풍선 자리에 실제 편집 가능한 텍스트박스를 띄운다 -->
+                    <Canvas x:Name="EditLayer" Visibility="Collapsed"/>
                 </Grid>
             </ScrollViewer>
         </Border>
