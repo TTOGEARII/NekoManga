@@ -176,15 +176,21 @@ public static class TextRenderer
             style = family.IsStyleAvailable(FontStyle.Bold) ? FontStyle.Bold : FontStyle.Regular;
 
         // 세로쓰기 원문도 한국어는 가로로 그린다 (국내 식자 관행).
+        // 줄바꿈은 GDI+ 기본 래핑에 맡기지 않는다 — CJK는 글자 아무 데서나 꺾여
+        // "멀긴한/데"처럼 어절(조사 포함 한 덩어리)이 중간에 잘린다. 어절 단위로 직접 줄을 짠다.
         for (float size = startSize; size >= 9; size -= 1.5f)
         {
             using var font = new Font(family, size, style, GraphicsUnit.Pixel);
-            var measured = g.MeasureString(text, font, (int)rect.Width, fmt);
-            if (measured.Height <= rect.Height + 2 || size <= 9)
+            // brokeWord = 어절 하나가 줄 폭보다 길어 글자 단위로 쪼개야 했다 →
+            // 가독성을 위해 글자를 더 줄여서라도 어절이 한 줄에 들어가게 한다 (9px 바닥까지만).
+            string wrapped = WrapByWords(g, text, font, rect.Width, out bool brokeWord);
+            var measured = g.MeasureString(wrapped, font, int.MaxValue, fmt);
+            bool fits = measured.Height <= rect.Height + 2 && measured.Width <= rect.Width + 2 && !brokeWord;
+            if (fits || size <= 9)
             {
                 // 외곽선(halo)으로 어떤 배경에서도 읽히게 한다.
                 using var path = new GraphicsPath();
-                path.AddString(text, family, (int)style, size, rect, fmt);
+                path.AddString(wrapped, family, (int)style, size, rect, fmt);
                 if (s.LetterOutlineScale > 0)
                 {
                     float w = (float)(Math.Max(2.5f, size / 7f) * Math.Clamp(s.LetterOutlineScale, 0, 4));
@@ -197,6 +203,41 @@ public static class TextRenderer
                 return;
             }
         }
+    }
+
+    /// <summary>어절(스페이스 단위) 줄바꿈. 한 줄에 다음 어절이 안 들어가면 줄을 넘긴다 —
+    /// "좀 / 멀긴한데 / 우리 집에서 / 기다리고 / 있어!!"처럼 어절이 중간에 꺾이지 않는다.
+    /// 어절 하나가 줄 폭 자체를 넘으면 그 어절만 어쩔 수 없이 글자 단위로 쪼갠다.</summary>
+    private static string WrapByWords(Graphics g, string text, Font font, float maxWidth, out bool brokeWord)
+    {
+        float W(string t) => t.Length == 0 ? 0 : g.MeasureString(t, font).Width;
+
+        brokeWord = false;
+        var lines = new List<string>();
+        foreach (var rawLine in text.Split('\n'))   // 사용자가 직접 넣은 줄바꿈은 존중
+        {
+            string line = "";
+            foreach (var word in rawLine.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            {
+                string candidate = line.Length == 0 ? word : line + " " + word;
+                if (W(candidate) <= maxWidth) { line = candidate; continue; }
+
+                if (line.Length > 0) { lines.Add(line); line = ""; }
+                if (W(word) <= maxWidth) { line = word; continue; }
+
+                // 어절 하나가 줄보다 길다 — 글자 단위로 쪼갠다 (호출부가 이를 보고 크기를 더 줄인다)
+                brokeWord = true;
+                string piece = "";
+                foreach (var ch in word)
+                {
+                    if (W(piece + ch) > maxWidth && piece.Length > 0) { lines.Add(piece); piece = ""; }
+                    piece += ch;
+                }
+                line = piece;
+            }
+            lines.Add(line);
+        }
+        return string.Join("\n", lines);
     }
 
     /// <summary>설정의 글꼴 이름을 FontFamily로. 미설치 이름이면 Malgun Gothic → GenericSansSerif 순으로 대체.</summary>

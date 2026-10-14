@@ -11,6 +11,19 @@ public class ComfyClient(string baseUrl)
     private static readonly HttpClient Http = new() { Timeout = Timeout.InfiniteTimeSpan };
 
     /// <summary>input 폴더로 업로드하고 서버가 부여한 파일명을 돌려준다.</summary>
+    /// <summary>서버가 해당 노드 클래스를 아는지 — 커스텀 노드 설치 후 서버를 안 껐으면 모를 수 있다.</summary>
+    public async Task<bool> HasNodeAsync(string classType, CancellationToken ct)
+    {
+        try
+        {
+            using var r = await Http.GetAsync($"{baseUrl}/object_info/{classType}", ct);
+            if (!r.IsSuccessStatusCode) return false;
+            var body = await r.Content.ReadAsStringAsync(ct);
+            return body.Contains(classType);
+        }
+        catch { return false; }
+    }
+
     public async Task<string> UploadImageAsync(byte[] png, string fileName, CancellationToken ct)
     {
         using var form = new MultipartFormDataContent();

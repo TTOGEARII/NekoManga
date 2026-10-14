@@ -27,6 +27,7 @@ public partial class SettingsWindow
         TxtManualTags.Text = s.ColorManualTags;
         TxtColorRefImage.Text = s.ColorRefImage;
         TxtColorRefTags.Text = s.ColorRefTags;
+        TxtRefStrength.Text = s.ColorRefStrength.ToString(CultureInfo.InvariantCulture);
         TxtExcludeTags.Text = s.ColorExcludeTags;
         TxtNegative.Text = s.ColorNegative;
 
@@ -84,6 +85,7 @@ public partial class SettingsWindow
         s.ColorManualTags = TxtManualTags.Text.Trim();
         s.ColorRefImage = TxtColorRefImage.Text.Trim();
         s.ColorRefTags = TxtColorRefTags.Text.Trim();
+        s.ColorRefStrength = ParseD(TxtRefStrength.Text, s.ColorRefStrength, 0, 1.5);
         s.ColorExcludeTags = TxtExcludeTags.Text.Trim();
         s.ColorNegative = TxtNegative.Text.Trim();
 
@@ -144,6 +146,46 @@ public partial class SettingsWindow
         foreach (ComboBoxItem it in cmb.Items)
             if ((string?)it.Tag == tag) { cmb.SelectedItem = it; return; }
         if (cmb.Items.Count > 0) cmb.SelectedIndex = 0;
+    }
+
+    private void RefDropZone_DragOver(object sender, System.Windows.DragEventArgs e)
+    {
+        e.Effects = e.Data.GetDataPresent(System.Windows.DataFormats.FileDrop)
+            ? System.Windows.DragDropEffects.Copy : System.Windows.DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void RefDropZone_Drop(object sender, System.Windows.DragEventArgs e)
+    {
+        if (e.Data.GetData(System.Windows.DataFormats.FileDrop) is string[] files && files.Length > 0)
+        {
+            TxtColorRefImage.Text = files[0];
+            TxtColorRefTags.Text = "";   // 표지가 바뀌면 캐시된 태그는 무효
+        }
+    }
+
+    private void TxtColorRefImage_Changed(object sender, System.Windows.Controls.TextChangedEventArgs e)
+        => UpdateRefPreview();
+
+    /// <summary>등록된 표지의 미리보기를 드롭존에 띄운다 (없으면 안내 문구).</summary>
+    private void UpdateRefPreview()
+    {
+        var path = TxtColorRefImage.Text.Trim();
+        System.Windows.Media.Imaging.BitmapImage? bmp = null;
+        if (File.Exists(path))
+            try
+            {
+                bmp = new System.Windows.Media.Imaging.BitmapImage();
+                bmp.BeginInit();
+                bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad; // 파일 잠금 방지
+                bmp.UriSource = new Uri(path);
+                bmp.DecodePixelHeight = 256;
+                bmp.EndInit();
+                bmp.Freeze();
+            }
+            catch { bmp = null; }
+        ImgRefPreview.Source = bmp;
+        TxtRefDropHint.Visibility = bmp == null ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void BtnRefBrowse_Click(object sender, RoutedEventArgs e)

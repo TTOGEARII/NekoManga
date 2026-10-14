@@ -474,14 +474,37 @@ public partial class ResultWindow
         Math.Clamp((int)Math.Round(p.X / _scale), 0, Math.Max(0, _img.Width - 1)),
         Math.Clamp((int)Math.Round(p.Y / _scale), 0, Math.Max(0, _img.Height - 1)));
 
+    // ── 휠(가운데) 버튼 드래그 = 화면 이동(패닝). 좌클릭은 기존 동작 그대로 ──
+    private bool _panning;
+    private WinPoint _panStartScreen;
+    private double _panStartH, _panStartV;
+
+    private void Host_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Middle || _img.Empty()) return;
+        _panning = true;
+        _panStartScreen = e.GetPosition(Scroller);
+        _panStartH = Scroller.HorizontalOffset;
+        _panStartV = Scroller.VerticalOffset;
+        ImageHost.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void Host_MouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Middle || !_panning) return;
+        _panning = false;
+        ImageHost.ReleaseMouseCapture();
+        e.Handled = true;
+    }
+
     private void Host_LeftClick(object sender, MouseButtonEventArgs e)
     {
         if (_img.Empty() || _busy) return;
 
-        // 식자 모드: 미리보기 중이면 그림 클릭으로 편집 모드로 돌아간다
-        // (편집 모드의 클릭은 텍스트박스가 직접 받으므로 여기로 안 온다)
         if (LetterMode)
         {
+            // 미리보기 중이면 편집 모드로 (편집 모드의 클릭은 텍스트박스가 직접 받는다)
             if (_letterPreview)
             {
                 _letterPreview = false;
@@ -492,9 +515,7 @@ public partial class ResultWindow
         }
 
         _pending.Add(ToImage(e.GetPosition(ImageHost)));
-
-        // 네 점이면 사각형 완성 — 막대는 사각형이라 네 점이면 충분하다
-        if (_pending.Count >= 4) CloseShape();
+        if (_pending.Count >= 4) CloseShape();   // 막대는 사각형이라 네 점이면 충분하다
         else
         {
             DrawShapes();
@@ -521,6 +542,15 @@ public partial class ResultWindow
 
     private void Host_MouseMove(object sender, MouseEventArgs e)
     {
+        // 휠 버튼 드래그 = 패닝 (확대 상태에서 화면 이동)
+        if (_panning && e.MiddleButton == MouseButtonState.Pressed)
+        {
+            var p = e.GetPosition(Scroller);
+            Scroller.ScrollToHorizontalOffset(_panStartH - (p.X - _panStartScreen.X));
+            Scroller.ScrollToVerticalOffset(_panStartV - (p.Y - _panStartScreen.Y));
+            return;
+        }
+
         if (LetterMode || _pending.Count == 0 || _img.Empty()) return;
         _hover = e.GetPosition(ImageHost);
         DrawShapes();

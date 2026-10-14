@@ -61,6 +61,9 @@ public class AppSettings
     /// <summary>표지에서 뽑은 색 태그 (자동 추출 후 캐시, 직접 수정 가능). 비어 있으면 채색 시작 때
     /// ColorRefImage가 있으면 자동으로 한 번 뽑는다.</summary>
     public string ColorRefTags { get; set; } = "";
+    /// <summary>IPAdapter로 표지를 반영하는 강도 (0~1.5). 높을수록 표지 색·스타일을 강하게 따른다.
+    /// IPAdapter 모델이 설치돼 있을 때만 쓰인다 (없으면 태그만으로 동작).</summary>
+    public double ColorRefStrength { get; set; } = 0.5;
 
     /// <summary>강력(SDXL) 검열제거의 시드. 고정해야 같은 원고를 다시 돌려도 같은 그림이 나온다
     /// (-1이면 매번 무작위 — 실행할 때마다 결과가 달라진다). 기본값은 실제 원고에서 결과가 좋았던 시드.</summary>

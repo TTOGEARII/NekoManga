@@ -9,7 +9,8 @@ public static class WorkflowBuilder
 {
     /// <summary>흑백 원고 1장을 자동채색하는 워크플로.
     /// 입력 이미지는 글자가 지워진 상태(번역 단계의 인페인트 결과)를 권장.</summary>
-    public static JsonObject BuildAutoColor(AppSettings s, string uploadedName, string filenamePrefix)
+    public static JsonObject BuildAutoColor(AppSettings s, string uploadedName, string filenamePrefix,
+        string? refImageName = null)
     {
         long seed = s.ColorSeed >= 0 ? s.ColorSeed : Random.Shared.NextInt64(0, uint.MaxValue);
         var manual = string.Join(", ",
@@ -68,7 +69,8 @@ public static class WorkflowBuilder
             ["17"] = Node("VAEEncode", new() { ["pixels"] = Link("3", 0), ["vae"] = Link("4", 2) }),
             ["18"] = Node("KSampler", new()
             {
-                ["model"] = Link("4", 0), ["positive"] = Link("16", 0), ["negative"] = Link("16", 1),
+                ["model"] = refImageName != null ? Link("32", 0) : Link("4", 0),
+                ["positive"] = Link("16", 0), ["negative"] = Link("16", 1),
                 ["latent_image"] = Link("17", 0),
                 ["seed"] = seed, ["steps"] = s.ColorSteps, ["cfg"] = s.ColorCfg,
                 ["sampler_name"] = s.ColorSampler, ["scheduler"] = s.ColorScheduler,
@@ -76,6 +78,26 @@ public static class WorkflowBuilder
             }),
             ["19"] = Node("VAEDecode", new() { ["samples"] = Link("18", 0), ["vae"] = Link("4", 2) }),
         };
+
+        // 표지 정밀 매칭 (IPAdapter): 표지 이미지의 색·스타일을 모델에 직접 주입한다.
+        // 태그보다 훨씬 정확하게 캐릭터 색이 맞는다. 모델/노드가 없으면 호출부에서 refImageName을 안 준다.
+        if (refImageName != null)
+        {
+            p["30"] = Node("LoadImage", new() { ["image"] = refImageName });
+            p["31"] = Node("IPAdapterUnifiedLoader", new()
+            {
+                ["model"] = Link("4", 0),
+                ["preset"] = "PLUS (high strength)",
+            });
+            p["32"] = Node("IPAdapter", new()
+            {
+                ["model"] = Link("31", 0), ["ipadapter"] = Link("31", 1),
+                ["image"] = Link("30", 0),
+                ["weight"] = Math.Clamp(s.ColorRefStrength, 0.0, 1.5),
+                ["start_at"] = 0.0, ["end_at"] = 0.9,
+                ["weight_type"] = "standard",
+            });
+        }
 
         string finalImage;
         if (s.ColorLineartOpacity > 0)

@@ -19,6 +19,7 @@ public record PageProgress(string File, string Stage, double Percent, bool Done 
 public class PipelineRunner(AppSettings settings) : IDisposable
 {
     private readonly OnnxEnv _onnx = new(settings);
+    private string? _refImageName;   // IPAdapter용으로 업로드한 표지 (서버에 없으면 null)
     private readonly ComfyServer _server = new(settings);
 
     public async Task RunAsync(IReadOnlyList<string> files, IProgress<PageProgress> progress, CancellationToken ct)
@@ -59,6 +60,20 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                     settings.Save();
                 }
                 catch { /* 표지 분석 실패는 치명적이지 않다 — 참고 색 없이 진행 */ }
+
+            // 표지 정밀 매칭(IPAdapter): 모델이 설치돼 있고 서버가 노드를 알고 있으면 표지를 올려 둔다
+            if (settings.EnableAutoColor && settings.ColorRefImage.Trim().Length > 0
+                && File.Exists(settings.ColorRefImage) && ColorRefHelper.IpAdapterAvailable(settings))
+                try
+                {
+                    if (await client.HasNodeAsync("IPAdapter", ct))
+                    {
+                        var refBytes = await File.ReadAllBytesAsync(settings.ColorRefImage, ct);
+                        _refImageName = await client.UploadImageAsync(refBytes, "nm_cover_ref.png", ct);
+                    }
+                    // 노드를 모르면 = 서버가 설치 전부터 떠 있던 것 — 이번 실행은 태그만으로 간다
+                }
+                catch { _refImageName = null; }
         }
 
         var workDir = Path.Combine(AppSettings.DataDir, "work",
@@ -127,7 +142,7 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                     var png = await File.ReadAllBytesAsync(work, ct);
                     var up = await client.UploadImageAsync(png, $"nm_cl_{i}.png", ct);
                     var pid = await client.QueuePromptAsync(
-                        WorkflowBuilder.BuildAutoColor(settings, up, $"nm_color_{i}"), ct);
+                        WorkflowBuilder.BuildAutoColor(settings, up, $"nm_color_{i}", _refImageName), ct);
                     var r = await client.WaitAsync(pid, comfyOutputDir, TimeSpan.FromMinutes(20), ct);
                     if (r.OutputFiles.Count == 0)
                         throw new InvalidOperationException("채색 결과 파일이 없어요.");

@@ -24,6 +24,19 @@ public static class ColorRefHelper
         "outline", "text", "speech", "sclera", "blood",
     ];
 
+    /// <summary>IPAdapter 정밀 매칭이 가능한가 — 커스텀 노드 + SDXL IPAdapter 모델 + CLIP 비전 모델.</summary>
+    public static bool IpAdapterAvailable(AppSettings s)
+    {
+        var root = Path.Combine(s.ComfyRoot, "ComfyUI");
+        var ipaDir = Path.Combine(root, "models", "ipadapter");
+        var cvDir = Path.Combine(root, "models", "clip_vision");
+        return Directory.Exists(Path.Combine(root, "custom_nodes", "ComfyUI_IPAdapter_plus"))
+            && Directory.Exists(ipaDir)
+            && Directory.EnumerateFiles(ipaDir, "*sdxl*").Any(f => f.Contains("plus", StringComparison.OrdinalIgnoreCase))
+            && Directory.Exists(cvDir)
+            && Directory.EnumerateFiles(cvDir, "*.safetensors").Any();
+    }
+
     /// <summary>WD14 출력에서 캐릭터 색 태그만 남긴다.</summary>
     public static string FilterColorTags(string wd14Output)
     {

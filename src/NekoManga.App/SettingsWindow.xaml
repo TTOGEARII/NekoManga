@@ -63,14 +63,34 @@
 
                         <TextBlock Style="{StaticResource SectionTitle}" Text="컬러 표지로 캐릭터 색 맞추기"/>
                         <DockPanel Margin="0,4">
-                            <ui:Button x:Name="BtnRefExtract" DockPanel.Dock="Right" Content="🎨 색 뽑기"
-                                       Click="BtnRefExtract_Click" Padding="12,4" Margin="8,0,0,0"/>
-                            <ui:Button DockPanel.Dock="Right" Content="찾기" Click="BtnRefBrowse_Click" Padding="12,4" Margin="8,0,0,0"/>
-                            <TextBox x:Name="TxtColorRefImage"/>
+                            <!-- 미리보기 겸 드롭존 — 표지를 여기에 끌어다 놓으면 등록된다 -->
+                            <Border x:Name="RefDropZone" DockPanel.Dock="Left" Width="96" Height="128"
+                                    Background="#201A20" CornerRadius="8" Margin="0,0,10,0"
+                                    BorderBrush="{StaticResource NekoStroke}" BorderThickness="1"
+                                    AllowDrop="True" Drop="RefDropZone_Drop" DragOver="RefDropZone_DragOver">
+                                <Grid>
+                                    <TextBlock x:Name="TxtRefDropHint" Text="표지를&#10;끌어다&#10;놓으세요"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               TextAlignment="Center" Foreground="{StaticResource NekoHint}"/>
+                                    <Image x:Name="ImgRefPreview" Stretch="Uniform" Margin="3"/>
+                                </Grid>
+                            </Border>
+                            <StackPanel>
+                                <DockPanel>
+                                    <ui:Button x:Name="BtnRefExtract" DockPanel.Dock="Right" Content="🎨 색 뽑기"
+                                               Click="BtnRefExtract_Click" Padding="12,4" Margin="8,0,0,0"/>
+                                    <ui:Button DockPanel.Dock="Right" Content="찾기" Click="BtnRefBrowse_Click" Padding="12,4" Margin="8,0,0,0"/>
+                                    <TextBox x:Name="TxtColorRefImage" TextChanged="TxtColorRefImage_Changed"/>
+                                </DockPanel>
+                                <TextBox x:Name="TxtColorRefTags" AcceptsReturn="True" Height="66" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                <DockPanel Margin="0,6,0,0">
+                                    <TextBlock Text="표지 반영 강도" Style="{StaticResource FieldLabel}" Width="110"/>
+                                    <TextBox x:Name="TxtRefStrength" Width="64" HorizontalAlignment="Left"/>
+                                </DockPanel>
+                            </StackPanel>
                         </DockPanel>
-                        <TextBox x:Name="TxtColorRefTags" AcceptsReturn="True" Height="54" TextWrapping="Wrap" Margin="0,4,0,0"/>
                         <TextBlock Style="{StaticResource HintText}"
-                                   Text="컬러 표지(또는 캐릭터 컬러 일러스트)를 등록하고 [색 뽑기]를 누르면 머리·눈·의상 색 태그를 자동으로 뽑아요 (ComfyUI 필요, 첫 실행은 서버 기동 1~2분). 비워 두면 채색 시작 때 자동으로 한 번 뽑아요. 아래 칸에서 직접 다듬을 수 있어요."/>
+                                   Text="컬러 표지를 등록하면 ① [색 뽑기]로 머리·눈·의상 색 태그를 뽑아 프롬프트에 넣고(비워 두면 채색 시작 때 자동), ② IPAdapter 모델이 설치돼 있으면 표지의 색·화풍을 모델에 직접 주입해 정밀하게 맞춰요. 반영 강도 0.4~0.6 권장 — 높이면 표지 화풍(배경 색감까지)이 강하게 묻어나요."/>
 
                         <TextBlock Style="{StaticResource SectionTitle}" Text="캐릭터 태그 (수동)"/>
                         <TextBox x:Name="TxtManualTags" AcceptsReturn="True" Height="54" TextWrapping="Wrap"/>

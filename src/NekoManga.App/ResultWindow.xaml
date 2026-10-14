@@ -111,6 +111,7 @@
                           PreviewMouseWheel="Scroller_PreviewMouseWheel">
                 <Grid x:Name="ImageHost" HorizontalAlignment="Center" VerticalAlignment="Center"
                       MouseLeftButtonDown="Host_LeftClick" MouseRightButtonDown="Host_RightClick"
+                      MouseDown="Host_MouseDown" MouseUp="Host_MouseUp"
                       MouseMove="Host_MouseMove" Background="Transparent" Cursor="Cross">
                     <Image x:Name="ImgView" Stretch="Fill" SnapsToDevicePixels="True"/>
                     <Canvas x:Name="Overlay" IsHitTestVisible="False"/>
