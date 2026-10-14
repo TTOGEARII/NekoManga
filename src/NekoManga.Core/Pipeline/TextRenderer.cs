@@ -50,12 +50,23 @@ public static class TextRenderer
                 (float)((b.X2 - b.X1) * scaleX), (float)((b.Y2 - b.Y1) * scaleY));
             if (rect.Width < 4 || rect.Height < 4) continue;
 
+            // 말풍선은 대개 타원이라 블록(사각형) 가장자리까지 글자를 채우면 테두리에 닿는다 — 약간 안쪽으로.
+            rect.Inflate(-rect.Width * 0.05f, -rect.Height * 0.03f);
+
             // 글자 색: 설정에 지정돼 있으면 그 색, 비어 있으면 원문 색을 따라간다
             var color = string.IsNullOrWhiteSpace(settings.LetterColorHex)
                 ? ParseColor(b.FontColorHex)
                 : ParseColor(settings.LetterColorHex);
             float fontSize = (float)Math.Max(9,
                 b.FontSize * Math.Min(scaleX, scaleY) * Math.Clamp(settings.LetterSizeScale, 0.3, 3.0));
+
+            // 일본식 세로 말풍선(원문이 세로쓰기)은 폭이 좁아, 원문 글자 크기 그대로 넣으면
+            // 가로쓰기 한국어가 한 줄에 1자씩 세로로 쌓인다. 긴 대사만 한 줄에 두 글자 이상
+            // 들어가게 풍선 폭 기준으로 글자 크기를 묶는다 (한글 글자 폭 ≈ 글자 크기).
+            // 짧은 대사(7자 이하)는 건드리지 않는다 — 좁은 풍선에 큰 글씨 1자/줄이 국내 식자 관행이고,
+            // 폭 기준으로 줄이면 글자가 너무 작아진다 (실측으로 확인).
+            if (b.Vertical && b.Translation.Length >= 8)
+                fontSize = Math.Max(9, Math.Min(fontSize, rect.Width / 2.2f));
 
             DrawFitted(g, b.Translation, rect, fontSize, color, settings);
         }
