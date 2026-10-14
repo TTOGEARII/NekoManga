@@ -102,7 +102,8 @@ public partial class ResultWindow
         BtnUndo.IsEnabled = false;
 
         _img = File.Exists(_pages[_index]) ? ImgIo.Read(_pages[_index], ImreadModes.Color) : new Mat();
-        TxtFile.Text = _pages[_index];
+        TxtFile.Text = System.IO.Path.GetFileName(_pages[_index]);
+        TxtFile.ToolTip = _pages[_index];
         TxtCount.Text = $"{_index + 1} / {_pages.Count}";
         BtnPrev.IsEnabled = _index > 0;
         BtnNext.IsEnabled = _index < _pages.Count - 1;

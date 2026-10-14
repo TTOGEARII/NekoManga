@@ -112,7 +112,7 @@
             <TabItem Header="🙈 검열 제거">
                 <StackPanel Margin="8">
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="제거 방식"/></Border>
-                    <ComboBox x:Name="CmbDecensorMode" Width="340" HorizontalAlignment="Left">
+                    <ComboBox x:Name="CmbDecensorMode" Width="400" HorizontalAlignment="Left">
                         <ComboBoxItem Content="기본 — 내장 LaMa (빠름, 추가 설치 불필요)" Tag="Basic"/>
                         <ComboBoxItem Content="엔진 LaMa — GPU 복원 (원본 레시피, 엔진 필요)" Tag="ComfyLama"/>
                         <ComboBoxItem Content="강력 — SDXL 재생성 (다시 그리기, 엔진 필요)" Tag="Strong"/>
