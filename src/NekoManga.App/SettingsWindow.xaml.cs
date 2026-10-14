@@ -28,6 +28,7 @@ public partial class SettingsWindow
         TxtColorRefImage.Text = s.ColorRefImage;
         TxtColorRefTags.Text = s.ColorRefTags;
         TxtRefStrength.Text = s.ColorRefStrength.ToString(CultureInfo.InvariantCulture);
+        LoadEngineTab(s);
         TxtExcludeTags.Text = s.ColorExcludeTags;
         TxtNegative.Text = s.ColorNegative;
 
@@ -86,6 +87,11 @@ public partial class SettingsWindow
         s.ColorRefImage = TxtColorRefImage.Text.Trim();
         s.ColorRefTags = TxtColorRefTags.Text.Trim();
         s.ColorRefStrength = ParseD(TxtRefStrength.Text, s.ColorRefStrength, 0, 1.5);
+
+        s.PrewarmComfyOnLaunch = ChkPrewarm.IsChecked == true;
+        s.KeepComfyWarm = ChkKeepWarm.IsChecked == true;
+        if (CmbCheckpoint.SelectedItem is string ckpt && ckpt.Length > 0) s.ColorCheckpoint = ckpt;
+        if (CmbControlNet.SelectedItem is string cn && cn.Length > 0) s.ColorControlNet = cn;
         s.ColorExcludeTags = TxtExcludeTags.Text.Trim();
         s.ColorNegative = TxtNegative.Text.Trim();
 
@@ -146,6 +152,104 @@ public partial class SettingsWindow
         foreach (ComboBoxItem it in cmb.Items)
             if ((string?)it.Tag == tag) { cmb.SelectedItem = it; return; }
         if (cmb.Items.Count > 0) cmb.SelectedIndex = 0;
+    }
+
+    // ── 엔진 탭 ──────────────────────────────────────────────
+    private void LoadEngineTab(NekoManga.Core.AppSettings s)
+    {
+        ChkPrewarm.IsChecked = s.PrewarmComfyOnLaunch;
+        ChkKeepWarm.IsChecked = s.KeepComfyWarm;
+        RefreshModelCombos(s);
+        _ = RefreshEngineStateAsync();
+    }
+
+    private void RefreshModelCombos(NekoManga.Core.AppSettings s)
+    {
+        CmbCheckpoint.Items.Clear();
+        foreach (var m in NekoManga.Core.Comfy.EngineManager.ListModels(s, "checkpoints"))
+            CmbCheckpoint.Items.Add(m);
+        if (!CmbCheckpoint.Items.Contains(s.ColorCheckpoint)) CmbCheckpoint.Items.Add(s.ColorCheckpoint);
+        CmbCheckpoint.SelectedItem = s.ColorCheckpoint;
+
+        CmbControlNet.Items.Clear();
+        foreach (var m in NekoManga.Core.Comfy.EngineManager.ListModels(s, "controlnet"))
+            CmbControlNet.Items.Add(m);
+        if (!CmbControlNet.Items.Contains(s.ColorControlNet)) CmbControlNet.Items.Add(s.ColorControlNet);
+        CmbControlNet.SelectedItem = s.ColorControlNet;
+    }
+
+    private async Task RefreshEngineStateAsync()
+    {
+        TxtEngineState.Text = "상태 확인 중...";
+        DotEngine.Fill = System.Windows.Media.Brushes.Gray;
+        bool alive = await NekoManga.Core.Comfy.EngineManager.IsAliveAsync(App.Settings);
+        DotEngine.Fill = alive ? System.Windows.Media.Brushes.LimeGreen : System.Windows.Media.Brushes.IndianRed;
+        TxtEngineState.Text = alive ? "켜져 있어요 — 바로 채색할 수 있어요" : "꺼져 있어요";
+        BtnEngineStart.IsEnabled = !alive;
+        BtnEngineStop.IsEnabled = alive;
+    }
+
+    private async void BtnEngineStart_Click(object sender, RoutedEventArgs e)
+    {
+        BtnEngineStart.IsEnabled = false;
+        try
+        {
+            var status = new Progress<string>(m => TxtEngineState.Text = m);
+            await NekoManga.Core.Comfy.EngineManager.StartAsync(App.Settings, status);
+        }
+        catch (Exception ex) { TxtEngineState.Text = "켜기 실패: " + ex.Message; }
+        await RefreshEngineStateAsync();
+    }
+
+    private async void BtnEngineStop_Click(object sender, RoutedEventArgs e)
+    {
+        BtnEngineStop.IsEnabled = false;
+        NekoManga.Core.Comfy.EngineManager.Stop(App.Settings);
+        await Task.Delay(800);
+        await RefreshEngineStateAsync();
+    }
+
+    private void BtnModelsRefresh_Click(object sender, RoutedEventArgs e) => RefreshModelCombos(App.Settings);
+
+    private void BtnCkptImport_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new System.Windows.Forms.OpenFileDialog
+        {
+            Title = "그림 모델 고르기 (.safetensors)",
+            Filter = "모델|*.safetensors;*.ckpt|모든 파일|*.*",
+        };
+        if (dlg.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
+        try
+        {
+            TxtCkptStatus.Text = "가져오는 중... (파일이 크면 몇 분 걸려요)";
+            var name = NekoManga.Core.Comfy.EngineManager.ImportModel(App.Settings, "checkpoints", dlg.FileName);
+            RefreshModelCombos(App.Settings);
+            CmbCheckpoint.SelectedItem = name;
+            TxtCkptStatus.Text = $"가져왔어요: {name} — 이 모델이 선택됐어요";
+        }
+        catch (Exception ex) { TxtCkptStatus.Text = "가져오기 실패: " + ex.Message; }
+    }
+
+    private async void BtnCkptDownload_Click(object sender, RoutedEventArgs e)
+    {
+        var url = TxtCkptUrl.Text.Trim();
+        if (!url.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        {
+            TxtCkptStatus.Text = "다운로드 주소(https://…)를 붙여넣어 주세요";
+            return;
+        }
+        BtnCkptDownload.IsEnabled = false;
+        try
+        {
+            var status = new Progress<string>(m => TxtCkptStatus.Text = m);
+            var name = await NekoManga.Core.Comfy.EngineManager.DownloadModelAsync(
+                App.Settings, "checkpoints", url, status);
+            RefreshModelCombos(App.Settings);
+            CmbCheckpoint.SelectedItem = name;
+            TxtCkptStatus.Text = $"받았어요: {name} — 이 모델이 선택됐어요";
+        }
+        catch (Exception ex) { TxtCkptStatus.Text = "받기 실패: " + ex.Message; }
+        finally { BtnCkptDownload.IsEnabled = true; }
     }
 
     private void RefDropZone_DragOver(object sender, System.Windows.DragEventArgs e)

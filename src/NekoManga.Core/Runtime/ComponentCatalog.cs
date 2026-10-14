@@ -112,13 +112,35 @@ public static class ComponentCatalog
         $"{ComfyDirName}/ComfyUI/models/controlnet/controlnet-union-sdxl-promax.safetensors",
         2_510_000_000, ForComfy: true);
 
+    // ── 표지 정밀 매칭 (IPAdapter — 선택이지만 기본 설치) ──
+    public static readonly Component NodeIpAdapter = new(
+        "node-ipadapter", "IPAdapter 노드 (표지 색 매칭)", ComponentKind.ArchiveZip,
+        "https://github.com/cubiq/ComfyUI_IPAdapter_plus/archive/refs/heads/main.zip",
+        $"{ComfyDirName}/ComfyUI/custom_nodes/ComfyUI_IPAdapter_plus",
+        $"{ComfyDirName}/ComfyUI/custom_nodes/ComfyUI_IPAdapter_plus/IPAdapterPlus.py", 400_000,
+        StripRootFolder: true, ForComfy: true);
+
+    public static readonly Component ModelIpAdapter = new(
+        "model-ipadapter", "IPAdapter SDXL 모델 (0.85GB)", ComponentKind.File,
+        "https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-plus_sdxl_vit-h.safetensors",
+        $"{ComfyDirName}/ComfyUI/models/ipadapter/ip-adapter-plus_sdxl_vit-h.safetensors",
+        $"{ComfyDirName}/ComfyUI/models/ipadapter/ip-adapter-plus_sdxl_vit-h.safetensors",
+        847_517_000, ForComfy: true);
+
+    public static readonly Component ModelClipVision = new(
+        "model-clipvision", "CLIP 비전 모델 ViT-H (2.5GB)", ComponentKind.File,
+        "https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors",
+        $"{ComfyDirName}/ComfyUI/models/clip_vision/CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors",
+        $"{ComfyDirName}/ComfyUI/models/clip_vision/CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors",
+        2_528_373_000, ForComfy: true);
+
     /// <summary>설치 순서대로. 내장 엔진 모델 먼저, ComfyUI(선택)는 뒤에.</summary>
     public static IReadOnlyList<Component> All { get; } = new[]
     {
         ModelCtd, ModelLama, ModelOcrEncoder, ModelOcrDecoder, ModelOcrVocab,
         SevenZip, ComfyPortable,
-        NodeWd14, NodeCustomScripts, NodeLayerStyle, NodeControlnetAux,
-        ModelCheckpoint, ModelControlnet,
+        NodeWd14, NodeCustomScripts, NodeLayerStyle, NodeControlnetAux, NodeIpAdapter,
+        ModelCheckpoint, ModelControlnet, ModelIpAdapter, ModelClipVision,
     };
 
     public static IEnumerable<Component> EngineComponents => All.Where(c => !c.ForComfy);

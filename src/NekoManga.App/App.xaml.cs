@@ -55,6 +55,15 @@ public partial class App : Application
             new SetupWindow().ShowDialog();
 
         main.Show();
+
+        // 채색 엔진 미리 켜기 — 첫 채색에서 1~2분 기다리지 않게 백그라운드로 데워 둔다.
+        // 실패해도 조용히 넘어간다 (채색을 쓸 때 어차피 다시 켠다).
+        if (Settings.PrewarmComfyOnLaunch && Settings.ComfyAvailable)
+            _ = Task.Run(async () =>
+            {
+                try { await NekoManga.Core.Comfy.EngineManager.StartAsync(Settings); }
+                catch { }
+            });
     }
 
     private static void AutoLinkExistingInstalls()

@@ -27,7 +27,7 @@ public static class WorkflowBuilder
                 ["megapixels"] = s.ColorMegapixels,
                 ["resolution_steps"] = 8,
             }),
-            ["4"] = Node("CheckpointLoaderSimple", new() { ["ckpt_name"] = "waiIllustriousSDXL_v170.safetensors" }),
+            ["4"] = Node("CheckpointLoaderSimple", new() { ["ckpt_name"] = s.ColorCheckpoint }),
             ["5"] = Node("WD14Tagger|pysssss", new()
             {
                 ["image"] = Link("3", 0),
@@ -49,7 +49,7 @@ public static class WorkflowBuilder
             ["7"] = Node("ShowText|pysssss", new() { ["text"] = Link("6", 0) }),
             ["8"] = Node("CLIPTextEncode", new() { ["clip"] = Link("4", 1), ["text"] = Link("6", 0) }),
             ["9"] = Node("CLIPTextEncode", new() { ["clip"] = Link("4", 1), ["text"] = s.ColorNegative }),
-            ["10"] = Node("ControlNetLoader", new() { ["control_net_name"] = "controlnet-union-sdxl-promax.safetensors" }),
+            ["10"] = Node("ControlNetLoader", new() { ["control_net_name"] = s.ColorControlNet }),
             ["11"] = Node("SetUnionControlNetType", new() { ["control_net"] = Link("10", 0), ["type"] = "canny/lineart/anime_lineart/mlsd" }),
             ["12"] = Node("Manga2Anime_LineArt_Preprocessor", new() { ["image"] = Link("3", 0), ["resolution"] = 1280 }),
             ["13"] = Node("ControlNetApplyAdvanced", new()
@@ -129,7 +129,7 @@ public static class WorkflowBuilder
         return new JsonObject
         {
             ["1"] = Node("LoadImage", new() { ["image"] = uploadedName }),
-            ["2"] = Node("CheckpointLoaderSimple", new() { ["ckpt_name"] = "waiIllustriousSDXL_v170.safetensors" }),
+            ["2"] = Node("CheckpointLoaderSimple", new() { ["ckpt_name"] = s.ColorCheckpoint }),
             ["3"] = Node("CLIPTextEncode", new()
             {
                 ["clip"] = Link("2", 1),

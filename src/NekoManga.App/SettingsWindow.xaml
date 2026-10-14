@@ -278,6 +278,57 @@
                 </ScrollViewer>
             </TabItem>
 
+            <!-- ── 엔진 (ComfyUI 수명·모델 관리 — 초보자용) ── -->
+            <TabItem Header="⚙ 엔진">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="8">
+                    <TextBlock Style="{StaticResource SectionTitle}" Text="채색 엔진"/>
+                    <TextBlock Style="{StaticResource HintText}"
+                               Text="채색과 강력 검열제거를 담당하는 엔진이에요. 창 없이 뒤에서 돌아가고, 앱이 알아서 켜고 꺼요 — 직접 실행할 일이 없어요."/>
+                    <Border Background="{StaticResource NekoCard}" CornerRadius="10" Padding="14,10" Margin="0,8,0,0">
+                        <StackPanel>
+                            <DockPanel>
+                                <Ellipse x:Name="DotEngine" Width="12" Height="12" Fill="Gray" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="TxtEngineState" Text="상태 확인 중..." Margin="10,0,0,0"
+                                           Foreground="{StaticResource NekoText}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <ui:Button x:Name="BtnEngineStart" Content="▶ 켜기" Click="BtnEngineStart_Click" Padding="14,4"/>
+                                    <ui:Button x:Name="BtnEngineStop" Content="■ 끄기" Click="BtnEngineStop_Click" Padding="14,4" Margin="8,0,0,0"/>
+                                </StackPanel>
+                            </DockPanel>
+                            <CheckBox x:Name="ChkPrewarm" Content="앱을 켤 때 엔진도 미리 켜 두기 (첫 채색 대기 없음)"
+                                      Foreground="{StaticResource NekoText}" Margin="0,10,0,0"/>
+                            <CheckBox x:Name="ChkKeepWarm" Content="작업이 끝나도 엔진을 꺼두지 않기 (다음 작업이 빨라져요)"
+                                      Foreground="{StaticResource NekoText}" Margin="0,6,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Style="{StaticResource SectionTitle}" Text="채색 모델"/>
+                    <TextBlock Style="{StaticResource HintText}"
+                               Text="그림을 그리는 모델이에요. 더 좋은 모델이 나오면 파일을 가져오거나 주소로 받아서 바꿔 끼울 수 있어요."/>
+                    <DockPanel Margin="0,6,0,0">
+                        <TextBlock Text="그림 모델" Style="{StaticResource FieldLabel}" Width="110"/>
+                        <ui:Button Content="↻" Click="BtnModelsRefresh_Click" DockPanel.Dock="Right" Padding="10,4" ToolTip="목록 새로고침"/>
+                        <ui:Button Content="파일 가져오기" Click="BtnCkptImport_Click" DockPanel.Dock="Right" Padding="10,4" Margin="8,0"/>
+                        <ComboBox x:Name="CmbCheckpoint"/>
+                    </DockPanel>
+                    <DockPanel Margin="0,6,0,0">
+                        <TextBlock Text="주소로 받기" Style="{StaticResource FieldLabel}" Width="110"/>
+                        <ui:Button x:Name="BtnCkptDownload" Content="⬇ 받기" Click="BtnCkptDownload_Click" DockPanel.Dock="Right" Padding="12,4" Margin="8,0,0,0"/>
+                        <TextBox x:Name="TxtCkptUrl" ToolTip="civitai·huggingface 다운로드 주소를 붙여넣으세요"/>
+                    </DockPanel>
+                    <TextBlock x:Name="TxtCkptStatus" Style="{StaticResource HintText}" Margin="0,4,0,0"
+                               Text="civitai 주소는 로그인 모델이면 구성요소 탭의 API 키를 써요. 받은 모델은 위 목록에서 골라요."/>
+                    <DockPanel Margin="0,10,0,0">
+                        <TextBlock Text="선화 안내 모델" Style="{StaticResource FieldLabel}" Width="110"/>
+                        <ComboBox x:Name="CmbControlNet"/>
+                    </DockPanel>
+                    <TextBlock Style="{StaticResource HintText}"
+                               Text="원고의 선을 따라 그리게 잡아주는 모델(ControlNet)이에요. 보통 바꿀 일이 없어요."/>
+                </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
             <!-- ── 구성요소 ── -->
             <TabItem Header="📦 구성요소">
                 <StackPanel Margin="8">

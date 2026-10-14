@@ -55,6 +55,15 @@ public class AppSettings
     /// 600은 실제 원고의 짧은 막대(13×40 정도, 약 530px²)를 놓쳐 350으로 낮췄다.</summary>
     public int DecensorBarMinArea { get; set; } = 350;
 
+    /// <summary>채색·강력검열에 쓰는 SDXL 체크포인트 파일명 (models/checkpoints 안).
+    /// 상위 모델이 나오면 엔진 탭에서 바꿔 끼울 수 있다.</summary>
+    public string ColorCheckpoint { get; set; } = "waiIllustriousSDXL_v170.safetensors";
+    /// <summary>ControlNet 모델 파일명 (models/controlnet 안).</summary>
+    public string ColorControlNet { get; set; } = "controlnet-union-sdxl-promax.safetensors";
+    /// <summary>앱을 켜면 채색 엔진(ComfyUI)을 미리 백그라운드로 켜 둔다 —
+    /// 첫 채색에서 1~2분 기다리는 일이 없어진다.</summary>
+    public bool PrewarmComfyOnLaunch { get; set; } = true;
+
     /// <summary>컬러 표지(또는 캐릭터 컬러 일러스트) 경로. 메인 캐릭터의 머리·눈·의상 색을
     /// 여기서 뽑아 채색 프롬프트에 넣는다 — 페이지마다 캐릭터 색이 일관돼진다.</summary>
     public string ColorRefImage { get; set; } = "";
