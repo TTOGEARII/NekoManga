@@ -4,7 +4,9 @@ namespace NekoManga.Core.Engine;
 
 /// <summary>번역된 말풍선 하나 (원본 이미지 좌표).
 /// ManualRect: 결과 보기 창에서 사용자가 위치·크기를 손으로 조정했음 —
-/// 식자 때 말풍선 폭 자동 측정(WidenToBubble)을 건너뛰고 이 좌표를 그대로 쓴다.</summary>
+/// 식자 때 말풍선 폭 자동 측정(WidenToBubble)을 건너뛰고 이 좌표를 그대로 쓴다.
+/// StyleScale 이하는 블록별 스타일 오버라이드(결과 보기 창의 '이 풍선만') —
+/// 전부 기본값 있는 마지막 파라미터라 구버전 사이드카 JSON도 그대로 읽힌다.</summary>
 public record TextBlockInfo(
     int X1, int Y1, int X2, int Y2,
     string SourceText,
@@ -12,7 +14,14 @@ public record TextBlockInfo(
     double FontSize,
     bool Vertical,
     string FontColorHex,
-    bool ManualRect = false);
+    bool ManualRect = false,
+    double StyleScale = 1.0,       // 블록별 크기 배율 (1 = 페이지 공통 크기 그대로)
+    string Align = "Center",       // Left / Center / Right
+    int BoldOverride = -1,         // -1=페이지 설정 따름, 0=보통, 1=굵게
+    bool Italic = false,
+    double LineSpacing = 1.0,      // 줄간격 배율
+    string ColorOverride = "",     // 블록별 글자색 #RRGGBB (비면 전역 규칙)
+    double RotationDeg = 0);       // 글자 기울이기(회전, 도)
 
 public record PageTranslation(string InpaintedPath, IReadOnlyList<TextBlockInfo> Blocks);
 

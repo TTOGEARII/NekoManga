@@ -87,6 +87,35 @@
                                 <TextBox x:Name="TxtBlockText" Margin="8,0,0,0" VerticalAlignment="Center"
                                          TextChanged="TxtBlockText_Changed"/>
                             </DockPanel>
+                            <!-- 선택한 풍선만 적용되는 세부 스타일 (BT급 디테일 편집) -->
+                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                <TextBlock Text="이 풍선만" Foreground="{StaticResource NekoPink}" FontWeight="SemiBold"
+                                           VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <TextBlock Text="크기×" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                <TextBox x:Name="TxtBScale" Width="46" VerticalAlignment="Center" TextChanged="BlockStyle_Changed"/>
+                                <TextBlock Text="정렬" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="12,0,4,0"/>
+                                <ComboBox x:Name="CmbBAlign" Width="86" VerticalAlignment="Center" SelectionChanged="BlockStyle_Changed">
+                                    <ComboBoxItem Tag="Left" Content="왼쪽"/>
+                                    <ComboBoxItem Tag="Center" Content="가운데" IsSelected="True"/>
+                                    <ComboBoxItem Tag="Right" Content="오른쪽"/>
+                                </ComboBox>
+                                <TextBlock Text="굵기" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="12,0,4,0"/>
+                                <ComboBox x:Name="CmbBBold" Width="96" VerticalAlignment="Center" SelectionChanged="BlockStyle_Changed">
+                                    <ComboBoxItem Tag="-1" Content="페이지 설정" IsSelected="True"/>
+                                    <ComboBoxItem Tag="1" Content="굵게"/>
+                                    <ComboBoxItem Tag="0" Content="보통"/>
+                                </ComboBox>
+                                <CheckBox x:Name="ChkBItalic" Content="기울임" Foreground="{StaticResource NekoText}"
+                                          VerticalAlignment="Center" Margin="12,0,0,0"
+                                          Checked="BlockStyle_Changed" Unchecked="BlockStyle_Changed"/>
+                                <TextBlock Text="줄간격" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="12,0,4,0"/>
+                                <TextBox x:Name="TxtBLineSp" Width="46" VerticalAlignment="Center" TextChanged="BlockStyle_Changed"/>
+                                <TextBlock Text="색" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="12,0,4,0"/>
+                                <TextBox x:Name="TxtBColor" Width="78" VerticalAlignment="Center" TextChanged="BlockStyle_Changed"
+                                         ToolTip="#RRGGBB — 비우면 전역 설정"/>
+                                <TextBlock Text="회전°" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="12,0,4,0"/>
+                                <TextBox x:Name="TxtBRot" Width="46" VerticalAlignment="Center" TextChanged="BlockStyle_Changed"/>
+                            </StackPanel>
                         </StackPanel>
                     </TabItem>
                 </TabControl>

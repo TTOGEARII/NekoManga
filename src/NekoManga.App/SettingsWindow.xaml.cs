@@ -254,6 +254,7 @@ public partial class SettingsWindow
         App.Settings.Save();
         AppTheme.Apply(theme);       // 열려 있는 모든 창에 즉시 반영
         MangaTextures.Refresh();     // 격자·톤망점도 새 테마 색으로 (DynamicResource라 자동 갱신)
+        AppTheme.RefreshLogo();      // 로고는 스냅샷 브러시라 전환 때 새로 그린다
     }
 
     // ── 엔진 탭 ──────────────────────────────────────────────

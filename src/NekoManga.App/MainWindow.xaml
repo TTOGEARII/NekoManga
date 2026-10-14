@@ -22,7 +22,7 @@
 
         <ui:TitleBar Grid.Row="0" Title="NekoManga">
             <ui:TitleBar.Icon>
-                <ui:ImageIcon Source="{StaticResource NekoLogo}"/>
+                <ui:ImageIcon Source="{DynamicResource NekoLogo}"/>
             </ui:TitleBar.Icon>
             <ui:TitleBar.Header>
                 <TextBlock x:Name="TxtVersion" VerticalAlignment="Center" Margin="8,0"
@@ -109,7 +109,7 @@
                     <Rectangle Fill="{DynamicResource MangaDots}"/>
                     <Rectangle Fill="{DynamicResource MangaGrid}"/>
                     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                        <Image Source="{StaticResource NekoLogo}" Width="96" Height="96" HorizontalAlignment="Center"/>
+                        <Image Source="{DynamicResource NekoLogo}" Width="96" Height="96" HorizontalAlignment="Center"/>
                         <TextBlock Text="만화 이미지나 폴더를 여기에 끌어다 놓으세요" FontSize="16"
                                    Margin="0,16,0,0" HorizontalAlignment="Center" FontWeight="SemiBold"
                                    Foreground="{StaticResource NekoText}"/>

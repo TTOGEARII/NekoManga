@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -166,6 +167,7 @@ public partial class ResultWindow
         }
         if (_letterBlocks.Count > 0) CmbBlocks.SelectedIndex = 0;
         TxtBlockText.Text = _letterBlocks.Count > 0 ? _letterBlocks[0].Translation : "";
+        if (_letterBlocks.Count > 0) LoadBlockStyleUi(_letterBlocks[0]);
         _syncingBlockUi = false;
     }
 
@@ -173,9 +175,50 @@ public partial class ResultWindow
     {
         if (_syncingBlockUi || CmbBlocks.SelectedIndex < 0) return;
         _syncingBlockUi = true;
-        TxtBlockText.Text = _letterBlocks[CmbBlocks.SelectedIndex].Translation;
+        var b = _letterBlocks[CmbBlocks.SelectedIndex];
+        TxtBlockText.Text = b.Translation;
+        LoadBlockStyleUi(b);
         _syncingBlockUi = false;
         DrawShapes();
+    }
+
+    /// <summary>선택한 블록의 '이 풍선만' 스타일을 컨트롤에 채운다 (_syncingBlockUi 상태에서 호출).</summary>
+    private void LoadBlockStyleUi(TextBlockInfo b)
+    {
+        TxtBScale.Text = b.StyleScale.ToString("0.##", CultureInfo.InvariantCulture);
+        foreach (ComboBoxItem it in CmbBAlign.Items)
+            if ((string?)it.Tag == b.Align) { CmbBAlign.SelectedItem = it; break; }
+        foreach (ComboBoxItem it in CmbBBold.Items)
+            if ((string?)it.Tag == b.BoldOverride.ToString()) { CmbBBold.SelectedItem = it; break; }
+        ChkBItalic.IsChecked = b.Italic;
+        TxtBLineSp.Text = b.LineSpacing.ToString("0.##", CultureInfo.InvariantCulture);
+        TxtBColor.Text = b.ColorOverride;
+        TxtBRot.Text = b.RotationDeg.ToString("0.#", CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>'이 풍선만' 컨트롤 변경 → 선택 블록에 저장하고 미리보기 갱신.</summary>
+    private void BlockStyle_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_syncingBlockUi || !IsLoaded || CmbBlocks.SelectedIndex < 0) return;
+        int i = CmbBlocks.SelectedIndex;
+        var b = _letterBlocks[i];
+
+        static double D(string t, double fb, double min, double max) =>
+            double.TryParse(t.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var v)
+                ? Math.Clamp(v, min, max) : fb;
+
+        _letterBlocks[i] = b with
+        {
+            StyleScale = D(TxtBScale.Text, b.StyleScale, 0.3, 3.0),
+            Align = (CmbBAlign.SelectedItem as ComboBoxItem)?.Tag as string ?? b.Align,
+            BoldOverride = int.TryParse((CmbBBold.SelectedItem as ComboBoxItem)?.Tag as string, out var bo) ? bo : b.BoldOverride,
+            Italic = ChkBItalic.IsChecked == true,
+            LineSpacing = D(TxtBLineSp.Text, b.LineSpacing, 0.6, 3.0),
+            ColorOverride = TxtBColor.Text.Trim(),
+            RotationDeg = D(TxtBRot.Text, b.RotationDeg, -45, 45),
+        };
+        if (LetterMode && !_letterPreview) RebuildLetterBoxes();
+        TxtStatus.Text = "풍선 스타일을 바꿨어요 — [다시 식자]가 최종 화질로 반영해요";
     }
 
     private void TxtBlockText_Changed(object sender, TextChangedEventArgs e)
@@ -310,24 +353,34 @@ public partial class ResultWindow
         {
             var b = _letterBlocks[i];
 
-            // 자동 폭 넓히기(세로 블록)는 렌더와 같은 규칙으로 — 손으로 잡은 블록은 그대로
+            // 자동 폭·높이 넓히기(세로 블록)는 렌더와 같은 규칙으로 — 손으로 잡은 블록은 그대로
             var rect = allRects[i];
             if (b.Vertical && !b.ManualRect)
-                rect = TextRenderer.WidenToBubble(_baseImg, rect, allRects.Where((_, j) => j != i).ToList());
+            {
+                var others = allRects.Where((_, j) => j != i).ToList();
+                rect = TextRenderer.WidenToBubble(_baseImg, rect, others);
+                rect = TextRenderer.HeightenToBubble(_baseImg, rect, others);
+            }
             double w = rect.Width * _scale, h = rect.Height * _scale;
             if (w < 8 || h < 8) continue;
 
+            // 블록별 스타일 오버라이드 반영 (줄간격은 TextBox 미리보기 한계로 생략 — 최종 렌더엔 적용)
+            bool bold = b.BoldOverride switch { 0 => false, 1 => true, _ => style.LetterBold };
+            var fg = !string.IsNullOrWhiteSpace(b.ColorOverride)
+                ? ToMedia(b.ColorOverride, b.FontColorHex)
+                : ToMedia(style.LetterColorHex, b.FontColorHex);
             var tb = new TextBox
             {
                 Text = b.Translation,
                 TextWrapping = TextWrapping.Wrap,
-                TextAlignment = TextAlignment.Center,
+                TextAlignment = b.Align switch { "Left" => TextAlignment.Left, "Right" => TextAlignment.Right, _ => TextAlignment.Center },
                 VerticalContentAlignment = VerticalAlignment.Center,
                 AcceptsReturn = true,
                 FontFamily = family,
-                FontWeight = style.LetterBold ? FontWeights.Bold : FontWeights.Normal,
-                FontSize = Math.Max(6, px * _scale),
-                Foreground = new SolidColorBrush(ToMedia(style.LetterColorHex, b.FontColorHex)),
+                FontWeight = bold ? FontWeights.Bold : FontWeights.Normal,
+                FontStyle = b.Italic ? FontStyles.Italic : FontStyles.Normal,
+                FontSize = Math.Max(6, px * Math.Clamp(b.StyleScale, 0.3, 3.0) * _scale),
+                Foreground = new SolidColorBrush(fg),
                 Background = new SolidColorBrush(Color.FromArgb(70, 255, 255, 255)),
                 BorderBrush = Brushes.DeepSkyBlue,
                 BorderThickness = new Thickness(1),
@@ -337,6 +390,11 @@ public partial class ResultWindow
 
             // 포토샵처럼 옮기고(위 손잡이) 늘리는(오른쪽 아래 모서리) 컨테이너
             var host = new Grid { Width = w, Height = h, Tag = i };
+            if (Math.Abs(b.RotationDeg) > 0.05)
+            {
+                host.RenderTransformOrigin = new System.Windows.Point(0.5, 0.5);
+                host.RenderTransform = new RotateTransform(b.RotationDeg);
+            }
             host.Children.Add(tb);
 
             var move = new System.Windows.Controls.Primitives.Thumb

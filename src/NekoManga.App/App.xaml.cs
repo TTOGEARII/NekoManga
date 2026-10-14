@@ -31,9 +31,9 @@ public partial class App : Application
         AppTheme.Apply(Settings.Theme);
         MangaTextures.Refresh();   // 원고 격자·톤망점 타일 (테마 색 반영)
 
-        // 만화 선화 고양이 로고 — 테마 브러시로 그려서 다크/화이트를 따라간다
-        Resources["NekoLogo"] = new System.Windows.Media.DrawingImage(
-            LogoArt.Build(AppTheme.GetBrush("NekoStroke"), AppTheme.GetBrush("NekoBg")));
+        // 만화 선화 고양이 로고 — 스냅샷 브러시로 그린다 (라이브 브러시를 주면 Window.Icon이
+        // 얼려 버려 테마 전환이 크래시). 전환 때는 Theme_Changed가 RefreshLogo로 다시 만든다.
+        AppTheme.RefreshLogo();
 
         // 기존 설치 자동 감지 — 이미 ComfyUI·BT를 쓰고 있으면 재다운로드 없이 연결한다.
         AutoLinkExistingInstalls();
@@ -67,6 +67,36 @@ public partial class App : Application
             new SetupWindow().ShowDialog();
 
         main.Show();
+
+        // --theme-test: 메인 창(아이콘 포함)이 뜬 뒤 테마를 자동 순환 — 아이콘이 로고 브러시를
+        // 얼려 전환이 크래시하던 회귀의 자동 검증용. 결과를 파일로 남기고 종료한다.
+        var cliArgs = Environment.GetCommandLineArgs();
+        var themeTestIdx = Array.IndexOf(cliArgs, "--theme-test");
+        if (themeTestIdx >= 0 && themeTestIdx + 1 < cliArgs.Length)
+        {
+            var outPath = cliArgs[themeTestIdx + 1];
+            var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+            timer.Tick += (_, _) =>
+            {
+                timer.Stop();
+                try
+                {
+                    foreach (var t in new[] { "Dark", "Light", "Dark", "Light" })
+                    {
+                        AppTheme.Apply(t);
+                        MangaTextures.Refresh();
+                        AppTheme.RefreshLogo();
+                    }
+                    System.IO.File.WriteAllText(outPath, "THEME-CYCLE OK");
+                }
+                catch (Exception ex)
+                {
+                    System.IO.File.WriteAllText(outPath, "THEME-CYCLE FAIL: " + ex);
+                }
+                Shutdown();
+            };
+            timer.Start();
+        }
 
         // 채색 엔진 미리 켜기 — 첫 채색에서 1~2분 기다리지 않게 백그라운드로 데워 둔다.
         // 실패해도 조용히 넘어간다 (채색을 쓸 때 어차피 다시 켠다).

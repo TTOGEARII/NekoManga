@@ -63,16 +63,23 @@ public static class TextRenderer
             // 단, 사용자가 결과 보기 창에서 손으로 잡은 블록(ManualRect)은 그 좌표를 존중한다.
             // 다른 블록 영역은 벽으로 — 결합 풍선은 내부가 이어져 흰 폭 측정이 이웃 풍선까지 샌다.
             if (b.Vertical && !b.ManualRect)
-                rect = WidenToBubble(mat, rect, allRects.Where((_, i) => i != bi).ToList());
+            {
+                var others = allRects.Where((_, i) => i != bi).ToList();
+                rect = WidenToBubble(mat, rect, others);
+                // 높이도 풍선의 실제 흰 높이까지 — 블록(글자 기둥 bbox)보다 풍선이 길면
+                // 그만큼 줄을 더 쓸 수 있어, 좁은 풍선에서 글자를 덜 줄이게 된다 (크기 통일 체감).
+                rect = HeightenToBubble(mat, rect, others);
+            }
 
             // 말풍선은 대개 타원이라 블록(사각형) 가장자리까지 글자를 채우면 테두리에 닿는다 — 약간 안쪽으로.
             rect.Inflate(-rect.Width * 0.05f, -rect.Height * 0.03f);
 
-            // 글자 색: 설정에 지정돼 있으면 그 색, 비어 있으면 원문 색을 따라간다
-            var color = string.IsNullOrWhiteSpace(settings.LetterColorHex)
-                ? ParseColor(b.FontColorHex)
+            // 글자 색: 블록별 지정 > 설정 전역 > 원문 색 자동
+            var color = !string.IsNullOrWhiteSpace(b.ColorOverride) ? ParseColor(b.ColorOverride)
+                : string.IsNullOrWhiteSpace(settings.LetterColorHex) ? ParseColor(b.FontColorHex)
                 : ParseColor(settings.LetterColorHex);
-            DrawFitted(g, b.Translation, rect, uniformSize, color, settings);
+            float startSize = uniformSize * (float)Math.Clamp(b.StyleScale, 0.3, 3.0);
+            DrawFitted(g, b, rect, startSize, color, settings);
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
@@ -123,6 +130,46 @@ public static class TextRenderer
         if (newW <= r.Width) return r;
         float nx = Math.Max(0, cx - newW / 2);
         return new RectangleF(nx, r.Y, Math.Min(newW, img.Cols - nx), r.Height);
+    }
+
+    /// <summary>세로쓰기 블록의 높이를 풍선의 실제 흰 높이까지 늘린다 — WidenToBubble의 세로판.
+    /// 글자 기둥 bbox보다 풍선이 길쭉하면 그 여유 줄 수만큼 글자를 덜 줄여도 되므로,
+    /// 페이지 공통 크기(중간값)가 좁은 풍선에서도 유지된다 (크기 제각각 피드백의 대책).</summary>
+    public static RectangleF HeightenToBubble(Mat img, RectangleF r, IReadOnlyList<RectangleF>? avoid = null)
+    {
+        int cy = Math.Clamp((int)(r.Y + r.Height / 2), 0, img.Rows - 1);
+        int capL = (int)Math.Max(8, r.Height * 1.8f);
+
+        bool Bright(int x, int y)
+        {
+            var p = img.At<Vec3b>(y, x);
+            return (p.Item0 + p.Item1 + p.Item2) / 3 >= 225;
+        }
+
+        bool Blocked(int x, int y)
+        {
+            if (avoid == null) return false;
+            foreach (var a in avoid)
+                if (x >= a.Left - 4 && x <= a.Right + 4 && y >= a.Top - 4 && y <= a.Bottom + 4)
+                    return true;
+            return false;
+        }
+
+        float minRun = float.MaxValue;
+        foreach (var fx in new[] { 0.25f, 0.5f, 0.75f })
+        {
+            int x = Math.Clamp((int)(r.X + r.Width * fx), 0, img.Cols - 1);
+            if (!Bright(x, cy)) { minRun = Math.Min(minRun, r.Height); continue; }
+            int yt = cy, yb = cy;
+            while (yt - 1 >= 0 && cy - yt < capL && Bright(x, yt - 1) && !Blocked(x, yt - 1)) yt--;
+            while (yb + 1 < img.Rows && yb - cy < capL && Bright(x, yb + 1) && !Blocked(x, yb + 1)) yb++;
+            minRun = Math.Min(minRun, yb - yt);
+        }
+
+        float newH = minRun * 0.86f;
+        if (newH <= r.Height) return r;
+        float ny = Math.Max(0, cy - newH / 2);
+        return new RectangleF(r.X, ny, r.Width, Math.Min(newH, img.Rows - ny));
     }
 
     /// <summary>페이지 공통 글자 크기 — 블록별 OCR 추정 크기의 **중앙값** × 사용자 배율.
@@ -176,50 +223,88 @@ public static class TextRenderer
         return mat;
     }
 
-    private static void DrawFitted(Graphics g, string text, RectangleF rect, float startSize, Color color,
+    private static void DrawFitted(Graphics g, TextBlockInfo b, RectangleF rect, float startSize, Color color,
         AppSettings s)
     {
-        var fmt = new StringFormat
-        {
-            Alignment = StringAlignment.Center,
-            LineAlignment = StringAlignment.Center,
-            Trimming = StringTrimming.None,
-        };
+        string text = b.Translation;
 
-        var style = s.LetterBold ? FontStyle.Bold : FontStyle.Regular;
+        // 블록별 스타일: 굵기(페이지 설정/보통/굵게) + 기울임
+        var style = b.BoldOverride switch { 0 => FontStyle.Regular, 1 => FontStyle.Bold, _ => s.LetterBold ? FontStyle.Bold : FontStyle.Regular };
+        if (b.Italic) style |= FontStyle.Italic;
         var family = ResolveFamily(s.LetterFontFamily);
-        // 일부 글꼴은 Regular/Bold 중 한쪽만 있다 — 없는 스타일로 Font를 만들면 던지므로 보정한다
+        // 일부 글꼴은 일부 스타일만 있다 — 없는 스타일로 Font를 만들면 던지므로 가능한 것으로 보정
         if (!family.IsStyleAvailable(style))
-            style = family.IsStyleAvailable(FontStyle.Bold) ? FontStyle.Bold : FontStyle.Regular;
+        {
+            foreach (var cand in new[] { style & ~FontStyle.Italic, FontStyle.Regular, FontStyle.Bold })
+                if (family.IsStyleAvailable(cand)) { style = cand; break; }
+        }
+
+        var align = b.Align switch { "Left" => StringAlignment.Near, "Right" => StringAlignment.Far, _ => StringAlignment.Center };
+        float spacing = (float)Math.Clamp(b.LineSpacing, 0.6, 3.0);
 
         // 세로쓰기 원문도 한국어는 가로로 그린다 (국내 식자 관행).
         // 줄바꿈은 GDI+ 기본 래핑에 맡기지 않는다 — CJK는 글자 아무 데서나 꺾여
-        // "멀긴한/데"처럼 어절(조사 포함 한 덩어리)이 중간에 잘린다. 어절 단위로 직접 줄을 짠다.
-        for (float size = startSize; size >= 9; size -= 1.5f)
+        // "멀긴한/데"처럼 어절이 중간에 잘린다. 어절 단위로 직접 줄을 짠다.
+        //
+        // 크기 통일: 1차 시도는 페이지 공통 크기의 75%까지만 줄여 본다(어절 보존).
+        // 안 들어가면 2차로 긴 어절을 글자 단위로 꺾는 것을 허용하고 다시 공통 크기부터 —
+        // '크기 제각각'보다 '아주 좁은 풍선에서만 어절이 꺾이는' 쪽이 덜 눈에 띈다 (사용자 피드백).
+        for (int pass = 0; pass < 2; pass++)
         {
-            using var font = new Font(family, size, style, GraphicsUnit.Pixel);
-            // brokeWord = 어절 하나가 줄 폭보다 길어 글자 단위로 쪼개야 했다 →
-            // 가독성을 위해 글자를 더 줄여서라도 어절이 한 줄에 들어가게 한다 (9px 바닥까지만).
-            string wrapped = WrapByWords(g, text, font, rect.Width, out bool brokeWord);
-            var measured = g.MeasureString(wrapped, font, int.MaxValue, fmt);
-            bool fits = measured.Height <= rect.Height + 2 && measured.Width <= rect.Width + 2 && !brokeWord;
-            if (fits || size <= 9)
+            bool allowBreak = pass == 1;
+            float floor = allowBreak ? 9 : Math.Max(9, startSize * 0.75f);
+            for (float size = startSize; size >= floor; size -= 1.5f)
             {
-                // 외곽선(halo)으로 어떤 배경에서도 읽히게 한다.
-                using var path = new GraphicsPath();
-                path.AddString(wrapped, family, (int)style, size, rect, fmt);
-                if (s.LetterOutlineScale > 0)
+                using var font = new Font(family, size, style, GraphicsUnit.Pixel);
+                string wrapped = WrapByWords(g, text, font, rect.Width, out bool brokeWord);
+                var lines = wrapped.Split('\n');
+                float lineH = font.GetHeight(g);
+                float totalH = lines.Length == 0 ? 0 : lineH * (1 + (lines.Length - 1) * spacing);
+                float maxW = lines.Max(l => l.Length == 0 ? 0 : g.MeasureString(l, font).Width);
+                bool fits = totalH <= rect.Height + 2 && maxW <= rect.Width + 2 && (allowBreak || !brokeWord);
+                if (fits || (allowBreak && size <= 9))
                 {
-                    float w = (float)(Math.Max(2.5f, size / 7f) * Math.Clamp(s.LetterOutlineScale, 0, 4));
-                    using var halo = new Pen(ParseColor(s.LetterOutlineColorHex, Color.White), w)
-                        { LineJoin = LineJoin.Round };
-                    g.DrawPath(halo, path);
+                    DrawLines(g, lines, family, style, size, lineH * spacing, rect, align, color, s, (float)b.RotationDeg);
+                    return;
                 }
-                using var brush = new SolidBrush(color);
-                g.FillPath(brush, path);
-                return;
             }
         }
+    }
+
+    /// <summary>줄 단위로 경로를 쌓아 외곽선+채움으로 그린다 — 줄간격·정렬·회전을 직접 제어한다.</summary>
+    private static void DrawLines(Graphics g, string[] lines, FontFamily family, FontStyle style, float size,
+        float lineAdvance, RectangleF rect, StringAlignment align, Color color, AppSettings s, float rotationDeg)
+    {
+        using var font = new Font(family, size, style, GraphicsUnit.Pixel);
+        float lineH = font.GetHeight(g);
+        float totalH = lines.Length == 0 ? 0 : lineAdvance * (lines.Length - 1) + lineH;
+        float y = rect.Y + Math.Max(0, (rect.Height - totalH) / 2);
+
+        using var path = new GraphicsPath();
+        var fmt = new StringFormat { Alignment = align, LineAlignment = StringAlignment.Near, Trimming = StringTrimming.None };
+        foreach (var line in lines)
+        {
+            if (line.Length > 0)
+                path.AddString(line, family, (int)style, size, new RectangleF(rect.X, y, rect.Width, lineH * 1.5f), fmt);
+            y += lineAdvance;
+        }
+
+        if (Math.Abs(rotationDeg) > 0.05f)
+        {
+            using var m = new Matrix();
+            m.RotateAt(rotationDeg, new PointF(rect.X + rect.Width / 2, rect.Y + rect.Height / 2));
+            path.Transform(m);
+        }
+
+        // 외곽선(halo)으로 어떤 배경에서도 읽히게 한다.
+        if (s.LetterOutlineScale > 0)
+        {
+            float w = (float)(Math.Max(2.5f, size / 7f) * Math.Clamp(s.LetterOutlineScale, 0, 4));
+            using var halo = new Pen(ParseColor(s.LetterOutlineColorHex, Color.White), w) { LineJoin = LineJoin.Round };
+            g.DrawPath(halo, path);
+        }
+        using var brush = new SolidBrush(color);
+        g.FillPath(brush, path);
     }
 
     /// <summary>어절(스페이스 단위) 줄바꿈. 한 줄에 다음 어절이 안 들어가면 줄을 넘긴다 —

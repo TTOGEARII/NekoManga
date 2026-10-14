@@ -35,8 +35,20 @@ public static class AppTheme
 
     public static bool IsDark { get; private set; }
 
-    /// <summary>테마를 따라 색이 바뀌는 라이브 브러시 (Apply 이후 유효).</summary>
+    /// <summary>테마를 따라 색이 바뀌는 라이브 브러시 (Apply 이후 유효).
+    /// 주의: Window.Icon 같은 freezable 소비처에 주지 말 것 — SnapshotBrush를 쓸 것.</summary>
     public static Brush GetBrush(string key) => Brushes[key];
+
+    /// <summary>현재 테마 색의 스냅샷 브러시 — Freeze돼도 되는 사본.
+    /// Window.Icon에 라이브 브러시가 든 DrawingImage를 주면 WPF가 아이콘 변환 때 통째로 얼려
+    /// 공유 브러시까지 읽기 전용이 되고, 다음 테마 전환의 .Color 변경이
+    /// InvalidOperationException으로 앱을 죽인다 (실사고 — 데모 창에선 아이콘이 없어 멀쩡했다).</summary>
+    public static SolidColorBrush SnapshotBrush(string key) => new(Brushes[key].Color);
+
+    /// <summary>로고 리소스를 현재 테마 색 스냅샷으로 (재)생성한다 — 시작 시와 테마 전환 때.</summary>
+    public static void RefreshLogo() =>
+        Application.Current.Resources["NekoLogo"] = new DrawingImage(
+            LogoArt.Build(SnapshotBrush("NekoStroke"), SnapshotBrush("NekoBg")));
 
     private static Color C(string hex) => (Color)ColorConverter.ConvertFromString(hex);
 
@@ -49,7 +61,9 @@ public static class AppTheme
         foreach (var (key, colors) in Palette)
         {
             var color = IsDark ? colors.Dark : colors.Light;
-            if (Brushes.TryGetValue(key, out var brush))
+            // IsFrozen 방어: 누가 얼려 버렸으면(freezable 소비처에 새어 들어간 경우)
+            // 색 변경 대신 새 인스턴스로 교체 — 크래시보다 일부 창의 지연 갱신이 낫다.
+            if (Brushes.TryGetValue(key, out var brush) && !brush.IsFrozen)
                 brush.Color = color;                 // 같은 인스턴스 색만 교체 → 전 창 즉시 반영
             else
             {

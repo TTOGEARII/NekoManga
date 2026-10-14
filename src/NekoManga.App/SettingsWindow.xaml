@@ -500,7 +500,7 @@
             <TabItem Header="ℹ 정보">
                 <StackPanel Margin="8">
                     <StackPanel Orientation="Horizontal" Margin="0,12,0,4">
-                        <Image Source="{StaticResource NekoLogo}" Width="46" Height="46" Margin="0,0,12,0"/>
+                        <Image Source="{DynamicResource NekoLogo}" Width="46" Height="46" Margin="0,0,12,0"/>
                         <TextBlock Text="NekoManga" FontSize="24" FontWeight="ExtraBold"
                                    Foreground="{StaticResource NekoText}" VerticalAlignment="Center"/>
                     </StackPanel>
