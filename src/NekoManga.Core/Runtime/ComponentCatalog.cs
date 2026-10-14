@@ -147,5 +147,5 @@ public static class ComponentCatalog
     public static IEnumerable<Component> ComfyComponents => All.Where(c => c.ForComfy);
 
     public const string FirstRunNote =
-        "번역·기본 검열제거는 작은 모델(0.8GB)만 있으면 돼요. 채색·강력 검열제거를 쓰려면 ComfyUI(11GB)까지 설치해 주세요.";
+        "번역·기본 검열제거는 작은 모델(0.8GB)만 있으면 돼요. 채색·강력 검열제거까지 쓰려면 채색 엔진(약 20GB)을 함께 설치해 주세요.";
 }

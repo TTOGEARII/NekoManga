@@ -12,6 +12,9 @@ public partial class App : Application
     /// <summary>--demo-settings: 설정 창만 띄워 레이아웃을 확인한다 (UI 작업용).</summary>
     public bool DemoSettings { get; set; }
 
+    /// <summary>--demo-setup: 설치 마법사만 띄운다 (UI 확인용 — 설정 파일 안 건드림).</summary>
+    public bool DemoSetup { get; set; }
+
     /// <summary>--result &lt;경로…&gt;: 결과 보기 창만 띄운다 (UI 확인용).</summary>
     public List<string>? ResultImages { get; set; }
 
@@ -36,6 +39,12 @@ public partial class App : Application
         if (DemoSettings)
         {
             new SettingsWindow().Show();
+            return;
+        }
+
+        if (DemoSetup)
+        {
+            new SetupWindow(demo: true).Show();
             return;
         }
 

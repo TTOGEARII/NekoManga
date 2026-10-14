@@ -23,12 +23,15 @@
             <TextBlock Text="(=^･ω･^=) AI 엔진을 준비할게요" FontSize="19" FontWeight="Bold"
                        Foreground="{StaticResource NekoPinkSoft}"/>
             <TextBlock Style="{StaticResource HintText}" Margin="0,8,0,0"
-                       Text="채색·번역에 필요한 구성요소를 자동으로 내려받아요. 모델이 커서(최대 11GB) 처음 한 번은 시간이 걸려요 — 중간에 꺼도 이어받아요."/>
+                       Text="채색·번역에 필요한 구성요소를 자동으로 내려받아요. 모델이 커서(전체 약 20GB) 처음 한 번은 시간이 걸려요 — 중간에 꺼도 이어받아요."/>
             <DockPanel Margin="0,12,0,0">
-                <TextBlock Text="설치 위치" Style="{StaticResource FieldLabel}"/>
-                <ui:Button DockPanel.Dock="Right" Content="변경" Click="BtnPickRoot_Click" Padding="12,4" Margin="8,0,0,0"/>
-                <TextBox x:Name="TxtRoot" IsReadOnly="True"/>
+                <TextBlock Text="설치 드라이브" Style="{StaticResource FieldLabel}"/>
+                <ui:Button DockPanel.Dock="Right" Content="폴더 직접 선택" Click="BtnPickRoot_Click" Padding="12,4" Margin="8,0,0,0"/>
+                <ComboBox x:Name="CmbDrive" SelectionChanged="CmbDrive_Changed"/>
             </DockPanel>
+            <TextBlock x:Name="TxtRoot" Style="{StaticResource HintText}" Margin="0,6,0,0"/>
+            <TextBlock x:Name="TxtSpace" Margin="0,4,0,0" FontWeight="SemiBold"
+                       Foreground="{StaticResource NekoText}"/>
         </StackPanel>
 
         <ListView x:Name="CompList" Grid.Row="2" Margin="24,8" Background="Transparent" BorderThickness="0">

@@ -21,6 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="System.Management" Version="10.0.13" />
     <PackageReference Include="WPF-UI" Version="3.0.5" />
     <!-- vpk CLI(워크플로)와 메이저 버전을 반드시 맞출 것 — 0.0.x 라이브러리 + 1.x 패커 조합은
          Setup.exe가 창도 로그도 없이 행업한다 (v0.1.1에서 실제 발생). -->

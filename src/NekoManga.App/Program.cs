@@ -70,6 +70,7 @@ public static class Program
         var app = new App
         {
             DemoSettings = args.Contains("--demo-settings"),
+            DemoSetup = args.Contains("--demo-setup"),
             ResultImages = resultIdx >= 0 ? args.Skip(resultIdx + 1).TakeWhile(a => !a.StartsWith("--")).ToList() : null,
             PreloadDir = filesIdx >= 0 && filesIdx + 1 < args.Length ? args[filesIdx + 1] : null,
         };
