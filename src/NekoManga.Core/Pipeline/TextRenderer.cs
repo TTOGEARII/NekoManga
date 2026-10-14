@@ -170,7 +170,7 @@ public static class TextRenderer
         };
 
         var style = s.LetterBold ? FontStyle.Bold : FontStyle.Regular;
-        var family = ResolveFamily(s.LetterFontFamily, style);
+        var family = ResolveFamily(s.LetterFontFamily);
         // 일부 글꼴은 Regular/Bold 중 한쪽만 있다 — 없는 스타일로 Font를 만들면 던지므로 보정한다
         if (!family.IsStyleAvailable(style))
             style = family.IsStyleAvailable(FontStyle.Bold) ? FontStyle.Bold : FontStyle.Regular;
@@ -241,7 +241,7 @@ public static class TextRenderer
     }
 
     /// <summary>설정의 글꼴 이름을 FontFamily로. 미설치 이름이면 Malgun Gothic → GenericSansSerif 순으로 대체.</summary>
-    private static FontFamily ResolveFamily(string name, FontStyle style)
+    private static FontFamily ResolveFamily(string name)
     {
         try { return new FontFamily(name); }
         catch

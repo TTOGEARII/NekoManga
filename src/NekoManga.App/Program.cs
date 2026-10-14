@@ -22,6 +22,28 @@ public static class Program
 
         // 내장 엔진 자가진단: 감지→OCR→번역→글자지움을 창 없이 돌려 결과 파일을 남긴다.
         // 사용: NekoManga.exe --selftest <이미지경로>  (결과: <이미지>.selftest.* + selftest.log)
+        // 전체 파이프라인 headless 실행 (E2E 테스트용): NekoManga.exe --run <이미지…>
+        // 현재 settings.json 그대로 돌리고, 단계별 진행을 <첫이미지>.runlog.txt에 남긴다.
+        var runIdx = Array.IndexOf(args, "--run");
+        if (runIdx >= 0 && runIdx + 1 < args.Length)
+        {
+            var files = args.Skip(runIdx + 1).TakeWhile(a => !a.StartsWith("--")).ToList();
+            var s = NekoManga.Core.AppSettings.Load();
+            var log = new StreamWriter(files[0] + ".runlog.txt", false, System.Text.Encoding.UTF8) { AutoFlush = true };
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var progress = new Progress<NekoManga.Core.Pipeline.PageProgress>(p =>
+                log.WriteLine($"[{sw.Elapsed:mm\\:ss}] {p.File} | {p.Stage}" + (p.Error != null ? $" | ERR: {p.Error}" : "")));
+            try
+            {
+                using var runner = new NekoManga.Core.Pipeline.PipelineRunner(s);
+                runner.RunAsync(files, progress, CancellationToken.None).GetAwaiter().GetResult();
+                log.WriteLine($"[{sw.Elapsed:mm\\:ss}] RUN OK");
+            }
+            catch (Exception ex) { log.WriteLine($"[{sw.Elapsed:mm\\:ss}] RUN FAIL: {ex}"); }
+            log.Dispose();
+            return;
+        }
+
         // 표지 색 태그 추출 확인용: NekoManga.exe --colorref <이미지> → <이미지>.colorref.txt
         var colorrefIdx = Array.IndexOf(args, "--colorref");
         if (colorrefIdx >= 0 && colorrefIdx + 1 < args.Length)

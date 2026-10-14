@@ -275,18 +275,6 @@ public static class MosaicDetector
         return k;
     }
 
-    /// <summary>두 마스크를 합친다 (한쪽이 null이면 나머지를 돌려준다). 둘 다 null이면 null.</summary>
-    public static Mat? Combine(Mat? a, Mat? b)
-    {
-        if (a == null) return b;
-        if (b == null) return a;
-        var m = new Mat();
-        Cv2.BitwiseOr(a, b, m);
-        a.Dispose();
-        b.Dispose();
-        return m;
-    }
-
     /// <summary>강력 모드(ComfyUI 인페인트)용: 마스크를 알파 0으로 뚫은 RGBA PNG 바이트.</summary>
     public static byte[] ToMaskedPng(Mat img, Mat mask)
     {

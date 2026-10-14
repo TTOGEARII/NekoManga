@@ -55,6 +55,7 @@ public partial class ResultWindow
     private List<TextBlockInfo> _letterBlocks = [];
     private bool _syncingBlockUi;                 // 콤보/텍스트박스 동기화 중 재진입 방지
     private Mat? _baseImg;                        // 식자 전 원고 — 편집 모드에서 이 위에 텍스트박스를 띄운다
+    private PipelineRunner? _runner;              // 수동 복원용 러너 — 창 수명 동안 ONNX 세션 재사용
     private bool _letterPreview;                  // true면 [다시 식자] 결과(_img)를 보여준다
 
     public ResultWindow(IReadOnlyList<string> pages, int startIndex)
@@ -629,11 +630,12 @@ public partial class ResultWindow
         try
         {
             var img = _img;
+            // 러너(ONNX 세션 포함)는 창 수명 동안 재사용 — 매번 만들면 LaMa 모델(208MB)을
+            // 적용할 때마다 다시 로딩해 수 초씩 낭비된다.
+            _runner ??= new PipelineRunner(App.Settings);
+            var runner = _runner;
             await Task.Run(async () =>
-            {
-                using var runner = new PipelineRunner(App.Settings);
-                await runner.ManualDecensorAsync(img, mask, engineMode, status, CancellationToken.None);
-            });
+                await runner.ManualDecensorAsync(img, mask, engineMode, status, CancellationToken.None));
 
             _undo.Push(before);
             BtnUndo.IsEnabled = true;
@@ -709,6 +711,7 @@ public partial class ResultWindow
     {
         if (!ConfirmDiscard()) { e.Cancel = true; return; }
         base.OnClosing(e);
+        _runner?.Dispose();
         _img.Dispose();
         _baseImg?.Dispose();
         while (_undo.Count > 0) _undo.Pop().Dispose();
