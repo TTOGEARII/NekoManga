@@ -55,6 +55,13 @@ public class AppSettings
     /// 600은 실제 원고의 짧은 막대(13×40 정도, 약 530px²)를 놓쳐 350으로 낮췄다.</summary>
     public int DecensorBarMinArea { get; set; } = 350;
 
+    /// <summary>컬러 표지(또는 캐릭터 컬러 일러스트) 경로. 메인 캐릭터의 머리·눈·의상 색을
+    /// 여기서 뽑아 채색 프롬프트에 넣는다 — 페이지마다 캐릭터 색이 일관돼진다.</summary>
+    public string ColorRefImage { get; set; } = "";
+    /// <summary>표지에서 뽑은 색 태그 (자동 추출 후 캐시, 직접 수정 가능). 비어 있으면 채색 시작 때
+    /// ColorRefImage가 있으면 자동으로 한 번 뽑는다.</summary>
+    public string ColorRefTags { get; set; } = "";
+
     /// <summary>강력(SDXL) 검열제거의 시드. 고정해야 같은 원고를 다시 돌려도 같은 그림이 나온다
     /// (-1이면 매번 무작위 — 실행할 때마다 결과가 달라진다). 기본값은 실제 원고에서 결과가 좋았던 시드.</summary>
     public long DecensorSeed { get; set; } = 3080993336;

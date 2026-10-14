@@ -61,10 +61,21 @@
                         <TextBlock Style="{StaticResource HintText}"
                                    Text="샘플러 dpmpp_sde_gpu는 품질 우선(페이지당 ~90초), dpmpp_2m은 속도 우선(~55초). 8GB VRAM이면 해상도 1.5MP를 넘기지 마세요."/>
 
+                        <TextBlock Style="{StaticResource SectionTitle}" Text="컬러 표지로 캐릭터 색 맞추기"/>
+                        <DockPanel Margin="0,4">
+                            <ui:Button x:Name="BtnRefExtract" DockPanel.Dock="Right" Content="🎨 색 뽑기"
+                                       Click="BtnRefExtract_Click" Padding="12,4" Margin="8,0,0,0"/>
+                            <ui:Button DockPanel.Dock="Right" Content="찾기" Click="BtnRefBrowse_Click" Padding="12,4" Margin="8,0,0,0"/>
+                            <TextBox x:Name="TxtColorRefImage"/>
+                        </DockPanel>
+                        <TextBox x:Name="TxtColorRefTags" AcceptsReturn="True" Height="54" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="컬러 표지(또는 캐릭터 컬러 일러스트)를 등록하고 [색 뽑기]를 누르면 머리·눈·의상 색 태그를 자동으로 뽑아요 (ComfyUI 필요, 첫 실행은 서버 기동 1~2분). 비워 두면 채색 시작 때 자동으로 한 번 뽑아요. 아래 칸에서 직접 다듬을 수 있어요."/>
+
                         <TextBlock Style="{StaticResource SectionTitle}" Text="캐릭터 태그 (수동)"/>
                         <TextBox x:Name="TxtManualTags" AcceptsReturn="True" Height="54" TextWrapping="Wrap"/>
                         <TextBlock Style="{StaticResource HintText}"
-                                   Text="예: blonde hair, amber eyes, navy sailor uniform — 캐릭터 머리·눈 색을 적어주면 채색이 일관돼요."/>
+                                   Text="예: blonde hair, amber eyes, navy sailor uniform — 캐릭터 머리·눈 색을 적어주면 채색이 일관돼요. 표지에서 뽑은 태그와 함께 들어가요."/>
 
                         <TextBlock Style="{StaticResource SectionTitle}" Text="자동 태그에서 뺄 태그"/>
                         <TextBox x:Name="TxtExcludeTags"/>

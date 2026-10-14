@@ -1,3 +1,4 @@
+using System.IO;
 using Velopack;
 
 namespace NekoManga.App;
@@ -21,6 +22,17 @@ public static class Program
 
         // 내장 엔진 자가진단: 감지→OCR→번역→글자지움을 창 없이 돌려 결과 파일을 남긴다.
         // 사용: NekoManga.exe --selftest <이미지경로>  (결과: <이미지>.selftest.* + selftest.log)
+        // 표지 색 태그 추출 확인용: NekoManga.exe --colorref <이미지> → <이미지>.colorref.txt
+        var colorrefIdx = Array.IndexOf(args, "--colorref");
+        if (colorrefIdx >= 0 && colorrefIdx + 1 < args.Length)
+        {
+            var img = args[colorrefIdx + 1];
+            var s = NekoManga.Core.AppSettings.Load();
+            var tags = NekoManga.Core.Comfy.ColorRefHelper.ExtractAsync(s, img).GetAwaiter().GetResult();
+            File.WriteAllText(img + ".colorref.txt", tags);
+            return;
+        }
+
         var selftestIdx = Array.IndexOf(args, "--selftest");
         if (selftestIdx >= 0 && selftestIdx + 1 < args.Length)
         {

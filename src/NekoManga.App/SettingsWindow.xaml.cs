@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Windows;
 using NekoManga.Core.Engine;
 using ComboBox = System.Windows.Controls.ComboBox;
@@ -24,6 +25,8 @@ public partial class SettingsWindow
         TxtLineart.Text = s.ColorLineartOpacity.ToString();
         TxtSeed.Text = s.ColorSeed.ToString();
         TxtManualTags.Text = s.ColorManualTags;
+        TxtColorRefImage.Text = s.ColorRefImage;
+        TxtColorRefTags.Text = s.ColorRefTags;
         TxtExcludeTags.Text = s.ColorExcludeTags;
         TxtNegative.Text = s.ColorNegative;
 
@@ -79,6 +82,8 @@ public partial class SettingsWindow
         s.ColorLineartOpacity = ParseI(TxtLineart.Text, s.ColorLineartOpacity, 0, 100);
         s.ColorSeed = long.TryParse(TxtSeed.Text, out var seed) ? seed : -1;
         s.ColorManualTags = TxtManualTags.Text.Trim();
+        s.ColorRefImage = TxtColorRefImage.Text.Trim();
+        s.ColorRefTags = TxtColorRefTags.Text.Trim();
         s.ColorExcludeTags = TxtExcludeTags.Text.Trim();
         s.ColorNegative = TxtNegative.Text.Trim();
 
@@ -139,6 +144,53 @@ public partial class SettingsWindow
         foreach (ComboBoxItem it in cmb.Items)
             if ((string?)it.Tag == tag) { cmb.SelectedItem = it; return; }
         if (cmb.Items.Count > 0) cmb.SelectedIndex = 0;
+    }
+
+    private void BtnRefBrowse_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new System.Windows.Forms.OpenFileDialog
+        {
+            Title = "컬러 표지/참고 일러스트 고르기",
+            Filter = "이미지|*.png;*.jpg;*.jpeg;*.webp;*.bmp|모든 파일|*.*",
+        };
+        if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+        {
+            TxtColorRefImage.Text = dlg.FileName;
+            TxtColorRefTags.Text = "";   // 표지가 바뀌면 캐시된 태그는 무효
+        }
+    }
+
+    private async void BtnRefExtract_Click(object sender, RoutedEventArgs e)
+    {
+        var path = TxtColorRefImage.Text.Trim();
+        if (!File.Exists(path))
+        {
+            TxtColorRefTags.Text = "";
+            System.Windows.MessageBox.Show("먼저 표지 이미지를 골라주세요.", "색 뽑기");
+            return;
+        }
+        BtnRefExtract.IsEnabled = false;
+        var old = BtnRefExtract.Content;
+        BtnRefExtract.Content = "뽑는 중...";
+        try
+        {
+            // 현재 입력값으로 뽑는다 (창을 닫기 전이라 settings엔 아직 저장 전일 수 있음)
+            var s = App.Settings;
+            var tags = await NekoManga.Core.Comfy.ColorRefHelper.ExtractAsync(
+                s, path, new Progress<string>(m => BtnRefExtract.Content = m));
+            TxtColorRefTags.Text = tags.Length > 0 ? tags : "";
+            if (tags.Length == 0)
+                System.Windows.MessageBox.Show("색 태그를 찾지 못했어요 — 컬러 이미지가 맞는지 확인해 주세요.", "색 뽑기");
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show("색 뽑기 실패: " + ex.Message, "색 뽑기");
+        }
+        finally
+        {
+            BtnRefExtract.IsEnabled = true;
+            BtnRefExtract.Content = old;
+        }
     }
 
     /// <summary>"#RRGGBB"만 통과시키고 아니면 fallback (빈 값 허용 = 자동).</summary>

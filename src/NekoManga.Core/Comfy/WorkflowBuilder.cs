@@ -13,7 +13,7 @@ public static class WorkflowBuilder
     {
         long seed = s.ColorSeed >= 0 ? s.ColorSeed : Random.Shared.NextInt64(0, uint.MaxValue);
         var manual = string.Join(", ",
-            new[] { s.ColorBaseTags, s.ColorManualTags }
+            new[] { s.ColorBaseTags, s.ColorRefTags, s.ColorManualTags }
             .Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => t.Trim().TrimEnd(',')));
 
         var p = new JsonObject
@@ -138,6 +138,23 @@ public static class WorkflowBuilder
             ["11"] = Node("SaveImage", new() { ["images"] = Link("10", 0), ["filename_prefix"] = filenamePrefix }),
         };
     }
+
+    /// <summary>표지/참고 일러스트에서 WD14 태그만 뽑는 미니 워크플로 (ShowText로 결과 수거).</summary>
+    public static JsonObject BuildTagExtract(AppSettings s, string uploadedName) => new()
+    {
+        ["1"] = Node("LoadImage", new() { ["image"] = uploadedName }),
+        ["2"] = Node("WD14Tagger|pysssss", new()
+        {
+            ["image"] = Link("1", 0),
+            ["model"] = s.ColorTaggerModel,
+            ["threshold"] = Math.Min(0.3, s.ColorTaggerThreshold),  // 색 태그는 놓치지 않게 낮게
+            ["character_threshold"] = 0.90,
+            ["replace_underscore"] = true,
+            ["trailing_comma"] = false,
+            ["exclude_tags"] = "",
+        }),
+        ["3"] = Node("ShowText|pysssss", new() { ["text"] = Link("2", 0) }),
+    };
 
     private static JsonObject Node(string classType, JsonObject inputs) =>
         new() { ["class_type"] = classType, ["inputs"] = inputs };

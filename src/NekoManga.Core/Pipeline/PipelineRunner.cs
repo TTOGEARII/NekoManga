@@ -48,6 +48,17 @@ public class PipelineRunner(AppSettings settings) : IDisposable
             await _server.EnsureRunningAsync(status, ct);
             client = new ComfyClient(_server.BaseUrl);
             comfyOutputDir = Path.Combine(settings.ComfyRoot, "ComfyUI", "output");
+
+            // 표지가 등록돼 있는데 색 태그를 아직 안 뽑았으면 여기서 한 번 뽑아 캐시한다
+            if (settings.EnableAutoColor && settings.ColorRefTags.Trim().Length == 0
+                && settings.ColorRefImage.Trim().Length > 0 && File.Exists(settings.ColorRefImage))
+                try
+                {
+                    Report(progress, files, "표지에서 캐릭터 색 뽑는 중...", 12);
+                    settings.ColorRefTags = await ColorRefHelper.ExtractAsync(settings, settings.ColorRefImage, null, ct);
+                    settings.Save();
+                }
+                catch { /* 표지 분석 실패는 치명적이지 않다 — 참고 색 없이 진행 */ }
         }
 
         var workDir = Path.Combine(AppSettings.DataDir, "work",
