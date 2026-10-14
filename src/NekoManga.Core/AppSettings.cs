@@ -87,6 +87,37 @@ public class AppSettings
     /// <summary>강력 모드 재생성 강도 (denoise).</summary>
     public double DecensorStrongDenoise { get; set; } = 0.75;
 
+    // ── 고급 옵션 (설정 창의 [고급 옵션] — 기본값 = 기존 하드코딩, 워크플로를 아는 사용자용) ──
+    /// <summary>강력(SDXL) 워크플로 KSampler 스텝.</summary>
+    public int DecensorStrongSteps { get; set; } = 24;
+    /// <summary>강력 워크플로 CFG.</summary>
+    public double DecensorStrongCfg { get; set; } = 6.0;
+    /// <summary>강력 워크플로 샘플러/스케줄러 (ComfyUI 이름 그대로).</summary>
+    public string DecensorStrongSampler { get; set; } = "dpmpp_2m";
+    public string DecensorStrongScheduler { get; set; } = "karras";
+    /// <summary>강력 워크플로 긍정/부정 프롬프트.</summary>
+    public string DecensorStrongPositive { get; set; } = "anime, high quality, detailed, clean, best quality, uncensored";
+    public string DecensorStrongNegative { get; set; } = "mosaic, pixelated, blurry, censored, bar censor, low quality, worst quality";
+    /// <summary>강력 워크플로 합성 마스크 여유(px) — GrowMask expand.</summary>
+    public int DecensorCompositeGrow { get; set; } = 4;
+    /// <summary>엔진 LaMa(원본 레시피) 워크플로의 마스크 확장/블러.</summary>
+    public int LamaMaskGrow { get; set; } = 8;
+    public int LamaMaskBlur { get; set; } = 8;
+    /// <summary>엔진 추가 실행 인자 (예: --lowvram). 엔진을 껐다 켜면 적용.</summary>
+    public string ComfyExtraArgs { get; set; } = "";
+    /// <summary>채색 ControlNet 1단(선화 lineart) 강도와 적용 구간 끝(0~1).</summary>
+    public double CnLineartStrength { get; set; } = 1.0;
+    public double CnLineartEnd { get; set; } = 0.6;
+    /// <summary>채색 ControlNet 2단(스케치 scribble) 강도와 적용 구간 시작(0~1).</summary>
+    public double CnScribbleStrength { get; set; } = 1.0;
+    public double CnScribbleStart { get; set; } = 0.6;
+    /// <summary>선화/스케치 전처리 해상도.</summary>
+    public int PreprocResolution { get; set; } = 1280;
+    /// <summary>Scribble XDoG 전처리 임계값.</summary>
+    public int ScribbleXdogThreshold { get; set; } = 32;
+    /// <summary>IPAdapter(표지 주입) 적용 끝 지점(0~1). 높을수록 끝까지 표지 색이 유지된다.</summary>
+    public double IpaEndAt { get; set; } = 0.9;
+
     // ── 번역 (내장 엔진: CTD + manga-ocr + LaMa) ────────────────
     /// <summary>"Google"(무료, 기본) · "DeepL" · "DeepSeek" · "Grok" (뒤 셋은 API 키 필요).</summary>
     public string TranslateEngine { get; set; } = "Google";
@@ -161,6 +192,22 @@ public class AppSettings
         // Papago 등 구 BT 엔진만 Google로 되돌린다 (DeepSeek·Grok은 유효).
         if (TranslateEngine is not ("Google" or "DeepL" or "DeepSeek" or "Grok")) TranslateEngine = "Google";
         if (DecensorMode is not ("Basic" or "ComfyLama" or "Strong")) DecensorMode = "Basic";
+
+        // 고급 옵션 안전망 — 손으로 json을 고치다 깨진 값이 워크플로를 터뜨리지 않게
+        if (string.IsNullOrWhiteSpace(DecensorStrongSampler)) DecensorStrongSampler = "dpmpp_2m";
+        if (string.IsNullOrWhiteSpace(DecensorStrongScheduler)) DecensorStrongScheduler = "karras";
+        DecensorStrongSteps = Math.Clamp(DecensorStrongSteps, 4, 100);
+        DecensorStrongCfg = Math.Clamp(DecensorStrongCfg, 1, 20);
+        DecensorCompositeGrow = Math.Clamp(DecensorCompositeGrow, 0, 64);
+        LamaMaskGrow = Math.Clamp(LamaMaskGrow, 0, 64);
+        LamaMaskBlur = Math.Clamp(LamaMaskBlur, 0, 64);
+        CnLineartStrength = Math.Clamp(CnLineartStrength, 0, 2);
+        CnLineartEnd = Math.Clamp(CnLineartEnd, 0, 1);
+        CnScribbleStrength = Math.Clamp(CnScribbleStrength, 0, 2);
+        CnScribbleStart = Math.Clamp(CnScribbleStart, 0, 1);
+        PreprocResolution = Math.Clamp(PreprocResolution, 256, 4096);
+        ScribbleXdogThreshold = Math.Clamp(ScribbleXdogThreshold, 1, 128);
+        IpaEndAt = Math.Clamp(IpaEndAt, 0, 1);
     }
 
     public void Save()

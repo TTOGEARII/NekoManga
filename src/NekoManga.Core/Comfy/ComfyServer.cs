@@ -46,7 +46,8 @@ public class ComfyServer(AppSettings settings) : IAsyncDisposable
         // 터진다 (실제 발생 — 단계마다 출력하는 노드가 KSampler라 늘 거기서 보인다).
         // 파일 핸들은 부모와 무관하므로 앱을 닫아도 서버가 멀쩡하고, 로그도 남아 진단이 된다.
         Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
-        var cmdline = $"\"{python}\" -s \"{main}\" --port {settings.ComfyPort} --disable-auto-launch";
+        var extraArgs = string.IsNullOrWhiteSpace(settings.ComfyExtraArgs) ? "" : " " + settings.ComfyExtraArgs.Trim();
+        var cmdline = $"\"{python}\" -s \"{main}\" --port {settings.ComfyPort} --disable-auto-launch{extraArgs}";
         _proc = Process.Start(new ProcessStartInfo
         {
             FileName = "cmd.exe",

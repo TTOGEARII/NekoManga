@@ -61,7 +61,7 @@ public static class Program
             {
                 ["autocolor"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildAutoColor(s, "IN.png", "OUT"),
                 ["autocolor_with_ref"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildAutoColor(s, "IN.png", "OUT", "REF.png"),
-                ["lama_decensor"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildLamaDecensor("IN.png", "OUT"),
+                ["lama_decensor"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildLamaDecensor(s, "IN.png", "OUT"),
                 ["strong_decensor"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildStrongDecensor(s, "IN.png", "OUT", 1234),
                 ["tag_extract"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildTagExtract(s, "IN.png"),
             };

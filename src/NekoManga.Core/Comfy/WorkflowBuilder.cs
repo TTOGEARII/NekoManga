@@ -51,20 +51,20 @@ public static class WorkflowBuilder
             ["9"] = Node("CLIPTextEncode", new() { ["clip"] = Link("4", 1), ["text"] = s.ColorNegative }),
             ["10"] = Node("ControlNetLoader", new() { ["control_net_name"] = s.ColorControlNet }),
             ["11"] = Node("SetUnionControlNetType", new() { ["control_net"] = Link("10", 0), ["type"] = "canny/lineart/anime_lineart/mlsd" }),
-            ["12"] = Node("Manga2Anime_LineArt_Preprocessor", new() { ["image"] = Link("3", 0), ["resolution"] = 1280 }),
+            ["12"] = Node("Manga2Anime_LineArt_Preprocessor", new() { ["image"] = Link("3", 0), ["resolution"] = s.PreprocResolution }),
             ["13"] = Node("ControlNetApplyAdvanced", new()
             {
                 ["positive"] = Link("8", 0), ["negative"] = Link("9", 0),
                 ["control_net"] = Link("11", 0), ["image"] = Link("12", 0),
-                ["strength"] = 1.0, ["start_percent"] = 0.0, ["end_percent"] = 0.6, ["vae"] = Link("4", 2),
+                ["strength"] = s.CnLineartStrength, ["start_percent"] = 0.0, ["end_percent"] = s.CnLineartEnd, ["vae"] = Link("4", 2),
             }),
             ["14"] = Node("SetUnionControlNetType", new() { ["control_net"] = Link("10", 0), ["type"] = "hed/pidi/scribble/ted" }),
-            ["15"] = Node("Scribble_XDoG_Preprocessor", new() { ["image"] = Link("3", 0), ["threshold"] = 32, ["resolution"] = 1280 }),
+            ["15"] = Node("Scribble_XDoG_Preprocessor", new() { ["image"] = Link("3", 0), ["threshold"] = s.ScribbleXdogThreshold, ["resolution"] = s.PreprocResolution }),
             ["16"] = Node("ControlNetApplyAdvanced", new()
             {
                 ["positive"] = Link("13", 0), ["negative"] = Link("13", 1),
                 ["control_net"] = Link("14", 0), ["image"] = Link("15", 0),
-                ["strength"] = 1.0, ["start_percent"] = 0.6, ["end_percent"] = 1.0, ["vae"] = Link("4", 2),
+                ["strength"] = s.CnScribbleStrength, ["start_percent"] = s.CnScribbleStart, ["end_percent"] = 1.0, ["vae"] = Link("4", 2),
             }),
             ["17"] = Node("VAEEncode", new() { ["pixels"] = Link("3", 0), ["vae"] = Link("4", 2) }),
             ["18"] = Node("KSampler", new()
@@ -94,7 +94,7 @@ public static class WorkflowBuilder
                 ["model"] = Link("31", 0), ["ipadapter"] = Link("31", 1),
                 ["image"] = Link("30", 0),
                 ["weight"] = Math.Clamp(s.ColorRefStrength, 0.0, 1.5),
-                ["start_at"] = 0.0, ["end_at"] = 0.9,
+                ["start_at"] = 0.0, ["end_at"] = s.IpaEndAt,
                 ["weight_type"] = "standard",
             });
         }
@@ -133,12 +133,12 @@ public static class WorkflowBuilder
             ["3"] = Node("CLIPTextEncode", new()
             {
                 ["clip"] = Link("2", 1),
-                ["text"] = "anime, high quality, detailed, clean, best quality, uncensored",
+                ["text"] = s.DecensorStrongPositive,
             }),
             ["4"] = Node("CLIPTextEncode", new()
             {
                 ["clip"] = Link("2", 1),
-                ["text"] = "mosaic, pixelated, blurry, censored, bar censor, low quality, worst quality",
+                ["text"] = s.DecensorStrongNegative,
             }),
             ["5"] = Node("VAEEncode", new() { ["pixels"] = Link("1", 0), ["vae"] = Link("2", 2) }),
             ["6"] = Node("SetLatentNoiseMask", new() { ["samples"] = Link("5", 0), ["mask"] = Link("1", 1) }),
@@ -146,12 +146,12 @@ public static class WorkflowBuilder
             {
                 ["model"] = Link("2", 0), ["positive"] = Link("3", 0), ["negative"] = Link("4", 0),
                 ["latent_image"] = Link("6", 0),
-                ["seed"] = seed, ["steps"] = 24, ["cfg"] = 6.0,
-                ["sampler_name"] = "dpmpp_2m", ["scheduler"] = "karras",
+                ["seed"] = seed, ["steps"] = s.DecensorStrongSteps, ["cfg"] = s.DecensorStrongCfg,
+                ["sampler_name"] = s.DecensorStrongSampler, ["scheduler"] = s.DecensorStrongScheduler,
                 ["denoise"] = s.DecensorStrongDenoise,
             }),
             ["8"] = Node("VAEDecode", new() { ["samples"] = Link("7", 0), ["vae"] = Link("2", 2) }),
-            ["9"] = Node("GrowMask", new() { ["mask"] = Link("1", 1), ["expand"] = 4, ["tapered_corners"] = true }),
+            ["9"] = Node("GrowMask", new() { ["mask"] = Link("1", 1), ["expand"] = s.DecensorCompositeGrow, ["tapered_corners"] = true }),
             ["10"] = Node("ImageCompositeMasked", new()
             {
                 ["destination"] = Link("1", 0), ["source"] = Link("8", 0),
@@ -162,16 +162,16 @@ public static class WorkflowBuilder
     }
 
     /// <summary>엔진 LaMa 검열제거 — 사용자가 ComfyUI에서 직접 쓰던 원본 파이프라인의 노드 그대로
-    /// (LayerUtility: LaMa, 'lama' 모델, CUDA, 마스크 확장 8·블러 8).
+    /// (LayerUtility: LaMa, 'lama' 모델, CUDA, 마스크 확장·블러는 고급 옵션 — 기본 8·8).
     /// 업로드 PNG의 알파 0 영역이 마스크다 (ComfyUI LoadImage 규약 — 강력 모드와 동일).</summary>
-    public static JsonObject BuildLamaDecensor(string uploadedName, string filenamePrefix) => new()
+    public static JsonObject BuildLamaDecensor(AppSettings s, string uploadedName, string filenamePrefix) => new()
     {
         ["1"] = Node("LoadImage", new() { ["image"] = uploadedName }),
         ["2"] = Node("LayerUtility: LaMa", new()
         {
             ["image"] = Link("1", 0), ["mask"] = Link("1", 1),
             ["lama_model"] = "lama", ["device"] = "cuda",
-            ["invert_mask"] = false, ["mask_grow"] = 8, ["mask_blur"] = 8,
+            ["invert_mask"] = false, ["mask_grow"] = s.LamaMaskGrow, ["mask_blur"] = s.LamaMaskBlur,
         }),
         ["3"] = Node("SaveImage", new() { ["images"] = Link("2", 0), ["filename_prefix"] = filenamePrefix }),
     };

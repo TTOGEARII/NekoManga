@@ -43,6 +43,28 @@ public partial class SettingsWindow
         TxtStrongDenoise.Text = s.DecensorStrongDenoise.ToString(CultureInfo.InvariantCulture);
         TxtDecensorSeed.Text = s.DecensorSeed.ToString(CultureInfo.InvariantCulture);
 
+        // 고급 옵션 — 검열 제거
+        TxtAdvStrongSteps.Text = s.DecensorStrongSteps.ToString();
+        TxtAdvStrongCfg.Text = s.DecensorStrongCfg.ToString(CultureInfo.InvariantCulture);
+        CmbAdvStrongSampler.Text = s.DecensorStrongSampler;
+        CmbAdvStrongScheduler.Text = s.DecensorStrongScheduler;
+        TxtAdvStrongPositive.Text = s.DecensorStrongPositive;
+        TxtAdvStrongNegative.Text = s.DecensorStrongNegative;
+        TxtAdvCompositeGrow.Text = s.DecensorCompositeGrow.ToString();
+        TxtAdvLamaGrow.Text = s.LamaMaskGrow.ToString();
+        TxtAdvLamaBlur.Text = s.LamaMaskBlur.ToString();
+
+        // 고급 옵션 — 엔진·채색 워크플로
+        TxtAdvPort.Text = s.ComfyPort.ToString();
+        TxtAdvExtraArgs.Text = s.ComfyExtraArgs;
+        TxtAdvCnLineStr.Text = s.CnLineartStrength.ToString(CultureInfo.InvariantCulture);
+        TxtAdvCnLineEnd.Text = s.CnLineartEnd.ToString(CultureInfo.InvariantCulture);
+        TxtAdvCnScrStr.Text = s.CnScribbleStrength.ToString(CultureInfo.InvariantCulture);
+        TxtAdvCnScrStart.Text = s.CnScribbleStart.ToString(CultureInfo.InvariantCulture);
+        TxtAdvPreRes.Text = s.PreprocResolution.ToString();
+        TxtAdvXdog.Text = s.ScribbleXdogThreshold.ToString();
+        TxtAdvIpaEnd.Text = s.IpaEndAt.ToString(CultureInfo.InvariantCulture);
+
         SelectComboByTag(CmbTranslator, s.TranslateEngine);
         SelectComboByTag(CmbSource, s.TranslateSource);
         SelectComboByTag(CmbTarget, s.TranslateTarget);
@@ -107,6 +129,28 @@ public partial class SettingsWindow
         s.DecensorSeed = long.TryParse(TxtDecensorSeed.Text.Trim(), out var dseed) && dseed >= -1
             ? dseed : s.DecensorSeed;
 
+        // 고급 옵션 — 검열 제거
+        s.DecensorStrongSteps = ParseI(TxtAdvStrongSteps.Text, s.DecensorStrongSteps, 4, 100);
+        s.DecensorStrongCfg = ParseD(TxtAdvStrongCfg.Text, s.DecensorStrongCfg, 1, 20);
+        if (!string.IsNullOrWhiteSpace(CmbAdvStrongSampler.Text)) s.DecensorStrongSampler = CmbAdvStrongSampler.Text.Trim();
+        if (!string.IsNullOrWhiteSpace(CmbAdvStrongScheduler.Text)) s.DecensorStrongScheduler = CmbAdvStrongScheduler.Text.Trim();
+        s.DecensorStrongPositive = TxtAdvStrongPositive.Text.Trim();
+        s.DecensorStrongNegative = TxtAdvStrongNegative.Text.Trim();
+        s.DecensorCompositeGrow = ParseI(TxtAdvCompositeGrow.Text, s.DecensorCompositeGrow, 0, 64);
+        s.LamaMaskGrow = ParseI(TxtAdvLamaGrow.Text, s.LamaMaskGrow, 0, 64);
+        s.LamaMaskBlur = ParseI(TxtAdvLamaBlur.Text, s.LamaMaskBlur, 0, 64);
+
+        // 고급 옵션 — 엔진·채색 워크플로
+        s.ComfyPort = ParseI(TxtAdvPort.Text, s.ComfyPort, 1024, 65535);
+        s.ComfyExtraArgs = TxtAdvExtraArgs.Text.Trim();
+        s.CnLineartStrength = ParseD(TxtAdvCnLineStr.Text, s.CnLineartStrength, 0, 2);
+        s.CnLineartEnd = ParseD(TxtAdvCnLineEnd.Text, s.CnLineartEnd, 0, 1);
+        s.CnScribbleStrength = ParseD(TxtAdvCnScrStr.Text, s.CnScribbleStrength, 0, 2);
+        s.CnScribbleStart = ParseD(TxtAdvCnScrStart.Text, s.CnScribbleStart, 0, 1);
+        s.PreprocResolution = ParseI(TxtAdvPreRes.Text, s.PreprocResolution, 256, 4096);
+        s.ScribbleXdogThreshold = ParseI(TxtAdvXdog.Text, s.ScribbleXdogThreshold, 1, 128);
+        s.IpaEndAt = ParseD(TxtAdvIpaEnd.Text, s.IpaEndAt, 0, 1);
+
         s.TranslateEngine = ComboTag(CmbTranslator, s.TranslateEngine);
         s.TranslateSource = ComboTag(CmbSource, s.TranslateSource);
         s.TranslateTarget = ComboTag(CmbTarget, s.TranslateTarget);
@@ -153,6 +197,53 @@ public partial class SettingsWindow
         foreach (ComboBoxItem it in cmb.Items)
             if ((string?)it.Tag == tag) { cmb.SelectedItem = it; return; }
         if (cmb.Items.Count > 0) cmb.SelectedIndex = 0;
+    }
+
+    /// <summary>빈 곳 어디를 잡아도 창이 끌리게 — 제목줄이 좁아 '드래그 안 되는 곳'이 많다는
+    /// 피드백. 버튼·입력칸·탭은 마우스 다운을 자기들이 처리(Handled)하므로 여기 안 들어온다.</summary>
+    protected override void OnMouseLeftButtonDown(System.Windows.Input.MouseButtonEventArgs e)
+    {
+        base.OnMouseLeftButtonDown(e);
+        if (e.ButtonState == System.Windows.Input.MouseButtonState.Pressed)
+            try { DragMove(); } catch { /* 버튼을 뗀 뒤 도착한 이벤트 */ }
+    }
+
+    private static void ToggleAdv(System.Windows.Controls.Panel panel, Wpf.Ui.Controls.Button btn)
+    {
+        bool show = panel.Visibility != Visibility.Visible;
+        panel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        btn.Content = (show ? "▾" : "▸") + ((string)btn.Content)[1..];
+    }
+
+    private void BtnDecensorAdv_Click(object sender, RoutedEventArgs e) => ToggleAdv(PnlDecensorAdv, BtnDecensorAdv);
+    private void BtnEngineAdv_Click(object sender, RoutedEventArgs e) => ToggleAdv(PnlEngineAdv, BtnEngineAdv);
+
+    private void BtnDecensorAdvReset_Click(object sender, RoutedEventArgs e)
+    {
+        var d = new NekoManga.Core.AppSettings(); // 기본값 원본
+        TxtAdvStrongSteps.Text = d.DecensorStrongSteps.ToString();
+        TxtAdvStrongCfg.Text = d.DecensorStrongCfg.ToString(CultureInfo.InvariantCulture);
+        CmbAdvStrongSampler.Text = d.DecensorStrongSampler;
+        CmbAdvStrongScheduler.Text = d.DecensorStrongScheduler;
+        TxtAdvStrongPositive.Text = d.DecensorStrongPositive;
+        TxtAdvStrongNegative.Text = d.DecensorStrongNegative;
+        TxtAdvCompositeGrow.Text = d.DecensorCompositeGrow.ToString();
+        TxtAdvLamaGrow.Text = d.LamaMaskGrow.ToString();
+        TxtAdvLamaBlur.Text = d.LamaMaskBlur.ToString();
+    }
+
+    private void BtnEngineAdvReset_Click(object sender, RoutedEventArgs e)
+    {
+        var d = new NekoManga.Core.AppSettings();
+        TxtAdvPort.Text = d.ComfyPort.ToString();
+        TxtAdvExtraArgs.Text = d.ComfyExtraArgs;
+        TxtAdvCnLineStr.Text = d.CnLineartStrength.ToString(CultureInfo.InvariantCulture);
+        TxtAdvCnLineEnd.Text = d.CnLineartEnd.ToString(CultureInfo.InvariantCulture);
+        TxtAdvCnScrStr.Text = d.CnScribbleStrength.ToString(CultureInfo.InvariantCulture);
+        TxtAdvCnScrStart.Text = d.CnScribbleStart.ToString(CultureInfo.InvariantCulture);
+        TxtAdvPreRes.Text = d.PreprocResolution.ToString();
+        TxtAdvXdog.Text = d.ScribbleXdogThreshold.ToString();
+        TxtAdvIpaEnd.Text = d.IpaEndAt.ToString(CultureInfo.InvariantCulture);
     }
 
     private void Theme_Changed(object sender, RoutedEventArgs e)

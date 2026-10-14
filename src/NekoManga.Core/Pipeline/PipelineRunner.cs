@@ -251,7 +251,7 @@ public class PipelineRunner(AppSettings settings) : IDisposable
         var maskedPng = MosaicDetector.ToMaskedPng(img, mask);
         var up = await client.UploadImageAsync(maskedPng, $"nm_lama_{pageIdx}.png", ct);
         var pid = await client.QueuePromptAsync(
-            WorkflowBuilder.BuildLamaDecensor(up, $"nm_lamaout_{pageIdx}"), ct);
+            WorkflowBuilder.BuildLamaDecensor(settings, up, $"nm_lamaout_{pageIdx}"), ct);
         var r = await client.WaitAsync(pid, comfyOutputDir, TimeSpan.FromMinutes(10), ct);
         if (r.OutputFiles.Count == 0)
             throw new InvalidOperationException("엔진 LaMa 결과 파일이 없어요.");

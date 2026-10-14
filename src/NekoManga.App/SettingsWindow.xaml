@@ -110,6 +110,7 @@
 
             <!-- ── 검열 제거 ── -->
             <TabItem Header="🙈 검열 제거">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="8">
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="제거 방식"/></Border>
                     <ComboBox x:Name="CmbDecensorMode" Width="400" HorizontalAlignment="Left">
@@ -169,7 +170,76 @@
                     </DockPanel>
                     <TextBlock Style="{StaticResource HintText}"
                                Text="감지된 영역 둘레를 조금 더 넓게 지워 경계를 자연스럽게 해요."/>
+
+                    <!-- 고급: 워크플로를 아는 사용자용 — 접힌 상태가 기본 -->
+                    <ui:Button x:Name="BtnDecensorAdv" Content="▸ 고급 옵션 — 워크플로 직접 제어"
+                               Click="BtnDecensorAdv_Click" Margin="0,18,0,0" Padding="14,6"/>
+                    <StackPanel x:Name="PnlDecensorAdv" Visibility="Collapsed">
+                        <TextBlock Style="{StaticResource HintText}" Margin="0,6,0,0"
+                                   Text="ComfyUI 워크플로에 들어가는 값 그대로예요. 기본값은 원본 레시피 — 바꾼 값은 다음 작업부터 적용돼요."/>
+
+                        <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="강력(SDXL) 워크플로"/></Border>
+                        <UniformGrid Columns="2" Rows="2" Margin="0,4,0,0">
+                            <DockPanel Margin="0,4">
+                                <TextBlock Text="스텝 수" Style="{StaticResource FieldLabel}" Width="110"/>
+                                <TextBox x:Name="TxtAdvStrongSteps" Width="80" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                            <DockPanel Margin="0,4">
+                                <TextBlock Text="CFG" Style="{StaticResource FieldLabel}" Width="110"/>
+                                <TextBox x:Name="TxtAdvStrongCfg" Width="80" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                            <DockPanel Margin="0,4">
+                                <TextBlock Text="샘플러" Style="{StaticResource FieldLabel}" Width="110"/>
+                                <ComboBox x:Name="CmbAdvStrongSampler" Width="170" IsEditable="True" HorizontalAlignment="Left">
+                                    <ComboBoxItem Content="dpmpp_2m"/>
+                                    <ComboBoxItem Content="dpmpp_sde_gpu"/>
+                                    <ComboBoxItem Content="euler"/>
+                                    <ComboBoxItem Content="euler_ancestral"/>
+                                </ComboBox>
+                            </DockPanel>
+                            <DockPanel Margin="0,4">
+                                <TextBlock Text="스케줄러" Style="{StaticResource FieldLabel}" Width="110"/>
+                                <ComboBox x:Name="CmbAdvStrongScheduler" Width="170" IsEditable="True" HorizontalAlignment="Left">
+                                    <ComboBoxItem Content="karras"/>
+                                    <ComboBoxItem Content="normal"/>
+                                    <ComboBoxItem Content="sgm_uniform"/>
+                                    <ComboBoxItem Content="exponential"/>
+                                </ComboBox>
+                            </DockPanel>
+                        </UniformGrid>
+                        <DockPanel Margin="0,4">
+                            <TextBlock Text="긍정 프롬프트" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <TextBox x:Name="TxtAdvStrongPositive" TextWrapping="Wrap" AcceptsReturn="True"/>
+                        </DockPanel>
+                        <DockPanel Margin="0,4">
+                            <TextBlock Text="부정 프롬프트" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <TextBox x:Name="TxtAdvStrongNegative" TextWrapping="Wrap" AcceptsReturn="True"/>
+                        </DockPanel>
+                        <DockPanel Margin="0,4">
+                            <TextBlock Text="합성 여유 (px)" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <TextBox x:Name="TxtAdvCompositeGrow" Width="80" HorizontalAlignment="Left"/>
+                        </DockPanel>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="다시 그린 조각을 원본에 붙일 때 마스크를 몇 px 넓혀 합성할지(GrowMask). 경계 티가 나면 올려보세요."/>
+
+                        <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="엔진 LaMa 워크플로"/></Border>
+                        <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
+                            <DockPanel>
+                                <TextBlock Text="마스크 확장" Style="{StaticResource FieldLabel}" Width="110"/>
+                                <TextBox x:Name="TxtAdvLamaGrow" Width="80" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                            <DockPanel>
+                                <TextBlock Text="마스크 블러" Style="{StaticResource FieldLabel}" Width="110"/>
+                                <TextBox x:Name="TxtAdvLamaBlur" Width="80" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                        </UniformGrid>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="LayerUtility: LaMa 노드의 mask_grow / mask_blur. 원본 레시피는 8 · 8이에요."/>
+
+                        <ui:Button Content="기본값 복원" Click="BtnDecensorAdvReset_Click" Margin="0,10,0,0" Padding="12,5"/>
+                    </StackPanel>
                 </StackPanel>
+                </ScrollViewer>
             </TabItem>
 
             <!-- ── 번역 ── -->
@@ -329,6 +399,67 @@
                     </DockPanel>
                     <TextBlock Style="{StaticResource HintText}"
                                Text="원고의 선을 따라 그리게 잡아주는 모델(ControlNet)이에요. 보통 바꿀 일이 없어요."/>
+
+                    <!-- 고급: 엔진 실행·채색 워크플로 세부 — 접힌 상태가 기본 -->
+                    <ui:Button x:Name="BtnEngineAdv" Content="▸ 고급 옵션 — 엔진·워크플로 직접 제어"
+                               Click="BtnEngineAdv_Click" Margin="0,18,0,0" Padding="14,6"/>
+                    <StackPanel x:Name="PnlEngineAdv" Visibility="Collapsed">
+                        <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="엔진 실행"/></Border>
+                        <DockPanel Margin="0,4">
+                            <TextBlock Text="포트" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <TextBox x:Name="TxtAdvPort" Width="90" HorizontalAlignment="Left"/>
+                        </DockPanel>
+                        <DockPanel Margin="0,4">
+                            <TextBlock Text="추가 실행 인자" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <TextBox x:Name="TxtAdvExtraArgs"/>
+                        </DockPanel>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="main.py 뒤에 그대로 붙어요 — 예: --lowvram (VRAM 부족), --cpu, --fast. 엔진을 껐다 켜면 적용돼요."/>
+
+                        <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="채색 ControlNet 2단"/></Border>
+                        <TextBlock Style="{StaticResource HintText}" Margin="0,2,0,0"
+                                   Text="원본 레시피: 선화(lineart)가 0~60% 구간, 스케치(scribble)가 60~100% 구간을 맡아요. 구간은 0~1."/>
+                        <UniformGrid Columns="2" Rows="2" Margin="0,4,0,0">
+                            <DockPanel Margin="0,4">
+                                <TextBlock Text="선화 강도" Style="{StaticResource FieldLabel}" Width="110"/>
+                                <TextBox x:Name="TxtAdvCnLineStr" Width="80" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                            <DockPanel Margin="0,4">
+                                <TextBlock Text="선화 구간 끝" Style="{StaticResource FieldLabel}" Width="110"/>
+                                <TextBox x:Name="TxtAdvCnLineEnd" Width="80" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                            <DockPanel Margin="0,4">
+                                <TextBlock Text="스케치 강도" Style="{StaticResource FieldLabel}" Width="110"/>
+                                <TextBox x:Name="TxtAdvCnScrStr" Width="80" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                            <DockPanel Margin="0,4">
+                                <TextBlock Text="스케치 구간 시작" Style="{StaticResource FieldLabel}" Width="110"/>
+                                <TextBox x:Name="TxtAdvCnScrStart" Width="80" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                        </UniformGrid>
+                        <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
+                            <DockPanel>
+                                <TextBlock Text="전처리 해상도" Style="{StaticResource FieldLabel}" Width="110"/>
+                                <TextBox x:Name="TxtAdvPreRes" Width="80" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                            <DockPanel>
+                                <TextBlock Text="XDoG 임계값" Style="{StaticResource FieldLabel}" Width="110"/>
+                                <TextBox x:Name="TxtAdvXdog" Width="80" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                        </UniformGrid>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="전처리 해상도(기본 1280)는 선화/스케치 추출 크기 — 높이면 가는 선을 더 잡지만 느려져요. XDoG 임계값(기본 32)은 스케치 선이 얼마나 진해야 잡을지예요."/>
+
+                        <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="표지 주입 (IPAdapter)"/></Border>
+                        <DockPanel Margin="0,4">
+                            <TextBlock Text="적용 끝 지점" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <TextBox x:Name="TxtAdvIpaEnd" Width="80" HorizontalAlignment="Left"/>
+                        </DockPanel>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="0~1 (기본 0.9). 낮추면 마무리 단계에서 표지 영향이 빠져 원고 본연의 톤이 살아나요."/>
+
+                        <ui:Button Content="기본값 복원" Click="BtnEngineAdvReset_Click" Margin="0,10,0,0" Padding="12,5"/>
+                    </StackPanel>
                 </StackPanel>
                 </ScrollViewer>
             </TabItem>
