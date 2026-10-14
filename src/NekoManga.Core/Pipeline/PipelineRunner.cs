@@ -82,16 +82,15 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                     var exclude = blocks.Select(b =>
                         new Rect(b.X1, b.Y1, Math.Max(1, b.X2 - b.X1), Math.Max(1, b.Y2 - b.Y1))).ToList();
 
-                    var mosaicMask = settings.DecensorFindMosaic
+                    // 검열 추적은 한 번에 한 종류만 — 여러 경로를 섞으면 서로의 오탐이 결과를 오염시킨다.
+                    using var mask = settings.DecensorTarget == "Mosaic"
                         ? MosaicDetector.BuildMask(img,
                             settings.DecensorBlockSize, settings.DecensorThreshold, settings.DecensorMaskGrow)
-                        : null;
-                    var barMask = MosaicDetector.BuildBarMask(img,
-                        settings.DecensorFindWhiteBar, settings.DecensorFindBlackBar,
-                        settings.DecensorBarMinAspect, settings.DecensorBarMinArea,
-                        settings.DecensorMaskGrow, exclude);
-
-                    using var mask = MosaicDetector.Combine(mosaicMask, barMask);
+                        : MosaicDetector.BuildBarMask(img,
+                            white: settings.DecensorTarget == "WhiteBar",
+                            black: settings.DecensorTarget == "BlackBar",
+                            settings.DecensorBarMinAspect, settings.DecensorBarMinArea,
+                            settings.DecensorMaskGrow, exclude);
                     if (mask != null)
                     {
                         if (!strongDecensor)

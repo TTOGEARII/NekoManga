@@ -60,17 +60,14 @@ public static class SelfTest
                 var exclude = result.Blocks.Select(b =>
                     new Rect(b.X1, b.Y1, Math.Max(1, b.X2 - b.X1), Math.Max(1, b.Y2 - b.Y1))).ToList();
 
-                var mo = settings.DecensorFindMosaic
+                using var mask = settings.DecensorTarget == "Mosaic"
                     ? MosaicDetector.BuildMask(img2, settings.DecensorBlockSize, settings.DecensorThreshold, settings.DecensorMaskGrow)
-                    : null;
-                L($"모자이크 감지: {(mo == null ? "없음" : Cv2.CountNonZero(mo) + "px")}");
-                var bar = MosaicDetector.BuildBarMask(img2,
-                    settings.DecensorFindWhiteBar, settings.DecensorFindBlackBar,
-                    settings.DecensorBarMinAspect, settings.DecensorBarMinArea,
-                    settings.DecensorMaskGrow, exclude);
-                L($"막대 감지: {(bar == null ? "없음" : Cv2.CountNonZero(bar) + "px")}");
-
-                using var mask = MosaicDetector.Combine(mo, bar);
+                    : MosaicDetector.BuildBarMask(img2,
+                        white: settings.DecensorTarget == "WhiteBar",
+                        black: settings.DecensorTarget == "BlackBar",
+                        settings.DecensorBarMinAspect, settings.DecensorBarMinArea,
+                        settings.DecensorMaskGrow, exclude);
+                L($"검열 감지({settings.DecensorTarget}): {(mask == null ? "없음" : Cv2.CountNonZero(mask) + "px")}");
                 if (mask != null)
                 {
                     ImgIo.Write(stem + ".selftest.censormask.png", mask);

@@ -97,13 +97,13 @@
                                Text="같은 원고를 다시 돌려도 같은 그림이 나오게 하는 값이에요. -1로 두면 매번 다르게 그려져요. 마음에 드는 결과가 나오면 그 시드를 적어 두세요."/>
 
                     <TextBlock Style="{StaticResource SectionTitle}" Text="무엇을 검열로 볼까요"/>
-                    <StackPanel Orientation="Horizontal">
-                        <CheckBox x:Name="ChkFindMosaic" Content="모자이크(격자)" Foreground="{StaticResource NekoText}" Margin="0,0,18,0"/>
-                        <CheckBox x:Name="ChkFindWhiteBar" Content="흰색 막대" Foreground="{StaticResource NekoText}" Margin="0,0,18,0"/>
-                        <CheckBox x:Name="ChkFindBlackBar" Content="검은색 막대(먹줄)" Foreground="{StaticResource NekoText}"/>
-                    </StackPanel>
+                    <ComboBox x:Name="CmbDecensorTarget" Width="300" HorizontalAlignment="Left">
+                        <ComboBoxItem Tag="BlackBar" Content="검은색 막대 (먹줄)"/>
+                        <ComboBoxItem Tag="WhiteBar" Content="흰색 막대"/>
+                        <ComboBoxItem Tag="Mosaic" Content="모자이크 (격자)"/>
+                    </ComboBox>
                     <TextBlock Style="{StaticResource HintText}"
-                               Text="막대 검열은 그림 위에 덮인 단색 직사각형을 찾아요. 말풍선·페이지 여백은 자동으로 제외됩니다. 흰색 막대는 주변 흰 살결·배경과 한 덩어리로 붙어 자동으로는 거의 못 찾아요 — [결과 보기·수정]에서 '흰 부분만'으로 직접 지우는 걸 권해요."/>
+                               Text="정확성을 위해 한 번에 한 종류만 추적해요 — 여러 종류를 섞으면 서로의 오탐이 결과를 망가뜨려요. 원고의 검열 방식에 맞게 골라주세요. 흰색 막대는 주변 흰 살결과 붙어 자동으로는 놓치기 쉬워요 — 놓친 건 [결과 보기·수정]에서 '흰 부분만'으로 직접 지울 수 있어요."/>
                     <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
                         <DockPanel>
                             <TextBlock Text="막대 최소 비율" Style="{StaticResource FieldLabel}" Width="110"/>

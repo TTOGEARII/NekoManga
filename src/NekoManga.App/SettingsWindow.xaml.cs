@@ -27,9 +27,7 @@ public partial class SettingsWindow
         TxtExcludeTags.Text = s.ColorExcludeTags;
         TxtNegative.Text = s.ColorNegative;
 
-        ChkFindMosaic.IsChecked = s.DecensorFindMosaic;
-        ChkFindWhiteBar.IsChecked = s.DecensorFindWhiteBar;
-        ChkFindBlackBar.IsChecked = s.DecensorFindBlackBar;
+        SelectComboByTag(CmbDecensorTarget, s.DecensorTarget);
         TxtBarAspect.Text = s.DecensorBarMinAspect.ToString(CultureInfo.InvariantCulture);
         TxtBarMinArea.Text = s.DecensorBarMinArea.ToString();
         TxtBlockSize.Text = s.DecensorBlockSize.ToString();
@@ -74,9 +72,7 @@ public partial class SettingsWindow
         s.ColorExcludeTags = TxtExcludeTags.Text.Trim();
         s.ColorNegative = TxtNegative.Text.Trim();
 
-        s.DecensorFindMosaic = ChkFindMosaic.IsChecked == true;
-        s.DecensorFindWhiteBar = ChkFindWhiteBar.IsChecked == true;
-        s.DecensorFindBlackBar = ChkFindBlackBar.IsChecked == true;
+        s.DecensorTarget = ComboTag(CmbDecensorTarget, s.DecensorTarget);
         s.DecensorBarMinAspect = ParseD(TxtBarAspect.Text, s.DecensorBarMinAspect, 1.0, 10.0);
         s.DecensorBarMinArea = ParseI(TxtBarMinArea.Text, s.DecensorBarMinArea, 50, 500_000);
         s.DecensorBlockSize = ParseI(TxtBlockSize.Text, s.DecensorBlockSize, 2, 64);

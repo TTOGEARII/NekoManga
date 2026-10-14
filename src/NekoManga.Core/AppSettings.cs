@@ -44,13 +44,11 @@ public class AppSettings
     // ── 검열제거 (모자이크 감지 + LaMa/SDXL) ────────────────────
     /// <summary>"Basic"=내장 LaMa (빠름, 추가 설치 불필요), "Strong"=ComfyUI SDXL 인페인트 (고품질, ComfyUI 필요).</summary>
     public string DecensorMode { get; set; } = "Basic";
-    /// <summary>모자이크(격자) 검열을 찾는다.</summary>
-    public bool DecensorFindMosaic { get; set; } = true;
-    /// <summary>흰색 막대 검열을 찾는다. 기본 꺼짐 — 원고에는 흰 띠(선 사이 여백·하이라이트)가 널려 있어
-    /// 오탐이 많다. 실측: 흰 막대가 없는 페이지에서 흰 경로만 6600px을 잘못 잡아 효과음 옆을 지웠다.</summary>
-    public bool DecensorFindWhiteBar { get; set; } = false;
-    /// <summary>검은색 막대(먹줄) 검열을 찾는다.</summary>
-    public bool DecensorFindBlackBar { get; set; } = true;
+    /// <summary>무엇을 검열로 볼지 — "BlackBar"(검은 막대·먹줄) / "WhiteBar"(흰 막대) / "Mosaic"(격자).
+    /// 한 번에 하나만 추적한다: 여러 종류를 동시에 켜면 서로의 오탐이 섞여 정확도가 떨어진다
+    /// (실측: 흰 경로를 함께 켜자 오탐 6600px이 검은 막대 결과까지 오염시켰다).
+    /// 원고의 검열 방식에 맞는 것 하나를 고르는 쪽이 늘 깨끗하다.</summary>
+    public string DecensorTarget { get; set; } = "BlackBar";
     /// <summary>막대로 인정할 최소 가로세로비. 낮출수록 정사각형에 가까운 것도 잡지만 오탐이 는다.</summary>
     public double DecensorBarMinAspect { get; set; } = 1.8;
     /// <summary>막대로 인정할 최소 면적(px²). 작은 글자·점 노이즈를 거른다.
