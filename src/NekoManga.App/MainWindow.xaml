@@ -161,15 +161,43 @@
                 <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch"
                               Background="Transparent"/>
 
-                <Border Grid.Column="2" Background="{StaticResource NekoCanvas}" CornerRadius="0" Padding="8">
+                <!-- 원고 작업대: 격자 캔버스 위에 재단선(트림마크)으로 원고를 올려 둔 느낌 -->
+                <Border Grid.Column="2" Background="{DynamicResource NekoCanvas}" CornerRadius="0"
+                        BorderBrush="{StaticResource NekoStroke}" BorderThickness="2" Padding="0">
                     <DockPanel>
-                        <TextBlock x:Name="TxtPreviewName" DockPanel.Dock="Top" Margin="2,0,2,6"
-                                   Foreground="{StaticResource NekoText}" TextTrimming="CharacterEllipsis"
-                                   Text="미리보기"/>
+                        <!-- 상단 라벨 바 (원고 핀업 태그) -->
+                        <Border DockPanel.Dock="Top" Background="{DynamicResource NekoStroke}" Padding="8,4">
+                            <TextBlock x:Name="TxtPreviewName" Foreground="{DynamicResource NekoBg}"
+                                       FontWeight="Bold" FontSize="12" TextTrimming="CharacterEllipsis"
+                                       Text="미리보기"/>
+                        </Border>
                         <ui:Button x:Name="BtnEditThis" DockPanel.Dock="Bottom" Content="✏ 이 장 수정하기"
-                                   Click="BtnViewResult_Click" Margin="0,8,0,0" HorizontalAlignment="Stretch"
+                                   Click="BtnViewResult_Click" Margin="8" HorizontalAlignment="Stretch"
                                    HorizontalContentAlignment="Center" Padding="10,6"/>
-                        <Image x:Name="ImgPreview" Stretch="Uniform" SnapsToDevicePixels="True"/>
+                        <!-- 격자 작업판 + 원고(그림자·테두리) + 네 귀 트림마크 -->
+                        <Grid Margin="10">
+                            <Rectangle Fill="{DynamicResource MangaGrid}"/>
+                            <Grid HorizontalAlignment="Center" VerticalAlignment="Center" Margin="14">
+                                <!-- 원고 그림자 -->
+                                <Border Background="{DynamicResource NekoStroke}" Opacity="0.25" Margin="6,6,-6,-6"/>
+                                <Border Background="{DynamicResource NekoBg}" BorderBrush="{DynamicResource NekoStroke}" BorderThickness="1.5">
+                                    <Image x:Name="ImgPreview" Stretch="Uniform" SnapsToDevicePixels="True" Margin="1"/>
+                                </Border>
+                                <!-- 트림마크: 네 귀 ㄱ자 재단선 -->
+                                <Path Stroke="{DynamicResource NekoStroke}" StrokeThickness="2"
+                                      HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-10,-10,0,0"
+                                      Data="M0,12 L0,0 L12,0"/>
+                                <Path Stroke="{DynamicResource NekoStroke}" StrokeThickness="2"
+                                      HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-10,-10,0"
+                                      Data="M12,12 L12,0 L0,0"/>
+                                <Path Stroke="{DynamicResource NekoStroke}" StrokeThickness="2"
+                                      HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="-10,0,0,-10"
+                                      Data="M0,0 L0,12 L12,12"/>
+                                <Path Stroke="{DynamicResource NekoStroke}" StrokeThickness="2"
+                                      HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-10,-10"
+                                      Data="M12,0 L12,12 L0,12"/>
+                            </Grid>
+                        </Grid>
                     </DockPanel>
                 </Border>
             </Grid>

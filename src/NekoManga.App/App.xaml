@@ -48,6 +48,25 @@
                 <Setter Property="FontSize" Value="11.5"/>
                 <Setter Property="TextWrapping" Value="Wrap"/>
             </Style>
+            <!-- 만화 원고 설정표: 섹션 제목을 먹색 라벨 바로 (필름 자막·원고 지시선 느낌) -->
+            <Style TargetType="Border" x:Key="MangaSection">
+                <Setter Property="BorderBrush" Value="{DynamicResource NekoStroke}"/>
+                <Setter Property="BorderThickness" Value="2"/>
+                <Setter Property="Margin" Value="0,14,0,0"/>
+                <Setter Property="Padding" Value="12,10"/>
+            </Style>
+            <Style TargetType="Border" x:Key="MangaTag">
+                <Setter Property="Background" Value="{DynamicResource NekoStroke}"/>
+                <Setter Property="Padding" Value="8,3"/>
+                <Setter Property="HorizontalAlignment" Value="Left"/>
+                <Setter Property="Margin" Value="0,16,0,6"/>
+            </Style>
+            <Style TargetType="TextBlock" x:Key="MangaTagText">
+                <Setter Property="Foreground" Value="{DynamicResource NekoBg}"/>
+                <Setter Property="FontWeight" Value="Bold"/>
+                <Setter Property="FontSize" Value="12.5"/>
+            </Style>
+
             <Style TargetType="TextBlock" x:Key="SectionTitle">
                 <Setter Property="FontWeight" Value="SemiBold"/>
                 <Setter Property="FontSize" Value="15"/>

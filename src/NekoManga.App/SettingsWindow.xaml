@@ -14,6 +14,9 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
+        <!-- 원고 질감 배경 -->
+        <Rectangle Fill="{DynamicResource MangaDots}" Grid.RowSpan="2" IsHitTestVisible="False"/>
+
         <ui:TitleBar Grid.Row="0" Title="설정 ⚙ (창을 닫으면 저장돼요)" ShowMinimize="False" ShowMaximize="False"/>
 
         <TabControl x:Name="SettingsTabs" Grid.Row="1" Margin="16,4,16,16">
@@ -22,7 +25,7 @@
             <TabItem Header="🎨 채색">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="8">
-                        <TextBlock Style="{StaticResource SectionTitle}" Text="품질 · 속도"/>
+                        <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="품질 · 속도"/></Border>
                         <UniformGrid Columns="2" Rows="4">
                             <DockPanel Margin="0,4">
                                 <TextBlock Text="해상도 상한 (MP)" Style="{StaticResource FieldLabel}" Width="130"/>
@@ -61,7 +64,7 @@
                         <TextBlock Style="{StaticResource HintText}"
                                    Text="샘플러 dpmpp_sde_gpu는 품질 우선(페이지당 ~90초), dpmpp_2m은 속도 우선(~55초). 8GB VRAM이면 해상도 1.5MP를 넘기지 마세요."/>
 
-                        <TextBlock Style="{StaticResource SectionTitle}" Text="컬러 표지로 캐릭터 색 맞추기"/>
+                        <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="컬러 표지로 캐릭터 색 맞추기"/></Border>
                         <DockPanel Margin="0,4">
                             <!-- 미리보기 겸 드롭존 — 표지를 여기에 끌어다 놓으면 등록된다 -->
                             <Border x:Name="RefDropZone" DockPanel.Dock="Left" Width="96" Height="128"
@@ -92,14 +95,14 @@
                         <TextBlock Style="{StaticResource HintText}"
                                    Text="컬러 표지를 등록하면 ① [색 뽑기]로 머리·눈·의상 색 태그를 뽑아 프롬프트에 넣고(비워 두면 채색 시작 때 자동), ② IPAdapter 모델이 설치돼 있으면 표지의 색·화풍을 모델에 직접 주입해 정밀하게 맞춰요. 반영 강도 0.4~0.6 권장 — 높이면 표지 화풍(배경 색감까지)이 강하게 묻어나요."/>
 
-                        <TextBlock Style="{StaticResource SectionTitle}" Text="캐릭터 태그 (수동)"/>
+                        <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="캐릭터 태그 (수동)"/></Border>
                         <TextBox x:Name="TxtManualTags" AcceptsReturn="True" Height="54" TextWrapping="Wrap"/>
                         <TextBlock Style="{StaticResource HintText}"
                                    Text="예: blonde hair, amber eyes, navy sailor uniform — 캐릭터 머리·눈 색을 적어주면 채색이 일관돼요. 표지에서 뽑은 태그와 함께 들어가요."/>
 
-                        <TextBlock Style="{StaticResource SectionTitle}" Text="자동 태그에서 뺄 태그"/>
+                        <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="자동 태그에서 뺄 태그"/></Border>
                         <TextBox x:Name="TxtExcludeTags"/>
-                        <TextBlock Style="{StaticResource SectionTitle}" Text="부정 프롬프트"/>
+                        <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="부정 프롬프트"/></Border>
                         <TextBox x:Name="TxtNegative" AcceptsReturn="True" Height="54" TextWrapping="Wrap"/>
                     </StackPanel>
                 </ScrollViewer>
@@ -108,7 +111,7 @@
             <!-- ── 검열 제거 ── -->
             <TabItem Header="🙈 검열 제거">
                 <StackPanel Margin="8">
-                    <TextBlock Style="{StaticResource SectionTitle}" Text="제거 방식"/>
+                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="제거 방식"/></Border>
                     <ComboBox x:Name="CmbDecensorMode" Width="340" HorizontalAlignment="Left">
                         <ComboBoxItem Content="기본 — 내장 LaMa (빠름, 추가 설치 불필요)" Tag="Basic"/>
                         <ComboBoxItem Content="엔진 LaMa — GPU 복원 (원본 레시피, 엔진 필요)" Tag="ComfyLama"/>
@@ -128,7 +131,7 @@
                     <TextBlock Style="{StaticResource HintText}"
                                Text="같은 원고를 다시 돌려도 같은 그림이 나오게 하는 값이에요. -1로 두면 매번 다르게 그려져요. 마음에 드는 결과가 나오면 그 시드를 적어 두세요."/>
 
-                    <TextBlock Style="{StaticResource SectionTitle}" Text="무엇을 검열로 볼까요"/>
+                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="무엇을 검열로 볼까요"/></Border>
                     <ComboBox x:Name="CmbDecensorTarget" Width="300" HorizontalAlignment="Left">
                         <ComboBoxItem Tag="BlackBar" Content="검은색 막대 (먹줄)"/>
                         <ComboBoxItem Tag="WhiteBar" Content="흰색 막대"/>
@@ -149,7 +152,7 @@
                     <TextBlock Style="{StaticResource HintText}"
                                Text="비율은 가로세로 길이의 비(1.8이면 긴 쪽이 짧은 쪽의 1.8배 이상). 정사각형에 가까운 검열도 잡으려면 1.2까지 낮춰보세요. 크기는 px² 단위."/>
 
-                    <TextBlock Style="{StaticResource SectionTitle}" Text="모자이크 감지 세부"/>
+                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="모자이크 감지 세부"/></Border>
                     <DockPanel Margin="0,4">
                         <TextBlock Text="블록 크기 (px)" Style="{StaticResource FieldLabel}" Width="130"/>
                         <TextBox x:Name="TxtBlockSize" Width="90" HorizontalAlignment="Left"/>
@@ -173,7 +176,7 @@
             <TabItem Header="💬 번역">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="8">
-                    <TextBlock Style="{StaticResource SectionTitle}" Text="번역 엔진"/>
+                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="번역 엔진"/></Border>
                     <ComboBox x:Name="CmbTranslator" Width="300" HorizontalAlignment="Left"
                               SelectionChanged="CmbTranslator_SelectionChanged">
                         <ComboBoxItem Content="Google (무료, 키 불필요)" Tag="Google"/>
@@ -246,7 +249,7 @@
                     <TextBlock Style="{StaticResource HintText}" Margin="0,8,0,0"
                                Text="글자 인식(manga-ocr)이 일본어 특화라 원본 언어는 일본어만 지원해요. 감지→인식→번역→글자 지우기 전부 내장 AI로 처리돼서 따로 설치할 게 없어요."/>
 
-                    <TextBlock Style="{StaticResource SectionTitle}" Text="식자 — 말풍선 글자 모양"/>
+                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="식자 — 말풍선 글자 모양"/></Border>
                     <DockPanel Margin="0,4">
                         <TextBlock Text="글꼴" Style="{StaticResource FieldLabel}" Width="110"/>
                         <ComboBox x:Name="CmbLetterFont" Width="240" HorizontalAlignment="Left" IsEditable="True"/>
@@ -283,7 +286,7 @@
             <TabItem Header="⚙ 엔진">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="8">
-                    <TextBlock Style="{StaticResource SectionTitle}" Text="채색 엔진"/>
+                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="채색 엔진"/></Border>
                     <TextBlock Style="{StaticResource HintText}"
                                Text="채색과 강력 검열제거를 담당하는 엔진이에요. 창 없이 뒤에서 돌아가고, 앱이 알아서 켜고 꺼요 — 직접 실행할 일이 없어요."/>
                     <Border Background="{StaticResource NekoCard}" BorderBrush="{StaticResource NekoStroke}" BorderThickness="2" CornerRadius="0" Padding="14,10" Margin="0,8,0,0">
@@ -304,7 +307,7 @@
                         </StackPanel>
                     </Border>
 
-                    <TextBlock Style="{StaticResource SectionTitle}" Text="채색 모델"/>
+                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="채색 모델"/></Border>
                     <TextBlock Style="{StaticResource HintText}"
                                Text="그림을 그리는 모델이에요. 더 좋은 모델이 나오면 파일을 가져오거나 주소로 받아서 바꿔 끼울 수 있어요."/>
                     <DockPanel Margin="0,6,0,0">
@@ -333,7 +336,7 @@
             <!-- ── 구성요소 ── -->
             <TabItem Header="📦 구성요소">
                 <StackPanel Margin="8">
-                    <TextBlock Style="{StaticResource SectionTitle}" Text="설치 경로"/>
+                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="설치 경로"/></Border>
                     <DockPanel Margin="0,4">
                         <TextBlock Text="구성요소 위치" Style="{StaticResource FieldLabel}" Width="130"/>
                         <TextBox x:Name="TxtRuntimeRoot" IsReadOnly="True"/>
@@ -345,7 +348,7 @@
                     </DockPanel>
                     <TextBlock Style="{StaticResource HintText}" Text="비워두면 원본 폴더 옆에 '폴더명_neko'로 저장돼요."/>
 
-                    <TextBlock Style="{StaticResource SectionTitle}" Text="기존 설치 연결"/>
+                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="기존 설치 연결"/></Border>
                     <DockPanel Margin="0,4">
                         <TextBlock Text="ComfyUI 경로" Style="{StaticResource FieldLabel}" Width="130"/>
                         <TextBox x:Name="TxtLinkedComfy"/>
@@ -353,7 +356,7 @@
                     <TextBlock Style="{StaticResource HintText}"
                                Text="이미 설치해 둔 ComfyUI portable이 있으면 경로를 넣어 재다운로드(11GB)를 건너뛰어요. 채색·강력 검열제거에만 필요해요."/>
 
-                    <TextBlock Style="{StaticResource SectionTitle}" Text="civitai API 키 (선택)"/>
+                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="civitai API 키 (선택)"/></Border>
                     <TextBox x:Name="TxtCivitaiKey"/>
                     <TextBlock Style="{StaticResource HintText}"
                                Text="채색 모델 다운로드가 로그인 오류로 실패할 때만 필요해요. civitai.com → 계정 설정 → API Keys."/>
@@ -375,7 +378,7 @@
                                Text="흑백 만화 자동 채색 + 검열 제거 + 번역 식자 올인원."/>
                     <ui:Button Content="GitHub 열기" Click="BtnGitHub_Click" Margin="0,16,0,0" Padding="16,8" HorizontalAlignment="Left"/>
 
-                    <TextBlock Style="{StaticResource SectionTitle}" Text="화면 테마"/>
+                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="화면 테마"/></Border>
                     <StackPanel Orientation="Horizontal">
                         <RadioButton x:Name="RbThemeLight" Content="☀ 화이트 (원고지)" IsChecked="True"
                                      Foreground="{StaticResource NekoText}" Margin="0,0,18,0"
@@ -386,7 +389,7 @@
                     </StackPanel>
                     <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,0"
                                Text="고르는 즉시 모든 창에 적용돼요."/>
-                    <TextBlock Style="{StaticResource SectionTitle}" Text="프로그램 삭제"/>
+                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="프로그램 삭제"/></Border>
                     <TextBlock Style="{StaticResource HintText}"
                                Text="앱과 바로가기를 제거해요. 내려받은 구성요소 폴더는 용량이 커서 자동으로 지우지 않아요 — 삭제 후 직접 지워주세요."/>
                     <ui:Button x:Name="BtnUninstall" Content="🗑 NekoManga 삭제하기" Click="BtnUninstall_Click"
