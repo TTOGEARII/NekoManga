@@ -41,44 +41,31 @@ public partial class SetupWindow
         RefreshList();
     }
 
-    /// <summary>드라이브 문자 → SSD/HDD 종류. WMI(저장소 네임스페이스)로 파티션→물리디스크를 잇는다.
-    /// 조회 실패(권한·가상 디스크 등)는 빈 문자열 — 표시만 생략된다.</summary>
+    /// <summary>드라이브 문자 → SSD/HDD 종류. 볼륨 핸들에 IOCTL_STORAGE_QUERY_PROPERTY —
+    /// 탐색 지연(seek penalty) 없음 = SSD, 버스 17 = NVMe. 관리자 권한 불필요.
+    /// 조회 실패(가상 디스크 등)는 그 드라이브만 생략된다.
+    /// WMI(System.Management)를 쓰지 않는 이유: 로컬 검증 배포는 DLL 3개만 덮어써서
+    /// System.Management.dll이 설치본에 없고, 어셈블리 로드 실패는 try 진입 전 JIT에서
+    /// 터져 catch로도 못 잡는다 — 구성요소 창을 열다 앱이 통째로 죽은 실사고.</summary>
     private static Dictionary<string, string> QueryDriveMedia()
     {
         var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        try
+        foreach (var d in DriveInfo.GetDrives())
         {
-            var scope = new System.Management.ManagementScope(@"\\.\root\Microsoft\Windows\Storage");
-            scope.Connect();
-
-            var diskMedia = new Dictionary<string, string>(); // DeviceId → 종류
-            using (var disks = new System.Management.ManagementObjectSearcher(scope,
-                new System.Management.ObjectQuery("SELECT DeviceId, MediaType, BusType FROM MSFT_PhysicalDisk")))
-                foreach (var d in disks.Get())
-                {
-                    var id = d["DeviceId"]?.ToString() ?? "";
-                    var media = Convert.ToInt32(d["MediaType"] ?? 0);   // 3=HDD, 4=SSD
-                    var bus = Convert.ToInt32(d["BusType"] ?? 0);       // 17=NVMe
-                    diskMedia[id] = media switch
-                    {
-                        4 => bus == 17 ? "NVMe SSD" : "SSD",
-                        3 => "HDD",
-                        _ => "",
-                    };
-                }
-
-            using var parts = new System.Management.ManagementObjectSearcher(scope,
-                new System.Management.ObjectQuery("SELECT DriveLetter, DiskNumber FROM MSFT_Partition"));
-            foreach (var p in parts.Get())
+            if (d.DriveType != DriveType.Fixed || !d.IsReady) continue;
+            try
             {
-                var letter = p["DriveLetter"]?.ToString();
-                if (string.IsNullOrEmpty(letter) || letter == "\0") continue;
-                var disk = p["DiskNumber"]?.ToString() ?? "";
-                if (diskMedia.TryGetValue(disk, out var kind) && kind.Length > 0)
-                    map[letter + ":\\"] = kind;
+                char letter = d.Name[0];
+                using var h = DriveProbe.OpenVolume(letter);
+                if (h.IsInvalid) continue;
+                bool? ssd = DriveProbe.HasNoSeekPenalty(h);
+                if (ssd == null) continue;
+                map[d.RootDirectory.FullName] = ssd.Value
+                    ? (DriveProbe.BusType(h) == 17 ? "NVMe SSD" : "SSD")
+                    : "HDD";
             }
+            catch { }
         }
-        catch { }
         return map;
     }
 
