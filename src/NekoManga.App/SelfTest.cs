@@ -79,7 +79,14 @@ public static class SelfTest
                 var exclude = result.Blocks.Select(b =>
                     new Rect(b.X1, b.Y1, Math.Max(1, b.X2 - b.X1), Math.Max(1, b.Y2 - b.Y1))).ToList();
 
-                using var mask = MosaicDetector.BuildMaskForTarget(settings, img2, exclude, out var kindUsed);
+                // AI 전용 모델이 있으면 1순위 (파이프라인과 같은 CensorNet.BuildMask 정책)
+                Mat? mask = null;
+                string kindUsed = "";
+                var net = new CensorNet(env);
+                bool ai = settings.DecensorTarget == "Auto" && net.IsReady;
+                if (ai) mask = net.BuildMask(img2, exclude, settings.DecensorMaskGrow, out kindUsed);
+                else mask = MosaicDetector.BuildMaskForTarget(settings, img2, exclude, out kindUsed);
+                using var _maskDispose = mask;
                 L($"검열 감지({settings.DecensorTarget}→{kindUsed}): {(mask == null ? "없음" : Cv2.CountNonZero(mask) + "px")}");
                 if (mask != null)
                 {

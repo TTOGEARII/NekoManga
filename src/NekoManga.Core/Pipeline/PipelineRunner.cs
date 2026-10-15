@@ -109,8 +109,9 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                     var exclude = blocks.Select(b =>
                         new Rect(b.X1, b.Y1, Math.Max(1, b.X2 - b.X1), Math.Max(1, b.Y2 - b.Y1))).ToList();
 
-                    // 검열 추적은 한 번에 한 종류만 — Auto면 페이지를 분석해 종류 선택까지 맡긴다.
-                    using var mask = MosaicDetector.BuildMaskForTarget(settings, img, exclude, out var kindUsed);
+                    // 검열 추적: AI 모델(합성 학습 전용 모델)이 있으면 그게 1순위 —
+                    // 흰/검/모자이크를 한 번에 찾는다. 없거나 못 찾으면 규칙 기반으로 폴백.
+                    using var mask = DetectCensorMask(img, exclude, out var kindUsed);
                     if (settings.DecensorTarget == "Auto")
                         progress.Report(new(name, $"검열 분석: {kindUsed}", 46));
                     if (mask != null)
@@ -203,6 +204,23 @@ public class PipelineRunner(AppSettings settings) : IDisposable
         }
 
         await _server.DisposeAsync();
+    }
+
+    /// <summary>검열 마스크 — AI 전용 모델(CensorNet) 1순위, 규칙 기반 폴백.
+    /// AI 모델은 무검열 원고에 검열을 합성해 학습한 세그멘테이션이라 흰/검/모자이크를
+    /// 한 번에, 장식 줄무늬·효과음과 구분해 찾는다. 모델 파일이 없으면 기존 규칙으로.</summary>
+    public Mat? DetectCensorMask(Mat img, IReadOnlyList<Rect>? exclude, out string kindUsed)
+    {
+        var net = new CensorNet(_onnx);
+        if (settings.DecensorTarget == "Auto" && net.IsReady)
+        {
+            // AI 모델이 있으면 AI가 유일한 판정자 — '없음'도 판정이다.
+            // 규칙 기반으로 폴백하면 모델이 안 속는 장식 줄무늬 오탐이 도로 살아난다 (실측 22p).
+            var aiMask = net.BuildMask(img, exclude, settings.DecensorMaskGrow, out kindUsed);
+            if (aiMask == null) kindUsed += " → 검열 없음";
+            return aiMask;
+        }
+        return MosaicDetector.BuildMaskForTarget(settings, img, exclude, out kindUsed);
     }
 
     /// <summary>결과 보기 창에서 사용자가 손으로 고른 영역을 지운다 (자동 감지가 놓친 검열용).

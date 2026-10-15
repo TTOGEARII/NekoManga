@@ -44,6 +44,31 @@ public static class Program
             return;
         }
 
+        // AI 검열 모델 단독 테스트: --censortest <이미지...> → <이미지>.censor.png(오버레이) + censortest.log
+        var ctIdx = Array.IndexOf(args, "--censortest");
+        if (ctIdx >= 0)
+        {
+            var settingsC = NekoManga.Core.AppSettings.Load();
+            using var envC = new NekoManga.Core.Engine.OnnxEnv(settingsC);
+            var netC = new NekoManga.Core.Engine.CensorNet(envC);
+            foreach (var p in args.Skip(ctIdx + 1).Where(File.Exists))
+            {
+                using var imC = NekoManga.Core.ImgIo.Read(p);
+                var swC = System.Diagnostics.Stopwatch.StartNew();
+                var (wM, bM, mM, dets) = netC.Detect(imC);
+                using (wM) using (bM) using (mM)
+                {
+                    imC.SetTo(new OpenCvSharp.Scalar(0, 0, 255), wM);
+                    imC.SetTo(new OpenCvSharp.Scalar(255, 0, 0), bM);
+                    imC.SetTo(new OpenCvSharp.Scalar(0, 200, 0), mM);
+                    File.AppendAllLines(Path.Combine(Path.GetDirectoryName(p)!, "censortest.log"),
+                        [$"{Path.GetFileName(p)}: 흰 {dets.Count(d => d.Cls == 0)} 검 {dets.Count(d => d.Cls == 1)} 모자이크 {dets.Count(d => d.Cls == 2)} ({swC.ElapsedMilliseconds}ms)"]);
+                }
+                NekoManga.Core.ImgIo.Write(Path.ChangeExtension(p, null) + ".censor.png", imC);
+            }
+            return;
+        }
+
         // 흰 막대 마스크 단독 테스트: --bartest <이미지...> → <이미지>.barmask.png + bartest.log
         var btIdx = Array.IndexOf(args, "--bartest");
         if (btIdx >= 0)
