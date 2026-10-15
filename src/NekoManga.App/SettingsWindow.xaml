@@ -133,14 +133,39 @@
                                Text="같은 원고를 다시 돌려도 같은 그림이 나오게 하는 값이에요. -1로 두면 매번 다르게 그려져요. 마음에 드는 결과가 나오면 그 시드를 적어 두세요."/>
 
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="무엇을 검열로 볼까요"/></Border>
-                    <ComboBox x:Name="CmbDecensorTarget" Width="300" HorizontalAlignment="Left">
-                        <ComboBoxItem Tag="Auto" Content="자동 — 이미지를 분석해 결정"/>
-                        <ComboBoxItem Tag="BlackBar" Content="검은색 막대 (먹줄)"/>
-                        <ComboBoxItem Tag="WhiteBar" Content="흰색 막대"/>
-                        <ComboBoxItem Tag="Mosaic" Content="모자이크 (격자)"/>
+                    <ComboBox x:Name="CmbDecensorTarget" Width="340" HorizontalAlignment="Left"
+                              SelectionChanged="CmbDecensorTarget_Changed">
+                        <ComboBoxItem Tag="Auto" Content="자동 (AI 감지) — 권장"/>
+                        <ComboBoxItem Tag="BlackBar" Content="검은색 막대 (먹줄) — 수동"/>
+                        <ComboBoxItem Tag="WhiteBar" Content="흰색 막대 — 수동"/>
+                        <ComboBoxItem Tag="Mosaic" Content="모자이크 (격자) — 수동"/>
                     </ComboBox>
-                    <TextBlock Style="{StaticResource HintText}"
-                               Text="정확성을 위해 한 번에 한 종류만 추적해요 — 자동은 장마다 이미지를 분석해 종류 선택(검은 막대 → 모자이크 → 흰 막대 순)을 대신해 줘요. 원고의 검열 방식을 알면 직접 고르는 게 더 정확해요. 흰색 막대는 주변 흰 살결과 붙어 자동으로는 놓치기 쉬워요 — 놓친 건 [결과 보기·수정]에서 '흰 부분만'이나 브러시로 직접 지울 수 있어요."/>
+
+                    <!-- AI 감지 상태 카드 — 모델 유무에 따라 안내가 바뀐다 -->
+                    <Border x:Name="CardCensorAi" Background="{DynamicResource NekoCard}"
+                            BorderBrush="{DynamicResource NekoStroke}" BorderThickness="2" CornerRadius="0"
+                            Padding="14,10" Margin="0,8,0,0">
+                        <StackPanel>
+                            <DockPanel>
+                                <Ellipse x:Name="DotCensorAi" Width="12" Height="12" Fill="Gray" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="TxtCensorAi" Margin="10,0,0,0" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource NekoText}" VerticalAlignment="Center"
+                                           Text="검열 감지 AI 상태 확인 중..."/>
+                            </DockPanel>
+                            <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,8,0,0"
+                                       Text="이 앱 전용으로 직접 학습한 모델이에요 — 흰 막대·흰 박스·단색 밀기·검은 막대·모자이크를 한 번에 찾고, 말풍선이나 체크무늬 옷 같은 건 검열로 보지 않아요. 수동 모드는 AI가 놓치는 특이한 검열을 직접 겨냥할 때만 쓰세요."/>
+                            <ui:Button x:Name="BtnInstallCensorAi" Content="⬇ 검열 감지 AI 설치"
+                                       Click="BtnOpenSetup_Click" Padding="14,6" Margin="0,10,0,0"
+                                       HorizontalAlignment="Left" Visibility="Collapsed"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 수동 모드 전용 세부값 — 자동(AI)에서는 쓰이지 않으므로 접어 둔다 -->
+                    <ui:Button x:Name="BtnManualDetect" Content="▸ 수동 감지 세부 설정"
+                               Click="BtnManualDetect_Click" Margin="0,14,0,0" Padding="14,6"/>
+                    <StackPanel x:Name="PnlManualDetect" Visibility="Collapsed">
+                    <TextBlock Style="{StaticResource HintText}" Margin="0,6,0,0"
+                               Text="아래 값들은 위에서 '수동'을 고른 경우에만 쓰여요 (AI 자동 감지에는 영향 없음). 수동은 한 번에 한 종류만 추적해요 — 섞으면 서로의 오탐이 결과를 망가뜨려요."/>
                     <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
                         <DockPanel>
                             <TextBlock Text="막대 최소 비율" Style="{StaticResource FieldLabel}" Width="110"/>
@@ -154,7 +179,7 @@
                     <TextBlock Style="{StaticResource HintText}"
                                Text="비율은 가로세로 길이의 비(1.8이면 긴 쪽이 짧은 쪽의 1.8배 이상). 정사각형에 가까운 검열도 잡으려면 1.2까지 낮춰보세요. 크기는 px² 단위."/>
 
-                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="모자이크 감지 세부"/></Border>
+                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="모자이크 감지 세부 (수동)"/></Border>
                     <DockPanel Margin="0,4">
                         <TextBlock Text="블록 크기 (px)" Style="{StaticResource FieldLabel}" Width="130"/>
                         <TextBox x:Name="TxtBlockSize" Width="90" HorizontalAlignment="Left"/>
@@ -165,12 +190,15 @@
                         <TextBox x:Name="TxtThreshold" Width="90" HorizontalAlignment="Left"/>
                     </DockPanel>
                     <TextBlock Style="{StaticResource HintText}" Text="낮을수록 더 많은 영역을 모자이크로 판단해요 (기본 15)."/>
-                    <DockPanel Margin="0,4">
+                    </StackPanel>
+
+                    <!-- 마스크 확장은 AI·수동 공통 (복원 경계를 자연스럽게) -->
+                    <DockPanel Margin="0,14,0,0">
                         <TextBlock Text="마스크 확장 (px)" Style="{StaticResource FieldLabel}" Width="130"/>
                         <TextBox x:Name="TxtMaskGrow" Width="90" HorizontalAlignment="Left"/>
                     </DockPanel>
                     <TextBlock Style="{StaticResource HintText}"
-                               Text="감지된 영역 둘레를 조금 더 넓게 지워 경계를 자연스럽게 해요."/>
+                               Text="감지된 영역 둘레를 조금 더 넓게 지워 경계를 자연스럽게 해요 (AI·수동 공통)."/>
 
                     <!-- 고급: 워크플로를 아는 사용자용 — 접힌 상태가 기본 -->
                     <ui:Button x:Name="BtnDecensorAdv" Content="▸ 고급 옵션 — 워크플로 직접 제어"

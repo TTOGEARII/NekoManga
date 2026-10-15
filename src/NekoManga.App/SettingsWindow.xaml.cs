@@ -94,6 +94,8 @@ public partial class SettingsWindow
         TxtCivitaiKey.Text = s.CivitaiApiKey;
 
         TxtAboutVersion.Text = $"버전 v{new UpdateService().CurrentVersion}";
+        RefreshCensorAiCard();
+
         if ((Application.Current as App)?.DemoSettings == true)
             SettingsTabs.SelectedIndex = 2; // 번역 탭 (UI 데모용)
         Closing += (_, _) => Apply();
@@ -222,6 +224,28 @@ public partial class SettingsWindow
     }
 
     private void BtnDecensorAdv_Click(object sender, RoutedEventArgs e) => ToggleAdv(PnlDecensorAdv, BtnDecensorAdv);
+    private void BtnManualDetect_Click(object sender, RoutedEventArgs e) => ToggleAdv(PnlManualDetect, BtnManualDetect);
+
+    /// <summary>검열 감지 AI 모델 설치 여부·선택 모드에 맞춰 상태 카드를 갱신한다.</summary>
+    private void RefreshCensorAiCard()
+    {
+        bool installed = File.Exists(Path.Combine(App.Settings.RuntimeRoot, "models", NekoManga.Core.Engine.CensorNet.ModelFile));
+        bool auto = ((CmbDecensorTarget.SelectedItem as ComboBoxItem)?.Tag as string ?? "") == "Auto";
+        DotCensorAi.Fill = installed
+            ? (auto ? System.Windows.Media.Brushes.MediumSeaGreen : System.Windows.Media.Brushes.Goldenrod)
+            : System.Windows.Media.Brushes.IndianRed;
+        TxtCensorAi.Text = !installed
+            ? "검열 감지 AI가 설치되어 있지 않아요 — 수동 규칙으로 찾습니다"
+            : auto ? "검열 감지 AI 사용 중 — 흰·검·모자이크를 한 번에 찾아요"
+                   : "검열 감지 AI는 준비됐지만 수동 모드예요 — '자동 (AI 감지)'을 고르면 켜져요";
+        BtnInstallCensorAi.Visibility = installed ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void CmbDecensorTarget_Changed(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        RefreshCensorAiCard();
+    }
     private void BtnEngineAdv_Click(object sender, RoutedEventArgs e) => ToggleAdv(PnlEngineAdv, BtnEngineAdv);
 
     private void BtnDecensorAdvReset_Click(object sender, RoutedEventArgs e)

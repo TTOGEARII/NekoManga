@@ -59,6 +59,14 @@ public static class ComponentCatalog
         "https://huggingface.co/mayocream/manga-ocr-onnx/resolve/main/vocab.txt",
         "models/ocr_vocab.txt", "models/ocr_vocab.txt", 31_000);
 
+    /// <summary>NekoManga 맞춤 검열 검출 모델 — 이 앱 전용으로 직접 학습했다 (릴리스 자산).
+    /// 무검열 원고에 검열을 합성 + 검열/무검열 쌍 diff 실라벨로 학습해, 흰 막대·흰 박스·
+    /// 단색 밀기·검은 막대·모자이크를 한 번에 찾는다 (CensorNet 주석 참조).</summary>
+    public static readonly Component ModelCensor = new(
+        "model-censor", "검열 감지 AI 모델 (NekoManga 전용)", ComponentKind.File,
+        "https://github.com/TTOGEARII/NekoManga/releases/latest/download/censor_seg.onnx",
+        "models/censor_seg.onnx", "models/censor_seg.onnx", 14_060_000);
+
     // ── ComfyUI (채색·강력 검열제거 전용 — 선택 설치) ──
     public static readonly Component SevenZip = new(
         "7zr", "7-Zip 압축해제기", ComponentKind.File,
@@ -137,7 +145,7 @@ public static class ComponentCatalog
     /// <summary>설치 순서대로. 내장 엔진 모델 먼저, ComfyUI(선택)는 뒤에.</summary>
     public static IReadOnlyList<Component> All { get; } = new[]
     {
-        ModelCtd, ModelLama, ModelOcrEncoder, ModelOcrDecoder, ModelOcrVocab,
+        ModelCtd, ModelLama, ModelOcrEncoder, ModelOcrDecoder, ModelOcrVocab, ModelCensor,
         SevenZip, ComfyPortable,
         NodeWd14, NodeCustomScripts, NodeLayerStyle, NodeControlnetAux, NodeIpAdapter,
         ModelCheckpoint, ModelControlnet, ModelIpAdapter, ModelClipVision,
@@ -147,5 +155,5 @@ public static class ComponentCatalog
     public static IEnumerable<Component> ComfyComponents => All.Where(c => c.ForComfy);
 
     public const string FirstRunNote =
-        "번역·기본 검열제거는 작은 모델(0.8GB)만 있으면 돼요. 채색·강력 검열제거까지 쓰려면 채색 엔진(약 20GB)을 함께 설치해 주세요.";
+        "번역·검열 감지·기본 검열제거는 작은 모델(0.8GB)만 있으면 돼요. 채색·강력 검열제거까지 쓰려면 채색 엔진(약 20GB)을 함께 설치해 주세요.";
 }

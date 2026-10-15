@@ -76,9 +76,13 @@ public partial class MainWindow
         BadgeColor.Visibility = comfyOk ? Visibility.Collapsed : Visibility.Visible;
         var strong = App.Settings.DecensorMode == "Strong";
         BadgeDecensor.Visibility = !comfyOk && strong ? Visibility.Visible : Visibility.Collapsed;
+        // 검열 감지 AI(전용 학습 모델) 유무·복원 방식에 맞춰 설명을 바꾼다
+        bool censorAi = App.Settings.DecensorTarget == "Auto" &&
+            File.Exists(Path.Combine(App.Settings.RuntimeRoot, "models", NekoManga.Core.Engine.CensorNet.ModelFile));
+        string find = censorAi ? "AI가 검열을 찾아" : "검열을 찾아";
         HintDecensor.Text = strong
-            ? "모자이크를 SDXL로 재생성 (강력 모드)"
-            : "모자이크를 찾아 자연스럽게 복원 (기본·내장 AI)";
+            ? $"{find} SDXL로 재생성 (강력 모드)"
+            : $"{find} 자연스럽게 복원 (기본·내장 AI)";
     }
 
     // ── 파일 추가 ──────────────────────────────────────────────

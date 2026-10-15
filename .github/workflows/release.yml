@@ -40,3 +40,12 @@ jobs:
 
       - name: Upload to GitHub Release
         run: vpk upload github --repoUrl https://github.com/TTOGEARII/NekoManga --publish --releaseName "NekoManga v${{ steps.ver.outputs.version }}" --tag ${{ github.ref_name }} --token ${{ secrets.GITHUB_TOKEN }}
+
+      # AI 검열 검출 모델(censor_seg.onnx)을 같은 릴리스에 자산으로 첨부한다 —
+      # 앱의 구성요소 설치가 이 주소(.../releases/latest/download/censor_seg.onnx)에서 받는다.
+      - name: Attach censor model
+        if: hashFiles('models/censor_seg.onnx') != ''
+        shell: pwsh
+        run: gh release upload ${{ github.ref_name }} models/censor_seg.onnx --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
