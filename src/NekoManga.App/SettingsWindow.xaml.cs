@@ -234,11 +234,14 @@ public partial class SettingsWindow
         DotCensorAi.Fill = installed
             ? (auto ? System.Windows.Media.Brushes.MediumSeaGreen : System.Windows.Media.Brushes.Goldenrod)
             : System.Windows.Media.Brushes.IndianRed;
+        bool lora = !string.IsNullOrWhiteSpace(App.Settings.DecensorLora) && File.Exists(
+            Path.Combine(App.Settings.ComfyRoot, "ComfyUI", "models", "loras", App.Settings.DecensorLora));
+        string loraNote = lora ? " · 복원 LoRA ✓" : " · 복원 LoRA 미설치";
         TxtCensorAi.Text = !installed
             ? "검열 감지 AI가 설치되어 있지 않아요 — 수동 규칙으로 찾습니다"
-            : auto ? "검열 감지 AI 사용 중 — 흰·검·모자이크를 한 번에 찾아요"
-                   : "검열 감지 AI는 준비됐지만 수동 모드예요 — '자동 (AI 감지)'을 고르면 켜져요";
-        BtnInstallCensorAi.Visibility = installed ? Visibility.Collapsed : Visibility.Visible;
+            : (auto ? "검열 감지 AI 사용 중 — 흰·검·모자이크를 한 번에 찾아요"
+                    : "검열 감지 AI는 준비됐지만 수동 모드예요 — '자동 (AI 감지)'을 고르면 켜져요") + loraNote;
+        BtnInstallCensorAi.Visibility = installed && lora ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void CmbDecensorTarget_Changed(object sender, System.Windows.Controls.SelectionChangedEventArgs e)

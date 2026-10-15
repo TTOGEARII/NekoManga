@@ -43,9 +43,11 @@ jobs:
 
       # AI 검열 검출 모델(censor_seg.onnx)을 같은 릴리스에 자산으로 첨부한다 —
       # 앱의 구성요소 설치가 이 주소(.../releases/latest/download/censor_seg.onnx)에서 받는다.
-      - name: Attach censor model
-        if: hashFiles('models/censor_seg.onnx') != ''
+      - name: Attach trained models
+        if: hashFiles('models/*') != ''
         shell: pwsh
-        run: gh release upload ${{ github.ref_name }} models/censor_seg.onnx --clobber
+        run: |
+          $files = Get-ChildItem models -File | ForEach-Object { $_.FullName }
+          gh release upload ${{ github.ref_name }} $files --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

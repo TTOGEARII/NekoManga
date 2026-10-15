@@ -84,8 +84,10 @@ public class AppSettings
     public int DecensorThreshold { get; set; } = 15;
     /// <summary>감지된 마스크 확장(px).</summary>
     public int DecensorMaskGrow { get; set; } = 8;
-    /// <summary>강력 모드 재생성 강도 (denoise).</summary>
-    public double DecensorStrongDenoise { get; set; } = 0.75;
+    /// <summary>강력 모드 재생성 강도 (denoise). 입력의 검열 영역은 블러로 보내므로 격자는
+    /// 이미 사라졌고, 이 값은 '원래 실루엣을 얼마나 따를지'를 정한다 — 너무 높으면(0.95+)
+    /// 형태를 무시하고 엉뚱한 걸 그리고, 너무 낮으면 흐릿함이 남는다 (실측 0.82가 균형).</summary>
+    public double DecensorStrongDenoise { get; set; } = 0.82;
 
     // ── 고급 옵션 (설정 창의 [고급 옵션] — 기본값 = 기존 하드코딩, 워크플로를 아는 사용자용) ──
     /// <summary>강력(SDXL) 워크플로 KSampler 스텝.</summary>
@@ -96,10 +98,24 @@ public class AppSettings
     public string DecensorStrongSampler { get; set; } = "dpmpp_2m";
     public string DecensorStrongScheduler { get; set; } = "karras";
     /// <summary>강력 워크플로 긍정/부정 프롬프트.</summary>
-    public string DecensorStrongPositive { get; set; } = "anime, high quality, detailed, clean, best quality, uncensored";
+    /// <summary>강력 모드 긍정 프롬프트. **무엇을 그릴지 반드시 명시해야 한다** —
+    /// 'uncensored' 정도로는 모델이 지운 자리에 얼굴·눈 같은 엉뚱한 걸 그린다 (실측).</summary>
+    public string DecensorStrongPositive { get; set; } =
+        "uncensored genitalia, penis, pussy, vaginal penetration, sex, nude, skin, "
+        + "anime, high quality, detailed, clean, best quality";
     public string DecensorStrongNegative { get; set; } = "mosaic, pixelated, blurry, censored, bar censor, low quality, worst quality";
     /// <summary>강력 워크플로 합성 마스크 여유(px) — GrowMask expand.</summary>
     public int DecensorCompositeGrow { get; set; } = 4;
+    /// <summary>검열 복원 전용 LoRA 파일명 (ComfyUI models/loras 기준, 비우면 미사용).
+    /// 무검열 만화에서 추출한 성기 작화로 학습해, SDXL이 주변 그림체에 맞는 해부를 그리게 한다.</summary>
+    /// <summary>기본값은 앱이 함께 배포하는 전용 LoRA — 파일이 없으면 워크플로가 알아서 건너뛴다.</summary>
+    public string DecensorLora { get; set; } = "nmdecensor_comfy.safetensors";
+    public double DecensorLoraStrength { get; set; } = 0.85;
+    /// <summary>강력 모드에서 주변 선화를 얼마나 강하게 따를지 (ControlNet lineart).
+    /// 높이면 주변 구조를 잘 잇지만 너무 높으면 구멍 안을 비워 둔다.</summary>
+    public double DecensorCnStrength { get; set; } = 0.35;
+    /// <summary>ControlNet 적용 끝 지점(0~1) — 초반 구도만 잡고 디테일은 모델에 맡긴다.</summary>
+    public double DecensorCnEnd { get; set; } = 0.45;
     /// <summary>엔진 LaMa(원본 레시피) 워크플로의 마스크 확장/블러.</summary>
     public int LamaMaskGrow { get; set; } = 8;
     public int LamaMaskBlur { get; set; } = 8;
@@ -188,6 +204,14 @@ public class AppSettings
         }
         catch { /* 손상된 설정은 기본값으로 */ }
         return new AppSettings();
+    }
+
+    /// <summary>강력 모드 재시도용 — denoise만 바꾼 얕은 복사본 (원 설정은 건드리지 않는다).</summary>
+    public AppSettings ShallowCloneForRetry(double denoise)
+    {
+        var c = (AppSettings)MemberwiseClone();
+        c.DecensorStrongDenoise = denoise;
+        return c;
     }
 
     /// <summary>v0.1.x(BallonsTranslator 연동 시절) 설정값을 내장 엔진 형식으로 변환한다.</summary>

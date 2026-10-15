@@ -44,6 +44,29 @@ public static class Program
             return;
         }
 
+        // 전체 검열제거 경로 테스트: --dctest <모드:Basic|ComfyLama|Strong> <이미지...>
+        //   → <이미지>.dc_<모드>.png (AI 감지 + 선택한 복원까지 실제 파이프라인 경로로)
+        var dcIdx = Array.IndexOf(args, "--dctest");
+        if (dcIdx >= 0 && dcIdx + 2 < args.Length)
+        {
+            var mode = args[dcIdx + 1];
+            var st = NekoManga.Core.AppSettings.Load();
+            using var runner0 = new NekoManga.Core.Pipeline.PipelineRunner(st);
+            foreach (var p in args.Skip(dcIdx + 2).Where(File.Exists))
+            {
+                using var im = NekoManga.Core.ImgIo.Read(p);
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                using var mk = runner0.DetectCensorMask(im, null, out var kind);
+                if (mk == null) { Console.WriteLine($"{Path.GetFileName(p)}: 검열 없음 ({kind})"); continue; }
+                int px = OpenCvSharp.Cv2.CountNonZero(mk);
+                var prog = new Progress<string>(m => Console.WriteLine("   " + m));
+                runner0.ManualDecensorAsync(im, mk, mode, prog, CancellationToken.None).GetAwaiter().GetResult();
+                NekoManga.Core.ImgIo.Write(Path.ChangeExtension(p, null) + $".dc_{mode}.png", im);
+                Console.WriteLine($"{Path.GetFileName(p)}: {kind} {px}px, {mode} 복원 {sw.ElapsedMilliseconds}ms");
+            }
+            return;
+        }
+
         // AI 검열 모델 단독 테스트: --censortest <이미지...> → <이미지>.censor.png(오버레이) + censortest.log
         var ctIdx = Array.IndexOf(args, "--censortest");
         if (ctIdx >= 0)

@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text.Json.Nodes;
 
 namespace NekoManga.Core.Comfy;
@@ -123,32 +124,66 @@ public static class WorkflowBuilder
     /// 업로드 PNG의 알파 채널이 마스크다 (알파 0 = 재생성 영역, ComfyUI LoadImage 규약).
     /// SetLatentNoiseMask로 마스크 영역만 다시 그리고, 최종적으로 마스크 영역만 원본에 합성해
     /// 나머지 픽셀은 1비트도 바뀌지 않게 한다.</summary>
+    /// <param name="monochrome">원고가 흑백이면 true — 프롬프트에 흑백·만화 토큰을 넣어
+    /// SDXL이 컬러·사실풍으로 그려 주변과 따로 노는 것을 막는다 (실측: 색·음영이 튀어 보임).</param>
     public static JsonObject BuildStrongDecensor(AppSettings s, string uploadedName, string filenamePrefix,
-        long seed)
+        long seed, bool monochrome = false)
     {
-        return new JsonObject
+        string pos = s.DecensorStrongPositive;
+        string neg = s.DecensorStrongNegative;
+        // 지운 자리에 '무엇을' 그릴지 모르면 얼굴 같은 엉뚱한 걸 그린다 (실측) — 해부 힌트를 준다
+        neg = "face, head, eyes, hair, text, speech bubble, extra limbs, " + neg;
+        if (monochrome)
+        {
+            pos = "monochrome, greyscale, manga, lineart, screentone, " + pos;
+            neg = "color, colored, watercolor, 3d, photorealistic, " + neg;
+        }
+        // 인페인트 체인: VAEEncode+SetLatentNoiseMask(=img2img 흉내)는 지운 자리에 원본 잠재가
+        // 남아 뭉개지거나, denoise를 올리면 맥락을 잃고 눈·얼굴 같은 엉뚱한 걸 그린다 (실측).
+        // InpaintModelConditioning은 '구멍'을 조건으로 함께 넣어 일반 체크포인트로도 제대로 된
+        // 인페인트가 되고, DifferentialDiffusion이 마스크 경계를 점진적으로 섞어 이음새를 없앤다.
+        var g = new JsonObject
         {
             ["1"] = Node("LoadImage", new() { ["image"] = uploadedName }),
             ["2"] = Node("CheckpointLoaderSimple", new() { ["ckpt_name"] = s.ColorCheckpoint }),
-            ["3"] = Node("CLIPTextEncode", new()
+            ["3"] = Node("CLIPTextEncode", new() { ["clip"] = Link("2", 1), ["text"] = pos }),
+            ["4"] = Node("CLIPTextEncode", new() { ["clip"] = Link("2", 1), ["text"] = neg }),
+            ["12"] = Node("DifferentialDiffusion", new() { ["model"] = Link("2", 0) }),
+            // 주변 선화를 ControlNet으로 물려 준다 — 이게 없으면 모델이 구멍을 '빈 캔버스'로 보고
+            // 얼굴·인물 같은 새 장면을 그려 넣는다 (실측: 성기 자리에 얼굴). 구멍 밖 선이 몸의
+            // 구조를 알려 주므로 그 연장선으로 채우게 된다.
+            ["15"] = Node("Manga2Anime_LineArt_Preprocessor", new()
             {
-                ["clip"] = Link("2", 1),
-                ["text"] = s.DecensorStrongPositive,
+                ["image"] = Link("1", 0), ["resolution"] = 1024,
             }),
-            ["4"] = Node("CLIPTextEncode", new()
+            ["16"] = Node("ControlNetLoader", new() { ["control_net_name"] = s.ColorControlNet }),
+            ["17"] = Node("SetUnionControlNetType", new()
             {
-                ["clip"] = Link("2", 1),
-                ["text"] = s.DecensorStrongNegative,
+                ["control_net"] = Link("16", 0), ["type"] = "canny/lineart/anime_lineart/mlsd",
             }),
-            ["5"] = Node("VAEEncode", new() { ["pixels"] = Link("1", 0), ["vae"] = Link("2", 2) }),
-            ["6"] = Node("SetLatentNoiseMask", new() { ["samples"] = Link("5", 0), ["mask"] = Link("1", 1) }),
+            ["18"] = Node("ControlNetApplyAdvanced", new()
+            {
+                ["positive"] = Link("3", 0), ["negative"] = Link("4", 0),
+                ["control_net"] = Link("17", 0), ["image"] = Link("15", 0),
+                // 구멍 안에는 선이 없으므로 ControlNet을 끝까지 강하게 걸면 '아무것도 그리지 말라'는
+                // 신호가 된다 (실측: 복원부가 백지). 초반에만 약하게 걸어 구도만 잡아 준다.
+                ["strength"] = s.DecensorCnStrength, ["start_percent"] = 0.0, ["end_percent"] = s.DecensorCnEnd,
+                ["vae"] = Link("2", 2),
+            }),
+            ["6"] = Node("InpaintModelConditioning", new()
+            {
+                ["positive"] = Link("18", 0), ["negative"] = Link("18", 1),
+                ["vae"] = Link("2", 2), ["pixels"] = Link("1", 0), ["mask"] = Link("1", 1),
+                ["noise_mask"] = true,
+            }),
             ["7"] = Node("KSampler", new()
             {
-                ["model"] = Link("2", 0), ["positive"] = Link("3", 0), ["negative"] = Link("4", 0),
-                ["latent_image"] = Link("6", 0),
+                ["model"] = Link("12", 0), ["positive"] = Link("6", 0), ["negative"] = Link("6", 1),
+                ["latent_image"] = Link("6", 2),
                 ["seed"] = seed, ["steps"] = s.DecensorStrongSteps, ["cfg"] = s.DecensorStrongCfg,
                 ["sampler_name"] = s.DecensorStrongSampler, ["scheduler"] = s.DecensorStrongScheduler,
-                ["denoise"] = s.DecensorStrongDenoise,
+                // 인페인트 조건이 구멍을 알려 주므로 denoise는 1.0이 정석 — 남은 검열 흔적도 사라진다
+                ["denoise"] = 1.0,
             }),
             ["8"] = Node("VAEDecode", new() { ["samples"] = Link("7", 0), ["vae"] = Link("2", 2) }),
             ["9"] = Node("GrowMask", new() { ["mask"] = Link("1", 1), ["expand"] = s.DecensorCompositeGrow, ["tapered_corners"] = true }),
@@ -159,6 +194,23 @@ public static class WorkflowBuilder
             }),
             ["11"] = Node("SaveImage", new() { ["images"] = Link("10", 0), ["filename_prefix"] = filenamePrefix }),
         };
+        // 검열 복원 전용 LoRA가 **실제로 설치돼 있을 때만** 끼운다 — 파일이 없는데 노드를 넣으면
+        // ComfyUI가 'lora not found'로 작업 전체를 실패시킨다 (새 PC 첫 실행 시나리오).
+        if (!string.IsNullOrWhiteSpace(s.DecensorLora) &&
+            File.Exists(Path.Combine(s.ComfyRoot, "ComfyUI", "models", "loras", s.DecensorLora)))
+        {
+            g["14"] = Node("LoraLoader", new()
+            {
+                ["model"] = Link("2", 0), ["clip"] = Link("2", 1),
+                ["lora_name"] = s.DecensorLora,
+                ["strength_model"] = s.DecensorLoraStrength,
+                ["strength_clip"] = s.DecensorLoraStrength,
+            });
+            ((JsonObject)g["3"]!["inputs"]!)["clip"] = Link("14", 1);
+            ((JsonObject)g["4"]!["inputs"]!)["clip"] = Link("14", 1);
+            ((JsonObject)g["12"]!["inputs"]!)["model"] = Link("14", 0);
+        }
+        return g;
     }
 
     /// <summary>엔진 LaMa 검열제거 — 사용자가 ComfyUI에서 직접 쓰던 원본 파이프라인의 노드 그대로

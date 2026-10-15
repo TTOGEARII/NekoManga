@@ -412,10 +412,36 @@ public static class MosaicDetector
     }
 
     /// <summary>강력 모드(ComfyUI 인페인트)용: 마스크를 알파 0으로 뚫은 RGBA PNG 바이트.</summary>
-    public static byte[] ToMaskedPng(Mat img, Mat mask)
+    /// <summary>ComfyUI LoadImage용 마스크 PNG (알파 0 = 재생성 영역).
+    ///
+    /// smoothInside=true면 마스크 안쪽을 **강하게 블러**한다. ComfyUI는 알파만 마스크로 쓰고
+    /// RGB는 그대로 VAE 인코딩하므로 손을 안 대면 모자이크 격자가 결과에 새어 나온다.
+    /// 그렇다고 주변 색으로 완전히 메우면(Telea) 실루엣까지 사라져 SDXL이 엉뚱한 걸 그린다
+    /// (실측: 성기 자리에 얼굴을 그림). 블러는 격자만 지우고 형태·명암은 남겨 생성을 안내한다.</summary>
+    public static byte[] ToMaskedPng(Mat img, Mat mask, bool smoothInside = false)
     {
+        using var src = img.Clone();
+        if (smoothInside)
+        {
+            // 블러 세기는 영역 크기에 맞춘다 — 작은 영역을 과하게 뭉개면 모델에 단서가 남지 않아
+            // 밋밋한 회색 사각형이 나온다 (실측 020p 하단). 격자만 지울 만큼만 흐린다.
+            using var nz = new Mat();
+            Cv2.FindNonZero(mask, nz);
+            int shortSide = 200;
+            if (!nz.Empty())
+            {
+                var br = Cv2.BoundingRect(nz);
+                shortSide = Math.Max(16, Math.Min(br.Width, br.Height));
+            }
+            double sigma = Math.Clamp(shortSide / 14.0, 3.0, 12.0);
+            using var blurred = new Mat();
+            Cv2.GaussianBlur(src, blurred, new Size(0, 0), sigma);
+            using var soft = new Mat();
+            Cv2.GaussianBlur(mask, soft, new Size(0, 0), 4);   // 경계도 부드럽게
+            blurred.CopyTo(src, soft);
+        }
         using var rgba = new Mat();
-        Cv2.CvtColor(img, rgba, ColorConversionCodes.BGR2BGRA);
+        Cv2.CvtColor(src, rgba, ColorConversionCodes.BGR2BGRA);
         unsafe
         {
             byte* pa = (byte*)rgba.DataPointer; long sa = (long)rgba.Step();

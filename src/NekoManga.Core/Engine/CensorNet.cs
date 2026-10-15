@@ -77,6 +77,13 @@ public class CensorNet(OnnxEnv env)
                     m[r].SetTo(Scalar.Black);
                 }
             }
+            // 같은 페이지에서 AI가 놓친 '같은 규격' 막대 보강 — 모델은 얇거나 가장자리에 걸친
+            // 막대를 더러 놓친다 (실측 15p: 막대 후보 15개 중 5개 미검출, conf를 낮춰도 그대로).
+            // AI가 이미 찾은 막대의 두께를 기준 삼아 그와 비슷한 규칙 기반 후보만 더한다 —
+            // 효과음 붓획은 두께·비율이 딴판이라 이 조건에서 걸러진다.
+            AugmentBars(imgBgr, dets, w, isWhite: true, exclude);
+            AugmentBars(imgBgr, dets, b, isWhite: false, exclude);
+
             int pw = Cv2.CountNonZero(w), pb = Cv2.CountNonZero(b), pm = Cv2.CountNonZero(m);
             summary = $"AI(흰 {dets.Count(d => d.Cls == 0)}·검 {dets.Count(d => d.Cls == 1)}·모자이크 {dets.Count(d => d.Cls == 2)} → {pw + pb + pm}px)";
             if (pw + pb + pm < 300) return null;
@@ -92,6 +99,61 @@ public class CensorNet(OnnxEnv env)
     }
 
     /// <summary>페이지 전체를 추론해 클래스별 마스크(8UC1, 페이지 크기)와 검출 목록을 돌려준다.</summary>
+    /// <summary>AI가 찾은 막대와 '같은 규격'인 단색 덩어리를 마스크에 보강한다.
+    /// 기준: 짧은 변이 AI 막대 중앙값의 0.5~2배, 길쭉하고 꽉 찬 사각형, 텍스트 영역 밖.
+    /// 모델이 얇거나 가장자리에 걸친 막대를 놓치는 걸 메운다 (실측 15p: 15개 중 5개 미검출,
+    /// conf를 0.2까지 낮춰도 그대로 — 신뢰도 문제가 아니라 아예 못 보는 것).</summary>
+    private static void AugmentBars(Mat imgBgr, List<Detection> dets, Mat mask, bool isWhite,
+        IReadOnlyList<Rect>? exclude)
+    {
+        int cls = isWhite ? 0 : 1;
+        var found = dets.Where(d => d.Cls == cls).ToList();
+        if (found.Count < 2) return;   // 기준 삼을 표본이 부족하면 보강하지 않는다
+        var shorts = found.Select(d => (double)Math.Min(d.Box.Width, d.Box.Height)).OrderBy(x => x).ToList();
+        double medShort = shorts[shorts.Count / 2];
+        if (medShort < 4) return;
+
+        using var gray = new Mat();
+        Cv2.CvtColor(imgBgr, gray, ColorConversionCodes.BGR2GRAY);
+        using var bin = new Mat();
+        if (isWhite) Cv2.Threshold(gray, bin, 244, 255, ThresholdTypes.Binary);
+        else Cv2.Threshold(gray, bin, 25, 255, ThresholdTypes.BinaryInv);
+        using var bin0 = bin.Clone();   // 침식 전 원본 (되돌릴 때 경계 제한용)
+        // 침식으로 얇은 연결을 끊는다 — 막대가 패널 테두리(검은 선)와 붙어 한 덩어리가 되면
+        // 모양 조건(길쭉·꽉 참)에서 탈락해 통째로 놓친다 (실측 15p 우측 세로 패널).
+        // 테두리는 몇 px라 끊기고, 두꺼운 막대는 남는다. 채택 후 같은 양만큼 되돌린다.
+        int er = 3;
+        using var ker = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(er * 2 + 1, er * 2 + 1));
+        Cv2.Erode(bin, bin, ker);
+
+        using var lab = new Mat();
+        using var st = new Mat();
+        using var ce = new Mat();
+        int n = Cv2.ConnectedComponentsWithStats(bin, lab, st, ce);
+        for (int i = 1; i < n; i++)
+        {
+            int area = st.At<int>(i, (int)ConnectedComponentsTypes.Area);
+            if (area < 400) continue;   // 침식으로 줄어든 면적 기준
+            var br = new Rect(
+                st.At<int>(i, (int)ConnectedComponentsTypes.Left),
+                st.At<int>(i, (int)ConnectedComponentsTypes.Top),
+                st.At<int>(i, (int)ConnectedComponentsTypes.Width),
+                st.At<int>(i, (int)ConnectedComponentsTypes.Height));
+            int shortSide = Math.Min(br.Width, br.Height), longSide = Math.Max(br.Width, br.Height);
+            // 규격 범위를 좁게 잡으면(0.5~2배) 같은 페이지의 조금 굵은 막대가 탈락한다 (실측 15p
+            // 우측 패널 막대가 중앙값의 2.2배라 빠짐) — 0.4~3배로 넓히되 모양 조건으로 거른다.
+            if (shortSide < medShort * 0.4 || shortSide > medShort * 3.0) continue;
+            if (longSide / (double)Math.Max(1, shortSide) < 1.4) continue;           // 길쭉해야 막대
+            if ((double)area / (br.Width * br.Height) < 0.75) continue;              // 꽉 찬 사각형
+            if (exclude != null && exclude.Any(e => (e & br).Width > 0 && (e & br).Height > 0)) continue;
+            using var comp = new Mat();
+            Cv2.InRange(lab, new Scalar(i), new Scalar(i), comp);
+            Cv2.Dilate(comp, comp, ker);          // 침식한 만큼 되돌린다
+            Cv2.BitwiseAnd(comp, bin0, comp);     // 원래 단색 영역 밖으로는 번지지 않게
+            Cv2.BitwiseOr(mask, comp, mask);
+        }
+    }
+
     public (Mat White, Mat Black, Mat Mosaic, List<Detection> Dets) Detect(Mat imgBgr, float conf = 0.45f)
     {
         int W = imgBgr.Cols, H = imgBgr.Rows;

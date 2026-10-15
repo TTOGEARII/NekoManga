@@ -280,6 +280,22 @@ public class PipelineRunner(AppSettings settings) : IDisposable
 
     /// <summary>강력 검열제거: 검열 ROI를 잘라 SDXL 인페인트(ComfyUI)로 재생성하고 제자리에 붙인다.
     /// 전체 이미지를 통째로 샘플링하면 8GB VRAM이 터지므로 ROI 단위(최대 1024px)로 처리.</summary>
+    /// <summary>흑백 원고인가 — 채널 간 차이가 거의 없으면 흑백. SDXL 프롬프트 스타일 결정용.</summary>
+    private static bool IsMonochrome(Mat bgr)
+    {
+        using var small = bgr.Resize(new OpenCvSharp.Size(96, 96));
+        var ch = small.Split();
+        try
+        {
+            using var d1 = new Mat();
+            using var d2 = new Mat();
+            Cv2.Absdiff(ch[0], ch[1], d1);
+            Cv2.Absdiff(ch[1], ch[2], d2);
+            return Cv2.Mean(d1).Val0 < 6 && Cv2.Mean(d2).Val0 < 6;
+        }
+        finally { foreach (var c in ch) c.Dispose(); }
+    }
+
     private async Task StrongDecensorAsync(ComfyClient client, string comfyOutputDir,
         Mat img, Mat mask, int pageIdx, LamaInpainter lama, CancellationToken ct)
     {
@@ -288,15 +304,35 @@ public class PipelineRunner(AppSettings settings) : IDisposable
         if (contours.Length == 0) return;
         var rois = LamaInpainter.MergeRois(contours.Select(Cv2.BoundingRect).ToList(), img.Width, img.Height);
 
+        // SDXL ROI는 1024가 상한이라, 그보다 큰 검열 덩어리는 **쪼개서 전부** 처리해야 한다.
+        // 예전엔 EnsureSize가 중앙 1024만 남겨 바깥쪽 마스크가 통째로 복원되지 않았다
+        // (실측 013p: 우측 모자이크 3곳이 그대로 남음).
+        var parts = new List<Rect>();
+        foreach (var r0 in rois)
+        {
+            const int MaxRoi = 1024, Step = 820;   // 겹침 ~200px — 이음새가 덜 보인다
+            if (r0.Width <= MaxRoi && r0.Height <= MaxRoi) { parts.Add(r0); continue; }
+            for (int py = r0.Y; py < r0.Bottom; py += Step)
+            for (int px = r0.X; px < r0.Right; px += Step)
+            {
+                var p = new Rect(px, py,
+                    Math.Min(Step, r0.Right - px), Math.Min(Step, r0.Bottom - py));
+                using var mp = new Mat(mask, p);
+                if (Cv2.CountNonZero(mp) > 0) parts.Add(p);
+            }
+        }
+
         int ri = 0;
-        foreach (var roi0 in rois)
+        foreach (var roi0 in parts)
         {
             ct.ThrowIfCancellationRequested();
             // SDXL이 다루기 좋은 크기로 (너무 작으면 주변 맥락 부족 → 최소 512, 최대 1024)
             var roi = EnsureSize(roi0, 512, 1024, img.Width, img.Height);
             using var crop = new Mat(img, roi);
             using var mcrop = new Mat(mask, roi);
-            var maskedPng = MosaicDetector.ToMaskedPng(crop, mcrop);
+            // 마스크 안쪽은 블러해서 보낸다 — 격자(모자이크 무늬)는 지우되 실루엣·명암은 남겨
+            // SDXL이 '원래 거기 있던 형태'를 따라 그리게 한다 (완전히 메우면 엉뚱한 걸 그린다).
+            var maskedPng = MosaicDetector.ToMaskedPng(crop, mcrop, smoothInside: true);
 
             // 시드를 고정해야 같은 원고를 다시 돌렸을 때 같은 그림이 나온다. ROI마다 다른 시드를 쓰되
             // (영역마다 같은 노이즈면 비슷한 무늬가 반복된다) 순서가 정해져 있어 결과는 재현된다.
@@ -304,18 +340,48 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                 ? (settings.DecensorSeed + ri) % uint.MaxValue
                 : Random.Shared.NextInt64(0, uint.MaxValue);
 
+            bool mono = IsMonochrome(crop);
             var up = await client.UploadImageAsync(maskedPng, $"nm_sdc_{pageIdx}_{ri}.png", ct);
             var pid = await client.QueuePromptAsync(
-                WorkflowBuilder.BuildStrongDecensor(settings, up, $"nm_strong_{pageIdx}_{ri}", seed), ct);
+                WorkflowBuilder.BuildStrongDecensor(settings, up, $"nm_strong_{pageIdx}_{ri}", seed,
+                    monochrome: mono), ct);
             var r = await client.WaitAsync(pid, comfyOutputDir, TimeSpan.FromMinutes(10), ct);
             if (r.OutputFiles.Count > 0)
             {
-                using var outImg = ImgIo.Read(r.OutputFiles[^1], ImreadModes.Color);
+                using var outImg0 = ImgIo.Read(r.OutputFiles[^1], ImreadModes.Color);
+                var outImg = outImg0;
+                // 밋밋 가드: 생성 결과가 주변보다 훨씬 평탄하면(그림을 안 그리고 회색으로 메움)
+                // 한 번만 더 강하게(denoise↑·다른 시드) 돌려 본다 — 실측 020p의 '회색 사각형'.
+                if (!outImg.Empty() && IsFlatFill(outImg, mcrop, crop))
+                {
+                    var retrySettings = settings.ShallowCloneForRetry(Math.Min(0.97, settings.DecensorStrongDenoise + 0.12));
+                    var pid2 = await client.QueuePromptAsync(
+                        WorkflowBuilder.BuildStrongDecensor(retrySettings, up, $"nm_strong_{pageIdx}_{ri}r",
+                            (seed + 7919) % uint.MaxValue, monochrome: mono), ct);
+                    var r2 = await client.WaitAsync(pid2, comfyOutputDir, TimeSpan.FromMinutes(10), ct);
+                    if (r2.OutputFiles.Count > 0)
+                    {
+                        var retry = ImgIo.Read(r2.OutputFiles[^1], ImreadModes.Color);
+                        if (!retry.Empty() && !IsFlatFill(retry, mcrop, crop)) { outImg0.Dispose(); outImg = retry; }
+                        else retry.Dispose();
+                    }
+                }
                 if (!outImg.Empty())
                 {
-                    using var resized = outImg.Width == roi.Width && outImg.Height == roi.Height
+                    using var resized0 = outImg.Width == roi.Width && outImg.Height == roi.Height
                         ? outImg.Clone()
                         : outImg.Resize(new OpenCvSharp.Size(roi.Width, roi.Height));
+                    // 흑백 원고에 색이 번지는 일이 있다 (실측: 복원부에 초록빛) — 회색조로 강제한다
+                    var resized = resized0;
+                    if (mono)
+                    {
+                        using var gtmp = new Mat();
+                        Cv2.CvtColor(resized0, gtmp, ColorConversionCodes.BGR2GRAY);
+                        var back = new Mat();
+                        Cv2.CvtColor(gtmp, back, ColorConversionCodes.GRAY2BGR);
+                        resized0.Dispose();
+                        resized = back;
+                    }
 
                     // SDXL은 시드에 따라 지운 자리를 새카맣게 칠해 놓기도 한다 — 같은 원고를 두 번 돌렸을 때
                     // 한 번은 멀쩡했고 한 번은 검은 타원이 생겼다. 검열을 지운 자리가 주변보다 극단적으로
@@ -337,10 +403,27 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                         patched.CopyTo(crop, mcrop);
                     }
                     else FeatherBlend(crop, resized, mcrop);
+                    if (!ReferenceEquals(resized, resized0)) resized.Dispose();
                 }
             }
             ri++;
         }
+    }
+
+    /// <summary>생성 결과가 '그림 없이 회색으로 메운' 상태인가 — 마스크 안쪽 표준편차가
+    /// 주변의 35%도 안 되고 절대값도 낮으면 실패로 본다 (실측: 밋밋한 회색 사각형).</summary>
+    private static bool IsFlatFill(Mat generated, Mat mask, Mat around)
+    {
+        using var g = new Mat();
+        using var a = new Mat();
+        Cv2.CvtColor(generated.Size() == mask.Size() ? generated : generated.Resize(mask.Size()), g, ColorConversionCodes.BGR2GRAY);
+        Cv2.CvtColor(around, a, ColorConversionCodes.BGR2GRAY);
+        using var notMask = new Mat();
+        Cv2.BitwiseNot(mask, notMask);
+        Cv2.MeanStdDev(g, out _, out var sIn, mask);
+        Cv2.MeanStdDev(a, out _, out var sOut, notMask);
+        // 임계가 빡빡하면(std<10) 약한 그라디언트가 있는 회색 덩어리를 놓친다 (실측 020p 하단)
+        return sIn.Val0 < 18 && sIn.Val0 < sOut.Val0 * 0.45;
     }
 
     /// <summary>새로 그린 그림을 마스크 경계에서 부드럽게 섞어 넣는다.

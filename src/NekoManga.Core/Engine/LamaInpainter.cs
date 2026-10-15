@@ -23,26 +23,34 @@ public class LamaInpainter(OnnxEnv env)
         Cv2.FindContours(forContours, out var contours, out _, RetrievalModes.External, ContourApproximationModes.ApproxSimple);
         if (contours.Length == 0) return;
 
-        var rois = MergeRois(contours.Select(Cv2.BoundingRect).ToList(), img.Width, img.Height);
-        foreach (var roi in rois)
+        var holes = MergeRois(contours.Select(Cv2.BoundingRect).ToList(), img.Width, img.Height);
+        foreach (var hole in holes)
         {
-            // 큰 ROI를 통째로 512에 욱여넣으면 복원 패치가 업스케일로 뭉개져
-            // 주변의 또렷한 망점과 티가 난다 (수기로 넓게 지운 영역에서 실측).
-            // 512 타일(겹침 64)로 나눠 원본 해상도에 가깝게 복원한다.
-            if (Math.Max(roi.Width, roi.Height) <= 560) { InpaintRoi(img, mask, roi); continue; }
-            const int T = 512, Stride = 448;
-            for (int ty = roi.Y; ty < roi.Bottom; ty += Stride)
-            for (int tx = roi.X; tx < roi.Right; tx += Stride)
+            // 구멍 조각 단위로 처리하되 **각 조각마다 주변 맥락을 3배로 붙여** 넣는다.
+            // 큰 모자이크를 512 타일로 원본 해상도 처리하면 타일이 통째로 구멍이라
+            // 참고할 주변이 없어 흐릿한 회색 덩어리·흰 얼룩이 나온다 (실측: 013p 성기 모자이크).
+            // 해상도를 조금 잃더라도 맥락을 주는 쪽이 주변 그림과 훨씬 잘 어울린다.
+            int chunk = Math.Max(96, Math.Min(360, Math.Max(hole.Width, hole.Height)));
+            for (int hy = hole.Y; hy < hole.Bottom; hy += chunk)
+            for (int hx = hole.X; hx < hole.Right; hx += chunk)
             {
-                int x = tx, y = ty;
-                if (x + T > roi.Right) x = Math.Max(roi.X, roi.Right - T);
-                if (y + T > roi.Bottom) y = Math.Max(roi.Y, roi.Bottom - T);
-                var tile = new Rect(x, y, Math.Min(T, img.Width - x), Math.Min(T, img.Height - y));
-                using var mt = new Mat(mask, tile);
-                if (Cv2.CountNonZero(mt) == 0) continue;
-                InpaintRoi(img, mask, tile);
+                var part = new Rect(hx, hy,
+                    Math.Min(chunk, hole.Right - hx), Math.Min(chunk, hole.Bottom - hy));
+                using (var mp = new Mat(mask, part))
+                    if (Cv2.CountNonZero(mp) == 0) continue;
+                InpaintRoi(img, mask, WithContext(part, img.Width, img.Height));
             }
         }
+    }
+
+    /// <summary>구멍 둘레에 구멍 크기만큼의 맥락을 붙인 ROI (구멍이 ROI의 1/3 이하가 되게).
+    /// LaMa는 512 입력이라, 구멍이 입력의 1/3을 넘으면 주변 정보가 부족해 복원이 무너진다.</summary>
+    private static Rect WithContext(Rect hole, int imW, int imH)
+    {
+        int padX = hole.Width, padY = hole.Height;
+        int x1 = Math.Max(0, hole.X - padX), y1 = Math.Max(0, hole.Y - padY);
+        int x2 = Math.Min(imW, hole.Right + padX), y2 = Math.Min(imH, hole.Bottom + padY);
+        return new Rect(x1, y1, x2 - x1, y2 - y1);
     }
 
     private void InpaintRoi(Mat img, Mat mask, Rect roi)

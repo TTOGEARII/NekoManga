@@ -135,6 +135,15 @@ public static class ComponentCatalog
         $"{ComfyDirName}/ComfyUI/models/ipadapter/ip-adapter-plus_sdxl_vit-h.safetensors",
         847_517_000, ForComfy: true);
 
+    /// <summary>검열 복원 LoRA — 무검열 만화의 성기 작화로 직접 학습한 모델 (이 앱 전용).
+    /// 이게 없으면 SDXL이 지운 자리에 얼굴 같은 엉뚱한 걸 그린다 (실측). 강력 모드에서만 쓴다.</summary>
+    public static readonly Component ModelDecensorLora = new(
+        "model-decensor-lora", "검열 복원 LoRA (NekoManga 전용)", ComponentKind.File,
+        "https://github.com/TTOGEARII/NekoManga/releases/latest/download/nmdecensor_comfy.safetensors",
+        $"{ComfyDirName}/ComfyUI/models/loras/nmdecensor_comfy.safetensors",
+        $"{ComfyDirName}/ComfyUI/models/loras/nmdecensor_comfy.safetensors",
+        93_100_000, ForComfy: true);
+
     public static readonly Component ModelClipVision = new(
         "model-clipvision", "CLIP 비전 모델 ViT-H (2.5GB)", ComponentKind.File,
         "https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors",
@@ -148,7 +157,7 @@ public static class ComponentCatalog
         ModelCtd, ModelLama, ModelOcrEncoder, ModelOcrDecoder, ModelOcrVocab, ModelCensor,
         SevenZip, ComfyPortable,
         NodeWd14, NodeCustomScripts, NodeLayerStyle, NodeControlnetAux, NodeIpAdapter,
-        ModelCheckpoint, ModelControlnet, ModelIpAdapter, ModelClipVision,
+        ModelCheckpoint, ModelControlnet, ModelIpAdapter, ModelClipVision, ModelDecensorLora,
     };
 
     public static IEnumerable<Component> EngineComponents => All.Where(c => !c.ForComfy);
