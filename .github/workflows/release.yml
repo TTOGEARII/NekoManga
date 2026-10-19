@@ -41,8 +41,10 @@ jobs:
       - name: Upload to GitHub Release
         run: vpk upload github --repoUrl https://github.com/TTOGEARII/NekoManga --publish --releaseName "NekoManga v${{ steps.ver.outputs.version }}" --tag ${{ github.ref_name }} --token ${{ secrets.GITHUB_TOKEN }}
 
-      # AI 검열 검출 모델(censor_seg.onnx)을 같은 릴리스에 자산으로 첨부한다 —
-      # 앱의 구성요소 설치가 이 주소(.../releases/latest/download/censor_seg.onnx)에서 받는다.
+      # models/ 아래 모델(censor_seg.onnx = 검열 검출)을 같은 릴리스에
+      # 자산으로 첨부한다 — 앱의 구성요소 설치가 이 주소(.../releases/latest/download/<파일>)에서 받는다.
+      # 만화판 LaMa(lama_manga.onnx, 211MB)는 git 100MiB 제한 때문에 여기 없고, 고정 태그 `models`의 **사전 릴리스** 자산이다
+      # (.../releases/download/models/lama_manga.onnx — ComponentCatalog.ModelLama 주석의 gh 명령으로 한 번만 올린다).
       - name: Attach trained models
         if: hashFiles('models/*') != ''
         shell: pwsh

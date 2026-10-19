@@ -114,23 +114,11 @@
                 <StackPanel Margin="8">
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="제거 방식"/></Border>
                     <ComboBox x:Name="CmbDecensorMode" Width="400" HorizontalAlignment="Left">
-                        <ComboBoxItem Content="기본 — 내장 LaMa (빠름, 추가 설치 불필요)" Tag="Basic"/>
+                        <ComboBoxItem Content="기본 — 내장 LaMa 만화판 (빠름, 추가 설치 불필요)" Tag="Basic"/>
                         <ComboBoxItem Content="엔진 LaMa — GPU 복원 (원본 레시피, 엔진 필요)" Tag="ComfyLama"/>
-                        <ComboBoxItem Content="강력 — SDXL 재생성 (다시 그리기, 엔진 필요)" Tag="Strong"/>
                     </ComboBox>
                     <TextBlock Style="{StaticResource HintText}"
-                               Text="기본·엔진 LaMa는 주변과 어울리게 '메우는' 방식 — 먹줄·흰줄·가벼운 모자이크에 적합해요. 엔진 LaMa는 ComfyUI에서 쓰던 원본 레시피(GPU, 확장 8·블러 8) 그대로예요. 강력은 SDXL이 그 자리를 '다시 그리는' 방식이라 면적이 넓거나 뭉개짐이 심할 때 써요."/>
-                    <DockPanel Margin="0,4">
-                        <TextBlock Text="강력 모드 강도" Style="{StaticResource FieldLabel}" Width="130"/>
-                        <TextBox x:Name="TxtStrongDenoise" Width="90" HorizontalAlignment="Left"/>
-                    </DockPanel>
-                    <TextBlock Style="{StaticResource HintText}" Text="0.5~0.9. 높을수록 많이 다시 그려요 (기본 0.75)."/>
-                    <DockPanel Margin="0,4">
-                        <TextBlock Text="강력 모드 시드" Style="{StaticResource FieldLabel}" Width="130"/>
-                        <TextBox x:Name="TxtDecensorSeed" Width="140" HorizontalAlignment="Left"/>
-                    </DockPanel>
-                    <TextBlock Style="{StaticResource HintText}"
-                               Text="같은 원고를 다시 돌려도 같은 그림이 나오게 하는 값이에요. -1로 두면 매번 다르게 그려져요. 마음에 드는 결과가 나오면 그 시드를 적어 두세요."/>
+                               Text="둘 다 주변과 어울리게 '메우는' 방식 — 먹줄·흰줄·가벼운 모자이크에 적합해요. 기본은 만화·애니 원고로 학습한 LaMa라 흑백 망점·선화에 맞고, 엔진 LaMa는 ComfyUI에서 쓰던 원본 레시피(GPU, 확장 8·블러 8, 사진 학습 모델) 그대로예요. 어느 방식이든 검열을 찾는 건 아래 '무엇을 검열로 볼까요' 설정이 정해요 — 자동이면 검열 감지 AI, 수동이면 규칙 감지."/>
 
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="무엇을 검열로 볼까요"/></Border>
                     <ComboBox x:Name="CmbDecensorTarget" Width="340" HorizontalAlignment="Left"
@@ -139,6 +127,7 @@
                         <ComboBoxItem Tag="BlackBar" Content="검은색 막대 (먹줄) — 수동"/>
                         <ComboBoxItem Tag="WhiteBar" Content="흰색 막대 — 수동"/>
                         <ComboBoxItem Tag="Mosaic" Content="모자이크 (격자) — 수동"/>
+                        <ComboBoxItem Tag="Color" Content="색 검열 (파란·빨간 막대·틴트 모자이크) — 수동"/>
                     </ComboBox>
 
                     <!-- AI 감지 상태 카드 — 모델 유무에 따라 안내가 바뀐다 -->
@@ -206,50 +195,6 @@
                     <StackPanel x:Name="PnlDecensorAdv" Visibility="Collapsed">
                         <TextBlock Style="{StaticResource HintText}" Margin="0,6,0,0"
                                    Text="ComfyUI 워크플로에 들어가는 값 그대로예요. 기본값은 원본 레시피 — 바꾼 값은 다음 작업부터 적용돼요."/>
-
-                        <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="강력(SDXL) 워크플로"/></Border>
-                        <UniformGrid Columns="2" Rows="2" Margin="0,4,0,0">
-                            <DockPanel Margin="0,4">
-                                <TextBlock Text="스텝 수" Style="{StaticResource FieldLabel}" Width="110"/>
-                                <TextBox x:Name="TxtAdvStrongSteps" Width="80" HorizontalAlignment="Left"/>
-                            </DockPanel>
-                            <DockPanel Margin="0,4">
-                                <TextBlock Text="CFG" Style="{StaticResource FieldLabel}" Width="110"/>
-                                <TextBox x:Name="TxtAdvStrongCfg" Width="80" HorizontalAlignment="Left"/>
-                            </DockPanel>
-                            <DockPanel Margin="0,4">
-                                <TextBlock Text="샘플러" Style="{StaticResource FieldLabel}" Width="110"/>
-                                <ComboBox x:Name="CmbAdvStrongSampler" Width="170" IsEditable="True" HorizontalAlignment="Left">
-                                    <ComboBoxItem Content="dpmpp_2m"/>
-                                    <ComboBoxItem Content="dpmpp_sde_gpu"/>
-                                    <ComboBoxItem Content="euler"/>
-                                    <ComboBoxItem Content="euler_ancestral"/>
-                                </ComboBox>
-                            </DockPanel>
-                            <DockPanel Margin="0,4">
-                                <TextBlock Text="스케줄러" Style="{StaticResource FieldLabel}" Width="110"/>
-                                <ComboBox x:Name="CmbAdvStrongScheduler" Width="170" IsEditable="True" HorizontalAlignment="Left">
-                                    <ComboBoxItem Content="karras"/>
-                                    <ComboBoxItem Content="normal"/>
-                                    <ComboBoxItem Content="sgm_uniform"/>
-                                    <ComboBoxItem Content="exponential"/>
-                                </ComboBox>
-                            </DockPanel>
-                        </UniformGrid>
-                        <DockPanel Margin="0,4">
-                            <TextBlock Text="긍정 프롬프트" Style="{StaticResource FieldLabel}" Width="110"/>
-                            <TextBox x:Name="TxtAdvStrongPositive" TextWrapping="Wrap" AcceptsReturn="True"/>
-                        </DockPanel>
-                        <DockPanel Margin="0,4">
-                            <TextBlock Text="부정 프롬프트" Style="{StaticResource FieldLabel}" Width="110"/>
-                            <TextBox x:Name="TxtAdvStrongNegative" TextWrapping="Wrap" AcceptsReturn="True"/>
-                        </DockPanel>
-                        <DockPanel Margin="0,4">
-                            <TextBlock Text="합성 여유 (px)" Style="{StaticResource FieldLabel}" Width="110"/>
-                            <TextBox x:Name="TxtAdvCompositeGrow" Width="80" HorizontalAlignment="Left"/>
-                        </DockPanel>
-                        <TextBlock Style="{StaticResource HintText}"
-                                   Text="다시 그린 조각을 원본에 붙일 때 마스크를 몇 px 넓혀 합성할지(GrowMask). 경계 티가 나면 올려보세요."/>
 
                         <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="엔진 LaMa 워크플로"/></Border>
                         <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
@@ -403,7 +348,7 @@
                 <StackPanel Margin="8">
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="채색 엔진"/></Border>
                     <TextBlock Style="{StaticResource HintText}"
-                               Text="채색과 강력 검열제거를 담당하는 엔진이에요. 창 없이 뒤에서 돌아가고, 앱이 알아서 켜고 꺼요 — 직접 실행할 일이 없어요."/>
+                               Text="채색과 엔진 LaMa 검열제거를 담당하는 엔진이에요. 창 없이 뒤에서 돌아가고, 앱이 알아서 켜고 꺼요 — 직접 실행할 일이 없어요."/>
                     <Border Background="{StaticResource NekoCard}" BorderBrush="{StaticResource NekoStroke}" BorderThickness="2" CornerRadius="0" Padding="14,10" Margin="0,8,0,0">
                         <StackPanel>
                             <DockPanel>
@@ -530,7 +475,7 @@
                         <TextBox x:Name="TxtLinkedComfy"/>
                     </DockPanel>
                     <TextBlock Style="{StaticResource HintText}"
-                               Text="이미 설치해 둔 ComfyUI portable이 있으면 경로를 넣어 재다운로드(11GB)를 건너뛰어요. 채색·강력 검열제거에만 필요해요."/>
+                               Text="이미 설치해 둔 ComfyUI portable이 있으면 경로를 넣어 재다운로드(11GB)를 건너뛰어요. 채색·엔진 LaMa 검열제거에만 필요해요."/>
 
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="civitai API 키 (선택)"/></Border>
                     <TextBox x:Name="TxtCivitaiKey"/>
@@ -558,10 +503,9 @@
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="내장 AI 모듈"/></Border>
                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,2,0,0" Text="• 텍스트 감지 — comictextdetector: 말풍선과 글자 위치를 찾아요 (BT와 같은 모델)."/>
                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 글자 인식 — manga-ocr: 일본어 세로쓰기·후리가나 특화 OCR."/>
-                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 글자 지움·기본 검열 제거 — LaMa: 지운 자리를 주변과 어울리게 메워요. '엔진 LaMa'는 ComfyUI 원본 레시피(GPU)로 같은 일을 해요."/>
+                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 글자 지움·기본 검열 제거 — LaMa(만화·애니 학습판): 지운 자리를 주변과 어울리게 메워요. '엔진 LaMa'는 ComfyUI 원본 레시피(GPU)로 같은 일을 해요."/>
                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 번역 — Google(무료) / DeepL / DeepSeek / Grok 중 선택."/>
                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 자동 채색 — SDXL(WAI-illustrious) + ControlNet 2단: 원고의 선을 따라 컬러로 그려요. WD14 태거가 장면 태그를 뽑아 프롬프트를 만들어요."/>
-                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 강력 검열 제거 — SDXL 인페인트: 검열 자리를 아예 다시 그려요 (면적이 넓을 때)."/>
                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 식자 — 내장 렌더러(GDI+): 번역문을 말풍선에 어절 단위 줄바꿈·외곽선과 함께 그려요."/>
 
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="화면 테마"/></Border>

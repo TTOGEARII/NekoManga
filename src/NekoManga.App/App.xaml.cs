@@ -61,7 +61,7 @@ public partial class App : Application
         MainWindow = main;
 
         // 내장 엔진(번역·기본 검열제거)에 필요한 모델이 빠져 있으면 준비 마법사를 보여준다.
-        // ComfyUI(채색·강력 검열)는 선택 — 마법사에서도 선택으로 표시된다.
+        // ComfyUI(채색·엔진 LaMa 검열)는 선택 — 마법사에서도 선택으로 표시된다.
         var installer = new ComponentInstaller(Settings);
         if (installer.MissingEngine().Count > 0)
             new SetupWindow().ShowDialog();

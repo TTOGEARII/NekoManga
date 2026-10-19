@@ -40,17 +40,8 @@ public partial class SettingsWindow
         TxtThreshold.Text = s.DecensorThreshold.ToString();
         TxtMaskGrow.Text = s.DecensorMaskGrow.ToString();
         SelectComboByTag(CmbDecensorMode, s.DecensorMode);
-        TxtStrongDenoise.Text = s.DecensorStrongDenoise.ToString(CultureInfo.InvariantCulture);
-        TxtDecensorSeed.Text = s.DecensorSeed.ToString(CultureInfo.InvariantCulture);
 
         // 고급 옵션 — 검열 제거
-        TxtAdvStrongSteps.Text = s.DecensorStrongSteps.ToString();
-        TxtAdvStrongCfg.Text = s.DecensorStrongCfg.ToString(CultureInfo.InvariantCulture);
-        CmbAdvStrongSampler.Text = s.DecensorStrongSampler;
-        CmbAdvStrongScheduler.Text = s.DecensorStrongScheduler;
-        TxtAdvStrongPositive.Text = s.DecensorStrongPositive;
-        TxtAdvStrongNegative.Text = s.DecensorStrongNegative;
-        TxtAdvCompositeGrow.Text = s.DecensorCompositeGrow.ToString();
         TxtAdvLamaGrow.Text = s.LamaMaskGrow.ToString();
         TxtAdvLamaBlur.Text = s.LamaMaskBlur.ToString();
 
@@ -130,18 +121,8 @@ public partial class SettingsWindow
         s.DecensorThreshold = ParseI(TxtThreshold.Text, s.DecensorThreshold, 1, 80);
         s.DecensorMaskGrow = ParseI(TxtMaskGrow.Text, s.DecensorMaskGrow, 0, 64);
         s.DecensorMode = ComboTag(CmbDecensorMode, s.DecensorMode);
-        s.DecensorStrongDenoise = ParseD(TxtStrongDenoise.Text, s.DecensorStrongDenoise, 0.3, 1.0);
-        s.DecensorSeed = long.TryParse(TxtDecensorSeed.Text.Trim(), out var dseed) && dseed >= -1
-            ? dseed : s.DecensorSeed;
 
         // 고급 옵션 — 검열 제거
-        s.DecensorStrongSteps = ParseI(TxtAdvStrongSteps.Text, s.DecensorStrongSteps, 4, 100);
-        s.DecensorStrongCfg = ParseD(TxtAdvStrongCfg.Text, s.DecensorStrongCfg, 1, 20);
-        if (!string.IsNullOrWhiteSpace(CmbAdvStrongSampler.Text)) s.DecensorStrongSampler = CmbAdvStrongSampler.Text.Trim();
-        if (!string.IsNullOrWhiteSpace(CmbAdvStrongScheduler.Text)) s.DecensorStrongScheduler = CmbAdvStrongScheduler.Text.Trim();
-        s.DecensorStrongPositive = TxtAdvStrongPositive.Text.Trim();
-        s.DecensorStrongNegative = TxtAdvStrongNegative.Text.Trim();
-        s.DecensorCompositeGrow = ParseI(TxtAdvCompositeGrow.Text, s.DecensorCompositeGrow, 0, 64);
         s.LamaMaskGrow = ParseI(TxtAdvLamaGrow.Text, s.LamaMaskGrow, 0, 64);
         s.LamaMaskBlur = ParseI(TxtAdvLamaBlur.Text, s.LamaMaskBlur, 0, 64);
 
@@ -234,14 +215,11 @@ public partial class SettingsWindow
         DotCensorAi.Fill = installed
             ? (auto ? System.Windows.Media.Brushes.MediumSeaGreen : System.Windows.Media.Brushes.Goldenrod)
             : System.Windows.Media.Brushes.IndianRed;
-        bool lora = !string.IsNullOrWhiteSpace(App.Settings.DecensorLora) && File.Exists(
-            Path.Combine(App.Settings.ComfyRoot, "ComfyUI", "models", "loras", App.Settings.DecensorLora));
-        string loraNote = lora ? " · 복원 LoRA ✓" : " · 복원 LoRA 미설치";
         TxtCensorAi.Text = !installed
             ? "검열 감지 AI가 설치되어 있지 않아요 — 수동 규칙으로 찾습니다"
-            : (auto ? "검열 감지 AI 사용 중 — 흰·검·모자이크를 한 번에 찾아요"
-                    : "검열 감지 AI는 준비됐지만 수동 모드예요 — '자동 (AI 감지)'을 고르면 켜져요") + loraNote;
-        BtnInstallCensorAi.Visibility = installed && lora ? Visibility.Collapsed : Visibility.Visible;
+            : auto ? "검열 감지 AI 사용 중 — 흰·검·모자이크를 한 번에 찾아요"
+                   : "검열 감지 AI는 준비됐지만 수동 모드예요 — '자동 (AI 감지)'을 고르면 켜져요";
+        BtnInstallCensorAi.Visibility = installed ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void CmbDecensorTarget_Changed(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
@@ -254,13 +232,6 @@ public partial class SettingsWindow
     private void BtnDecensorAdvReset_Click(object sender, RoutedEventArgs e)
     {
         var d = new NekoManga.Core.AppSettings(); // 기본값 원본
-        TxtAdvStrongSteps.Text = d.DecensorStrongSteps.ToString();
-        TxtAdvStrongCfg.Text = d.DecensorStrongCfg.ToString(CultureInfo.InvariantCulture);
-        CmbAdvStrongSampler.Text = d.DecensorStrongSampler;
-        CmbAdvStrongScheduler.Text = d.DecensorStrongScheduler;
-        TxtAdvStrongPositive.Text = d.DecensorStrongPositive;
-        TxtAdvStrongNegative.Text = d.DecensorStrongNegative;
-        TxtAdvCompositeGrow.Text = d.DecensorCompositeGrow.ToString();
         TxtAdvLamaGrow.Text = d.LamaMaskGrow.ToString();
         TxtAdvLamaBlur.Text = d.LamaMaskBlur.ToString();
     }

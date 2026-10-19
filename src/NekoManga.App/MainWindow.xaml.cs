@@ -69,20 +69,22 @@ public partial class MainWindow
         };
     }
 
-    /// <summary>ComfyUI가 필요한 기능(채색·강력 검열) 카드에 설치 필요 배지를 띄운다.</summary>
+    /// <summary>ComfyUI가 필요한 기능(채색·엔진 LaMa 검열) 카드에 설치 필요 배지를 띄운다.</summary>
     private void RefreshComfyBadges()
     {
         var comfyOk = App.Settings.ComfyAvailable;
         BadgeColor.Visibility = comfyOk ? Visibility.Collapsed : Visibility.Visible;
-        var strong = App.Settings.DecensorMode == "Strong";
-        BadgeDecensor.Visibility = !comfyOk && strong ? Visibility.Visible : Visibility.Collapsed;
+        var comfyLama = App.Settings.DecensorMode == "ComfyLama";
+        BadgeDecensor.Visibility = !comfyOk && comfyLama ? Visibility.Visible : Visibility.Collapsed;
         // 검열 감지 AI(전용 학습 모델) 유무·복원 방식에 맞춰 설명을 바꾼다
         bool censorAi = App.Settings.DecensorTarget == "Auto" &&
             File.Exists(Path.Combine(App.Settings.RuntimeRoot, "models", NekoManga.Core.Engine.CensorNet.ModelFile));
         string find = censorAi ? "AI가 검열을 찾아" : "검열을 찾아";
-        HintDecensor.Text = strong
-            ? $"{find} SDXL로 재생성 (강력 모드)"
-            : $"{find} 자연스럽게 복원 (기본·내장 AI)";
+        HintDecensor.Text = App.Settings.DecensorMode switch
+        {
+            "ComfyLama" => $"{find} 엔진 LaMa로 복원 (GPU)",
+            _ => $"{find} 자연스럽게 복원 (기본·내장 AI)",
+        };
     }
 
     // ── 파일 추가 ──────────────────────────────────────────────
@@ -261,10 +263,10 @@ public partial class MainWindow
 
         // ComfyUI가 필요한 조합인데 미설치면 바로 안내
         bool needComfy = s.EnableAutoColor
-            || (s.EnableDecensor && s.DecensorMode is "Strong" or "ComfyLama");
+            || (s.EnableDecensor && s.DecensorMode == "ComfyLama");
         if (needComfy && !s.ComfyAvailable)
         {
-            TxtStatus.Text = "채색/강력 검열은 ComfyUI가 필요해요 — 설정 → 구성요소에서 설치해 주세요";
+            TxtStatus.Text = "채색/엔진 LaMa 검열은 ComfyUI가 필요해요 — 설정 → 구성요소에서 설치해 주세요";
             return;
         }
 

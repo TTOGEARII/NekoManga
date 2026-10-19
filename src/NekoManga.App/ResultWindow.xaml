@@ -62,9 +62,8 @@
                                 <TextBox x:Name="TxtGrow" Text="6" Width="56" VerticalAlignment="Center"/>
                                 <TextBlock Text="모델" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="20,0,6,0"/>
                                 <ComboBox x:Name="CmbEngine" Width="280" VerticalAlignment="Center">
-                                    <ComboBoxItem Tag="Basic" Content="기본 LaMa (빠름·항상 같은 결과)" IsSelected="True"/>
+                                    <ComboBoxItem Tag="Basic" Content="기본 LaMa 만화판 (빠름·항상 같은 결과)" IsSelected="True"/>
                                     <ComboBoxItem Tag="ComfyLama" Content="엔진 LaMa (GPU·원본 레시피)"/>
-                                    <ComboBoxItem Tag="Strong" Content="강력 SDXL (느림·재생성)"/>
                                 </ComboBox>
                             </WrapPanel>
                         </StackPanel>

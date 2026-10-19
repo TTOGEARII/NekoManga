@@ -68,7 +68,22 @@ public class ComponentInstaller(AppSettings settings)
                 break;
             }
         }
+        RemoveObsolete(c);
         progress.Report(new(c.Id, "완료", 100, c.ApproxBytes, c.ApproxBytes));
+    }
+
+    /// <summary>이 구성요소가 대체한 옛 파일을 지운다 (예: 만화판 LaMa 설치 뒤 Carve lama_fp32.onnx 208MB — 업그레이드 설치에 죽은 파일로 남는다).
+    /// 설치가 끝난 뒤에만 부르므로 실패해도 새 파일은 이미 있다. A/B용 `NEKO_LAMA_MODEL`이 가리키는 파일은 남긴다. 삭제 실패는 무시(잠김 등).</summary>
+    private void RemoveObsolete(Component c)
+    {
+        var keep = Environment.GetEnvironmentVariable("NEKO_LAMA_MODEL");
+        foreach (var rel in c.Obsolete ?? [])
+        {
+            var path = Resolve(rel);
+            if (!string.IsNullOrEmpty(keep) && string.Equals(Path.GetFileName(path), keep, StringComparison.OrdinalIgnoreCase)) continue;
+            try { if (File.Exists(path)) File.Delete(path); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* 다음 설치 때 다시 시도된다 */ }
+        }
     }
 
     private async Task DownloadAsync(Component c, string dest, IProgress<InstallProgress> progress, CancellationToken ct)

@@ -775,7 +775,7 @@ public partial class ResultWindow
         try
         {
             var img = _img;
-            // 러너(ONNX 세션 포함)는 창 수명 동안 재사용 — 매번 만들면 LaMa 모델(208MB)을
+            // 러너(ONNX 세션 포함)는 창 수명 동안 재사용 — 매번 만들면 LaMa 모델(211MB)을
             // 적용할 때마다 다시 로딩해 수 초씩 낭비된다.
             _runner ??= new PipelineRunner(App.Settings);
             var runner = _runner;

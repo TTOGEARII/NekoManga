@@ -67,8 +67,8 @@
                             <TextBlock Style="{StaticResource CardTitle}" Text="🙈 검열 제거"/>
                             <Border x:Name="BadgeDecensor" Background="#33FFB020" CornerRadius="0"
                                     Padding="6,1" Margin="8,0,0,0" Visibility="Collapsed"
-                                    ToolTip="강력 모드는 ComfyUI가 필요해요 — 기본 모드는 바로 쓸 수 있어요">
-                                <TextBlock Text="⚠ 강력 모드: ComfyUI 필요" FontSize="10.5" Foreground="#FFCF6E"/>
+                                    ToolTip="엔진 LaMa 모드는 ComfyUI가 필요해요 — 기본 모드는 바로 쓸 수 있어요">
+                                <TextBlock Text="⚠ 엔진 LaMa 모드: ComfyUI 필요" FontSize="10.5" Foreground="#FFCF6E"/>
                             </Border>
                         </StackPanel>
                         <TextBlock x:Name="HintDecensor" Style="{StaticResource HintText}" Margin="0,4,0,0"

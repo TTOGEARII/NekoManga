@@ -6,13 +6,22 @@ namespace NekoManga.Core.Engine;
 
 /// <summary>LaMa(ONNX)로 마스크 영역을 주변과 어울리게 메운다. 입력 0–1, 출력 0–255 (실측 검증).
 /// 전체 이미지를 512로 줄이면 디테일이 뭉개지므로, 마스크 영역을 품는 ROI를 잘라
-/// 512×512로 처리한 뒤 마스크 부분만 원본에 되붙인다.</summary>
+/// 512×512로 처리한 뒤 마스크 부분만 원본에 되붙인다.
+/// 모델은 **만화·애니 학습 big-lama**(dreMaz/AnimeMangaInpainting `lama_large_512px.ckpt`, MIT — 2026-10-19 교체).
+/// 사진(Places) 학습 Carve lama_fp32.onnx와 입출력 계약이 같아(image 0–1, mask 1=구멍, 출력 0–255 합성) 코드는 그대로다.
+/// 이식: D:\NekoManga-train\lama_manga\lama_port.py (FFT를 DFT 행렬 곱으로 전개). **fp32 211MB** — 가중치 fp16 저장은 BN running_var가
+/// fp16 범위를 넘어(6.8e5 > 65504) 출력이 붕괴하므로 쓰지 않았다. git 100MiB 제한 때문에 모델은 `models` 사전 릴리스 자산(ComponentCatalog 참조).</summary>
 public class LamaInpainter(OnnxEnv env)
 {
-    public const string ModelFile = "lama_fp32.onnx";
+    public const string ModelFile = "lama_manga.onnx";
     private const int Size = 512;
 
-    public bool IsReady => env.ModelExists(ModelFile);
+    /// <summary>실제로 여는 모델 파일 — `NEKO_LAMA_MODEL=<파일명>`(models\ 안의 **파일명만**, 경로 불가)으로 바꿔 A/B 벤치할 수 있다
+    /// (예: 옛 lama_fp32.onnx). 경로가 섞인 값은 무시하고 기본 모델을 쓴다. 디버그용 — 구성요소 설치 판정(ComponentCatalog Probe)은 기본 파일만 본다.</summary>
+    public static string ActiveModelFile =>
+        Environment.GetEnvironmentVariable("NEKO_LAMA_MODEL") is { Length: > 0 } f && Path.GetFileName(f) == f ? f : ModelFile;
+
+    public bool IsReady => env.ModelExists(ActiveModelFile);
 
     /// <summary>img(BGR)·mask(8UC1, 255=지울 영역)를 받아 img를 제자리 수정한다.</summary>
     public void Inpaint(Mat img, Mat mask)
@@ -79,7 +88,7 @@ public class LamaInpainter(OnnxEnv env)
             }
         }
 
-        var session = env.Get(ModelFile);
+        var session = env.Get(ActiveModelFile);
         using var results = session.Run(new[]
         {
             NamedOnnxValue.CreateFromTensor("image", image),
@@ -105,12 +114,18 @@ public class LamaInpainter(OnnxEnv env)
             }
         }
 
-        // 원본 크기로 되돌려 마스크 부분만 교체 — 하드 마스크 대신 **페더 블렌딩**:
-        // 경계를 안쪽으로 몇 px 부드럽게 섞어 '덧붙인 티'를 없앤다 (수기 제거가 부자연하다는
-        // 피드백). 마스크를 살짝 침식한 뒤 블러 → 알파가 마스크 밖으로 번지지 않아
-        // 바깥의 멀쩡한 그림에는 손대지 않는다.
+        // 원본 크기로 되돌려 마스크 부분만 교체 (페더 블렌딩 — FeatherPaste 참조).
         // new Mat(img, roi)는 데이터 공유 뷰라 여기에 쓰면 img 원본이 바뀐다.
         using var outFull = outMat.Resize(new Size(roi.Width, roi.Height), interpolation: InterpolationFlags.Linear);
+        FeatherPaste(crop, outFull, mcrop);
+    }
+
+    /// <summary>복원 결과(<paramref name="outFull"/>)를 <paramref name="crop"/>의 마스크 부분에 되붙인다 — 하드 마스크 대신
+    /// **페더 블렌딩**: 경계를 안쪽으로 몇 px 부드럽게 섞어 '덧붙인 티'를 없앤다 (수기 제거가 부자연하다는 피드백).
+    /// 마스크를 살짝 침식한 뒤 블러 → 알파가 마스크 밖으로 번지지 않아 바깥의 멀쩡한 그림에는 손대지 않는다.
+    /// 세 Mat은 같은 크기(crop·outFull 8UC3, mcrop 8UC1).</summary>
+    private static void FeatherPaste(Mat crop, Mat outFull, Mat mcrop)
+    {
         using var alpha = new Mat();
         Cv2.Erode(mcrop, alpha, Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(5, 5)));
         alpha.ConvertTo(alpha, MatType.CV_32F, 1.0 / 255);
@@ -131,8 +146,7 @@ public class LamaInpainter(OnnxEnv env)
         blended.ConvertTo(crop, MatType.CV_8UC3);
     }
 
-    /// <summary>겹치거나 가까운 박스를 합치고, 모델 처리에 적당하도록 사방 여백을 준 ROI 목록.
-    /// (강력 검열제거의 SDXL 크롭 인페인트도 같은 로직을 쓴다.)</summary>
+    /// <summary>겹치거나 가까운 박스를 합치고, 모델 처리에 적당하도록 사방 여백을 준 ROI 목록.</summary>
     public static List<Rect> MergeRois(List<Rect> boxes, int imW, int imH)
     {
         // 여백: 512로 리사이즈해 넣으므로 구멍이 ROI의 1/3 이하여야 LaMa가 주변색으로 잘 메운다.

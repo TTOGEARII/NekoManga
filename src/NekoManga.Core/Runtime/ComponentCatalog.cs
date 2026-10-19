@@ -24,8 +24,10 @@ public record Component(
     bool StripRootFolder = false,
     /// <summary>civitai처럼 Authorization 토큰이 필요할 수 있는 다운로드.</summary>
     bool UseCivitaiKey = false,
-    /// <summary>채색·강력 검열제거(ComfyUI) 전용 구성요소 — 내장 기능(번역·기본 검열제거)에는 불필요.</summary>
-    bool ForComfy = false
+    /// <summary>채색·엔진 LaMa(ComfyUI) 전용 구성요소 — 내장 기능(번역·기본 검열제거)에는 불필요.</summary>
+    bool ForComfy = false,
+    /// <summary>이 구성요소가 대체한 옛 파일(RuntimeRoot 기준 상대) — 설치가 끝나면 지운다 (예: 만화판 LaMa가 대체한 Carve lama_fp32.onnx).</summary>
+    string[]? Obsolete = null
 );
 
 /// <summary>필요 구성요소 목록. 검증된 소스 (2026-10 기준, 실제 설치에 사용한 URL).</summary>
@@ -33,16 +35,29 @@ public static class ComponentCatalog
 {
     public const string ComfyDirName = "ComfyUI_windows_portable";
 
-    // ── 내장 엔진 모델 (번역·기본 검열제거 — 필수, 총 ~760MB) ──
+    // ── 내장 엔진 모델 (번역·검열 감지·기본 검열제거 — 필수, 총 ~780MB) ──
     public static readonly Component ModelCtd = new(
         "model-ctd", "텍스트 감지 모델 (comictextdetector)", ComponentKind.File,
         "https://huggingface.co/dreMaz/mit_models/resolve/main/comictextdetector.pt.onnx",
         "models/ctd.onnx", "models/ctd.onnx", 94_670_000);
 
+    /// <summary>글자·검열 자리 복원 모델 — **만화·애니 학습 big-lama**(dreMaz/AnimeMangaInpainting `lama_large_512px.ckpt`, MIT,
+    /// 만화·애니 30만 장 미세조정)를 ONNX로 이식한 것(D:\NekoManga-train\lama_manga\lama_port.py, fp32 211MB).
+    /// 2026-10-19까지는 사진(Places) 학습 Carve `lama_fp32.onnx`였다 — 입출력 계약이 같아 LamaInpainter 코드는 그대로.
+    /// 211MB라 git(100MiB 제한)에 못 넣으므로 **고정 태그 `models`의 사전 릴리스 자산**으로 올린다(latest 릴리스와 무관하게 주소 고정).
+    /// **이 자산을 올리기 전에는 아래 URL이 404라 새 설치·업그레이드의 엔진 설치가 통째로 실패한다** — 커밋/태그 전에 한 번 올릴 것
+    /// (GitHub CLI 필요: `winget install GitHub.cli` 후 `gh auth login`, 또는 웹 Releases UI에서 수동 업로드):
+    /// `gh release create models -R TTOGEARII/NekoManga --prerelease --target 44c4380424aaebd6b28ee695c395fff9c621d8ff --title "모델 자산"
+    ///   --notes "앱이 내려받는 대용량 모델 (lama_manga.onnx)" "D:\NekoManga-train\lama_manga\lama_manga.onnx"`
+    /// `--target`은 v0.1.0 커밋 — GitHub의 latest는 릴리스 created_at(=태그 커밋 날짜) 기준이라, 만에 하나 사전 릴리스 표시가 풀려도 latest가 되지
+    /// 않게 가장 오래된 커밋에 건다. (사전 릴리스는 Velopack 업데이트 검색(GithubSource prerelease:false)·releases/latest에서 제외된다.)
+    /// 확인: `curl -sI https://github.com/TTOGEARII/NekoManga/releases/download/models/lama_manga.onnx` 가 302(objects.githubusercontent.com)면 OK.
+    /// 옛 Carve `lama_fp32.onnx`(208MB)는 설치 후 Obsolete로 지운다(업그레이드 설치에 남는 죽은 파일).</summary>
     public static readonly Component ModelLama = new(
-        "model-lama", "배경 복원 모델 (LaMa)", ComponentKind.File,
-        "https://huggingface.co/Carve/LaMa-ONNX/resolve/main/lama_fp32.onnx",
-        "models/lama_fp32.onnx", "models/lama_fp32.onnx", 208_045_000);
+        "model-lama", "배경 복원 모델 (LaMa 만화판)", ComponentKind.File,
+        "https://github.com/TTOGEARII/NekoManga/releases/download/models/lama_manga.onnx",
+        "models/lama_manga.onnx", "models/lama_manga.onnx", 210_935_000,
+        Obsolete: new[] { "models/lama_fp32.onnx" });
 
     public static readonly Component ModelOcrEncoder = new(
         "model-ocr-enc", "글자 인식 모델 1/2 (manga-ocr)", ComponentKind.File,
@@ -67,7 +82,7 @@ public static class ComponentCatalog
         "https://github.com/TTOGEARII/NekoManga/releases/latest/download/censor_seg.onnx",
         "models/censor_seg.onnx", "models/censor_seg.onnx", 14_060_000);
 
-    // ── ComfyUI (채색·강력 검열제거 전용 — 선택 설치) ──
+    // ── ComfyUI (채색·엔진 LaMa 검열제거 전용 — 선택 설치) ──
     public static readonly Component SevenZip = new(
         "7zr", "7-Zip 압축해제기", ComponentKind.File,
         "https://www.7-zip.org/a/7zr.exe",
@@ -135,15 +150,6 @@ public static class ComponentCatalog
         $"{ComfyDirName}/ComfyUI/models/ipadapter/ip-adapter-plus_sdxl_vit-h.safetensors",
         847_517_000, ForComfy: true);
 
-    /// <summary>검열 복원 LoRA — 무검열 만화의 성기 작화로 직접 학습한 모델 (이 앱 전용).
-    /// 이게 없으면 SDXL이 지운 자리에 얼굴 같은 엉뚱한 걸 그린다 (실측). 강력 모드에서만 쓴다.</summary>
-    public static readonly Component ModelDecensorLora = new(
-        "model-decensor-lora", "검열 복원 LoRA (NekoManga 전용)", ComponentKind.File,
-        "https://github.com/TTOGEARII/NekoManga/releases/latest/download/nmdecensor_comfy.safetensors",
-        $"{ComfyDirName}/ComfyUI/models/loras/nmdecensor_comfy.safetensors",
-        $"{ComfyDirName}/ComfyUI/models/loras/nmdecensor_comfy.safetensors",
-        93_100_000, ForComfy: true);
-
     public static readonly Component ModelClipVision = new(
         "model-clipvision", "CLIP 비전 모델 ViT-H (2.5GB)", ComponentKind.File,
         "https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors",
@@ -157,12 +163,12 @@ public static class ComponentCatalog
         ModelCtd, ModelLama, ModelOcrEncoder, ModelOcrDecoder, ModelOcrVocab, ModelCensor,
         SevenZip, ComfyPortable,
         NodeWd14, NodeCustomScripts, NodeLayerStyle, NodeControlnetAux, NodeIpAdapter,
-        ModelCheckpoint, ModelControlnet, ModelIpAdapter, ModelClipVision, ModelDecensorLora,
+        ModelCheckpoint, ModelControlnet, ModelIpAdapter, ModelClipVision,
     };
 
     public static IEnumerable<Component> EngineComponents => All.Where(c => !c.ForComfy);
     public static IEnumerable<Component> ComfyComponents => All.Where(c => c.ForComfy);
 
     public const string FirstRunNote =
-        "번역·검열 감지·기본 검열제거는 작은 모델(0.8GB)만 있으면 돼요. 채색·강력 검열제거까지 쓰려면 채색 엔진(약 20GB)을 함께 설치해 주세요.";
+        "번역·검열 감지·검열 복원(LaMa)은 작은 모델(0.8GB)만 있으면 돼요. 채색까지 쓰려면 채색 엔진(약 20GB)을 함께 설치해 주세요.";
 }

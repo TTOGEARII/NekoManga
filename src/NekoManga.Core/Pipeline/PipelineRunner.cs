@@ -10,12 +10,13 @@ public record PageProgress(string File, string Stage, double Percent, bool Done 
 /// <summary>페이지 처리 파이프라인.
 ///
 ///   원고 → [번역: 내장 엔진이 글자 감지→OCR→번역→글자 지움]
-///        → [검열제거: 모자이크 감지 → 기본(내장 LaMa) / 강력(ComfyUI SDXL 인페인트)]
+///        → [검열제거: 검열 감지 → 기본(내장 LaMa 만화판) / 엔진 LaMa(ComfyUI)]
 ///        → [자동채색: ComfyUI SDXL]
 ///        → [식자: 번역문을 C#으로 렌더]
 ///        → 완성본
 ///
-/// 번역·기본 검열제거는 전부 프로세스 안(ONNX)에서 돌고, 채색·강력 검열제거만 ComfyUI가 필요하다.</summary>
+/// 번역·기본 검열제거는 전부 프로세스 안(ONNX)에서 돌고, 채색·엔진 LaMa만 ComfyUI가 필요하다.
+/// (SDXL+LoRA 재생성('강력') 경로와 그 후임 DeepCreamPy 모드는 2026-10-19에 폐기 — CLAUDE.md 참조.)</summary>
 public class PipelineRunner(AppSettings settings) : IDisposable
 {
     private readonly OnnxEnv _onnx = new(settings);
@@ -29,17 +30,16 @@ public class PipelineRunner(AppSettings settings) : IDisposable
         var translator = settings.EnableTranslate ? new EmbeddedTranslator(settings, _onnx) : null;
         var lama = new LamaInpainter(_onnx);
 
-        bool strongDecensor = settings.EnableDecensor && settings.DecensorMode == "Strong";
         bool comfyLama = settings.EnableDecensor && settings.DecensorMode == "ComfyLama";
-        bool needComfy = settings.EnableAutoColor || strongDecensor || comfyLama;
+        bool needComfy = settings.EnableAutoColor || comfyLama;
 
         if (translator is { IsReady: false })
             throw new FileNotFoundException("번역 엔진 모델이 아직 설치되지 않았어요 — 설정 → 구성요소에서 받아주세요.");
-        if (settings.EnableDecensor && !strongDecensor && !comfyLama && !lama.IsReady)
+        if (settings.EnableDecensor && !comfyLama && !lama.IsReady)
             throw new FileNotFoundException("검열제거(기본) 모델(LaMa)이 아직 설치되지 않았어요 — 설정 → 구성요소에서 받아주세요.");
         if (needComfy && !settings.ComfyAvailable)
             throw new FileNotFoundException(
-                (settings.EnableAutoColor ? "자동 채색" : "강력 검열제거") +
+                (settings.EnableAutoColor ? "자동 채색" : "엔진 LaMa 검열제거") +
                 " 기능은 ComfyUI가 필요해요 — 설정 → 구성요소에서 ComfyUI를 설치해 주세요.");
 
         ComfyClient? client = null;
@@ -116,12 +116,7 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                         progress.Report(new(name, $"검열 분석: {kindUsed}", 46));
                     if (mask != null)
                     {
-                        if (strongDecensor)
-                        {
-                            progress.Report(new(name, "검열 재생성 중 (강력·SDXL)", 50));
-                            await StrongDecensorAsync(client!, comfyOutputDir, img, mask, i, lama, ct);
-                        }
-                        else if (comfyLama)
+                        if (comfyLama)
                         {
                             progress.Report(new(name, "검열 지우는 중 (엔진 LaMa·GPU)", 50));
                             await ComfyLamaDecensorAsync(client!, comfyOutputDir, img, mask, i, ct);
@@ -224,35 +219,35 @@ public class PipelineRunner(AppSettings settings) : IDisposable
     }
 
     /// <summary>결과 보기 창에서 사용자가 손으로 고른 영역을 지운다 (자동 감지가 놓친 검열용).
-    /// 파이프라인과 같은 복원 경로를 쓰므로 결과물의 성격이 일관된다.</summary>
+    /// 파이프라인과 같은 복원 경로를 쓰므로 결과물의 성격이 일관된다.
+    /// mode: "Basic" | "ComfyLama" (옛 "Strong"·"DeepCream"은 2026-10-19 폐기 — 모르는 값은 ArgumentException).</summary>
     public async Task ManualDecensorAsync(Mat img, Mat mask, string mode,
         IProgress<string>? status, CancellationToken ct)
     {
-        var lama = new LamaInpainter(_onnx);
-
-        if (mode == "Basic")
+        switch (mode)
         {
-            if (!lama.IsReady)
-                throw new InvalidOperationException("복원 모델(LaMa)이 없어요 — 설정 → 구성요소에서 설치해 주세요.");
-            status?.Report("복원 중...");
-            using var m = mask.Clone(); // LaMa 내부 FindContours가 마스크를 파괴한다
-            lama.Inpaint(img, m);
-            return;
-        }
-
-        await _server.EnsureRunningAsync(status, ct);
-        var client = new ComfyClient(_server.BaseUrl);
-        var outDir = Path.Combine(settings.ComfyRoot, "ComfyUI", "output");
-        // 페이지 번호는 파일 이름 충돌만 피하면 되므로 손수정 전용 번호를 쓴다
-        if (mode == "ComfyLama")
-        {
-            status?.Report("엔진 LaMa로 복원 중...");
-            await ComfyLamaDecensorAsync(client, outDir, img, mask, 900, ct);
-        }
-        else
-        {
-            status?.Report("SDXL로 다시 그리는 중... (수십 초)");
-            await StrongDecensorAsync(client, outDir, img, mask, 900, lama, ct);
+            case "Basic":
+            {
+                var lama = new LamaInpainter(_onnx);
+                if (!lama.IsReady)
+                    throw new InvalidOperationException("복원 모델(LaMa)이 없어요 — 설정 → 구성요소에서 설치해 주세요.");
+                status?.Report("복원 중...");
+                using var m = mask.Clone(); // LaMa 내부 FindContours가 마스크를 파괴한다
+                lama.Inpaint(img, m);
+                return;
+            }
+            case "ComfyLama":
+            {
+                await _server.EnsureRunningAsync(status, ct);
+                var client = new ComfyClient(_server.BaseUrl);
+                var outDir = Path.Combine(settings.ComfyRoot, "ComfyUI", "output");
+                status?.Report("엔진 LaMa로 복원 중...");
+                // 페이지 번호는 파일 이름 충돌만 피하면 되므로 손수정 전용 번호를 쓴다
+                await ComfyLamaDecensorAsync(client, outDir, img, mask, 900, ct);
+                return;
+            }
+            default:
+                throw new ArgumentException($"알 수 없는 복원 방식: {mode} (Basic | ComfyLama)", nameof(mode));
         }
     }
 
@@ -278,189 +273,6 @@ public class PipelineRunner(AppSettings settings) : IDisposable
         resized.CopyTo(img, mask);
     }
 
-    /// <summary>강력 검열제거: 검열 ROI를 잘라 SDXL 인페인트(ComfyUI)로 재생성하고 제자리에 붙인다.
-    /// 전체 이미지를 통째로 샘플링하면 8GB VRAM이 터지므로 ROI 단위(최대 1024px)로 처리.</summary>
-    /// <summary>흑백 원고인가 — 채널 간 차이가 거의 없으면 흑백. SDXL 프롬프트 스타일 결정용.</summary>
-    private static bool IsMonochrome(Mat bgr)
-    {
-        using var small = bgr.Resize(new OpenCvSharp.Size(96, 96));
-        var ch = small.Split();
-        try
-        {
-            using var d1 = new Mat();
-            using var d2 = new Mat();
-            Cv2.Absdiff(ch[0], ch[1], d1);
-            Cv2.Absdiff(ch[1], ch[2], d2);
-            return Cv2.Mean(d1).Val0 < 6 && Cv2.Mean(d2).Val0 < 6;
-        }
-        finally { foreach (var c in ch) c.Dispose(); }
-    }
-
-    private async Task StrongDecensorAsync(ComfyClient client, string comfyOutputDir,
-        Mat img, Mat mask, int pageIdx, LamaInpainter lama, CancellationToken ct)
-    {
-        using var forContours = mask.Clone(); // FindContours가 입력을 파괴하므로 복제본에서 찾는다
-        Cv2.FindContours(forContours, out var contours, out _, RetrievalModes.External, ContourApproximationModes.ApproxSimple);
-        if (contours.Length == 0) return;
-        var rois = LamaInpainter.MergeRois(contours.Select(Cv2.BoundingRect).ToList(), img.Width, img.Height);
-
-        // SDXL ROI는 1024가 상한이라, 그보다 큰 검열 덩어리는 **쪼개서 전부** 처리해야 한다.
-        // 예전엔 EnsureSize가 중앙 1024만 남겨 바깥쪽 마스크가 통째로 복원되지 않았다
-        // (실측 013p: 우측 모자이크 3곳이 그대로 남음).
-        var parts = new List<Rect>();
-        foreach (var r0 in rois)
-        {
-            const int MaxRoi = 1024, Step = 820;   // 겹침 ~200px — 이음새가 덜 보인다
-            if (r0.Width <= MaxRoi && r0.Height <= MaxRoi) { parts.Add(r0); continue; }
-            for (int py = r0.Y; py < r0.Bottom; py += Step)
-            for (int px = r0.X; px < r0.Right; px += Step)
-            {
-                var p = new Rect(px, py,
-                    Math.Min(Step, r0.Right - px), Math.Min(Step, r0.Bottom - py));
-                using var mp = new Mat(mask, p);
-                if (Cv2.CountNonZero(mp) > 0) parts.Add(p);
-            }
-        }
-
-        int ri = 0;
-        foreach (var roi0 in parts)
-        {
-            ct.ThrowIfCancellationRequested();
-            // SDXL이 다루기 좋은 크기로 (너무 작으면 주변 맥락 부족 → 최소 512, 최대 1024)
-            var roi = EnsureSize(roi0, 512, 1024, img.Width, img.Height);
-            using var crop = new Mat(img, roi);
-            using var mcrop = new Mat(mask, roi);
-            // 마스크 안쪽은 블러해서 보낸다 — 격자(모자이크 무늬)는 지우되 실루엣·명암은 남겨
-            // SDXL이 '원래 거기 있던 형태'를 따라 그리게 한다 (완전히 메우면 엉뚱한 걸 그린다).
-            var maskedPng = MosaicDetector.ToMaskedPng(crop, mcrop, smoothInside: true);
-
-            // 시드를 고정해야 같은 원고를 다시 돌렸을 때 같은 그림이 나온다. ROI마다 다른 시드를 쓰되
-            // (영역마다 같은 노이즈면 비슷한 무늬가 반복된다) 순서가 정해져 있어 결과는 재현된다.
-            long seed = settings.DecensorSeed >= 0
-                ? (settings.DecensorSeed + ri) % uint.MaxValue
-                : Random.Shared.NextInt64(0, uint.MaxValue);
-
-            bool mono = IsMonochrome(crop);
-            var up = await client.UploadImageAsync(maskedPng, $"nm_sdc_{pageIdx}_{ri}.png", ct);
-            var pid = await client.QueuePromptAsync(
-                WorkflowBuilder.BuildStrongDecensor(settings, up, $"nm_strong_{pageIdx}_{ri}", seed,
-                    monochrome: mono), ct);
-            var r = await client.WaitAsync(pid, comfyOutputDir, TimeSpan.FromMinutes(10), ct);
-            if (r.OutputFiles.Count > 0)
-            {
-                using var outImg0 = ImgIo.Read(r.OutputFiles[^1], ImreadModes.Color);
-                var outImg = outImg0;
-                // 밋밋 가드: 생성 결과가 주변보다 훨씬 평탄하면(그림을 안 그리고 회색으로 메움)
-                // 한 번만 더 강하게(denoise↑·다른 시드) 돌려 본다 — 실측 020p의 '회색 사각형'.
-                if (!outImg.Empty() && IsFlatFill(outImg, mcrop, crop))
-                {
-                    var retrySettings = settings.ShallowCloneForRetry(Math.Min(0.97, settings.DecensorStrongDenoise + 0.12));
-                    var pid2 = await client.QueuePromptAsync(
-                        WorkflowBuilder.BuildStrongDecensor(retrySettings, up, $"nm_strong_{pageIdx}_{ri}r",
-                            (seed + 7919) % uint.MaxValue, monochrome: mono), ct);
-                    var r2 = await client.WaitAsync(pid2, comfyOutputDir, TimeSpan.FromMinutes(10), ct);
-                    if (r2.OutputFiles.Count > 0)
-                    {
-                        var retry = ImgIo.Read(r2.OutputFiles[^1], ImreadModes.Color);
-                        if (!retry.Empty() && !IsFlatFill(retry, mcrop, crop)) { outImg0.Dispose(); outImg = retry; }
-                        else retry.Dispose();
-                    }
-                }
-                if (!outImg.Empty())
-                {
-                    using var resized0 = outImg.Width == roi.Width && outImg.Height == roi.Height
-                        ? outImg.Clone()
-                        : outImg.Resize(new OpenCvSharp.Size(roi.Width, roi.Height));
-                    // 흑백 원고에 색이 번지는 일이 있다 (실측: 복원부에 초록빛) — 회색조로 강제한다
-                    var resized = resized0;
-                    if (mono)
-                    {
-                        using var gtmp = new Mat();
-                        Cv2.CvtColor(resized0, gtmp, ColorConversionCodes.BGR2GRAY);
-                        var back = new Mat();
-                        Cv2.CvtColor(gtmp, back, ColorConversionCodes.GRAY2BGR);
-                        resized0.Dispose();
-                        resized = back;
-                    }
-
-                    // SDXL은 시드에 따라 지운 자리를 새카맣게 칠해 놓기도 한다 — 같은 원고를 두 번 돌렸을 때
-                    // 한 번은 멀쩡했고 한 번은 검은 타원이 생겼다. 검열을 지운 자리가 주변보다 극단적으로
-                    // 어두우면 실패로 보고 LaMa로 대신 메운다 (살짝 어두운 건 정상 — 음영일 수 있다).
-                    using var genGray = new Mat();
-                    using var srcGray = new Mat();
-                    Cv2.CvtColor(resized, genGray, ColorConversionCodes.BGR2GRAY);
-                    Cv2.CvtColor(crop, srcGray, ColorConversionCodes.BGR2GRAY);
-                    using var notMask = new Mat();
-                    Cv2.BitwiseNot(mcrop, notMask);
-                    double generated = Cv2.Mean(genGray, mcrop).Val0;
-                    double around = Cv2.Mean(srcGray, notMask).Val0;
-
-                    if (generated < around - 90 && lama.IsReady)
-                    {
-                        using var patched = crop.Clone();
-                        using var mclone = mcrop.Clone(); // LaMa 내부 FindContours가 마스크를 파괴한다
-                        lama.Inpaint(patched, mclone);
-                        patched.CopyTo(crop, mcrop);
-                    }
-                    else FeatherBlend(crop, resized, mcrop);
-                    if (!ReferenceEquals(resized, resized0)) resized.Dispose();
-                }
-            }
-            ri++;
-        }
-    }
-
-    /// <summary>생성 결과가 '그림 없이 회색으로 메운' 상태인가 — 마스크 안쪽 표준편차가
-    /// 주변의 35%도 안 되고 절대값도 낮으면 실패로 본다 (실측: 밋밋한 회색 사각형).</summary>
-    private static bool IsFlatFill(Mat generated, Mat mask, Mat around)
-    {
-        using var g = new Mat();
-        using var a = new Mat();
-        Cv2.CvtColor(generated.Size() == mask.Size() ? generated : generated.Resize(mask.Size()), g, ColorConversionCodes.BGR2GRAY);
-        Cv2.CvtColor(around, a, ColorConversionCodes.BGR2GRAY);
-        using var notMask = new Mat();
-        Cv2.BitwiseNot(mask, notMask);
-        Cv2.MeanStdDev(g, out _, out var sIn, mask);
-        Cv2.MeanStdDev(a, out _, out var sOut, notMask);
-        // 임계가 빡빡하면(std<10) 약한 그라디언트가 있는 회색 덩어리를 놓친다 (실측 020p 하단)
-        return sIn.Val0 < 18 && sIn.Val0 < sOut.Val0 * 0.45;
-    }
-
-    /// <summary>새로 그린 그림을 마스크 경계에서 부드럽게 섞어 넣는다.
-    /// 하드 마스크로 그대로 붙이면 경계선이 또렷하게 드러나 '덧붙인 티'가 난다 — 특히 SDXL 결과는
-    /// 주변과 밝기·질감이 미묘하게 달라서 네모난 자국으로 보인다. 마스크를 흐려 알파 블렌딩하면
-    /// 경계가 사라진다. 마스크 밖은 알파 0이라 원본 픽셀이 그대로 남는다.</summary>
-    private static void FeatherBlend(Mat dst, Mat generated, Mat mask)
-    {
-        using var soft = new Mat();
-        Cv2.GaussianBlur(mask, soft, new OpenCvSharp.Size(9, 9), 0);
-
-        using var alpha1 = new Mat();
-        soft.ConvertTo(alpha1, MatType.CV_32FC1, 1.0 / 255);
-        using var alpha = new Mat();
-        Cv2.CvtColor(alpha1, alpha, ColorConversionCodes.GRAY2BGR);
-
-        using var one = new Mat(alpha.Size(), MatType.CV_32FC3, Scalar.All(1));
-        using var inv = new Mat();
-        Cv2.Subtract(one, alpha, inv);
-
-        using var fDst = new Mat();
-        using var fGen = new Mat();
-        dst.ConvertTo(fDst, MatType.CV_32FC3);
-        generated.ConvertTo(fGen, MatType.CV_32FC3);
-
-        using var keep = new Mat();
-        using var add = new Mat();
-        Cv2.Multiply(fDst, inv, keep);
-        Cv2.Multiply(fGen, alpha, add);
-        using var mixed = new Mat();
-        Cv2.Add(keep, add, mixed);
-
-        using var result = new Mat();
-        mixed.ConvertTo(result, MatType.CV_8UC3);
-        result.CopyTo(dst);
-    }
-
     public string OutputPathFor(string inputFile)
     {
         var dir = !string.IsNullOrWhiteSpace(settings.OutputRoot)
@@ -468,15 +280,6 @@ public class PipelineRunner(AppSettings settings) : IDisposable
             : Path.Combine(Path.GetDirectoryName(inputFile)!,
                 Path.GetFileName(Path.GetDirectoryName(inputFile)!) + "_neko");
         return Path.Combine(dir, Path.GetFileNameWithoutExtension(inputFile) + ".png");
-    }
-
-    private static Rect EnsureSize(Rect r, int min, int max, int imW, int imH)
-    {
-        int w = Math.Clamp(Math.Max(r.Width, min), min, Math.Min(max, imW));
-        int h = Math.Clamp(Math.Max(r.Height, min), min, Math.Min(max, imH));
-        int x = Math.Clamp(r.X + r.Width / 2 - w / 2, 0, Math.Max(0, imW - w));
-        int y = Math.Clamp(r.Y + r.Height / 2 - h / 2, 0, Math.Max(0, imH - h));
-        return new Rect(x, y, w, h);
     }
 
     private static void Report(IProgress<PageProgress> p, IReadOnlyList<string> files, string stage, double pct)

@@ -41,13 +41,19 @@ public class AppSettings
     public string ColorTaggerModel { get; set; } = "wd-eva02-large-tagger-v3";
     public double ColorTaggerThreshold { get; set; } = 0.35;
 
-    // ── 검열제거 (모자이크 감지 + LaMa/SDXL) ────────────────────
-    /// <summary>"Basic"=내장 LaMa (빠름, 추가 설치 불필요), "Strong"=ComfyUI SDXL 인페인트 (고품질, ComfyUI 필요).</summary>
+    // ── 검열제거 (검열 감지 + LaMa) ────────────────────
+    /// <summary>"Basic"=내장 LaMa 만화판 (빠름, 추가 설치 불필요) / "ComfyLama"=ComfyUI LayerUtility LaMa (GPU, 원본 레시피).
+    /// 옛 "Strong"(SDXL+LoRA 재생성)과 "DeepCream"(DeepCreamPy PConv)은 2026-10-19 폐기 — MigrateLegacy가 Basic으로 바꾼다.
+    /// 검열 **감지**는 모드와 무관하게 CensorNet/규칙 감지기가 맡는다.</summary>
     public string DecensorMode { get; set; } = "Basic";
-    /// <summary>무엇을 검열로 볼지 — "BlackBar"(검은 막대·먹줄) / "WhiteBar"(흰 막대) / "Mosaic"(격자).
+    /// <summary>무엇을 검열로 볼지 — "Auto"(AI) / "BlackBar"(검은 막대·먹줄) / "WhiteBar"(흰 막대) /
+    /// "Mosaic"(격자) / "Color"(색 막대·틴트 모자이크 — 채도 기반).
     /// 한 번에 하나만 추적한다: 여러 종류를 동시에 켜면 서로의 오탐이 섞여 정확도가 떨어진다
     /// (실측: 흰 경로를 함께 켜자 오탐 6600px이 검은 막대 결과까지 오염시켰다).
-    /// 원고의 검열 방식에 맞는 것 하나를 고르는 쪽이 늘 깨끗하다.</summary>
+    /// 원고의 검열 방식에 맞는 것 하나를 고르는 쪽이 늘 깨끗하다.
+    /// "Color"는 AI(흑/백/모자이크 합성 학습)가 아예 못 보는 **색 검열**(Benantoka 파란 막대·
+    /// mashiro 빨간 막대·Sumiyao 틴트 모자이크 등)용 수동 모드다 — 흑백 원고의 채도 덩어리를 찾는다.
+    /// 채도만으로는 체크무늬 색 천과 구분이 안 돼(실측 오탐) Auto엔 넣지 않고 수동으로만 둔다.</summary>
     public string DecensorTarget { get; set; } = "BlackBar";
     /// <summary>막대로 인정할 최소 가로세로비. 낮출수록 정사각형에 가까운 것도 잡지만 오탐이 는다.</summary>
     public double DecensorBarMinAspect { get; set; } = 1.8;
@@ -55,7 +61,7 @@ public class AppSettings
     /// 600은 실제 원고의 짧은 막대(13×40 정도, 약 530px²)를 놓쳐 350으로 낮췄다.</summary>
     public int DecensorBarMinArea { get; set; } = 350;
 
-    /// <summary>채색·강력검열에 쓰는 SDXL 체크포인트 파일명 (models/checkpoints 안).
+    /// <summary>채색에 쓰는 SDXL 체크포인트 파일명 (models/checkpoints 안).
     /// 상위 모델이 나오면 엔진 탭에서 바꿔 끼울 수 있다.</summary>
     public string ColorCheckpoint { get; set; } = "waiIllustriousSDXL_v170.safetensors";
     /// <summary>ControlNet 모델 파일명 (models/controlnet 안).</summary>
@@ -74,48 +80,16 @@ public class AppSettings
     /// IPAdapter 모델이 설치돼 있을 때만 쓰인다 (없으면 태그만으로 동작).</summary>
     public double ColorRefStrength { get; set; } = 0.5;
 
-    /// <summary>강력(SDXL) 검열제거의 시드. 고정해야 같은 원고를 다시 돌려도 같은 그림이 나온다
-    /// (-1이면 매번 무작위 — 실행할 때마다 결과가 달라진다). 기본값은 실제 원고에서 결과가 좋았던 시드.</summary>
-    public long DecensorSeed { get; set; } = 3080993336;
-
     /// <summary>모자이크 블록 크기(px). 이미지에 맞게 조절.</summary>
     public int DecensorBlockSize { get; set; } = 8;
     /// <summary>감지 민감도. 낮을수록 더 많은 영역을 모자이크로 판단.</summary>
     public int DecensorThreshold { get; set; } = 15;
     /// <summary>감지된 마스크 확장(px).</summary>
     public int DecensorMaskGrow { get; set; } = 8;
-    /// <summary>강력 모드 재생성 강도 (denoise). 입력의 검열 영역은 블러로 보내므로 격자는
-    /// 이미 사라졌고, 이 값은 '원래 실루엣을 얼마나 따를지'를 정한다 — 너무 높으면(0.95+)
-    /// 형태를 무시하고 엉뚱한 걸 그리고, 너무 낮으면 흐릿함이 남는다 (실측 0.82가 균형).</summary>
-    public double DecensorStrongDenoise { get; set; } = 0.82;
 
     // ── 고급 옵션 (설정 창의 [고급 옵션] — 기본값 = 기존 하드코딩, 워크플로를 아는 사용자용) ──
-    /// <summary>강력(SDXL) 워크플로 KSampler 스텝.</summary>
-    public int DecensorStrongSteps { get; set; } = 24;
-    /// <summary>강력 워크플로 CFG.</summary>
-    public double DecensorStrongCfg { get; set; } = 6.0;
-    /// <summary>강력 워크플로 샘플러/스케줄러 (ComfyUI 이름 그대로).</summary>
-    public string DecensorStrongSampler { get; set; } = "dpmpp_2m";
-    public string DecensorStrongScheduler { get; set; } = "karras";
-    /// <summary>강력 워크플로 긍정/부정 프롬프트.</summary>
-    /// <summary>강력 모드 긍정 프롬프트. **무엇을 그릴지 반드시 명시해야 한다** —
-    /// 'uncensored' 정도로는 모델이 지운 자리에 얼굴·눈 같은 엉뚱한 걸 그린다 (실측).</summary>
-    public string DecensorStrongPositive { get; set; } =
-        "uncensored genitalia, penis, pussy, vaginal penetration, sex, nude, skin, "
-        + "anime, high quality, detailed, clean, best quality";
-    public string DecensorStrongNegative { get; set; } = "mosaic, pixelated, blurry, censored, bar censor, low quality, worst quality";
-    /// <summary>강력 워크플로 합성 마스크 여유(px) — GrowMask expand.</summary>
-    public int DecensorCompositeGrow { get; set; } = 4;
-    /// <summary>검열 복원 전용 LoRA 파일명 (ComfyUI models/loras 기준, 비우면 미사용).
-    /// 무검열 만화에서 추출한 성기 작화로 학습해, SDXL이 주변 그림체에 맞는 해부를 그리게 한다.</summary>
-    /// <summary>기본값은 앱이 함께 배포하는 전용 LoRA — 파일이 없으면 워크플로가 알아서 건너뛴다.</summary>
-    public string DecensorLora { get; set; } = "nmdecensor_comfy.safetensors";
-    public double DecensorLoraStrength { get; set; } = 0.85;
-    /// <summary>강력 모드에서 주변 선화를 얼마나 강하게 따를지 (ControlNet lineart).
-    /// 높이면 주변 구조를 잘 잇지만 너무 높으면 구멍 안을 비워 둔다.</summary>
-    public double DecensorCnStrength { get; set; } = 0.35;
-    /// <summary>ControlNet 적용 끝 지점(0~1) — 초반 구도만 잡고 디테일은 모델에 맡긴다.</summary>
-    public double DecensorCnEnd { get; set; } = 0.45;
+    // (강력(SDXL) 워크플로 설정 DecensorStrong*/DecensorLora*/DecensorCn*/DecensorSeed/DecensorCompositeGrow는
+    //  2026-10-19 폐기 — 옛 settings.json에 남은 값은 역직렬화에서 무시된다.)
     /// <summary>엔진 LaMa(원본 레시피) 워크플로의 마스크 확장/블러.</summary>
     public int LamaMaskGrow { get; set; } = 8;
     public int LamaMaskBlur { get; set; } = 8;
@@ -183,7 +157,10 @@ public class AppSettings
     public static string DataDir =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NekoManga");
 
-    private static string SettingsPath => Path.Combine(DataDir, "settings.json");
+    /// <summary>설정 파일 경로. 환경변수 NEKO_SETTINGS로 바꿀 수 있다 — 회귀 하네스(D:\NekoManga-train\bench\dc_batch.py)가
+    /// 사용자 설정을 건드리지 않고 중립 프롬프트·고정 시드로 돌리기 위한 것. 없으면 %AppData%\NekoManga\settings.json.</summary>
+    private static string SettingsPath =>
+        Environment.GetEnvironmentVariable("NEKO_SETTINGS") is { Length: > 0 } ov ? ov : Path.Combine(DataDir, "settings.json");
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -206,14 +183,6 @@ public class AppSettings
         return new AppSettings();
     }
 
-    /// <summary>강력 모드 재시도용 — denoise만 바꾼 얕은 복사본 (원 설정은 건드리지 않는다).</summary>
-    public AppSettings ShallowCloneForRetry(double denoise)
-    {
-        var c = (AppSettings)MemberwiseClone();
-        c.DecensorStrongDenoise = denoise;
-        return c;
-    }
-
     /// <summary>v0.1.x(BallonsTranslator 연동 시절) 설정값을 내장 엔진 형식으로 변환한다.</summary>
     private void MigrateLegacy()
     {
@@ -221,14 +190,10 @@ public class AppSettings
         TranslateTarget = TranslateTarget switch { "한국어" => "ko", "English" => "en", _ => TranslateTarget };
         // Papago 등 구 BT 엔진만 Google로 되돌린다 (DeepSeek·Grok은 유효).
         if (TranslateEngine is not ("Google" or "DeepL" or "DeepSeek" or "Grok")) TranslateEngine = "Google";
-        if (DecensorMode is not ("Basic" or "ComfyLama" or "Strong")) DecensorMode = "Basic";
+        // 옛 '강력'(SDXL+LoRA)·DeepCream 모드는 2026-10-19 폐기 — 둘 다 기본(내장 LaMa)으로 돌린다
+        if (DecensorMode is not ("Basic" or "ComfyLama")) DecensorMode = "Basic";
 
         // 고급 옵션 안전망 — 손으로 json을 고치다 깨진 값이 워크플로를 터뜨리지 않게
-        if (string.IsNullOrWhiteSpace(DecensorStrongSampler)) DecensorStrongSampler = "dpmpp_2m";
-        if (string.IsNullOrWhiteSpace(DecensorStrongScheduler)) DecensorStrongScheduler = "karras";
-        DecensorStrongSteps = Math.Clamp(DecensorStrongSteps, 4, 100);
-        DecensorStrongCfg = Math.Clamp(DecensorStrongCfg, 1, 20);
-        DecensorCompositeGrow = Math.Clamp(DecensorCompositeGrow, 0, 64);
         LamaMaskGrow = Math.Clamp(LamaMaskGrow, 0, 64);
         LamaMaskBlur = Math.Clamp(LamaMaskBlur, 0, 64);
         CnLineartStrength = Math.Clamp(CnLineartStrength, 0, 2);
@@ -244,7 +209,9 @@ public class AppSettings
 
     public void Save()
     {
-        Directory.CreateDirectory(DataDir);
+        // NEKO_SETTINGS가 디렉터리 없는 상대 파일명이면 GetDirectoryName이 ""를 돌려줘 CreateDirectory("")가 던진다 → 전체 경로로 푼 뒤 만든다
+        var dir = Path.GetDirectoryName(Path.GetFullPath(SettingsPath));
+        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
         File.WriteAllText(SettingsPath, JsonSerializer.Serialize(this, JsonOpts));
     }
 
@@ -271,7 +238,7 @@ public class AppSettings
         !string.IsNullOrWhiteSpace(LinkedComfyRoot) ? LinkedComfyRoot
         : Path.Combine(RuntimeRoot, "ComfyUI_windows_portable");
 
-    /// <summary>ComfyUI가 사용 가능한가 (채색·강력 검열제거의 전제조건).</summary>
+    /// <summary>ComfyUI가 사용 가능한가 (채색·엔진 LaMa 검열제거의 전제조건).</summary>
     [JsonIgnore]
     public bool ComfyAvailable =>
         File.Exists(Path.Combine(ComfyRoot, "ComfyUI", "main.py")) &&
