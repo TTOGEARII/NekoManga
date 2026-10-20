@@ -39,6 +39,7 @@ public partial class SetupWindow
         CompList.ItemsSource = _rows;
         PopulateDrives();
         RefreshList();
+        Loaded += async (_, _) => { try { await CheckRequirementsAsync(); } catch { /* 점검 실패는 설치를 막지 않는다 */ } };
     }
 
     /// <summary>드라이브 문자 → SSD/HDD 종류. 볼륨 핸들에 IOCTL_STORAGE_QUERY_PROPERTY —
@@ -185,6 +186,43 @@ public partial class SetupWindow
             SetRoot(dlg.SelectedPath);
     }
 
+    // ── ComfyUI 묶음 전제 조건 점검 (2026-10-20: 다른 PC에서 옛 드라이버로 torch c10.dll 1114 크래시 → 설치 전에 안내) ──
+    private SystemCheck.Report? _req;
+
+    /// <summary>ComfyUI 묶음이 설치 대상에 있으면 PC를 점검해 패널에 보여 준다. 막히는 항목이 있으면 true.</summary>
+    private async Task<bool> CheckRequirementsAsync()
+    {
+        bool needComfy = _rows.Any(r => r.Component.ForComfy && r.Status == "필요");
+        if (!needComfy) { PnlReq.Visibility = Visibility.Collapsed; _req = null; return false; }
+        TxtReqTitle.Text = "PC 점검 중..."; PnlReq.Visibility = Visibility.Visible;
+        _req = await Task.Run(SystemCheck.CheckForComfy);
+        var r = _req;
+        BtnReqDriver.Visibility = r.Items.Any(i => !i.Ok && i.FixUrl == SystemCheck.DriverUrl) ? Visibility.Visible : Visibility.Collapsed;
+        BtnReqVc.Visibility = r.Items.Any(i => !i.Ok && i.FixUrl == SystemCheck.VcRedistUrl) ? Visibility.Visible : Visibility.Collapsed;
+        if (r.HasBlocking)
+        {
+            TxtReqTitle.Text = "✖ 채색 엔진(ComfyUI)을 쓰려면 먼저 해야 할 일이 있어요";
+            TxtReq.Text = r.Summary + "\n번역·검열 감지·기본 복원은 영향 없이 설치돼요. 위 항목을 해결한 뒤 [다시 확인]을 누르면 엔진 묶음도 이어서 받아요.";
+        }
+        else if (r.HasWarning)
+        {
+            TxtReqTitle.Text = "⚠ PC 점검 — 설치는 되지만 참고하세요";
+            TxtReq.Text = r.Summary;
+        }
+        else
+        {
+            TxtReqTitle.Text = "✔ PC 점검 통과";
+            TxtReq.Text = string.Join(" · ", r.Items.Select(i => i.Title + " " + i.Detail.Split(' ')[0]));
+        }
+        return r.HasBlocking;
+    }
+
+    private void BtnReqDriver_Click(object sender, RoutedEventArgs e) =>
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(SystemCheck.DriverUrl) { UseShellExecute = true });
+    private void BtnReqVc_Click(object sender, RoutedEventArgs e) =>
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(SystemCheck.VcRedistUrl) { UseShellExecute = true });
+    private async void BtnReqRecheck_Click(object sender, RoutedEventArgs e) { if (!_running) await CheckRequirementsAsync(); }
+
     private async void BtnInstall_Click(object sender, RoutedEventArgs e)
     {
         if (_running) return;
@@ -202,6 +240,11 @@ public partial class SetupWindow
 
         try
         {
+            // 엔진 묶음 전제 조건이 안 맞으면 그 묶음은 건너뛰고(내장 엔진은 그대로 설치) 안내만 남긴다
+            bool blocked = await CheckRequirementsAsync();
+            if (blocked)
+                foreach (var row in _rows.Where(r => r.Component.ForComfy && r.Status == "필요")) row.Status = "조건 미충족 — 위 안내 참고";
+
             foreach (var row in _rows.Where(r => r.Status == "필요").ToList())
             {
                 row.Status = "내려받는 중";
@@ -209,9 +252,12 @@ public partial class SetupWindow
                 row.Status = "설치됨 ✓";
                 row.Percent = 100;
             }
-            TxtNote.Text = "준비 끝! 이제 바로 쓸 수 있어요 (ﾉ´ヮ`)ﾉ*:･ﾟ✧";
+            bool leftover = _rows.Any(r => r.Status.StartsWith("조건 미충족"));
+            TxtNote.Text = leftover ? "내장 엔진은 준비됐어요. 채색 엔진은 위 조건을 해결한 뒤 [다시 확인] → [준비 시작!]으로 받아요."
+                                    : "준비 끝! 이제 바로 쓸 수 있어요 (ﾉ´ヮ`)ﾉ*:･ﾟ✧";
             BtnSkip.Content = "시작하기";
-            BtnInstall.Content = "모두 준비됨 ✓";
+            if (leftover) { foreach (var row in _rows.Where(r => r.Status.StartsWith("조건 미충족"))) row.Status = "필요"; BtnInstall.IsEnabled = true; }
+            else BtnInstall.Content = "모두 준비됨 ✓";
         }
         catch (Exception ex)
         {
