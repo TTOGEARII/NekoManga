@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using NekoManga.Core;
 using NekoManga.Core.Runtime;
@@ -20,6 +21,9 @@ public partial class App : Application
 
     /// <summary>--demo-files &lt;폴더&gt;: 메인 창 목록을 미리 채운다 (UI 확인용).</summary>
     public string? PreloadDir { get; set; }
+
+    /// <summary>--review &lt;이미지…&gt;: 검열 감지만 돌려 검토 창을 띄운다 (검토 흐름 UI 확인용 — 제거는 안 한다).</summary>
+    public List<string>? ReviewImages { get; set; }
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -54,6 +58,26 @@ public partial class App : Application
         if (ResultImages is { Count: > 0 })
         {
             new ResultWindow(ResultImages, 0).Show();
+            return;
+        }
+
+        if (ReviewImages is { Count: > 0 })
+        {
+            // 감지만 돌려 검토 창을 띄운다 — 마스크는 창을 닫을 때 같이 버린다
+            using var runner = new NekoManga.Core.Pipeline.PipelineRunner(Settings);
+            var pages = new List<NekoManga.Core.Pipeline.PipelineRunner.ReviewPage>();
+            foreach (var f in ReviewImages.Where(File.Exists))
+            {
+                var pg = new NekoManga.Core.Pipeline.PipelineRunner.ReviewPage(f);
+                using var img = NekoManga.Core.ImgIo.Read(f, OpenCvSharp.ImreadModes.Color);
+                var m = runner.DetectCensorMask(img, null, out var kind);
+                pg.Summary = kind;
+                pg.Mask = m ?? new OpenCvSharp.Mat(img.Rows, img.Cols, OpenCvSharp.MatType.CV_8UC1, OpenCvSharp.Scalar.Black);
+                pages.Add(pg);
+            }
+            var w = new MaskReviewWindow(pages);
+            w.Closed += (_, _) => { foreach (var p in pages) p.Mask?.Dispose(); };
+            w.Show();
             return;
         }
 

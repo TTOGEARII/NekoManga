@@ -64,6 +64,8 @@
                                 <ComboBox x:Name="CmbEngine" Width="280" VerticalAlignment="Center">
                                     <ComboBoxItem Tag="Basic" Content="기본 LaMa 만화판 (빠름·항상 같은 결과)" IsSelected="True"/>
                                     <ComboBoxItem Tag="ComfyLama" Content="엔진 LaMa (GPU·원본 레시피)"/>
+                                    <ComboBoxItem Tag="ComfyRegen" Content="재생성 (SDXL·내장 레시피)"/>
+                                    <ComboBoxItem Tag="ComfyCustom" Content="커스텀 ComfyUI (설정의 워크플로 파일)"/>
                                 </ComboBox>
                             </WrapPanel>
                         </StackPanel>

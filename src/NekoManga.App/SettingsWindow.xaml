@@ -28,19 +28,19 @@
                         <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="품질 · 속도"/></Border>
                         <UniformGrid Columns="2" Rows="4">
                             <DockPanel Margin="0,4">
-                                <TextBlock Text="해상도 상한 (MP)" Style="{StaticResource FieldLabel}" Width="130"/>
+                                <TextBlock Text="해상도 상한 MP (0.3 ~ 4)" Style="{StaticResource FieldLabel}" Width="150"/>
                                 <TextBox x:Name="TxtMegapixels" Width="90" HorizontalAlignment="Left"/>
                             </DockPanel>
                             <DockPanel Margin="0,4">
-                                <TextBlock Text="스텝 수" Style="{StaticResource FieldLabel}" Width="130"/>
+                                <TextBlock Text="스텝 수 (5 ~ 100)" Style="{StaticResource FieldLabel}" Width="150"/>
                                 <TextBox x:Name="TxtSteps" Width="90" HorizontalAlignment="Left"/>
                             </DockPanel>
                             <DockPanel Margin="0,4">
-                                <TextBlock Text="CFG" Style="{StaticResource FieldLabel}" Width="130"/>
+                                <TextBlock Text="CFG (1 ~ 15)" Style="{StaticResource FieldLabel}" Width="150"/>
                                 <TextBox x:Name="TxtCfg" Width="90" HorizontalAlignment="Left"/>
                             </DockPanel>
                             <DockPanel Margin="0,4">
-                                <TextBlock Text="Denoise" Style="{StaticResource FieldLabel}" Width="130"/>
+                                <TextBlock Text="Denoise (0.1 ~ 1)" Style="{StaticResource FieldLabel}" Width="150"/>
                                 <TextBox x:Name="TxtDenoise" Width="90" HorizontalAlignment="Left"/>
                             </DockPanel>
                             <DockPanel Margin="0,4">
@@ -52,7 +52,7 @@
                                 </ComboBox>
                             </DockPanel>
                             <DockPanel Margin="0,4">
-                                <TextBlock Text="선화 합성 %" Style="{StaticResource FieldLabel}" Width="130"/>
+                                <TextBlock Text="선화 합성 % (0 ~ 100)" Style="{StaticResource FieldLabel}" Width="150"/>
                                 <TextBox x:Name="TxtLineart" Width="90" HorizontalAlignment="Left"/>
                             </DockPanel>
                             <DockPanel Margin="0,4">
@@ -87,7 +87,7 @@
                                 </DockPanel>
                                 <TextBox x:Name="TxtColorRefTags" AcceptsReturn="True" Height="66" TextWrapping="Wrap" Margin="0,6,0,0"/>
                                 <DockPanel Margin="0,6,0,0">
-                                    <TextBlock Text="표지 반영 강도" Style="{StaticResource FieldLabel}" Width="110"/>
+                                    <TextBlock Text="표지 반영 강도 (0 ~ 1.5)" Style="{StaticResource FieldLabel}" Width="150"/>
                                     <TextBox x:Name="TxtRefStrength" Width="64" HorizontalAlignment="Left"/>
                                 </DockPanel>
                             </StackPanel>
@@ -113,12 +113,26 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="8">
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="제거 방식"/></Border>
-                    <ComboBox x:Name="CmbDecensorMode" Width="400" HorizontalAlignment="Left">
+                    <ComboBox x:Name="CmbDecensorMode" Width="400" HorizontalAlignment="Left" SelectionChanged="CmbDecensorMode_Changed">
                         <ComboBoxItem Content="기본 — 내장 LaMa 만화판 (빠름, 추가 설치 불필요)" Tag="Basic"/>
                         <ComboBoxItem Content="엔진 LaMa — GPU 복원 (원본 레시피, 엔진 필요)" Tag="ComfyLama"/>
+                        <ComboBoxItem Content="재생성 — SDXL로 검열 자리를 그려 넣기 (내장 재생성 레시피, 엔진 필요)" Tag="ComfyRegen"/>
+                        <ComboBoxItem Content="커스텀 ComfyUI — 내가 ComfyUI에서 짠 워크플로 파일로 (API JSON, 엔진 필요)" Tag="ComfyCustom"/>
                     </ComboBox>
-                    <TextBlock Style="{StaticResource HintText}"
-                               Text="둘 다 주변과 어울리게 '메우는' 방식 — 먹줄·흰줄·가벼운 모자이크에 적합해요. 기본은 만화·애니 원고로 학습한 LaMa라 흑백 망점·선화에 맞고, 엔진 LaMa는 ComfyUI에서 쓰던 원본 레시피(GPU, 확장 8·블러 8, 사진 학습 모델) 그대로예요. 어느 방식이든 검열을 찾는 건 아래 '무엇을 검열로 볼까요' 설정이 정해요 — 자동이면 검열 감지 AI, 수동이면 규칙 감지."/>
+                    <StackPanel x:Name="PnlCustomDecensor" Visibility="Collapsed">
+                        <DockPanel Margin="0,6,0,0">
+                            <TextBlock Text="워크플로 파일" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <ui:Button Content="찾기…" Click="BtnCustomDecensorPick_Click" DockPanel.Dock="Right" Padding="10,4" Margin="8,0,0,0"/>
+                            <TextBox x:Name="TxtCustomDecensor" ToolTip="ComfyUI 화면에서 워크플로 메뉴 → Export (API)로 내보낸 JSON"/>
+                        </DockPanel>
+                        <DockPanel Margin="0,4,0,0">
+                            <TextBlock Text="되돌릴 범위 px (0 ~ 512)" Style="{StaticResource FieldLabel}" Width="150"/>
+                            <TextBox x:Name="TxtCustomReach" Width="70" HorizontalAlignment="Left"/>
+                        </DockPanel>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="ComfyUI 메뉴 → Export (API)로 내보낸 파일. 규칙: LoadImage 1개(원고, 알파=마스크) + SaveImage 1개(결과). 되돌릴 범위는 마스크 둘레 px (0 = 전체)."/>
+                    </StackPanel>
+                    <TextBlock x:Name="TxtDecensorModeHint" Style="{StaticResource HintText}" Text=""/>
 
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="무엇을 검열로 볼까요"/></Border>
                     <ComboBox x:Name="CmbDecensorTarget" Width="340" HorizontalAlignment="Left"
@@ -157,11 +171,11 @@
                                Text="아래 값들은 위에서 '수동'을 고른 경우에만 쓰여요 (AI 자동 감지에는 영향 없음). 수동은 한 번에 한 종류만 추적해요 — 섞으면 서로의 오탐이 결과를 망가뜨려요."/>
                     <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
                         <DockPanel>
-                            <TextBlock Text="막대 최소 비율" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <TextBlock Text="막대 최소 비율 (1 ~ 10)" Style="{StaticResource FieldLabel}" Width="160"/>
                             <TextBox x:Name="TxtBarAspect" Width="80" HorizontalAlignment="Left"/>
                         </DockPanel>
                         <DockPanel>
-                            <TextBlock Text="막대 최소 크기" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <TextBlock Text="막대 최소 크기 (50 ~ 500000)" Style="{StaticResource FieldLabel}" Width="160"/>
                             <TextBox x:Name="TxtBarMinArea" Width="80" HorizontalAlignment="Left"/>
                         </DockPanel>
                     </UniformGrid>
@@ -170,12 +184,12 @@
 
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="모자이크 감지 세부 (수동)"/></Border>
                     <DockPanel Margin="0,4">
-                        <TextBlock Text="블록 크기 (px)" Style="{StaticResource FieldLabel}" Width="130"/>
+                        <TextBlock Text="블록 크기 px (2 ~ 64)" Style="{StaticResource FieldLabel}" Width="160"/>
                         <TextBox x:Name="TxtBlockSize" Width="90" HorizontalAlignment="Left"/>
                     </DockPanel>
                     <TextBlock Style="{StaticResource HintText}" Text="모자이크 격자 한 칸의 픽셀 크기. 이미지를 확대해서 재보세요 (보통 4~16)."/>
                     <DockPanel Margin="0,4">
-                        <TextBlock Text="감지 민감도" Style="{StaticResource FieldLabel}" Width="130"/>
+                        <TextBlock Text="감지 민감도 (1 ~ 80)" Style="{StaticResource FieldLabel}" Width="160"/>
                         <TextBox x:Name="TxtThreshold" Width="90" HorizontalAlignment="Left"/>
                     </DockPanel>
                     <TextBlock Style="{StaticResource HintText}" Text="낮을수록 더 많은 영역을 모자이크로 판단해요 (기본 15)."/>
@@ -183,11 +197,56 @@
 
                     <!-- 마스크 확장은 AI·수동 공통 (복원 경계를 자연스럽게) -->
                     <DockPanel Margin="0,14,0,0">
-                        <TextBlock Text="마스크 확장 (px)" Style="{StaticResource FieldLabel}" Width="130"/>
+                        <TextBlock Text="마스크 확장 px (0 ~ 64)" Style="{StaticResource FieldLabel}" Width="160"/>
                         <TextBox x:Name="TxtMaskGrow" Width="90" HorizontalAlignment="Left"/>
                     </DockPanel>
                     <TextBlock Style="{StaticResource HintText}"
                                Text="감지된 영역 둘레를 조금 더 넓게 지워 경계를 자연스럽게 해요 (AI·수동 공통)."/>
+                    <CheckBox x:Name="ChkReview" Content="제거 전에 감지된 마스크를 직접 확인·추가하기 (검토 창)" Margin="0,12,0,0"/>
+                    <TextBlock Style="{StaticResource HintText}"
+                               Text="모든 페이지의 검열을 먼저 찾은 뒤 검토 창이 떠요. 놓친 검열은 브러시·다각형으로 칠하고, 잘못 잡힌 곳은 지우고 나서 제거를 시작해요."/>
+                    <CheckBox x:Name="ChkCollect" Content="검토에서 고친 마스크를 학습 재료로 모으기 (내 PC에만 저장)" Margin="0,8,0,0"/>
+                    <TextBlock Style="{StaticResource HintText}"
+                               Text="원고·자동 감지·최종 마스크를 %AppData%\NekoManga\training\corrections 에 저장해요. 모인 재료로 감지 모델을 다시 학습하면 내 원고에 맞게 좋아져요."/>
+
+                    <Border Style="{StaticResource MangaTag}" Margin="0,14,0,0"><TextBlock Style="{StaticResource MangaTagText}" Text="자가 학습 (반자동)"/></Border>
+                    <CheckBox x:Name="ChkSelfTrain" Content="자가 학습 기능 켜기" Margin="0,6,0,0" Checked="ChkSelfTrain_Changed" Unchecked="ChkSelfTrain_Changed"/>
+                    <StackPanel x:Name="PnlSelfTrain" Visibility="Collapsed">
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="모은 재료로 감지 모델을 짧게 미세조정하고, 보류해 둔 페이지에서 전/후를 비교해 보여 줘요. [적용]을 눌러야 모델이 바뀌고 언제든 되돌릴 수 있어요. 학습 중엔 GPU를 쓰고(엔진은 잠시 꺼요) 수 분~수십 분 걸려요."/>
+                        <TextBlock x:Name="TxtTrainMaterial" Style="{StaticResource HintText}" Margin="0,4,0,0" Text=""/>
+                        <WrapPanel Margin="0,6,0,0">
+                            <ui:Button x:Name="BtnSelfTrain" Content="🎓 지금까지 모은 재료로 학습" Click="BtnSelfTrain_Click" Padding="12,5"/>
+                            <ui:Button x:Name="BtnSelfTrainStop" Content="중단" Click="BtnSelfTrainStop_Click" Padding="12,5" Margin="8,0,0,0" IsEnabled="False"/>
+                            <ui:Button x:Name="BtnSelfApply" Content="✔ 적용" Click="BtnSelfApply_Click" Padding="12,5" Margin="8,0,0,0" IsEnabled="False"/>
+                            <ui:Button x:Name="BtnSelfRollback" Content="↶ 이전 모델로 되돌리기" Click="BtnSelfRollback_Click" Padding="12,5" Margin="8,0,0,0" IsEnabled="False"/>
+                            <ui:Button Content="재료 폴더 열기" Click="BtnOpenCorrections_Click" Padding="12,5" Margin="8,0,0,0"/>
+                        </WrapPanel>
+                        <TextBlock x:Name="TxtTrainStatus" Style="{StaticResource HintText}" Margin="0,6,0,0" Text="" TextWrapping="Wrap"/>
+                        <UniformGrid Columns="2" Rows="2" Margin="0,8,0,0">
+                            <DockPanel>
+                                <TextBlock Text="에폭 (1 ~ 50)" Style="{StaticResource FieldLabel}" Width="150"/>
+                                <TextBox x:Name="TxtSelfEpochs" Width="70" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                            <DockPanel>
+                                <TextBlock Text="학습률 (0.00001 ~ 0.01)" Style="{StaticResource FieldLabel}" Width="150"/>
+                                <TextBox x:Name="TxtSelfLr" Width="90" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                            <DockPanel>
+                                <TextBlock Text="동결 층 (0 ~ 22)" Style="{StaticResource FieldLabel}" Width="150"/>
+                                <TextBox x:Name="TxtSelfFreeze" Width="70" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                            <DockPanel>
+                                <TextBlock Text="최소 재료 쪽수 (5 ~ 500)" Style="{StaticResource FieldLabel}" Width="150"/>
+                                <TextBox x:Name="TxtSelfMinPages" Width="70" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                        </UniformGrid>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="기본값(5에폭·0.0002·백본 동결)은 재료가 적을 때 기존 실력을 잊지 않게 보수적으로 잡은 값이에요."/>
+                    </StackPanel>
+                    <CheckBox x:Name="ChkBubbleFilter" Content="흰 말풍선 필터 (글자 블록과 겹치는 흰 검출 버리기)" Margin="0,10,0,0"/>
+                    <TextBlock Style="{StaticResource HintText}"
+                               Text="기본 꺼짐. 켜면 흰 말풍선 오탐은 줄지만 진짜 흰선 검열도 일부 지워져요. 말풍선이 자꾸 지워지는 원고에서만."/>
 
                     <!-- 고급: 워크플로를 아는 사용자용 — 접힌 상태가 기본 -->
                     <ui:Button x:Name="BtnDecensorAdv" Content="▸ 고급 옵션 — 워크플로 직접 제어"
@@ -199,16 +258,64 @@
                         <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="엔진 LaMa 워크플로"/></Border>
                         <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
                             <DockPanel>
-                                <TextBlock Text="마스크 확장" Style="{StaticResource FieldLabel}" Width="110"/>
+                                <TextBlock Text="마스크 확장 (0 ~ 64)" Style="{StaticResource FieldLabel}" Width="150"/>
                                 <TextBox x:Name="TxtAdvLamaGrow" Width="80" HorizontalAlignment="Left"/>
                             </DockPanel>
                             <DockPanel>
-                                <TextBlock Text="마스크 블러" Style="{StaticResource FieldLabel}" Width="110"/>
+                                <TextBlock Text="마스크 블러 (0 ~ 64)" Style="{StaticResource FieldLabel}" Width="150"/>
                                 <TextBox x:Name="TxtAdvLamaBlur" Width="80" HorizontalAlignment="Left"/>
                             </DockPanel>
                         </UniformGrid>
                         <TextBlock Style="{StaticResource HintText}"
                                    Text="LayerUtility: LaMa 노드의 mask_grow / mask_blur. 원본 레시피는 8 · 8이에요."/>
+
+                        <Border Style="{StaticResource MangaTag}" Margin="0,12,0,0"><TextBlock Style="{StaticResource MangaTagText}" Text="재생성 워크플로 (SDXL)"/></Border>
+                        <DockPanel Margin="0,4">
+                            <TextBlock Text="체크포인트 파일" Style="{StaticResource FieldLabel}" Width="130"/>
+                            <ui:Button Content="찾기…" Click="BtnRegenCkptPick_Click" DockPanel.Dock="Right" Padding="10,4" Margin="8,0,0,0"/>
+                            <TextBox x:Name="TxtRegenCkpt" IsReadOnly="True"/>
+                        </DockPanel>
+                        <DockPanel Margin="0,4">
+                            <TextBlock Text="ControlNet 파일" Style="{StaticResource FieldLabel}" Width="130"/>
+                            <ui:Button Content="찾기…" Click="BtnRegenCnPick_Click" DockPanel.Dock="Right" Padding="10,4" Margin="8,0,0,0"/>
+                            <TextBox x:Name="TxtRegenCn" IsReadOnly="True"/>
+                        </DockPanel>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="safetensors · ckpt · pt 파일. ComfyUI models 폴더 밖의 파일을 고르면 그 폴더로 복사해요."/>
+                        <TextBlock Text="기본 프롬프트" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
+                        <TextBox x:Name="TxtRegenPrompt" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="48"/>
+                        <TextBlock Text="신체부위 복원 태그 (직접 수정)" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
+                        <TextBox x:Name="TxtRegenBody" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="36"/>
+                        <TextBlock Text="네거티브" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
+                        <TextBox x:Name="TxtRegenNeg" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="48"/>
+                        <UniformGrid Columns="2" Rows="3" Margin="0,8,0,0">
+                            <DockPanel>
+                                <TextBlock Text="디노이즈 (0.05 ~ 1)" Style="{StaticResource FieldLabel}" Width="150"/>
+                                <TextBox x:Name="TxtRegenDenoise" Width="70" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                            <DockPanel>
+                                <TextBlock Text="스텝 (1 ~ 150)" Style="{StaticResource FieldLabel}" Width="150"/>
+                                <TextBox x:Name="TxtRegenSteps" Width="70" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                            <DockPanel>
+                                <TextBlock Text="CFG (0 ~ 30)" Style="{StaticResource FieldLabel}" Width="150"/>
+                                <TextBox x:Name="TxtRegenCfg" Width="70" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                            <DockPanel>
+                                <TextBlock Text="CN 강도 (0 ~ 2)" Style="{StaticResource FieldLabel}" Width="150"/>
+                                <TextBox x:Name="TxtRegenCnStr" Width="70" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                            <DockPanel>
+                                <TextBlock Text="CN 끝 (0 ~ 1)" Style="{StaticResource FieldLabel}" Width="150"/>
+                                <TextBox x:Name="TxtRegenCnEnd" Width="70" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                            <DockPanel>
+                                <TextBlock Text="축소 MP (0 ~ 8, 0=원본)" Style="{StaticResource FieldLabel}" Width="150"/>
+                                <TextBox x:Name="TxtRegenMp" Width="70" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                        </UniformGrid>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="범위를 벗어난 값은 저장할 때 범위 안으로 잘려요. VRAM이 모자라면 '축소 MP'를 1.5 정도로."/>
 
                         <ui:Button Content="기본값 복원" Click="BtnDecensorAdvReset_Click" Margin="0,10,0,0" Padding="12,5"/>
                     </StackPanel>
@@ -302,7 +409,7 @@
                     </DockPanel>
                     <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
                         <DockPanel>
-                            <TextBlock Text="크기 배율" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <TextBlock Text="크기 배율 (0.3 ~ 3)" Style="{StaticResource FieldLabel}" Width="140"/>
                             <TextBox x:Name="TxtLetterSize" Width="70" HorizontalAlignment="Left"/>
                         </DockPanel>
                         <DockPanel>
@@ -312,7 +419,7 @@
                     </UniformGrid>
                     <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
                         <DockPanel>
-                            <TextBlock Text="외곽선 두께" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <TextBlock Text="외곽선 두께 (0 ~ 4)" Style="{StaticResource FieldLabel}" Width="140"/>
                             <TextBox x:Name="TxtLetterOutline" Width="70" HorizontalAlignment="Left"/>
                         </DockPanel>
                         <DockPanel>
@@ -330,7 +437,7 @@
                             </ComboBox>
                         </DockPanel>
                         <DockPanel>
-                            <TextBlock Text="줄간격" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <TextBlock Text="줄간격 (0.6 ~ 3)" Style="{StaticResource FieldLabel}" Width="140"/>
                             <TextBox x:Name="TxtLetterLineSp" Width="70" HorizontalAlignment="Left"/>
                             <CheckBox x:Name="ChkLetterItalic" Content="기울임" Foreground="{StaticResource NekoText}"
                                       VerticalAlignment="Center" Margin="14,0,0,0"/>
@@ -367,6 +474,26 @@
                         </StackPanel>
                     </Border>
 
+                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="ComfyUI 화면 · 내 워크플로"/></Border>
+                    <TextBlock Style="{StaticResource HintText}"
+                               Text="ComfyUI 화면에서 워크플로를 만들고 Export (API)로 저장하면 검열 제거(커스텀 ComfyUI)나 채색에 끼울 수 있어요."/>
+                    <WrapPanel Margin="0,6,0,0">
+                        <ui:Button Content="🌐 ComfyUI 화면 열기" Click="BtnOpenComfyUi_Click" Padding="12,5"/>
+                        <ui:Button Content="내장 재생성 레시피를 ComfyUI에 넣기" Click="BtnInstallBundledWf_Click" Padding="12,5" Margin="8,0,0,0"
+                                   ToolTip="앱에 내장된 재생성 레시피(검열 제거 방식 '재생성'이 쓰는 것)를 ComfyUI 워크플로 목록에 복사해요. 커스텀 워크플로를 만들 때 출발점으로 쓰세요."/>
+                        <ui:Button Content="재생성 레시피를 API JSON으로 저장" Click="BtnExportRegenApi_Click" Padding="12,5" Margin="8,0,0,0"
+                                   ToolTip="지금 설정값이 반영된 재생성 레시피를 API 포맷 파일로 저장해요. 그대로 커스텀 ComfyUI 파일로 지정할 수 있어요."/>
+                    </WrapPanel>
+                    <TextBlock x:Name="TxtWfStatus" Style="{StaticResource HintText}" Margin="0,4,0,0" Text=""/>
+                    <DockPanel Margin="0,8,0,0">
+                        <TextBlock Text="채색 커스텀" Style="{StaticResource FieldLabel}" Width="110"/>
+                        <ui:Button Content="비우기" Click="BtnColorCustomClear_Click" DockPanel.Dock="Right" Padding="10,4" Margin="8,0,0,0"/>
+                        <ui:Button Content="찾기…" Click="BtnColorCustomPick_Click" DockPanel.Dock="Right" Padding="10,4" Margin="8,0,0,0"/>
+                        <TextBox x:Name="TxtColorCustom" ToolTip="비우면 내장 채색 워크플로를 써요"/>
+                    </DockPanel>
+                    <TextBlock Style="{StaticResource HintText}"
+                               Text="지정하면 내장 채색 대신 이 워크플로를 써요 (LoadImage 1개 = 원고, SaveImage 1개 = 결과)."/>
+
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="채색 모델"/></Border>
                     <TextBlock Style="{StaticResource HintText}"
                                Text="그림을 그리는 모델이에요. 더 좋은 모델이 나오면 파일을 가져오거나 주소로 받아서 바꿔 끼울 수 있어요."/>
@@ -396,7 +523,7 @@
                     <StackPanel x:Name="PnlEngineAdv" Visibility="Collapsed">
                         <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="엔진 실행"/></Border>
                         <DockPanel Margin="0,4">
-                            <TextBlock Text="포트" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <TextBlock Text="포트 (1024 ~ 65535)" Style="{StaticResource FieldLabel}" Width="160"/>
                             <TextBox x:Name="TxtAdvPort" Width="90" HorizontalAlignment="Left"/>
                         </DockPanel>
                         <DockPanel Margin="0,4">
@@ -411,29 +538,29 @@
                                    Text="원본 레시피: 선화(lineart)가 0~60% 구간, 스케치(scribble)가 60~100% 구간을 맡아요. 구간은 0~1."/>
                         <UniformGrid Columns="2" Rows="2" Margin="0,4,0,0">
                             <DockPanel Margin="0,4">
-                                <TextBlock Text="선화 강도" Style="{StaticResource FieldLabel}" Width="110"/>
+                                <TextBlock Text="선화 강도 (0 ~ 2)" Style="{StaticResource FieldLabel}" Width="160"/>
                                 <TextBox x:Name="TxtAdvCnLineStr" Width="80" HorizontalAlignment="Left"/>
                             </DockPanel>
                             <DockPanel Margin="0,4">
-                                <TextBlock Text="선화 구간 끝" Style="{StaticResource FieldLabel}" Width="110"/>
+                                <TextBlock Text="선화 구간 끝 (0 ~ 1)" Style="{StaticResource FieldLabel}" Width="160"/>
                                 <TextBox x:Name="TxtAdvCnLineEnd" Width="80" HorizontalAlignment="Left"/>
                             </DockPanel>
                             <DockPanel Margin="0,4">
-                                <TextBlock Text="스케치 강도" Style="{StaticResource FieldLabel}" Width="110"/>
+                                <TextBlock Text="스케치 강도 (0 ~ 2)" Style="{StaticResource FieldLabel}" Width="160"/>
                                 <TextBox x:Name="TxtAdvCnScrStr" Width="80" HorizontalAlignment="Left"/>
                             </DockPanel>
                             <DockPanel Margin="0,4">
-                                <TextBlock Text="스케치 구간 시작" Style="{StaticResource FieldLabel}" Width="110"/>
+                                <TextBlock Text="스케치 구간 시작 (0 ~ 1)" Style="{StaticResource FieldLabel}" Width="160"/>
                                 <TextBox x:Name="TxtAdvCnScrStart" Width="80" HorizontalAlignment="Left"/>
                             </DockPanel>
                         </UniformGrid>
                         <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
                             <DockPanel>
-                                <TextBlock Text="전처리 해상도" Style="{StaticResource FieldLabel}" Width="110"/>
+                                <TextBlock Text="전처리 해상도 (256 ~ 4096)" Style="{StaticResource FieldLabel}" Width="160"/>
                                 <TextBox x:Name="TxtAdvPreRes" Width="80" HorizontalAlignment="Left"/>
                             </DockPanel>
                             <DockPanel>
-                                <TextBlock Text="XDoG 임계값" Style="{StaticResource FieldLabel}" Width="110"/>
+                                <TextBlock Text="XDoG 임계값 (1 ~ 128)" Style="{StaticResource FieldLabel}" Width="160"/>
                                 <TextBox x:Name="TxtAdvXdog" Width="80" HorizontalAlignment="Left"/>
                             </DockPanel>
                         </UniformGrid>
@@ -442,7 +569,7 @@
 
                         <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="표지 주입 (IPAdapter)"/></Border>
                         <DockPanel Margin="0,4">
-                            <TextBlock Text="적용 끝 지점" Style="{StaticResource FieldLabel}" Width="110"/>
+                            <TextBlock Text="적용 끝 지점 (0 ~ 1)" Style="{StaticResource FieldLabel}" Width="160"/>
                             <TextBox x:Name="TxtAdvIpaEnd" Width="80" HorizontalAlignment="Left"/>
                         </DockPanel>
                         <TextBlock Style="{StaticResource HintText}"

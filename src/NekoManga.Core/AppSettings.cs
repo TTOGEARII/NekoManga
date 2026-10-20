@@ -86,6 +86,23 @@ public class AppSettings
     public int DecensorThreshold { get; set; } = 15;
     /// <summary>감지된 마스크 확장(px).</summary>
     public int DecensorMaskGrow { get; set; } = 8;
+    /// <summary>흰 검출의 말풍선 필터(글자 블록과 겹치는 흰 성분 삭제). 2026-10-20 실측: 글자 감지기가 흰 검열 막대를 글자로 잡아 진짜 흰선을 지웠다
+    /// (Confusion 실라벨 78개 중 겹침 15% 기준 11개·60% 기준 6개 손실, 대신 라벨 밖 발화 36% 감소). 기본 끔 — 흰 말풍선이 자꾸 지워지는 원고에서만 켠다.</summary>
+    public bool DecensorBubbleFilter { get; set; } = false;
+    /// <summary>검열 제거 전에 감지된 마스크를 사용자가 확인·추가·삭제하는 검토 창을 띄운다 (2026-10-20 사용자 요청: 감지가 놓치는 검열을 직접 칠하고 제거).
+    /// 흐름: 모든 페이지 번역+감지 → 검토 창(페이지 넘기며 브러시·다각형으로 마스크 편집) → 제거+채색+식자. 헤드리스(--run)에서는 무시.</summary>
+    public bool DecensorReview { get; set; } = true;
+    /// <summary>검토 창에서 고친 마스크를 학습 재료로 모은다 (2026-10-20 사용자 요청 "검열 추적이 자동으로 향상되게"): 번역 뒤 원고 + 자동 감지 마스크 + 최종 마스크를
+    /// %AppData%\NekoManga\training\corrections\&lt;날짜&gt;\ 에 저장하고 index.jsonl에 한 줄씩 적는다. 전부 로컬 파일이며 어디로도 보내지 않는다.
+    /// 학습 자체는 D:\NekoManga-train 의 파이프라인(또는 추후 앱 내 학습)이 이 폴더를 읽어 한다.</summary>
+    public bool CollectCorrections { get; set; } = true;
+    /// <summary>자가 학습 기능(검토 재료로 감지 모델 미세조정 → 전/후 비교 → 사용자가 적용) 켜기. 끄면 설정 창의 학습 구역이 숨고 아무것도 돌지 않는다.</summary>
+    public bool EnableSelfTraining { get; set; } = false;
+    public int SelfTrainEpochs { get; set; } = 5;
+    public double SelfTrainLr { get; set; } = 0.0002;
+    /// <summary>앞에서부터 동결할 층 수(10 = YOLOv8 백본 전부). 재료가 적을 때 망각을 줄인다.</summary>
+    public int SelfTrainFreeze { get; set; } = 10;
+    public int SelfTrainMinPages { get; set; } = 20;
 
     // ── 고급 옵션 (설정 창의 [고급 옵션] — 기본값 = 기존 하드코딩, 워크플로를 아는 사용자용) ──
     // (강력(SDXL) 워크플로 설정 DecensorStrong*/DecensorLora*/DecensorCn*/DecensorSeed/DecensorCompositeGrow는
@@ -93,6 +110,45 @@ public class AppSettings
     /// <summary>엔진 LaMa(원본 레시피) 워크플로의 마스크 확장/블러.</summary>
     public int LamaMaskGrow { get; set; } = 8;
     public int LamaMaskBlur { get; set; } = 8;
+
+    // ── 재생성(ComfyRegen) — 사용자가 ComfyUI에서 직접 짠 "manga_restore_masked_uncensor_v2" 워크플로(2026-10-20)를 그대로 이식 ──
+    //   LaMa 1차 복원(마스크 확장 4·블러 4) → Manga2Anime 선화 전처리(1472) → SDXL 체크포인트 + ControlNet(0.85, 0~0.85)
+    //   → KSampler(24, cfg 5, dpmpp_sde_gpu/karras, denoise 0.62) → 엣지 마스크(확장 12·블러 8)·코어 마스크(확장 4·블러 1)로 LaMa 결과 위에 합성.
+    //   체크포인트·ControlNet·프롬프트는 사용자의 워크플로 값이 기본이며 전부 설정에서 바꿀 수 있다 (파일은 ComfyUI models/ 폴더에 직접 넣는다).
+    /// <summary>사용자 워크플로 원본은 waiNSFWIllustrious_v140 — 이 PC엔 없어 사용자 결정(10-20)으로 채색과 같은 WAI v170을 기본으로 쓴다(같은 Illustrious 계열, 그래프 동일).</summary>
+    public string RegenCheckpoint { get; set; } = "waiIllustriousSDXL_v170.safetensors";
+    /// <summary>사용자 워크플로 원본은 diffusion_pytorch_model_promax(xinsir union promax) — 앱 설치본과 같은 모델이라 사용자 결정(10-20)으로 설치된 이름을 기본으로 쓴다.</summary>
+    public string RegenControlNet { get; set; } = "controlnet-union-sdxl-promax.safetensors";
+    public string RegenPrompt { get; set; } = "masterpiece, monochrome manga, clean lineart, consistent screentone, preserve original composition, preserve original character design, preserve original grayscale tone, seamless restoration, no sticker effect, no residual censorship marks";
+    /// <summary>사용자 워크플로의 "신체부위 복원 태그 (직접 수정)" 노드 — 기본 프롬프트 뒤에 ", "로 붙는다.</summary>
+    public string RegenBodyTags { get; set; } = "penis, glains, clitoris, pussy, vulva, cum in pussy";
+    public string RegenNegative { get; set; } = "text, letters, sound effects, symbols, watermark, speech bubble text, black bar censor, bar censor, mosaic censoring, censorship, broken lines, extra limbs, blurry lineart, colorized, oversmoothed, residual artifacts";
+    public int RegenSteps { get; set; } = 24;
+    public double RegenCfg { get; set; } = 5.0;
+    public string RegenSampler { get; set; } = "dpmpp_sde_gpu";
+    public string RegenScheduler { get; set; } = "karras";
+    public double RegenDenoise { get; set; } = 0.62;
+    /// <summary>-1이면 매번 무작위(사용자 워크플로의 randomize).</summary>
+    public long RegenSeed { get; set; } = -1;
+    public double RegenCnStrength { get; set; } = 0.85;
+    public double RegenCnEnd { get; set; } = 0.85;
+    public int RegenPreprocResolution { get; set; } = 1472;
+    public int RegenLamaGrow { get; set; } = 4;
+    public int RegenLamaBlur { get; set; } = 4;
+    public int RegenEdgeGrow { get; set; } = 12;
+    public int RegenEdgeBlur { get; set; } = 8;
+    public int RegenCoreGrow { get; set; } = 4;
+    public int RegenCoreBlur { get; set; } = 1;
+    /// <summary>0이면 원본 해상도 그대로(사용자 워크플로). 큰 페이지에서 VRAM이 모자라면 1.5 같은 값으로 줄여 보낸다(결과는 원본 크기로 되돌림).</summary>
+    public double RegenMegapixels { get; set; } = 0;
+
+    // ── 커스텀 워크플로(ComfyCustom) — ComfyUI 화면에서 직접 짠 API 포맷 JSON을 그대로 돌린다 (2026-10-20, CustomWorkflow.cs 규약) ──
+    /// <summary>검열제거용 커스텀 워크플로(API JSON) 경로. DecensorMode="ComfyCustom"일 때 쓴다.</summary>
+    public string CustomDecensorWorkflow { get; set; } = "";
+    /// <summary>커스텀 검열제거 결과를 원본에 되돌릴 범위: 마스크를 이 px만큼 넓힌 안쪽만 받는다. 0이면 결과 페이지 전체를 받는다.</summary>
+    public int CustomDecensorReach { get; set; } = 24;
+    /// <summary>채색용 커스텀 워크플로(API JSON) 경로. 비어 있지 않고 파일이 있으면 내장 채색 워크플로 대신 쓴다.</summary>
+    public string ColorCustomWorkflow { get; set; } = "";
     /// <summary>엔진 추가 실행 인자 (예: --lowvram). 엔진을 껐다 켜면 적용.</summary>
     public string ComfyExtraArgs { get; set; } = "";
     /// <summary>채색 ControlNet 1단(선화 lineart) 강도와 적용 구간 끝(0~1).</summary>
@@ -191,11 +247,26 @@ public class AppSettings
         // Papago 등 구 BT 엔진만 Google로 되돌린다 (DeepSeek·Grok은 유효).
         if (TranslateEngine is not ("Google" or "DeepL" or "DeepSeek" or "Grok")) TranslateEngine = "Google";
         // 옛 '강력'(SDXL+LoRA)·DeepCream 모드는 2026-10-19 폐기 — 둘 다 기본(내장 LaMa)으로 돌린다
-        if (DecensorMode is not ("Basic" or "ComfyLama")) DecensorMode = "Basic";
+        if (DecensorMode is not ("Basic" or "ComfyLama" or "ComfyRegen" or "ComfyCustom")) DecensorMode = "Basic";
+        CustomDecensorReach = Math.Clamp(CustomDecensorReach, 0, 512);
+        SelfTrainEpochs = Math.Clamp(SelfTrainEpochs, 1, 50); SelfTrainLr = Math.Clamp(SelfTrainLr, 0.00001, 0.01);
+        SelfTrainFreeze = Math.Clamp(SelfTrainFreeze, 0, 22); SelfTrainMinPages = Math.Clamp(SelfTrainMinPages, 5, 500);
 
         // 고급 옵션 안전망 — 손으로 json을 고치다 깨진 값이 워크플로를 터뜨리지 않게
         LamaMaskGrow = Math.Clamp(LamaMaskGrow, 0, 64);
         LamaMaskBlur = Math.Clamp(LamaMaskBlur, 0, 64);
+        RegenSteps = Math.Clamp(RegenSteps, 1, 150);
+        RegenCfg = Math.Clamp(RegenCfg, 0, 30);
+        RegenDenoise = Math.Clamp(RegenDenoise, 0.05, 1.0);
+        RegenCnStrength = Math.Clamp(RegenCnStrength, 0, 2);
+        RegenCnEnd = Math.Clamp(RegenCnEnd, 0, 1);
+        RegenPreprocResolution = Math.Clamp(RegenPreprocResolution, 256, 4096);
+        RegenLamaGrow = Math.Clamp(RegenLamaGrow, 0, 64); RegenLamaBlur = Math.Clamp(RegenLamaBlur, 0, 64);
+        RegenEdgeGrow = Math.Clamp(RegenEdgeGrow, 0, 128); RegenEdgeBlur = Math.Clamp(RegenEdgeBlur, 0, 64);
+        RegenCoreGrow = Math.Clamp(RegenCoreGrow, 0, 64); RegenCoreBlur = Math.Clamp(RegenCoreBlur, 0, 64);
+        RegenMegapixels = Math.Clamp(RegenMegapixels, 0, 8);
+        if (string.IsNullOrWhiteSpace(RegenSampler)) RegenSampler = "dpmpp_sde_gpu";
+        if (string.IsNullOrWhiteSpace(RegenScheduler)) RegenScheduler = "karras";
         CnLineartStrength = Math.Clamp(CnLineartStrength, 0, 2);
         CnLineartEnd = Math.Clamp(CnLineartEnd, 0, 1);
         CnScribbleStrength = Math.Clamp(CnScribbleStrength, 0, 2);

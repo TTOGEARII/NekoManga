@@ -44,7 +44,7 @@ public static class Program
             return;
         }
 
-        // 전체 검열제거 경로 테스트: --dctest <모드:Basic|ComfyLama> <이미지...>
+        // 전체 검열제거 경로 테스트: --dctest <모드:Basic|ComfyLama|ComfyRegen|ComfyCustom> <이미지...>
         //   → <이미지>.dc_<모드>.png (AI 감지 + 선택한 복원까지 실제 파이프라인 경로로)
         var dcIdx = Array.IndexOf(args, "--dctest");
         if (dcIdx >= 0 && dcIdx + 2 < args.Length)
@@ -155,7 +155,9 @@ public static class Program
             {
                 using var im = NekoManga.Core.ImgIo.Read(p);
                 var swM = System.Diagnostics.Stopwatch.StartNew();
-                using var mk = runnerM.DetectCensorMask(im, null, out var kind);
+                // NEKO_MASKTEST_CTD=1 이면 파이프라인처럼 글자 감지 블록으로 말풍선 필터까지 돌린다 (기본은 꺼짐 — 기존 측정치와 비교 가능하게)
+                using var mk = runnerM.DetectCensorMask(im, null, out var kind,
+                    autoBubbles: Environment.GetEnvironmentVariable("NEKO_MASKTEST_CTD") == "1");
                 int px = mk == null ? 0 : OpenCvSharp.Cv2.CountNonZero(mk);
                 File.AppendAllLines(Path.Combine(Path.GetDirectoryName(p)!, "masktest.log"),
                     [$"{Path.GetFileName(p)}: {px}px | {kind} ({swM.ElapsedMilliseconds}ms)"]);
@@ -268,6 +270,7 @@ public static class Program
                 ["autocolor"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildAutoColor(s, "IN.png", "OUT"),
                 ["autocolor_with_ref"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildAutoColor(s, "IN.png", "OUT", "REF.png"),
                 ["lama_decensor"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildLamaDecensor(s, "IN.png", "OUT"),
+                ["regen_decensor"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildRegenDecensor(s, "IN.png", "OUT"),
                 ["tag_extract"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildTagExtract(s, "IN.png"),
             };
             File.WriteAllText(args[dumpIdx + 1], all.ToJsonString(
@@ -296,10 +299,13 @@ public static class Program
         // UI 확인용 진입점
         //   --result <이미지…>     결과 보기 창만 띄운다 (여러 장을 주면 창 안에서 넘겨볼 수 있다)
         //   --demo-files <폴더>    메인 창 목록에 그 폴더의 이미지를 미리 올려 둔다
+        //   --review <이미지…>     검열 감지만 돌리고 검토 창(MaskReviewWindow)을 띄운다 (검토 흐름 UI 확인용, 제거는 안 함)
         var resultIdx = Array.IndexOf(args, "--result");
         var filesIdx = Array.IndexOf(args, "--demo-files");
+        var reviewIdx = Array.IndexOf(args, "--review");
         var app = new App
         {
+            ReviewImages = reviewIdx >= 0 ? args.Skip(reviewIdx + 1).TakeWhile(a => !a.StartsWith("--")).ToList() : null,
             DemoSettings = args.Contains("--demo-settings"),
             DemoSetup = args.Contains("--demo-setup"),
             ResultImages = resultIdx >= 0 ? args.Skip(resultIdx + 1).TakeWhile(a => !a.StartsWith("--")).ToList() : null,

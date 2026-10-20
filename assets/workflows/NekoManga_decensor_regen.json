@@ -1,0 +1,1404 @@
+{
+  "id": "0b9a2aa9-113e-4130-96a7-d39d7268df73",
+  "revision": 0,
+  "last_node_id": 20,
+  "last_link_id": 60,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "CheckpointLoaderSimple",
+      "pos": [
+        100,
+        130
+      ],
+      "size": [
+        270,
+        98
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            48
+          ]
+        },
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            40,
+            41
+          ]
+        },
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            47,
+            53
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.35.1",
+        "Node name for S&R": "CheckpointLoaderSimple",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.5.1"
+        }
+      },
+      "widgets_values": [
+        "waiIllustriousSDXL_v170.safetensors"
+      ],
+      "widgets_values_named": {
+        "ckpt_name": "waiIllustriousSDXL_v170.safetensors"
+      }
+    },
+    {
+      "id": 2,
+      "type": "ControlNetLoader",
+      "pos": [
+        100,
+        358
+      ],
+      "size": [
+        270,
+        58
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "CONTROL_NET",
+          "type": "CONTROL_NET",
+          "links": [
+            44
+          ]
+        }
+      ],
+      "title": "컨트롤넷 로드",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.35.1",
+        "Node name for S&R": "ControlNetLoader",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.5.1"
+        }
+      },
+      "widgets_values": [
+        "controlnet-union-sdxl-promax.safetensors"
+      ],
+      "widgets_values_named": {
+        "control_net_name": "controlnet-union-sdxl-promax.safetensors"
+      }
+    },
+    {
+      "id": 4,
+      "type": "LayerMask: MaskGrow",
+      "pos": [
+        600,
+        460
+      ],
+      "size": [
+        270,
+        106
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 31
+        }
+      ],
+      "outputs": [
+        {
+          "name": "mask",
+          "type": "MASK",
+          "links": [
+            59
+          ]
+        }
+      ],
+      "title": "코어 마스크",
+      "properties": {
+        "cnr_id": "comfyui_layerstyle",
+        "ver": "1.0.90",
+        "Node name for S&R": "LayerMask: MaskGrow",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.5.1"
+        }
+      },
+      "widgets_values": [
+        false,
+        4,
+        1
+      ],
+      "widgets_values_named": {
+        "invert_mask": false,
+        "grow": 4,
+        "blur": 1
+      }
+    },
+    {
+      "id": 5,
+      "type": "LayerMask: MaskGrow",
+      "pos": [
+        600,
+        696
+      ],
+      "size": [
+        270,
+        106
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 32
+        }
+      ],
+      "outputs": [
+        {
+          "name": "mask",
+          "type": "MASK",
+          "links": [
+            56
+          ]
+        }
+      ],
+      "title": "엣지 마스크",
+      "properties": {
+        "cnr_id": "comfyui_layerstyle",
+        "ver": "1.0.90",
+        "Node name for S&R": "LayerMask: MaskGrow",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.5.1"
+        }
+      },
+      "widgets_values": [
+        false,
+        12,
+        8
+      ],
+      "widgets_values_named": {
+        "invert_mask": false,
+        "grow": 12,
+        "blur": 8
+      }
+    },
+    {
+      "id": 8,
+      "type": "AIO_Preprocessor",
+      "pos": [
+        1600,
+        130
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 36
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            45
+          ]
+        }
+      ],
+      "title": "라인아트 전처리",
+      "properties": {
+        "cnr_id": "comfyui_controlnet_aux",
+        "ver": "136f125c89aed92ced1b6fbb491e13719b72fcc0",
+        "Node name for S&R": "AIO_Preprocessor",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.5.1"
+        }
+      },
+      "widgets_values": [
+        "Manga2Anime_LineArt_Preprocessor",
+        1472
+      ],
+      "widgets_values_named": {
+        "preprocessor": "Manga2Anime_LineArt_Preprocessor",
+        "resolution": 1472
+      }
+    },
+    {
+      "id": 11,
+      "type": "Text Concatenate",
+      "pos": [
+        600,
+        1168
+      ],
+      "size": [
+        270,
+        142
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "text_a",
+          "shape": 7,
+          "type": "STRING",
+          "link": 37
+        },
+        {
+          "name": "text_b",
+          "shape": 7,
+          "type": "STRING",
+          "link": 38
+        },
+        {
+          "name": "text_c",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        },
+        {
+          "name": "text_d",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            39
+          ]
+        }
+      ],
+      "title": "프롬프트 결합",
+      "properties": {
+        "cnr_id": "was-ns",
+        "ver": "3.0.1",
+        "Node name for S&R": "Text Concatenate",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.5.1"
+        }
+      },
+      "widgets_values": [
+        ", ",
+        "true"
+      ],
+      "widgets_values_named": {
+        "delimiter": ", ",
+        "clean_whitespace": "true"
+      }
+    },
+    {
+      "id": 12,
+      "type": "CLIPTextEncode",
+      "pos": [
+        1100,
+        434
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 40
+        },
+        {
+          "name": "text",
+          "type": "STRING",
+          "widget": {
+            "name": "text"
+          },
+          "link": 39
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            42
+          ]
+        }
+      ],
+      "title": "포지티브 인코딩",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.35.1",
+        "Node name for S&R": "CLIPTextEncode",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.5.1"
+        }
+      },
+      "widgets_values": [
+        ""
+      ],
+      "widgets_values_named": {
+        "text": ""
+      }
+    },
+    {
+      "id": 13,
+      "type": "CLIPTextEncode",
+      "pos": [
+        600,
+        130
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 41
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            43
+          ]
+        }
+      ],
+      "title": "네거티브 인코딩",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.35.1",
+        "Node name for S&R": "CLIPTextEncode",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.5.1"
+        }
+      },
+      "widgets_values": [
+        "text, letters, sound effects, symbols, watermark, speech bubble text, black bar censor, bar censor, mosaic censoring, censorship, broken lines, extra limbs, blurry lineart, colorized, oversmoothed, residual artifacts"
+      ],
+      "widgets_values_named": {
+        "text": "text, letters, sound effects, symbols, watermark, speech bubble text, black bar censor, bar censor, mosaic censoring, censorship, broken lines, extra limbs, blurry lineart, colorized, oversmoothed, residual artifacts"
+      }
+    },
+    {
+      "id": 14,
+      "type": "ACN_AdvancedControlNetApply",
+      "pos": [
+        1970,
+        130
+      ],
+      "size": [
+        289.616796875,
+        286
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 42
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 43
+        },
+        {
+          "name": "control_net",
+          "type": "CONTROL_NET",
+          "link": 44
+        },
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 45
+        },
+        {
+          "name": "mask_optional",
+          "shape": 7,
+          "type": "MASK",
+          "link": null
+        },
+        {
+          "name": "timestep_kf",
+          "shape": 7,
+          "type": "TIMESTEP_KEYFRAME",
+          "link": null
+        },
+        {
+          "name": "latent_kf_override",
+          "shape": 7,
+          "type": "LATENT_KEYFRAME",
+          "link": null
+        },
+        {
+          "name": "weights_override",
+          "shape": 7,
+          "type": "CONTROL_NET_WEIGHTS",
+          "link": null
+        },
+        {
+          "name": "model_optional",
+          "shape": 7,
+          "type": "MODEL",
+          "link": null
+        },
+        {
+          "name": "vae_optional",
+          "shape": 7,
+          "type": "VAE",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "links": [
+            49
+          ]
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "links": [
+            50
+          ]
+        },
+        {
+          "name": "model_opt",
+          "type": "MODEL",
+          "links": null
+        }
+      ],
+      "title": "라인아트 컨트롤넷 적용",
+      "properties": {
+        "cnr_id": "comfyui-advanced-controlnet",
+        "ver": "1.5.6",
+        "Node name for S&R": "ACN_AdvancedControlNetApply",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.5.1"
+        }
+      },
+      "widgets_values": [
+        0.85,
+        0,
+        0.85
+      ],
+      "widgets_values_named": {
+        "strength": 0.85,
+        "start_percent": 0,
+        "end_percent": 0.85
+      }
+    },
+    {
+      "id": 15,
+      "type": "VAEEncode",
+      "pos": [
+        1600,
+        342
+      ],
+      "size": [
+        179.1739715576172,
+        46
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "pixels",
+          "type": "IMAGE",
+          "link": 46
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 47
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            51
+          ]
+        }
+      ],
+      "title": "LaMa 결과 VAE 인코드",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.35.1",
+        "Node name for S&R": "VAEEncode",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.5.1"
+        }
+      }
+    },
+    {
+      "id": 16,
+      "type": "KSampler",
+      "pos": [
+        2359.616796875,
+        130
+      ],
+      "size": [
+        270,
+        262
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 48
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 49
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 50
+        },
+        {
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 51
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            52
+          ]
+        }
+      ],
+      "title": "전체 페이지 재생성",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.35.1",
+        "Node name for S&R": "KSampler",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.5.1"
+        }
+      },
+      "widgets_values": [
+        766788775851168,
+        "randomize",
+        24,
+        5,
+        "dpmpp_sde_gpu",
+        "karras",
+        0.62
+      ],
+      "widgets_values_named": {
+        "seed": 766788775851168,
+        "control_after_generate": "randomize",
+        "steps": 24,
+        "cfg": 5,
+        "sampler_name": "dpmpp_sde_gpu",
+        "scheduler": "karras",
+        "denoise": 0.62
+      }
+    },
+    {
+      "id": 17,
+      "type": "VAEDecode",
+      "pos": [
+        2729.616796875,
+        130
+      ],
+      "size": [
+        140,
+        46
+      ],
+      "flags": {},
+      "order": 16,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 52
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 53
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            55,
+            58
+          ]
+        }
+      ],
+      "title": "생성 결과 디코드",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.35.1",
+        "Node name for S&R": "VAEDecode",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.5.1"
+        }
+      }
+    },
+    {
+      "id": 18,
+      "type": "ImageCompositeMasked",
+      "pos": [
+        2969.616796875,
+        130
+      ],
+      "size": [
+        270,
+        146
+      ],
+      "flags": {},
+      "order": 17,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "destination",
+          "type": "IMAGE",
+          "link": 54
+        },
+        {
+          "name": "source",
+          "type": "IMAGE",
+          "link": 55
+        },
+        {
+          "name": "mask",
+          "shape": 7,
+          "type": "MASK",
+          "link": 56
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            57
+          ]
+        }
+      ],
+      "title": "엣지 마스크 합성",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.35.1",
+        "Node name for S&R": "ImageCompositeMasked",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.5.1"
+        }
+      },
+      "widgets_values": [
+        0,
+        0,
+        false
+      ],
+      "widgets_values_named": {
+        "x": 0,
+        "y": 0,
+        "resize_source": false
+      }
+    },
+    {
+      "id": 19,
+      "type": "ImageCompositeMasked",
+      "pos": [
+        3339.616796875,
+        130
+      ],
+      "size": [
+        270,
+        146
+      ],
+      "flags": {},
+      "order": 18,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "destination",
+          "type": "IMAGE",
+          "link": 57
+        },
+        {
+          "name": "source",
+          "type": "IMAGE",
+          "link": 58
+        },
+        {
+          "name": "mask",
+          "shape": 7,
+          "type": "MASK",
+          "link": 59
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            60
+          ]
+        }
+      ],
+      "title": "코어 마스크 합성",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.35.1",
+        "Node name for S&R": "ImageCompositeMasked",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.5.1"
+        }
+      },
+      "widgets_values": [
+        0,
+        0,
+        false
+      ],
+      "widgets_values_named": {
+        "x": 0,
+        "y": 0,
+        "resize_source": false
+      }
+    },
+    {
+      "id": 20,
+      "type": "SaveImage",
+      "pos": [
+        3709.616796875,
+        130
+      ],
+      "size": [
+        270,
+        270
+      ],
+      "flags": {},
+      "order": 19,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 60
+        }
+      ],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.35.1",
+        "Node name for S&R": "SaveImage",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.5.1"
+        }
+      },
+      "widgets_values": [
+        "manga_restore_masked_uncensor_v2"
+      ],
+      "widgets_values_named": {
+        "filename_prefix": "manga_restore_masked_uncensor_v2"
+      }
+    },
+    {
+      "id": 9,
+      "type": "Text",
+      "pos": [
+        103.07069139623142,
+        846.5791915281684
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            37
+          ]
+        }
+      ],
+      "title": "기본 프롬프트",
+      "properties": {
+        "cnr_id": "kaytool",
+        "ver": "f4c80b009194d51a13a94f06d37847110a174c52",
+        "Node name for S&R": "Text",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.5.1"
+        }
+      },
+      "widgets_values": [
+        "masterpiece, monochrome manga, clean lineart, consistent screentone, preserve original composition, preserve original character design, preserve original grayscale tone, seamless restoration, no sticker effect, no residual censorship marks"
+      ],
+      "widgets_values_named": {
+        "text": "masterpiece, monochrome manga, clean lineart, consistent screentone, preserve original composition, preserve original character design, preserve original grayscale tone, seamless restoration, no sticker effect, no residual censorship marks"
+      }
+    },
+    {
+      "id": 7,
+      "type": "LayerUtility: LaMa",
+      "pos": [
+        1100,
+        130
+      ],
+      "size": [
+        270,
+        174
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 34
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 35
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": [
+            36,
+            46,
+            54
+          ]
+        }
+      ],
+      "title": "LaMa 1차 복원",
+      "properties": {
+        "cnr_id": "comfyui_layerstyle",
+        "ver": "1.0.90",
+        "Node name for S&R": "LayerUtility: LaMa",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.5.1"
+        }
+      },
+      "widgets_values": [
+        "lama",
+        "cuda",
+        false,
+        0,
+        0
+      ],
+      "widgets_values_named": {
+        "lama_model": "lama",
+        "device": "cuda",
+        "invert_mask": false,
+        "mask_grow": 0,
+        "mask_blur": 0
+      }
+    },
+    {
+      "id": 3,
+      "type": "LoadImage",
+      "pos": [
+        103.84510723955401,
+        439.8747846138463
+      ],
+      "size": [
+        270,
+        314.00000000000006
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            34
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": [
+            31,
+            32,
+            33
+          ]
+        }
+      ],
+      "title": "원본 이미지 + 수동 마스크 로드",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.35.1",
+        "Node name for S&R": "LoadImage",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.5.1"
+        },
+        "image": "nm_regen_input.png"
+      },
+      "widgets_values": [
+        "nm_regen_input.png",
+        "image"
+      ],
+      "widgets_values_named": {
+        "image": "nm_regen_input.png",
+        "upload": "image"
+      }
+    },
+    {
+      "id": 10,
+      "type": "Text",
+      "pos": [
+        100,
+        1108
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            38
+          ]
+        }
+      ],
+      "title": "신체부위 복원 태그 (직접 수정)",
+      "properties": {
+        "cnr_id": "kaytool",
+        "ver": "f4c80b009194d51a13a94f06d37847110a174c52",
+        "Node name for S&R": "Text",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.5.1"
+        }
+      },
+      "widgets_values": [
+        "penis, glains, clitoris, pussy, vulva, cum in pussy"
+      ],
+      "widgets_values_named": {
+        "text": "penis, glains, clitoris, pussy, vulva, cum in pussy"
+      }
+    },
+    {
+      "id": 6,
+      "type": "LayerMask: MaskGrow",
+      "pos": [
+        600,
+        932
+      ],
+      "size": [
+        270,
+        106
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 33
+        }
+      ],
+      "outputs": [
+        {
+          "name": "mask",
+          "type": "MASK",
+          "links": [
+            35
+          ]
+        }
+      ],
+      "title": "LaMa용 마스크",
+      "properties": {
+        "cnr_id": "comfyui_layerstyle",
+        "ver": "1.0.90",
+        "Node name for S&R": "LayerMask: MaskGrow",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.5.1"
+        }
+      },
+      "widgets_values": [
+        false,
+        4,
+        4
+      ],
+      "widgets_values_named": {
+        "invert_mask": false,
+        "grow": 4,
+        "blur": 4
+      }
+    }
+  ],
+  "links": [
+    [
+      31,
+      3,
+      1,
+      4,
+      0,
+      "MASK"
+    ],
+    [
+      32,
+      3,
+      1,
+      5,
+      0,
+      "MASK"
+    ],
+    [
+      33,
+      3,
+      1,
+      6,
+      0,
+      "MASK"
+    ],
+    [
+      34,
+      3,
+      0,
+      7,
+      0,
+      "IMAGE"
+    ],
+    [
+      35,
+      6,
+      0,
+      7,
+      1,
+      "MASK"
+    ],
+    [
+      36,
+      7,
+      0,
+      8,
+      0,
+      "IMAGE"
+    ],
+    [
+      37,
+      9,
+      0,
+      11,
+      0,
+      "STRING"
+    ],
+    [
+      38,
+      10,
+      0,
+      11,
+      1,
+      "STRING"
+    ],
+    [
+      39,
+      11,
+      0,
+      12,
+      1,
+      "STRING"
+    ],
+    [
+      40,
+      1,
+      1,
+      12,
+      0,
+      "CLIP"
+    ],
+    [
+      41,
+      1,
+      1,
+      13,
+      0,
+      "CLIP"
+    ],
+    [
+      42,
+      12,
+      0,
+      14,
+      0,
+      "CONDITIONING"
+    ],
+    [
+      43,
+      13,
+      0,
+      14,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      44,
+      2,
+      0,
+      14,
+      2,
+      "CONTROL_NET"
+    ],
+    [
+      45,
+      8,
+      0,
+      14,
+      3,
+      "IMAGE"
+    ],
+    [
+      46,
+      7,
+      0,
+      15,
+      0,
+      "IMAGE"
+    ],
+    [
+      47,
+      1,
+      2,
+      15,
+      1,
+      "VAE"
+    ],
+    [
+      48,
+      1,
+      0,
+      16,
+      0,
+      "MODEL"
+    ],
+    [
+      49,
+      14,
+      0,
+      16,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      50,
+      14,
+      1,
+      16,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      51,
+      15,
+      0,
+      16,
+      3,
+      "LATENT"
+    ],
+    [
+      52,
+      16,
+      0,
+      17,
+      0,
+      "LATENT"
+    ],
+    [
+      53,
+      1,
+      2,
+      17,
+      1,
+      "VAE"
+    ],
+    [
+      54,
+      7,
+      0,
+      18,
+      0,
+      "IMAGE"
+    ],
+    [
+      55,
+      17,
+      0,
+      18,
+      1,
+      "IMAGE"
+    ],
+    [
+      56,
+      5,
+      0,
+      18,
+      2,
+      "MASK"
+    ],
+    [
+      57,
+      18,
+      0,
+      19,
+      0,
+      "IMAGE"
+    ],
+    [
+      58,
+      17,
+      0,
+      19,
+      1,
+      "IMAGE"
+    ],
+    [
+      59,
+      4,
+      0,
+      19,
+      2,
+      "MASK"
+    ],
+    [
+      60,
+      19,
+      0,
+      20,
+      0,
+      "IMAGE"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ue_links": [],
+    "links_added_by_ue": [],
+    "ds": {
+      "scale": 1.0855252313443584,
+      "offset": [
+        5.139047791127282,
+        -709.466091046149
+      ]
+    },
+    "frontendVersion": "1.51.10",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
+  "version": 0.4
+}

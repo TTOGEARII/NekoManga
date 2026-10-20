@@ -36,7 +36,9 @@ public class CensorNet(OnnxEnv env)
     /// 흰 검출은 **성분 단위로** 텍스트 블록(exclude)과 20% 이상 겹치면 통째로 버린다 —
     /// 모델이 흰 말풍선을 흰 박스로 오인할 때 사각형 빼기만으로는 풍선 고리가 남았다 (실측 22p).
     /// 요약 문자열(흰 n·검 n·모자이크 n)을 함께 돌려준다. 충분한 검출이 없으면 null.</summary>
-    public Mat? BuildMask(Mat imgBgr, IReadOnlyList<Rect>? exclude, int grow, out string summary)
+    /// <param name="bubbleFilter">false면 흰 성분의 말풍선 필터를 건너뛴다(검/모자이크의 글자 상자 빼기는 유지). 2026-10-20 실측: CTD가 흰 검열 막대를 글자로
+    /// 잡아 필터가 진짜 흰선을 지웠다(Confusion 실라벨 78개 중 15% 기준 11개·60% 기준 6개 손실) → 설정 DecensorBubbleFilter로 끌 수 있게.</param>
+    public Mat? BuildMask(Mat imgBgr, IReadOnlyList<Rect>? exclude, int grow, out string summary, bool bubbleFilter = true)
     {
         float strongConf = ConfOverride ?? 0.40f;
         var (w, b, m, dets) = Detect(imgBgr, strongConf);
@@ -44,8 +46,8 @@ public class CensorNet(OnnxEnv env)
         {
             // 흰: 성분 단위 말풍선 필터 — 텍스트 블록을 1.8배 부풀려 '풍선' 근사로 쓴다.
             // 모델의 풍선 오탐 마스크는 글자 박스보다 넓게 풍선 전체를 덮으므로(실측 22p 고리 잔존),
-            // 부풀린 블록과 15% 이상 겹치는 흰 성분은 통째로 버린다.
-            if (exclude is { Count: > 0 })
+            // 부풀린 블록과 BubbleOverlap(기본 0.6 — 2026-10-20에 0.15에서 올림) 이상 겹치는 흰 성분은 통째로 버린다.
+            if (exclude is { Count: > 0 } && bubbleFilter)
             {
                 var bubbles = exclude.Select(ex =>
                 {
@@ -70,14 +72,19 @@ public class CensorNet(OnnxEnv env)
                         var r = ex & br;
                         if (r.Width > 0 && r.Height > 0) inter += (double)r.Width * r.Height;
                     }
-                    if (inter >= area * 0.15)
+                    // 겹침 비율 기준은 실험용 환경변수 NEKO_BUBBLE_OVERLAP(기본 0.15)로 바꿔 볼 수 있다 — 2026-10-20 실측: 0.15는 말풍선 곁 진짜 흰 검열까지
+                    // 통째로 버렸다(Confusion 실라벨 적중 49/17 → 42/13, 라벨 밖 발화는 162k → 93k).
+                    if (inter >= area * BubbleOverlap)
                     {
                         using var comp = new Mat();
                         Cv2.InRange(lab, new Scalar(i), new Scalar(i), comp);
                         w.SetTo(Scalar.Black, comp);
                     }
                 }
-                // 검/모자이크는 텍스트 블록 사각형만 빼준다 (글자 획 보호)
+            }
+            if (exclude is { Count: > 0 })
+            {
+                // 검/모자이크는 텍스트 블록 사각형만 빼준다 (글자 획 보호) — 말풍선 필터와 무관하게 늘 적용
                 foreach (var ex in exclude)
                 {
                     var r = ex & new Rect(0, 0, imgBgr.Cols, imgBgr.Rows);
@@ -90,7 +97,8 @@ public class CensorNet(OnnxEnv env)
             // 막대를 더러 놓친다 (실측 15p: 막대 후보 15개 중 5개 미검출, conf를 낮춰도 그대로).
             // AI가 이미 찾은 막대의 두께를 기준 삼아 그와 비슷한 규칙 기반 후보만 더한다 —
             // 효과음 붓획은 두께·비율이 딴판이라 이 조건에서 걸러진다.
-            AugmentBars(imgBgr, dets, w, isWhite: true, exclude, strongConf);
+            // 흰 보강의 글자 블록 제외도 말풍선 필터와 함께 끈다(2026-10-20 실측: 제외만으로도 17-P2(144×282)·17-P3·22-P5 흰선을 잃었다).
+            AugmentBars(imgBgr, dets, w, isWhite: true, bubbleFilter ? exclude : null, strongConf);
             AugmentBars(imgBgr, dets, b, isWhite: false, exclude, strongConf);
 
             int pw = Cv2.CountNonZero(w), pb = Cv2.CountNonZero(b), pm = Cv2.CountNonZero(m);
@@ -326,47 +334,88 @@ public class CensorNet(OnnxEnv env)
         var mosaic = new Mat(H, W, MatType.CV_8UC1, Scalar.Black);
         var dets = new List<Detection>();
         float lo = Math.Min(conf, weakConf);
-        var weak = new List<(int Cls, float Conf, Rect Box, Mat Crop)>();
+        var weak = new List<(int Cls, float Conf, Rect Box, Mat Crop)>();   // Box·Crop은 페이지 좌표
 
-        foreach (var (tx, ty) in Tiles(W, H))
+        // **다중 배율(2026-10-20)**: 모델은 1024 타일을 원본 배율로 훑는데, 큰 페이지(Chipa 1998×2880)에서는 막대가 학습 배율보다
+        // 커져 거의 못 본다(실측 c2: 원본 32쪽 중 1쪽, 폭 1200 축소본 5쪽, 폭 800 축소본 7쪽 — 셋이 서로 다른 페이지를 잡는다).
+        // 그래서 축소본에서도 훑어 마스크를 페이지 좌표로 합친다. 배율 목록은 NEKO_MS_SCALES(기본 "1" = 원본만, 측정 뒤 결정).
+        foreach (float sc in Scales(W, H))
         {
-            int tw = Math.Min(Size, W - tx), th = Math.Min(Size, H - ty);
-            using var tile = new Mat(Size, Size, MatType.CV_8UC3, new Scalar(255, 255, 255));
-            using (var src = new Mat(imgBgr, new Rect(tx, ty, tw, th)))
-            using (var dst = new Mat(tile, new Rect(0, 0, tw, th)))
-                src.CopyTo(dst);
-
-            foreach (var d in RunTile(tile, lo))
+            Mat img = imgBgr;
+            if (sc != 1f)
             {
-                using var m = d.Mask;
-                var rawBox = new Rect(d.Box.X + tx, d.Box.Y + ty, d.Box.Width, d.Box.Height);
-                var pageBox = rawBox & new Rect(0, 0, W, H);
-                if (pageBox.Width <= 0 || pageBox.Height <= 0) continue;
+                img = new Mat();
+                Cv2.Resize(imgBgr, img, new Size(Math.Max(1, (int)Math.Round(W * sc)), Math.Max(1, (int)Math.Round(H * sc))), interpolation: InterpolationFlags.Area);
+            }
+            int Ws = img.Cols, Hs = img.Rows;
+            // sc==1이면 페이지 마스크에 바로 쓴다(해제 금지). 축소 배율은 자기 크기 마스크에 모았다가 끝에 키워 합친다.
+            Mat sW = sc == 1f ? white : new Mat(Hs, Ws, MatType.CV_8UC1, Scalar.Black);
+            Mat sB = sc == 1f ? black : new Mat(Hs, Ws, MatType.CV_8UC1, Scalar.Black);
+            Mat sM = sc == 1f ? mosaic : new Mat(Hs, Ws, MatType.CV_8UC1, Scalar.Black);
+            foreach (var (tx, ty) in Tiles(Ws, Hs))
+            {
+                int tw = Math.Min(Size, Ws - tx), th = Math.Min(Size, Hs - ty);
+                using var tile = new Mat(Size, Size, MatType.CV_8UC3, new Scalar(255, 255, 255));
+                using (var src = new Mat(img, new Rect(tx, ty, tw, th)))
+                using (var dst = new Mat(tile, new Rect(0, 0, tw, th)))
+                    src.CopyTo(dst);
 
-                // **타일 흰색 패딩이 만드는 유령 검출을 버린다.** 페이지가 1024보다 작으면 타일의
-                // 남는 자리를 흰색으로 채우는데, 모델이 그 경계를 '흰 막대'로 본다 (실측 mashiro
-                // 60p: 816px 폭 페이지에서 190x361 상자가 잡혀 잘린 뒤 3x361 쪽자만 남았다).
-                // 상자의 절반 이상이 페이지 밖이면 패딩을 본 것이고, 잘린 뒤 너무 얇아도 마찬가지다.
-                double inPage = (double)pageBox.Width * pageBox.Height / Math.Max(1, rawBox.Width * rawBox.Height);
-                if (inPage < 0.5 || Math.Min(pageBox.Width, pageBox.Height) < 6)
+                foreach (var d in RunTile(tile, lo))
                 {
-                    Dbg($"   padding-ghost drop cls{d.Cls} conf{d.Conf:F2} raw={rawBox.Width}x{rawBox.Height} → {pageBox.Width}x{pageBox.Height}@({pageBox.X},{pageBox.Y}) inPage={inPage:F2}");
-                    continue;
-                }
+                    using var m = d.Mask;
+                    var rawBox = new Rect(d.Box.X + tx, d.Box.Y + ty, d.Box.Width, d.Box.Height);
+                    var sBox = rawBox & new Rect(0, 0, Ws, Hs);
+                    if (sBox.Width <= 0 || sBox.Height <= 0) continue;
 
-                if (d.Conf < conf)
-                {
-                    // 약한 검출은 상자 크기의 마스크 조각만 들고 있다가 나중에 판정한다
-                    var tileBox = new Rect(pageBox.X - tx, pageBox.Y - ty, pageBox.Width, pageBox.Height);
-                    weak.Add((d.Cls, d.Conf, pageBox, new Mat(m, tileBox).Clone()));
-                    continue;
+                    // **타일 흰색 패딩이 만드는 유령 검출을 버린다.** 페이지가 1024보다 작으면 타일의
+                    // 남는 자리를 흰색으로 채우는데, 모델이 그 경계를 '흰 막대'로 본다 (실측 mashiro
+                    // 60p: 816px 폭 페이지에서 190x361 상자가 잡혀 잘린 뒤 3x361 쪽자만 남았다).
+                    // 상자의 절반 이상이 페이지 밖이면 패딩을 본 것이고, 잘린 뒤 너무 얇아도 마찬가지다.
+                    double inPage = (double)sBox.Width * sBox.Height / Math.Max(1, rawBox.Width * rawBox.Height);
+                    if (inPage < 0.5 || Math.Min(sBox.Width, sBox.Height) < 6)
+                    {
+                        Dbg($"   padding-ghost drop cls{d.Cls} conf{d.Conf:F2} s={sc:F2} raw={rawBox.Width}x{rawBox.Height} → {sBox.Width}x{sBox.Height}@({sBox.X},{sBox.Y}) inPage={inPage:F2}");
+                        continue;
+                    }
+                    // 페이지 좌표 상자
+                    var pageBox = sc == 1f ? sBox : new Rect((int)Math.Round(sBox.X / sc), (int)Math.Round(sBox.Y / sc),
+                        Math.Max(1, (int)Math.Round(sBox.Width / sc)), Math.Max(1, (int)Math.Round(sBox.Height / sc))) & new Rect(0, 0, W, H);
+                    if (pageBox.Width <= 0 || pageBox.Height <= 0) continue;
+
+                    // 모자이크는 보통 한 자리에 한 덩어리라 2단 임계의 '강한 앵커'가 없다 → 클래스별 임계(NEKO_CENSOR_CONF_MOSAIC, 기본 = conf)로 실험(2026-10-20).
+                    float clsConf = d.Cls == 2 && MosaicConf is { } mc ? mc : d.Cls == 1 && BlackConf is { } bc ? bc : conf;
+                    if (d.Conf < clsConf)
+                    {
+                        // 약한 검출은 상자 크기의 마스크 조각만 들고 있다가 나중에 판정한다 (페이지 배율로 맞춰 둔다)
+                        var tileBox = new Rect(sBox.X - tx, sBox.Y - ty, sBox.Width, sBox.Height);
+                        var crop = new Mat(m, tileBox).Clone();
+                        if (sc != 1f)
+                        {
+                            var up = new Mat();
+                            Cv2.Resize(crop, up, new Size(pageBox.Width, pageBox.Height), interpolation: InterpolationFlags.Linear);
+                            Cv2.Threshold(up, up, 127, 255, ThresholdTypes.Binary);
+                            crop.Dispose(); crop = up;
+                        }
+                        weak.Add((d.Cls, d.Conf, pageBox, crop));
+                        continue;
+                    }
+                    // 타일 겹침 영역의 중복은 마스크 OR라 자연히 합쳐진다
+                    using (var roiW = new Mat(d.Cls == 0 ? sW : d.Cls == 1 ? sB : sM, new Rect(tx, ty, tw, th)))
+                    using (var mCrop = new Mat(m, new Rect(0, 0, tw, th)))
+                        Cv2.BitwiseOr(roiW, mCrop, roiW);
+                    dets.Add(new Detection(d.Cls, d.Conf, pageBox));
                 }
-                // 타일 겹침 영역의 중복은 마스크 OR라 자연히 합쳐진다
-                using (var roiW = new Mat(d.Cls == 0 ? white : d.Cls == 1 ? black : mosaic,
-                           new Rect(tx, ty, tw, th)))
-                using (var mCrop = new Mat(m, new Rect(0, 0, tw, th)))
-                    Cv2.BitwiseOr(roiW, mCrop, roiW);
-                dets.Add(new Detection(d.Cls, d.Conf, pageBox));
+            }
+            if (sc != 1f)
+            {
+                foreach (var (src, dst) in new[] { (sW, white), (sB, black), (sM, mosaic) })
+                {
+                    using var up = new Mat();
+                    Cv2.Resize(src, up, new Size(W, H), interpolation: InterpolationFlags.Linear);
+                    Cv2.Threshold(up, up, 127, 255, ThresholdTypes.Binary);
+                    Cv2.BitwiseOr(dst, up, dst);
+                }
+                sW.Dispose(); sB.Dispose(); sM.Dispose(); img.Dispose();
             }
         }
 
@@ -374,27 +423,89 @@ public class CensorNet(OnnxEnv env)
         // 기준은 **강한 검출만** 쓴다 (스냅샷) — 방금 받은 약한 것을 다시 기준으로 삼으면
         // 꼬리를 물고 번져 엉뚱한 데까지 이어진다.
         var strong = dets.ToList();
-        foreach (var (cls, wc, box, crop) in weak)
+        static bool Touches(Rect a, Rect b)
         {
+            int pad = Math.Max(a.Width, a.Height);
+            var grown = new Rect(a.X - pad, a.Y - pad, a.Width + pad * 2, a.Height + pad * 2);
+            var ix = grown & b;
+            return ix.Width > 0 && ix.Height > 0;
+        }
+        // **약한 뭉치(2026-10-20, 실험 — 환경변수 NEKO_WEAK_CLUSTER="<최소 개수>:<최고 conf>" 로 켠다, 기본 꺼짐)**:
+        // 강한 앵커가 하나도 없는 페이지라도 **검은 막대(cls1)** 약한 검출이 서로 곁에 ≥min개 모여 있고 그중 최고 conf가 ≥top이면
+        // 검열로 본다. 실측(eval 검은선 Dere-kumo 11·15, Chipa 17): 막대 2~6개가 0.29·0.24·0.19… 로 모여 있는데 0.40 앵커가 없어
+        // 통째로 빠졌다(사용자 "파란선으로 잡힌 것도 마스크에 들어가야"). 흰/모자이크는 오탐 위험이 커 제외.
+        bool[] accepted = new bool[weak.Count];
+        if (WeakCluster is { } wcfg)
+        {
+            for (int i = 0; i < weak.Count; i++)
+            {
+                if (weak[i].Cls != 1 || strong.Any(s => s.Cls == 1 && Touches(s.Box, weak[i].Box))) continue;
+                int n = 1; float top = weak[i].Conf;
+                for (int j = 0; j < weak.Count; j++)
+                {
+                    if (j == i || weak[j].Cls != 1) continue;
+                    if (Touches(weak[i].Box, weak[j].Box) || Touches(weak[j].Box, weak[i].Box)) { n++; top = Math.Max(top, weak[j].Conf); }
+                }
+                if (n >= wcfg.Min && top >= wcfg.Top) accepted[i] = true;
+            }
+        }
+        for (int i = 0; i < weak.Count; i++)
+        {
+            var (cls, wc, box, crop) = weak[i];
             using (crop)
             {
-                bool near = strong.Any(s =>
-                {
-                    if (s.Cls != cls) return false;
-                    int pad = Math.Max(s.Box.Width, s.Box.Height);
-                    var grown = new Rect(s.Box.X - pad, s.Box.Y - pad,
-                                         s.Box.Width + pad * 2, s.Box.Height + pad * 2);
-                    var ix = grown & box;
-                    return ix.Width > 0 && ix.Height > 0;
-                });
-                Dbg($"   weak cls{cls} conf{wc:F2} {box.Width}x{box.Height}@({box.X},{box.Y}) → {(near ? "ACCEPT" : "reject")}");
-                if (!near) continue;
+                bool near = strong.Any(s => s.Cls == cls && Touches(s.Box, box));
+                bool cluster = !near && accepted[i];
+                Dbg($"   weak cls{cls} conf{wc:F2} {box.Width}x{box.Height}@({box.X},{box.Y}) → {(near ? "ACCEPT" : cluster ? "ACCEPT(cluster)" : "reject")}");
+                if (!near && !cluster) continue;
                 using (var roi = new Mat(cls == 0 ? white : cls == 1 ? black : mosaic, box))
                     Cv2.BitwiseOr(roi, crop, roi);
                 dets.Add(new Detection(cls, wc, box));
             }
         }
         return (white, black, mosaic, dets);
+    }
+
+    private static readonly double BubbleOverlap =
+        double.TryParse(Environment.GetEnvironmentVariable("NEKO_BUBBLE_OVERLAP"),
+            System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var bo) ? bo : 0.6;
+
+    /// <summary>검은 막대(cls1) 전용 강한 임계 — NEKO_CENSOR_CONF_BLACK (실험, 2026-10-20: c10은 검 리콜이 포화(107/107)라 임계를 올려 오탐만 깎을 수 있는지).</summary>
+    private static readonly float? BlackConf =
+        float.TryParse(Environment.GetEnvironmentVariable("NEKO_CENSOR_CONF_BLACK"),
+            System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var bcv) ? bcv : null;
+
+    /// <summary>모자이크(cls2) 전용 강한 임계 — NEKO_CENSOR_CONF_MOSAIC. 없으면 공통 conf.</summary>
+    private static readonly float? MosaicConf =
+        float.TryParse(Environment.GetEnvironmentVariable("NEKO_CENSOR_CONF_MOSAIC"),
+            System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var mcv) ? mcv : null;
+
+    /// <summary>약한 뭉치 채택 설정 (NEKO_WEAK_CLUSTER="2:0.25" → 최소 2개·최고 conf 0.25). 없으면 꺼짐.</summary>
+    private static readonly (int Min, float Top)? WeakCluster = ParseWeakCluster(Environment.GetEnvironmentVariable("NEKO_WEAK_CLUSTER"));
+    private static (int Min, float Top)? ParseWeakCluster(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return null;
+        var p = s.Split(':');
+        int min = p.Length > 0 && int.TryParse(p[0], out var m) ? m : 2;
+        float top = p.Length > 1 && float.TryParse(p[1], System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var t) ? t : 0.25f;
+        return (Math.Max(1, min), top);
+    }
+
+    /// <summary>훑을 배율 목록 — NEKO_MS_SCALES="1,0.6,0.4" (기본 "1"). 축소본의 짧은 변이 400px 아래로 내려가는 배율은 건너뛴다.</summary>
+    private static readonly float[] ScaleList = (Environment.GetEnvironmentVariable("NEKO_MS_SCALES") ?? "1")
+        .Split(',', StringSplitOptions.RemoveEmptyEntries)
+        .Select(s => float.TryParse(s.Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 1f)
+        .Where(v => v > 0.05f && v <= 1f).Distinct().OrderByDescending(v => v).ToArray();
+    private static IEnumerable<float> Scales(int W, int H)
+    {
+        bool any = false;
+        foreach (var s in ScaleList)
+        {
+            if (s != 1f && Math.Min(W, H) * s < 400) continue;
+            any = true; yield return s;
+        }
+        if (!any) yield return 1f;
     }
 
     private static IEnumerable<(int X, int Y)> Tiles(int W, int H)

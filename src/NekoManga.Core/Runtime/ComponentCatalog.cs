@@ -82,6 +82,12 @@ public static class ComponentCatalog
         "https://github.com/TTOGEARII/NekoManga/releases/latest/download/censor_seg.onnx",
         "models/censor_seg.onnx", "models/censor_seg.onnx", 14_060_000);
 
+    /// <summary>검열 감지 모델의 PyTorch 가중치 — 자가 학습(SelfTrainer)의 시작점. ComfyUI의 python_embeded로만 학습하므로 ComfyUI 묶음에 넣는다 (7MB).</summary>
+    public static readonly Component ModelCensorPt = new(
+        "model-censor-pt", "검열 감지 AI 학습용 가중치 (자가 학습)", ComponentKind.File,
+        "https://github.com/TTOGEARII/NekoManga/releases/latest/download/censor_seg.pt",
+        "models/censor_seg.pt", "models/censor_seg.pt", 7_120_000, ForComfy: true);
+
     // ── ComfyUI (채색·엔진 LaMa 검열제거 전용 — 선택 설치) ──
     public static readonly Component SevenZip = new(
         "7zr", "7-Zip 압축해제기", ComponentKind.File,
@@ -163,7 +169,7 @@ public static class ComponentCatalog
         ModelCtd, ModelLama, ModelOcrEncoder, ModelOcrDecoder, ModelOcrVocab, ModelCensor,
         SevenZip, ComfyPortable,
         NodeWd14, NodeCustomScripts, NodeLayerStyle, NodeControlnetAux, NodeIpAdapter,
-        ModelCheckpoint, ModelControlnet, ModelIpAdapter, ModelClipVision,
+        ModelCheckpoint, ModelControlnet, ModelIpAdapter, ModelClipVision, ModelCensorPt,
     };
 
     public static IEnumerable<Component> EngineComponents => All.Where(c => !c.ForComfy);

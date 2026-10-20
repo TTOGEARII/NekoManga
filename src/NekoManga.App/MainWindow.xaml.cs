@@ -74,7 +74,7 @@ public partial class MainWindow
     {
         var comfyOk = App.Settings.ComfyAvailable;
         BadgeColor.Visibility = comfyOk ? Visibility.Collapsed : Visibility.Visible;
-        var comfyLama = App.Settings.DecensorMode == "ComfyLama";
+        var comfyLama = App.Settings.DecensorMode is "ComfyLama" or "ComfyRegen" or "ComfyCustom";
         BadgeDecensor.Visibility = !comfyOk && comfyLama ? Visibility.Visible : Visibility.Collapsed;
         // 검열 감지 AI(전용 학습 모델) 유무·복원 방식에 맞춰 설명을 바꾼다
         bool censorAi = App.Settings.DecensorTarget == "Auto" &&
@@ -83,6 +83,8 @@ public partial class MainWindow
         HintDecensor.Text = App.Settings.DecensorMode switch
         {
             "ComfyLama" => $"{find} 엔진 LaMa로 복원 (GPU)",
+            "ComfyRegen" => $"{find} SDXL로 재생성 (GPU·내장 레시피)",
+            "ComfyCustom" => $"{find} 커스텀 ComfyUI 워크플로로 복원 (GPU)",
             _ => $"{find} 자연스럽게 복원 (기본·내장 AI)",
         };
     }
@@ -263,10 +265,10 @@ public partial class MainWindow
 
         // ComfyUI가 필요한 조합인데 미설치면 바로 안내
         bool needComfy = s.EnableAutoColor
-            || (s.EnableDecensor && s.DecensorMode == "ComfyLama");
+            || (s.EnableDecensor && s.DecensorMode is "ComfyLama" or "ComfyRegen" or "ComfyCustom");
         if (needComfy && !s.ComfyAvailable)
         {
-            TxtStatus.Text = "채색/엔진 LaMa 검열은 ComfyUI가 필요해요 — 설정 → 구성요소에서 설치해 주세요";
+            TxtStatus.Text = "채색/엔진 LaMa·재생성 검열은 ComfyUI가 필요해요 — 설정 → 구성요소에서 설치해 주세요";
             return;
         }
 
@@ -296,6 +298,14 @@ public partial class MainWindow
             row.Stage = p.Error != null ? $"실패 — {p.Error}" : p.Stage;
             row.Percent = p.Percent;
         });
+
+        // 검토 흐름(설정 DecensorReview): 러너가 1차(번역+감지)를 끝내면 UI 스레드에서 검토 창을 띄워 마스크를 고치게 한다
+        runner.ReviewMasks = (pages, token) => Dispatcher.InvokeAsync(() =>
+        {
+            TxtStatus.Text = "검열 마스크 검토 중 — 창에서 확인·수정 후 [검열 제거 시작]을 누르세요";
+            var w = new MaskReviewWindow(pages) { Owner = this };
+            return w.ShowDialog() == true;
+        }).Task;
 
         try
         {
