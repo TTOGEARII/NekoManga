@@ -357,8 +357,9 @@ public class PipelineRunner(AppSettings settings) : IDisposable
     /// <summary>결과 보기 창에서 사용자가 손으로 고른 영역을 지운다 (자동 감지가 놓친 검열용).
     /// 파이프라인과 같은 복원 경로를 쓰므로 결과물의 성격이 일관된다.
     /// mode: "Basic" | "ComfyLama" | "ComfyRegen" (옛 "Strong"·"DeepCream"은 2026-10-19 폐기 — 모르는 값은 ArgumentException).</summary>
+    /// <param name="regenSettings">재생성(ComfyRegen)에서만 쓰는 설정 — 결과 창이 '이 페이지만' 프롬프트·수치를 바꾼 사본(null이면 전역 설정).</param>
     public async Task ManualDecensorAsync(Mat img, Mat mask, string mode,
-        IProgress<string>? status, CancellationToken ct)
+        IProgress<string>? status, CancellationToken ct, AppSettings? regenSettings = null)
     {
         switch (mode)
         {
@@ -379,7 +380,7 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                 var client = new ComfyClient(_server.BaseUrl);
                 var outDir = Path.Combine(settings.ComfyRoot, "ComfyUI", "output");
                 status?.Report("검열 자리 재생성 중 (SDXL)...");
-                await ComfyRegenDecensorAsync(client, outDir, img, mask, 901, ct);
+                await ComfyRegenDecensorAsync(client, outDir, img, mask, 901, ct, regenSettings);
                 return;
             }
             case "Basic":
@@ -459,12 +460,13 @@ public class PipelineRunner(AppSettings settings) : IDisposable
     /// 되가져올 때는 워크플로의 엣지 마스크(확장+블러)가 닿는 범위까지만 받아들이고 나머지 픽셀은 원본 그대로 둔다
     /// (VAE 왕복은 마스크 밖도 미세하게 바꾸지만 워크플로가 LaMa 결과 위에 합성하므로 밖은 LaMa 결과=원본이다).</summary>
     private async Task ComfyRegenDecensorAsync(ComfyClient client, string comfyOutputDir,
-        Mat img, Mat mask, int pageIdx, CancellationToken ct)
+        Mat img, Mat mask, int pageIdx, CancellationToken ct, AppSettings? regenSettings = null)
     {
+        var rs = regenSettings ?? settings;   // 결과 창의 '이 페이지만' 프롬프트·수치 (마스크 확장값은 전역과 같아 되가져오는 범위도 그대로)
         var maskedPng = MosaicDetector.ToMaskedPng(img, mask);
         var up = await client.UploadImageAsync(maskedPng, $"nm_regen_{pageIdx}.png", ct);
         var pid = await client.QueuePromptAsync(
-            WorkflowBuilder.BuildRegenDecensor(settings, up, $"nm_regenout_{pageIdx}"), ct);
+            WorkflowBuilder.BuildRegenDecensor(rs, up, $"nm_regenout_{pageIdx}"), ct);
         var r = await client.WaitAsync(pid, comfyOutputDir, TimeSpan.FromMinutes(20), ct);
         if (r.OutputFiles.Count == 0)
             throw new InvalidOperationException("재생성 결과 파일이 없어요.");

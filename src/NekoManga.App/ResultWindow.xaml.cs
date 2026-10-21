@@ -133,6 +133,7 @@ public partial class ResultWindow
     {
         if (_busy) return;                 // 복원이 돌고 있으면 _img를 건드리지 않는다
         if (!ConfirmDiscard()) return;
+        StashRegenFields();                // 떠나는 페이지의 재생성 값을 기억
         int gen = ++_loadGen;
 
         idx = Math.Clamp(idx, 0, _pages.Count - 1);
@@ -188,6 +189,7 @@ public partial class ResultWindow
 
         if (fit) FitToWindow();
         Redraw();
+        if (RegenMode) LoadRegenFields();   // 새 페이지의 재생성 값(기억된 것 또는 설정값)
         TxtStatus.Text = "지울 검열의 꼭짓점을 클릭하세요";
     }
 
@@ -818,6 +820,67 @@ public partial class ResultWindow
         }
     }
 
+    // ── 재생성(SDXL) '이 페이지만' 설정 (2026-10-21, 사용자 요청) ─────────────────────
+    // 전역 설정의 사본에 이 페이지 값만 덮어 러너에 넘긴다 — settings.json은 건드리지 않는다. 페이지별로 창이 열려 있는 동안만 기억.
+    private sealed record RegenPageValues(string Prompt, string Body, string Negative, double Denoise, int Steps, double Cfg, long Seed, double CnStr, double CnEnd)
+    {
+        public static RegenPageValues From(NekoManga.Core.AppSettings s) =>
+            new(s.RegenPrompt, s.RegenBodyTags, s.RegenNegative, s.RegenDenoise, s.RegenSteps, s.RegenCfg, s.RegenSeed, s.RegenCnStrength, s.RegenCnEnd);
+        public NekoManga.Core.AppSettings ApplyTo(NekoManga.Core.AppSettings s)
+        {
+            var c = s.ShallowClone();
+            c.RegenPrompt = Prompt; c.RegenBodyTags = Body; c.RegenNegative = Negative;
+            c.RegenDenoise = Denoise; c.RegenSteps = Steps; c.RegenCfg = Cfg; c.RegenSeed = Seed; c.RegenCnStrength = CnStr; c.RegenCnEnd = CnEnd;
+            return c;
+        }
+    }
+    private readonly Dictionary<int, RegenPageValues> _regenPerPage = [];
+    private bool RegenMode => (CmbEngine.SelectedItem as ComboBoxItem)?.Tag as string == "ComfyRegen";
+
+    private void CmbEngine_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        PnlRegen.Visibility = RegenMode ? Visibility.Visible : Visibility.Collapsed;
+        if (RegenMode) LoadRegenFields();
+    }
+
+    /// <summary>이 페이지에 기억된 값이 있으면 그것을, 없으면 ⚙ 설정의 재생성 값을 칸에 채운다.</summary>
+    private void LoadRegenFields()
+    {
+        var v = _regenPerPage.TryGetValue(_index, out var saved) ? saved : RegenPageValues.From(App.Settings);
+        var ic = System.Globalization.CultureInfo.InvariantCulture;
+        TxtRgPrompt.Text = v.Prompt; TxtRgBody.Text = v.Body; TxtRgNeg.Text = v.Negative;
+        TxtRgDenoise.Text = v.Denoise.ToString(ic); TxtRgSteps.Text = v.Steps.ToString(); TxtRgCfg.Text = v.Cfg.ToString(ic);
+        TxtRgSeed.Text = v.Seed.ToString(); TxtRgCnStr.Text = v.CnStr.ToString(ic); TxtRgCnEnd.Text = v.CnEnd.ToString(ic);
+    }
+
+    /// <summary>칸의 값을 읽어(범위 밖은 설정값으로) 이 페이지 값으로 기억하고 돌려준다. 설정과 같으면 기억에서 뺀다.</summary>
+    private RegenPageValues ReadRegenFields()
+    {
+        var d = RegenPageValues.From(App.Settings);
+        var ic = System.Globalization.CultureInfo.InvariantCulture;
+        double D(string t, double def, double lo, double hi) => double.TryParse(t.Trim(), System.Globalization.NumberStyles.Float, ic, out var x) ? Math.Clamp(x, lo, hi) : def;
+        int I(string t, int def, int lo, int hi) => int.TryParse(t.Trim(), out var x) ? Math.Clamp(x, lo, hi) : def;
+        var v = new RegenPageValues(TxtRgPrompt.Text.Trim(), TxtRgBody.Text.Trim(), TxtRgNeg.Text.Trim(),
+            D(TxtRgDenoise.Text, d.Denoise, 0.05, 1.0), I(TxtRgSteps.Text, d.Steps, 1, 150), D(TxtRgCfg.Text, d.Cfg, 0, 30),
+            long.TryParse(TxtRgSeed.Text.Trim(), out var seed) ? seed : -1, D(TxtRgCnStr.Text, d.CnStr, 0, 2), D(TxtRgCnEnd.Text, d.CnEnd, 0, 1));
+        if (v == d) _regenPerPage.Remove(_index); else _regenPerPage[_index] = v;
+        return v;
+    }
+
+    /// <summary>페이지를 떠나기 전에 칸 값을 그 페이지 몫으로 기억해 둔다.</summary>
+    private void StashRegenFields()
+    {
+        if (IsLoaded && PnlRegen.Visibility == Visibility.Visible && !_img.Empty()) ReadRegenFields();
+    }
+
+    private void BtnRegenReset_Click(object sender, RoutedEventArgs e)
+    {
+        _regenPerPage.Remove(_index);
+        LoadRegenFields();
+        TxtStatus.Text = "이 페이지의 재생성 값을 설정값으로 되돌렸어요";
+    }
+
     private void BtnClearSel_Click(object sender, RoutedEventArgs e)
     {
         _shapes.Clear();
@@ -873,8 +936,10 @@ public partial class ResultWindow
             // 적용할 때마다 다시 로딩해 수 초씩 낭비된다.
             _runner ??= new PipelineRunner(App.Settings);
             var runner = _runner;
+            // 재생성이면 이 페이지 전용 프롬프트·수치를 담은 설정 사본을 넘긴다 (전역 설정은 그대로)
+            var regenSettings = engineMode == "ComfyRegen" ? ReadRegenFields().ApplyTo(App.Settings) : null;
             await Task.Run(async () =>
-                await runner.ManualDecensorAsync(img, mask, engineMode, status, CancellationToken.None));
+                await runner.ManualDecensorAsync(img, mask, engineMode, status, CancellationToken.None, regenSettings));
 
             _undo.Push(before);
             BtnUndo.IsEnabled = true;

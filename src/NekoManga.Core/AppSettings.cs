@@ -227,6 +227,9 @@ public class AppSettings
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
+    /// <summary>얕은 복사 — 결과 창이 '이 페이지만' 재생성 프롬프트·수치를 바꿔 쓸 때 전역 설정을 건드리지 않게 (2026-10-21). 문자열·숫자뿐이라 얕은 복사면 충분.</summary>
+    public AppSettings ShallowClone() => (AppSettings)MemberwiseClone();
+
     public static AppSettings Load()
     {
         try
