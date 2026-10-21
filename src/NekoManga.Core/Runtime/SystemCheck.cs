@@ -73,26 +73,97 @@ public static class SystemCheck
         return old.Any(n.Contains);
     }
 
-    /// <summary>ComfyUI 묶음 조건 점검.</summary>
-    public static Report CheckForComfy()
+    public const string AmdDriverUrl = "https://www.amd.com/en/support/download/drivers.html";
+    public const int MinDriverMajorCu126 = 528;      // CUDA 12.6 런타임(마이너 버전 호환)의 사실상 최소 드라이버
+
+    /// <summary>레지스트리의 디스플레이 어댑터(DriverDesc) 목록 — WMI 없이 그래픽카드 이름·벤더를 본다.</summary>
+    public static IReadOnlyList<string> DisplayAdapters()
+    {
+        var list = new List<string>();
+        try
+        {
+            using var cls = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}");
+            if (cls == null) return list;
+            foreach (var sub in cls.GetSubKeyNames().Where(n => n.Length == 4 && n.All(char.IsDigit)))
+            {
+                using var k = cls.OpenSubKey(sub);
+                if (k?.GetValue("DriverDesc") is string d && d.Length > 0) list.Add(d);
+            }
+        }
+        catch { }
+        return list;
+    }
+
+    /// <summary>그래픽카드 종류 감지: "nvidia"(RTX 20+) / "nvidia-old"(GTX 10 이하) / "amd" / "none". 가상 어댑터(Parsec 등)는 무시.</summary>
+    public static (string Vendor, string Name) DetectVendor()
+    {
+        var adapters = DisplayAdapters().Where(a => !a.Contains("Virtual", StringComparison.OrdinalIgnoreCase) && !a.Contains("Parsec", StringComparison.OrdinalIgnoreCase)).ToList();
+        var nv = adapters.FirstOrDefault(a => a.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase) || a.Contains("GeForce", StringComparison.OrdinalIgnoreCase));
+        if (nv != null) return (LooksUnsupportedByCuda13(nv) ? "nvidia-old" : "nvidia", nv);
+        var amd = adapters.FirstOrDefault(a => a.Contains("AMD", StringComparison.OrdinalIgnoreCase) || a.Contains("Radeon", StringComparison.OrdinalIgnoreCase));
+        if (amd != null) return ("amd", amd);
+        return ("none", adapters.FirstOrDefault() ?? "");
+    }
+
+    /// <summary>ROCm(Windows)이 지원하는 Radeon 세대인지 이름으로 거칠게 판정: RX 6000(RDNA2)·7000(RDNA3)·9000(RDNA4)·Ryzen AI Max 내장. RX 5000·Vega·내장 Vega는 미지원.</summary>
+    public static bool LooksRocmSupported(string name)
+    {
+        var n = name.ToUpperInvariant();
+        if (n.Contains("RX 6") || n.Contains("RX 7") || n.Contains("RX 9") || n.Contains("AI MAX") || n.Contains("W7") || n.Contains("PRO R9")) return true;
+        return false;
+    }
+
+    public static Report CheckForComfy() => CheckForComfy("auto");
+
+    /// <summary>ComfyUI 묶음 조건 점검. vendor = 설정 GpuVendor("auto"면 감지).</summary>
+    public static Report CheckForComfy(string vendor)
     {
         var items = new List<Item>();
-        var gpu = QueryNvidia();
-        if (gpu == null)
-            items.Add(new("NVIDIA 드라이버", false, true, "NVIDIA 드라이버를 찾지 못했어요 (nvidia-smi 없음). 채색·재생성·자가 학습은 NVIDIA GPU가 필요해요.", DriverUrl, "드라이버 받기"));
+        var (detected, detName) = DetectVendor();
+        if (vendor == "auto") vendor = detected;
         else
         {
-            bool drvOk = gpu.DriverMajor >= MinDriverMajor;
-            items.Add(new("NVIDIA 드라이버", drvOk, true,
-                drvOk ? $"{gpu.Driver} (충분)" : $"{gpu.Driver} — 엔진의 CUDA 13 런타임은 {MinDriverMajor} 이상이 필요해요. 최신 GeForce 드라이버로 올린 뒤 재부팅하세요.",
-                drvOk ? null : DriverUrl, "드라이버 받기"));
-            bool genOk = !LooksUnsupportedByCuda13(gpu.Name);
-            items.Add(new("그래픽카드 세대", genOk, true,
-                genOk ? gpu.Name : $"{gpu.Name} — CUDA 13이 지원하지 않는 세대(GTX 9xx/10xx 등)예요. 채색·재생성은 이 PC에서 돌릴 수 없어요 (번역·검열제거는 가능).", null, null));
-            bool vramOk = gpu.MemoryMb >= 6000;
-            items.Add(new("VRAM", vramOk, false,
-                vramOk ? $"{gpu.MemoryMb / 1024.0:0.#}GB" + (gpu.MemoryMb < 8000 ? " — 6GB는 빠듯해요: 엔진 인자 --lowvram, 채색 해상도 1.0MP, 재생성 축소 MP 1.0을 권해요" : "")
-                       : $"{gpu.MemoryMb / 1024.0:0.#}GB — 6GB 미만이라 채색·재생성이 메모리 부족으로 실패하기 쉬워요.", null, null));
+            // 사용자가 종류를 직접 골랐으면 그 벤더의 어댑터 이름만 쓴다 (NVIDIA PC에서 AMD를 골라도 NVIDIA 이름으로 판정하지 않게)
+            bool wantAmd = vendor == "amd";
+            detName = DisplayAdapters().FirstOrDefault(a => wantAmd
+                ? a.Contains("AMD", StringComparison.OrdinalIgnoreCase) || a.Contains("Radeon", StringComparison.OrdinalIgnoreCase)
+                : a.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase) || a.Contains("GeForce", StringComparison.OrdinalIgnoreCase)) ?? "";
+        }
+        if (vendor == "amd")
+        {
+            bool win11 = Environment.OSVersion.Version.Build >= 22000;
+            items.Add(new("그래픽카드", true, false, detName.Length > 0 ? detName + " (AMD — ROCm 포터블)" : "AMD Radeon을 찾지 못했지만 AMD용(ROCm) 포터블을 받아요", null, null));
+            items.Add(new("Windows 11", win11, true,
+                win11 ? $"빌드 {Environment.OSVersion.Version.Build} (충분)" : $"빌드 {Environment.OSVersion.Version.Build} — AMD용 엔진(ROCm)은 Windows 11이 필요해요.", null, null));
+            bool genOk = detName.Length == 0 || LooksRocmSupported(detName);
+            items.Add(new("Radeon 세대", genOk, true,
+                genOk ? "RDNA2 이상(RX 6000/7000/9000)으로 보여요. AMD Software(Adrenalin)를 최신으로 유지하세요." : $"{detName} — ROCm(Windows)이 지원하지 않는 세대예요(RX 5000·Vega 등). 번역·검열제거는 되지만 채색·재생성은 돌릴 수 없어요.",
+                genOk ? AmdDriverUrl : null, "AMD 드라이버 받기"));
+            items.Add(new("참고", true, false, "AMD용 엔진은 ComfyUI 공식 ROCm 포터블(초기 지원)이라 NVIDIA보다 느리거나 일부 노드가 안 될 수 있어요. VRAM 8GB 이상 권장.", null, null));
+        }
+        else if (vendor == "none")
+        {
+            items.Add(new("그래픽카드", false, true, "NVIDIA나 AMD 그래픽카드를 찾지 못했어요. 채색·재생성·자가 학습은 전용 GPU가 필요해요 (번역·검열제거는 CPU로 돼요).", null, null));
+        }
+        else
+        {
+            var gpu = QueryNvidia();
+            bool old = vendor == "nvidia-old";
+            int minDrv = old ? MinDriverMajorCu126 : MinDriverMajor;
+            if (gpu == null)
+                items.Add(new("NVIDIA 드라이버", false, true, "NVIDIA 드라이버를 찾지 못했어요 (nvidia-smi 없음). 드라이버를 설치해 주세요.", DriverUrl, "드라이버 받기"));
+            else
+            {
+                bool drvOk = gpu.DriverMajor >= minDrv;
+                items.Add(new("NVIDIA 드라이버", drvOk, true,
+                    drvOk ? $"{gpu.Driver} (충분)" : $"{gpu.Driver} — 엔진의 {(old ? "CUDA 12.6" : "CUDA 13")} 런타임은 {minDrv} 이상이 필요해요. 최신 GeForce 드라이버로 올린 뒤 재부팅하세요.",
+                    drvOk ? null : DriverUrl, "드라이버 받기"));
+                items.Add(new("그래픽카드", true, false, gpu.Name + (old ? " — GTX 10 이하용 CUDA 12.6 포터블을 받아요 (느릴 수 있어요)" : " — CUDA 13 포터블"), null, null));
+                bool vramOk = gpu.MemoryMb >= 6000;
+                items.Add(new("VRAM", vramOk, false,
+                    vramOk ? $"{gpu.MemoryMb / 1024.0:0.#}GB" + (gpu.MemoryMb < 8000 ? " — 6GB는 빠듯해요: 엔진 인자 --lowvram, 채색 해상도 1.0MP, 재생성 축소 MP 1.0을 권해요" : "")
+                           : $"{gpu.MemoryMb / 1024.0:0.#}GB — 6GB 미만이라 채색·재생성이 메모리 부족으로 실패하기 쉬워요.", null, null));
+            }
         }
         var vc = VcRuntime();
         bool vcOk = vc != null && (vc.Major > 14 || (vc.Major == 14 && vc.Minor >= MinVcBuild));
@@ -123,7 +194,9 @@ public static class SystemCheck
             if (txt.Contains("CUDA out of memory") || txt.Contains("OutOfMemoryError"))
                 return "GPU 메모리가 부족했어요 — 설정 → 엔진 → 고급 옵션의 추가 실행 인자에 --lowvram 을 넣고, 채색 해상도 상한·재생성 축소 MP를 1.0으로 낮춰 보세요.";
             if (txt.Contains("Torch not compiled with CUDA") || txt.Contains("no kernel image is available"))
-                return "이 그래픽카드는 엔진의 CUDA 13 빌드가 지원하지 않아요 (GTX 9xx/10xx 등). 번역·검열제거는 되지만 채색·재생성은 돌릴 수 없어요.";
+                return "이 그래픽카드는 엔진 빌드가 지원하지 않아요. NVIDIA GTX 10 이하면 설정 → 엔진의 '그래픽카드 종류'를 'GTX 10 이하'로 바꾸고 ComfyUI 포터블 폴더를 지운 뒤 구성요소를 다시 설치하세요 (AMD는 RX 6000 이상 필요). 번역·검열제거는 돌아가요.";
+            if (txt.Contains("HIP error") || txt.Contains("hipErrorNoBinaryForGpu") || txt.Contains("rocBLAS"))
+                return "AMD 엔진(ROCm)이 이 Radeon을 지원하지 않거나 드라이버가 오래됐어요. AMD Software(Adrenalin)를 최신으로 올리고, RX 6000/7000/9000 계열인지 확인하세요.";
             return null;
         }
         catch { return null; }

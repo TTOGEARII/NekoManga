@@ -60,11 +60,20 @@ public class ComponentInstaller(AppSettings settings)
 
             case ComponentKind.Archive7z:
             {
+                // ComfyUI 포터블은 그래픽카드 종류(설정 GpuVendor, auto면 감지)에 맞는 묶음을 받는다 (2026-10-21 AMD·구형 NVIDIA 지원)
+                if (c.Id == ComponentCatalog.ComfyPortable.Id)
+                {
+                    var vendor = settings.GpuVendor == "auto" ? SystemCheck.DetectVendor().Vendor : settings.GpuVendor;
+                    c = c with { Url = ComponentCatalog.ComfyPortableUrl(vendor) };
+                }
                 var tmp = Resolve($"tmp/{c.Id}.7z");
                 await DownloadAsync(c, tmp, progress, ct);
                 progress.Report(new(c.Id, "압축 푸는 중... (수 분 걸려요)", 99, 0, 0));
                 await Extract7zAsync(tmp, Resolve(c.Target), ct);
                 File.Delete(tmp);
+                // AMD 묶음은 `ComfyUI_windows_portable_amd`로 풀린다 → 나머지 구성요소·실행 경로가 기대하는 이름으로 맞춘다
+                var amdDir = Resolve(ComponentCatalog.ComfyAmdDirName); var stdDir = Resolve(ComponentCatalog.ComfyDirName);
+                if (Directory.Exists(amdDir) && !Directory.Exists(stdDir)) Directory.Move(amdDir, stdDir);
                 break;
             }
         }

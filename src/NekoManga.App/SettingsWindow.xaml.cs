@@ -4,6 +4,7 @@ using System.IO;
 using System.Threading;
 using System.Windows;
 using NekoManga.Core.Engine;
+using NekoManga.Core.Runtime;
 using ComboBox = System.Windows.Controls.ComboBox;
 using ComboBoxItem = System.Windows.Controls.ComboBoxItem;
 using MessageBox = System.Windows.MessageBox;
@@ -60,6 +61,16 @@ public partial class SettingsWindow
         TxtAdvLamaGrow.Text = s.LamaMaskGrow.ToString();
         TxtAdvLamaBlur.Text = s.LamaMaskBlur.ToString();
         LoadRegen(s);
+
+        // 엔진 — 그래픽카드 종류 (ComfyUI 포터블 빌드 선택, 2026-10-21 AMD 지원)
+        foreach (ComboBoxItem it in CmbGpuVendor.Items) if ((string)it.Tag == s.GpuVendor) { CmbGpuVendor.SelectedItem = it; break; }
+        if (CmbGpuVendor.SelectedItem == null) CmbGpuVendor.SelectedIndex = 0;
+        _ = Task.Run(SystemCheck.DetectVendor).ContinueWith(t =>
+        {
+            var (v, name) = t.Result;
+            var label = v switch { "nvidia" => "NVIDIA (RTX 20 이상 → CUDA 13 빌드)", "nvidia-old" => "NVIDIA 구형 (GTX 10 이하 → CUDA 12.6 빌드)", "amd" => "AMD Radeon (→ ROCm 빌드, Windows 11 필요)", _ => "전용 그래픽카드 없음" };
+            Dispatcher.Invoke(() => TxtGpuDetected.Text = "감지됨: " + (name.Length > 0 ? name + " — " : "") + label);
+        });
 
         // 고급 옵션 — 엔진·채색 워크플로
         TxtAdvPort.Text = s.ComfyPort.ToString();
@@ -163,6 +174,8 @@ public partial class SettingsWindow
         s.RegenCnStrength = ParseD(TxtRegenCnStr.Text, s.RegenCnStrength, 0, 2);
         s.RegenCnEnd = ParseD(TxtRegenCnEnd.Text, s.RegenCnEnd, 0, 1);
         s.RegenMegapixels = ParseD(TxtRegenMp.Text, s.RegenMegapixels, 0, 8);
+
+        s.GpuVendor = CmbGpuVendor.SelectedItem is ComboBoxItem gv ? (string)gv.Tag : "auto";
 
         // 고급 옵션 — 엔진·채색 워크플로
         s.ComfyPort = ParseI(TxtAdvPort.Text, s.ComfyPort, 1024, 65535);

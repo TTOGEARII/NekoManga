@@ -471,6 +471,17 @@
                                       Foreground="{StaticResource NekoText}" Margin="0,10,0,0"/>
                             <CheckBox x:Name="ChkKeepWarm" Content="작업이 끝나도 엔진을 꺼두지 않기 (다음 작업이 빨라져요)"
                                       Foreground="{StaticResource NekoText}" Margin="0,6,0,0"/>
+                            <DockPanel Margin="0,10,0,0">
+                                <TextBlock Text="그래픽카드 종류" Style="{StaticResource FieldLabel}" Width="110"/>
+                                <ComboBox x:Name="CmbGpuVendor" Width="260" HorizontalAlignment="Left"
+                                          ToolTip="엔진(ComfyUI) 묶음을 어떤 빌드로 받을지 정해요. 이미 설치된 엔진은 바뀌지 않아요 — 바꾸려면 ComfyUI 포터블 폴더를 지우고 구성요소를 다시 설치하세요.">
+                                    <ComboBoxItem Tag="auto" Content="자동 감지"/>
+                                    <ComboBoxItem Tag="nvidia" Content="NVIDIA RTX 20 이상"/>
+                                    <ComboBoxItem Tag="nvidia-old" Content="NVIDIA GTX 10 이하 (구형)"/>
+                                    <ComboBoxItem Tag="amd" Content="AMD Radeon RX 6000 이상"/>
+                                </ComboBox>
+                            </DockPanel>
+                            <TextBlock x:Name="TxtGpuDetected" Style="{StaticResource HintText}" Margin="0,4,0,0" Text=""/>
                         </StackPanel>
                     </Border>
 

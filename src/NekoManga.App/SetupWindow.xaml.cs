@@ -195,9 +195,13 @@ public partial class SetupWindow
         bool needComfy = _rows.Any(r => r.Component.ForComfy && r.Status == "필요");
         if (!needComfy) { PnlReq.Visibility = Visibility.Collapsed; _req = null; return false; }
         TxtReqTitle.Text = "PC 점검 중..."; PnlReq.Visibility = Visibility.Visible;
-        _req = await Task.Run(SystemCheck.CheckForComfy);
+        if (CmbGpu.SelectedItem == null)
+            foreach (ComboBoxItem it in CmbGpu.Items) if ((string)it.Tag == App.Settings.GpuVendor) { CmbGpu.SelectedItem = it; break; }
+        var vendor = App.Settings.GpuVendor;
+        _req = await Task.Run(() => SystemCheck.CheckForComfy(vendor));
         var r = _req;
-        BtnReqDriver.Visibility = r.Items.Any(i => !i.Ok && i.FixUrl == SystemCheck.DriverUrl) ? Visibility.Visible : Visibility.Collapsed;
+        BtnReqDriver.Visibility = r.Items.Any(i => !i.Ok && (i.FixUrl == SystemCheck.DriverUrl || i.FixUrl == SystemCheck.AmdDriverUrl)) ? Visibility.Visible : Visibility.Collapsed;
+        BtnReqDriver.Content = r.Items.Any(i => !i.Ok && i.FixUrl == SystemCheck.AmdDriverUrl) ? "⬇ AMD 드라이버 받기" : "⬇ NVIDIA 드라이버 받기";
         BtnReqVc.Visibility = r.Items.Any(i => !i.Ok && i.FixUrl == SystemCheck.VcRedistUrl) ? Visibility.Visible : Visibility.Collapsed;
         if (r.HasBlocking)
         {
@@ -218,7 +222,17 @@ public partial class SetupWindow
     }
 
     private void BtnReqDriver_Click(object sender, RoutedEventArgs e) =>
-        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(SystemCheck.DriverUrl) { UseShellExecute = true });
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+            _req != null && _req.Items.Any(i => !i.Ok && i.FixUrl == SystemCheck.AmdDriverUrl) ? SystemCheck.AmdDriverUrl : SystemCheck.DriverUrl) { UseShellExecute = true });
+
+    private async void CmbGpu_Changed(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (CmbGpu.SelectedItem is not ComboBoxItem it || _running) return;
+        var tag = (string)it.Tag;
+        if (tag == App.Settings.GpuVendor) return;
+        App.Settings.GpuVendor = tag; if (!_demo) App.Settings.Save();
+        await CheckRequirementsAsync();
+    }
     private void BtnReqVc_Click(object sender, RoutedEventArgs e) =>
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(SystemCheck.VcRedistUrl) { UseShellExecute = true });
     private async void BtnReqRecheck_Click(object sender, RoutedEventArgs e) { if (!_running) await CheckRequirementsAsync(); }

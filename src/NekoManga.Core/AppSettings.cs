@@ -66,6 +66,9 @@ public class AppSettings
     public string ColorCheckpoint { get; set; } = "waiIllustriousSDXL_v170.safetensors";
     /// <summary>ControlNet 모델 파일명 (models/controlnet 안).</summary>
     public string ColorControlNet { get; set; } = "controlnet-union-sdxl-promax.safetensors";
+    /// <summary>ComfyUI 포터블 종류 (2026-10-21 AMD 지원): "auto"(감지) / "nvidia"(RTX 20 이상, CUDA 13) / "nvidia-old"(GTX 10 이하, CUDA 12.6) / "amd"(Radeon RDNA2+, ROCm, Windows 11).
+    /// 내장 엔진(번역·검열 감지·기본 복원)은 ONNX DirectML이라 그래픽카드 종류와 무관하다.</summary>
+    public string GpuVendor { get; set; } = "auto";
     /// <summary>앱을 켜면 채색 엔진(ComfyUI)을 미리 백그라운드로 켜 둔다 —
     /// 첫 채색에서 1~2분 기다리는 일이 없어진다.</summary>
     public bool PrewarmComfyOnLaunch { get; set; } = true;
@@ -248,6 +251,7 @@ public class AppSettings
         if (TranslateEngine is not ("Google" or "DeepL" or "DeepSeek" or "Grok")) TranslateEngine = "Google";
         // 옛 '강력'(SDXL+LoRA)·DeepCream 모드는 2026-10-19 폐기 — 둘 다 기본(내장 LaMa)으로 돌린다
         if (DecensorMode is not ("Basic" or "ComfyLama" or "ComfyRegen" or "ComfyCustom")) DecensorMode = "Basic";
+        if (GpuVendor is not ("auto" or "nvidia" or "nvidia-old" or "amd")) GpuVendor = "auto";
         CustomDecensorReach = Math.Clamp(CustomDecensorReach, 0, 512);
         SelfTrainEpochs = Math.Clamp(SelfTrainEpochs, 1, 50); SelfTrainLr = Math.Clamp(SelfTrainLr, 0.00001, 0.01);
         SelfTrainFreeze = Math.Clamp(SelfTrainFreeze, 0, 22); SelfTrainMinPages = Math.Clamp(SelfTrainMinPages, 5, 500);

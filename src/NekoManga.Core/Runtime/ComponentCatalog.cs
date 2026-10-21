@@ -99,6 +99,17 @@ public static class ComponentCatalog
         "https://github.com/comfyanonymous/ComfyUI/releases/latest/download/ComfyUI_windows_portable_nvidia.7z",
         ".", $"{ComfyDirName}/ComfyUI/main.py", 1_800_000_000, ForComfy: true);
 
+    /// <summary>그래픽카드 종류별 ComfyUI 포터블 (2026-10-21): nvidia = CUDA 13(RTX 20 이상, 드라이버 580+), nvidia-old = CUDA 12.6(GTX 10 이하),
+    /// amd = ROCm(Radeon RDNA2+, Windows 11; 압축이 `ComfyUI_windows_portable_amd`로 풀리므로 설치기가 `ComfyUI_windows_portable`로 이름을 맞춘다).
+    /// 셋 다 안에 든 ComfyUI·python_embeded 구조는 같아 커스텀 노드·모델 경로와 실행 명령은 공통이다.</summary>
+    public static string ComfyPortableUrl(string vendor) => vendor switch
+    {
+        "amd" => "https://github.com/comfyanonymous/ComfyUI/releases/latest/download/ComfyUI_windows_portable_amd.7z",
+        "nvidia-old" => "https://github.com/comfyanonymous/ComfyUI/releases/latest/download/ComfyUI_windows_portable_nvidia_cu126.7z",
+        _ => ComfyPortable.Url,
+    };
+    public const string ComfyAmdDirName = "ComfyUI_windows_portable_amd";
+
     public static readonly Component NodeWd14 = new(
         "node-wd14", "WD14 Tagger 노드 (자동 태그)", ComponentKind.ArchiveZip,
         "https://github.com/pythongosssss/ComfyUI-WD14-Tagger/archive/refs/heads/main.zip",

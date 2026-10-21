@@ -36,7 +36,17 @@
             <Border x:Name="PnlReq" Visibility="Collapsed" Margin="0,8,0,0" Padding="12,8" BorderThickness="2"
                     BorderBrush="{StaticResource NekoStroke}" Background="{StaticResource NekoCard}">
                 <StackPanel>
-                    <TextBlock x:Name="TxtReqTitle" FontWeight="SemiBold" Foreground="{StaticResource NekoText}" Text="PC 점검"/>
+                    <DockPanel>
+                        <TextBlock Text="그래픽카드" Style="{StaticResource FieldLabel}" Width="80"/>
+                        <ComboBox x:Name="CmbGpu" Width="300" HorizontalAlignment="Left" SelectionChanged="CmbGpu_Changed"
+                                  ToolTip="채색 엔진(ComfyUI) 묶음을 그래픽카드에 맞는 빌드로 받아요. 보통은 자동 감지면 돼요.">
+                            <ComboBoxItem Tag="auto" Content="자동 감지"/>
+                            <ComboBoxItem Tag="nvidia" Content="NVIDIA RTX 20 이상"/>
+                            <ComboBoxItem Tag="nvidia-old" Content="NVIDIA GTX 10 이하 (구형)"/>
+                            <ComboBoxItem Tag="amd" Content="AMD Radeon RX 6000 이상"/>
+                        </ComboBox>
+                    </DockPanel>
+                    <TextBlock x:Name="TxtReqTitle" FontWeight="SemiBold" Foreground="{StaticResource NekoText}" Text="PC 점검" Margin="0,6,0,0"/>
                     <TextBlock x:Name="TxtReq" Style="{StaticResource HintText}" Margin="0,4,0,0" TextWrapping="Wrap"/>
                     <WrapPanel Margin="0,6,0,0">
                         <ui:Button x:Name="BtnReqDriver" Content="⬇ NVIDIA 드라이버 받기" Click="BtnReqDriver_Click" Padding="10,4" Visibility="Collapsed"/>
