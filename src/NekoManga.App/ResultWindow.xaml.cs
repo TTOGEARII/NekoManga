@@ -328,7 +328,7 @@ public partial class ResultWindow
         // 식자 편집 모드에서는 글자가 안 구워진 원고(base)를 깔고 그 위에 텍스트박스를 띄운다
         bool editView = LetterMode && !_letterPreview && _baseImg != null;
         var shown = editView ? _baseImg! : _img;
-        ImgView.Source = ToBitmap(shown);
+        ImgView.Source = ToBitmapCached(shown);
         ImageHost.Width = ImgView.Width = Overlay.Width = EditLayer.Width = shown.Width * _scale;
         ImageHost.Height = ImgView.Height = Overlay.Height = EditLayer.Height = shown.Height * _scale;
         TxtZoom.Text = $"{_scale * 100:0}%";
@@ -481,6 +481,18 @@ public partial class ResultWindow
             catch { }
         return Colors.Black;
     }
+
+    /// <summary>같은 Mat이면 지난 변환을 다시 쓴다 — Redraw는 휠 확대마다 불리는데, 2000×3000 페이지를 매번
+    /// BGRA로 복사해 비트맵을 새로 만들면(23MB) 확대·페이지 전환이 굼떴다 (2026-10-21). 제자리에서 픽셀을 바꾼
+    /// 뒤(수동 복원)에는 InvalidateBitmap()으로 버린다; 새 Mat을 대입한 경우는 참조가 달라 자동으로 다시 만든다.</summary>
+    private Mat? _bmpKey; private BitmapSource? _bmpVal;
+    private BitmapSource ToBitmapCached(Mat m)
+    {
+        if (ReferenceEquals(m, _bmpKey) && _bmpVal != null) return _bmpVal;
+        _bmpVal = ToBitmap(m); _bmpKey = m;
+        return _bmpVal;
+    }
+    private void InvalidateBitmap() { _bmpKey = null; _bmpVal = null; }
 
     /// <summary>Mat(BGR) → WPF 비트맵. OpenCvSharp.Extensions 없이 직접 옮긴다.</summary>
     private static BitmapSource ToBitmap(Mat m)
@@ -788,6 +800,7 @@ public partial class ResultWindow
             BtnSave.IsEnabled = true;
             _shapes.Clear();
             _brushStrokes.Clear();
+            InvalidateBitmap();   // _img를 제자리에서 고쳤다
             Redraw();
             TxtStatus.Text = $"지웠어요 ({px:N0}px) — 마음에 들면 [저장]을 눌러주세요";
         }

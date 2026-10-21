@@ -146,12 +146,21 @@ public partial class MainWindow
     }
 
     /// <summary>목록 썸네일을 백그라운드에서 만든다. DecodePixelHeight로 축소 디코딩해
-    /// 원고 수십 장을 올려도 메모리·시간이 튀지 않는다.</summary>
+    /// 원고 수십 장을 올려도 메모리·시간이 튀지 않는다.
+    /// 동시 디코딩은 3장으로 제한 — 결과물 PNG(채색본 수 MB)를 수십 장 한꺼번에 풀면 스레드풀이 꽉 차
+    /// 미리보기 디코딩까지 뒤로 밀려 "완료 후 그림이 늦게 뜨는" 체감이 됐다 (2026-10-21).</summary>
+    private static readonly SemaphoreSlim ThumbGate = new(3);
     private static async Task LoadThumbAsync(FileRow row)
     {
         var path = row.ViewPath;
-        var thumb = await Task.Run(() => LoadBitmap(path, 160));
-        row.Thumb = thumb;
+        await ThumbGate.WaitAsync();
+        try
+        {
+            if (row.ViewPath != path) return;   // 기다리는 사이 경로가 바뀌었으면(결과물로 교체) 그쪽 요청이 다시 온다
+            var thumb = await Task.Run(() => LoadBitmap(path, 160));
+            if (row.ViewPath == path) row.Thumb = thumb;
+        }
+        finally { ThumbGate.Release(); }
     }
 
     private static BitmapSource? LoadBitmap(string path, int decodeHeight)
@@ -172,19 +181,33 @@ public partial class MainWindow
         catch { return null; }   // webp 등 WPF가 못 읽는 포맷은 썸네일 없이 간다
     }
 
-    /// <summary>작업이 끝난 뒤 결과물 쪽을 보도록 경로를 바꾸고 썸네일·미리보기를 갱신한다.</summary>
+    /// <summary>이 장의 결과물 경로 (없으면 원본). 검열이 없던 장은 원본이 확장자 그대로 복사된다.</summary>
+    private static string ResolveViewPath(PipelineRunner runner, FileRow row)
+    {
+        var outPath = runner.OutputPathFor(row.Path);
+        if (File.Exists(outPath)) return outPath;
+        var sameName = Path.Combine(Path.GetDirectoryName(outPath)!, Path.GetFileName(row.Path));
+        return File.Exists(sameName) ? sameName : row.Path;
+    }
+
+    /// <summary>한 장이 끝날 때마다 그 장만 결과물로 바꿔 보여 준다 — 전체가 끝날 때까지 기다리지 않는다 (2026-10-21).</summary>
+    private void ShowResultFor(PipelineRunner runner, FileRow row)
+    {
+        var path = ResolveViewPath(runner, row);
+        if (path == row.ViewPath) return;
+        row.ViewPath = path;
+        _ = LoadThumbAsync(row);
+        if (ReferenceEquals(FileList.SelectedItem, row)) ShowPreview(row);
+    }
+
+    /// <summary>작업이 끝난 뒤 결과물 쪽을 보도록 경로를 바꾸고 썸네일·미리보기를 갱신한다 (진행 중 놓친 장 보정용).</summary>
     private void RefreshResultViews(PipelineRunner runner)
     {
         foreach (var row in _rows)
         {
-            var outPath = runner.OutputPathFor(row.Path);
-            if (!File.Exists(outPath))
-            {
-                // 검열이 없던 장은 원본이 확장자 그대로 복사된다
-                var sameName = Path.Combine(Path.GetDirectoryName(outPath)!, Path.GetFileName(row.Path));
-                outPath = File.Exists(sameName) ? sameName : row.Path;
-            }
-            row.ViewPath = outPath;
+            var path = ResolveViewPath(runner, row);
+            if (path == row.ViewPath) continue;
+            row.ViewPath = path;
             _ = LoadThumbAsync(row);
         }
         ShowPreview(FileList.SelectedItem as FileRow ?? _rows.FirstOrDefault());
@@ -193,11 +216,21 @@ public partial class MainWindow
     private void FileList_SelectionChanged(object sender, SelectionChangedEventArgs e)
         => ShowPreview(FileList.SelectedItem as FileRow);
 
-    private void ShowPreview(FileRow? row)
+    /// <summary>큰 미리보기. 디코딩은 백그라운드에서 — 결과물 PNG(2000×3000 채색본)를 UI 스레드에서 풀면 0.5~1.5초 멈춘다.
+    /// 디코딩 높이는 패널 크기에 맞춘다(기본 380px 폭 패널에 1400px을 풀던 것은 낭비). 늦게 끝난 옛 요청은 세대 번호로 버린다.</summary>
+    private int _previewGen;
+    private async void ShowPreview(FileRow? row)
     {
+        int gen = ++_previewGen;
         if (row == null) { ImgPreview.Source = null; TxtPreviewName.Text = "미리보기"; return; }
-        TxtPreviewName.Text = Path.GetFileName(row.ViewPath);
-        ImgPreview.Source = LoadBitmap(row.ViewPath, 1400);
+        var path = row.ViewPath;
+        TxtPreviewName.Text = Path.GetFileName(path);
+        // 패널 실제 높이 × DPI × 1.5 (확대 여유), 600~1600 사이
+        double dpi = System.Windows.Media.VisualTreeHelper.GetDpi(this).DpiScaleY;
+        int h = (int)Math.Clamp((ImgPreview.ActualHeight > 50 ? ImgPreview.ActualHeight : 700) * dpi * 1.5, 600, 1600);
+        var bmp = await Task.Run(() => LoadBitmap(path, h));
+        if (gen != _previewGen) return;            // 그 사이 다른 장을 골랐거나 경로가 바뀜
+        ImgPreview.Source = bmp;
     }
 
     private void BtnClear_Click(object sender, RoutedEventArgs e)
@@ -297,6 +330,7 @@ public partial class MainWindow
             if (row == null) return;
             row.Stage = p.Error != null ? $"실패 — {p.Error}" : p.Stage;
             row.Percent = p.Percent;
+            if (p.Done && p.Error == null) ShowResultFor(runner, row);   // 끝난 장은 바로 결과물로
         });
 
         // 검토 흐름(설정 DecensorReview): 러너가 1차(번역+감지)를 끝내면 UI 스레드에서 검토 창을 띄워 마스크를 고치게 한다
