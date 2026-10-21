@@ -127,25 +127,33 @@ public partial class ResultWindow
 
     /// <summary>페이지 전환. 읽기는 백그라운드(미리 읽어 둔 것이 있으면 즉시) — 읽는 동안은 넘김 버튼만 잠근다.
     /// 2026-10-21 이전엔 UI 스레드에서 PNG 두 장(결과물·식자 전 원고)을 동기로 읽어 큰 페이지에서 0.5초쯤 멈췄다.</summary>
+    private bool _loading;   // 페이지 읽기 대기 중 — 그동안 [지우기] 적용은 막는다 (옛 _img를 지우는 사이 복원이 그 위에 쓰면 안 된다)
+
     private async void LoadPage(int idx, bool fit)
     {
+        if (_busy) return;                 // 복원이 돌고 있으면 _img를 건드리지 않는다
         if (!ConfirmDiscard()) return;
         int gen = ++_loadGen;
 
-        _index = Math.Clamp(idx, 0, _pages.Count - 1);
-        TxtFile.Text = System.IO.Path.GetFileName(_pages[_index]);
-        TxtFile.ToolTip = _pages[_index];
-        TxtCount.Text = $"{_index + 1} / {_pages.Count}";
+        idx = Math.Clamp(idx, 0, _pages.Count - 1);
+        _index = idx;
+        _loading = true;
+        TxtFile.Text = System.IO.Path.GetFileName(_pages[idx]);
+        TxtFile.ToolTip = _pages[idx];
+        TxtCount.Text = $"{idx + 1} / {_pages.Count}";
         BtnPrev.IsEnabled = BtnNext.IsEnabled = false;
-        if (CmbPages.SelectedIndex != _index) CmbPages.SelectedIndex = _index;
+        if (CmbPages.SelectedIndex != idx) CmbPages.SelectedIndex = idx;
 
-        var task = FetchPage(_index);
+        var task = FetchPage(idx);
         if (!task.IsCompleted) TxtStatus.Text = "읽는 중...";
-        PageData data;
+        PageData data; string? readError = null;
         try { data = await task; }
-        catch (Exception ex) { data = new PageData(new Mat(), null, null); TxtStatus.Text = "읽기 실패: " + ex.Message; }
-        _prefetch.Remove(_index);
-        if (gen != _loadGen) { data.Dispose(); return; }   // 기다리는 사이 또 넘겼다
+        catch (Exception ex) { data = new PageData(new Mat(), null, null); readError = ex.Message; }
+        // 기다리는 사이 또 넘겼거나 창이 닫혔다 — 결과는 사전(_prefetch)이 계속 소유하므로 여기서 해제·제거하지 않는다
+        // (지는 쪽이 이기는 쪽 키를 지우고 Mat을 해제해 ObjectDisposedException으로 죽던 경로)
+        if (gen != _loadGen) return;
+        _loading = false;
+        _prefetch.Remove(idx);
 
         _img.Dispose();
         while (_undo.Count > 0) _undo.Pop().Dispose();
@@ -164,7 +172,7 @@ public partial class ResultWindow
 
         if (_img.Empty())
         {
-            TxtStatus.Text = "이미지를 읽지 못했어요: " + Path.GetFileName(_pages[_index]);
+            TxtStatus.Text = "이미지를 읽지 못했어요: " + Path.GetFileName(_pages[_index]) + (readError != null ? " — " + readError : "");
             ImgView.Source = null;
             Overlay.Children.Clear();
             return;
@@ -797,7 +805,7 @@ public partial class ResultWindow
     // ── 지우기 ──────────────────────────────────────────────
     private async void BtnApply_Click(object sender, RoutedEventArgs e)
     {
-        if (_img.Empty() || _busy) return;
+        if (_img.Empty() || _busy || _loading) return;
 
         if (LetterMode) { ApplyLettering(); return; }
 
@@ -926,8 +934,9 @@ public partial class ResultWindow
     {
         if (!ConfirmDiscard()) { e.Cancel = true; return; }
         base.OnClosing(e);
-        _runner?.Dispose();
-        _img.Dispose();
+        ++_loadGen;   // 아직 기다리는 LoadPage가 있으면 깨어나도 아무것도 안 하게
+        // 복원이 돌고 있으면 그 Mat·러너는 해제하지 않는다(작업이 끝나면 GC가 거둔다) — 쓰는 중인 네이티브 메모리를 해제하면 죽는다
+        if (!_busy) { _runner?.Dispose(); _img.Dispose(); }
         _baseImg?.Dispose();
         while (_undo.Count > 0) _undo.Pop().Dispose();
         foreach (var t in _prefetch.Values) t.ContinueWith(x => { if (x.Status == TaskStatus.RanToCompletion) x.Result.Dispose(); });

@@ -24,7 +24,7 @@
             <!-- ── 채색 ── -->
             <TabItem Header="🎨 채색">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="8">
+                    <StackPanel Margin="8,8,18,8">
                         <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="품질 · 속도"/></Border>
                         <UniformGrid Columns="2" Rows="4">
                             <DockPanel Margin="0,4">
@@ -111,7 +111,7 @@
             <!-- ── 검열 제거 ── -->
             <TabItem Header="🙈 검열 제거">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="8">
+                <StackPanel Margin="8,8,18,8">
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="제거 방식"/></Border>
                     <ComboBox x:Name="CmbDecensorMode" Width="400" HorizontalAlignment="Left" SelectionChanged="CmbDecensorMode_Changed">
                         <ComboBoxItem Content="기본 — 내장 LaMa 만화판 (빠름, 추가 설치 불필요)" Tag="Basic"/>
@@ -237,7 +237,7 @@
                                 <TextBox x:Name="TxtSelfFreeze" Width="70" HorizontalAlignment="Left"/>
                             </DockPanel>
                             <DockPanel>
-                                <TextBlock Text="최소 재료 쪽수 (5 ~ 500)" Style="{StaticResource FieldLabel}" Width="150"/>
+                                <TextBlock Text="최소 재료 쪽수 (5 ~ 500)" Style="{StaticResource FieldLabel}" Width="166"/>
                                 <TextBox x:Name="TxtSelfMinPages" Width="70" HorizontalAlignment="Left"/>
                             </DockPanel>
                         </UniformGrid>
@@ -326,7 +326,7 @@
             <!-- ── 번역 ── -->
             <TabItem Header="💬 번역">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="8">
+                <StackPanel Margin="8,8,18,8">
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="번역 엔진"/></Border>
                     <ComboBox x:Name="CmbTranslator" Width="300" HorizontalAlignment="Left"
                               SelectionChanged="CmbTranslator_SelectionChanged">
@@ -452,7 +452,7 @@
             <!-- ── 엔진 (ComfyUI 수명·모델 관리 — 초보자용) ── -->
             <TabItem Header="⚙ 엔진">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="8">
+                <StackPanel Margin="8,8,18,8">
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="채색 엔진"/></Border>
                     <TextBlock Style="{StaticResource HintText}"
                                Text="채색과 엔진 LaMa 검열제거를 담당하는 엔진이에요. 창 없이 뒤에서 돌아가고, 앱이 알아서 켜고 꺼요 — 직접 실행할 일이 없어요."/>
@@ -596,7 +596,7 @@
 
             <!-- ── 구성요소 ── -->
             <TabItem Header="📦 구성요소">
-                <StackPanel Margin="8">
+                <StackPanel Margin="8,8,18,8">
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="설치 경로"/></Border>
                     <DockPanel Margin="0,4">
                         <TextBlock Text="구성요소 위치" Style="{StaticResource FieldLabel}" Width="130"/>
@@ -615,7 +615,7 @@
                         <TextBox x:Name="TxtLinkedComfy"/>
                     </DockPanel>
                     <TextBlock Style="{StaticResource HintText}"
-                               Text="이미 설치해 둔 ComfyUI portable이 있으면 경로를 넣어 재다운로드(11GB)를 건너뛰어요. 채색·엔진 LaMa 검열제거에만 필요해요."/>
+                               Text="이미 설치해 둔 ComfyUI portable이 있으면 경로를 넣어 재다운로드(약 20GB)를 건너뛰어요. 채색과 GPU 검열 제거(엔진 LaMa·재생성·커스텀)에만 필요해요."/>
 
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="civitai API 키 (선택)"/></Border>
                     <TextBox x:Name="TxtCivitaiKey"/>
@@ -629,7 +629,7 @@
             <!-- ── 정보 ── -->
             <TabItem Header="ℹ 정보">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="8">
+                <StackPanel Margin="8,8,18,8">
                     <StackPanel Orientation="Horizontal" Margin="0,12,0,4">
                         <Image Source="{DynamicResource NekoLogo}" Width="46" Height="46" Margin="0,0,12,0"/>
                         <TextBlock Text="NekoManga" FontSize="24" FontWeight="ExtraBold"
@@ -643,7 +643,8 @@
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="내장 AI 모듈"/></Border>
                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,2,0,0" Text="• 텍스트 감지 — comictextdetector: 말풍선과 글자 위치를 찾아요 (BT와 같은 모델)."/>
                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 글자 인식 — manga-ocr: 일본어 세로쓰기·후리가나 특화 OCR."/>
-                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 글자 지움·기본 검열 제거 — LaMa(만화·애니 학습판): 지운 자리를 주변과 어울리게 메워요. '엔진 LaMa'는 ComfyUI 원본 레시피(GPU)로 같은 일을 해요."/>
+                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 검열 감지 — NekoManga 전용 학습 모델(YOLO-seg): 흰선·검은선·모자이크를 한 번에 찾아요. 검토 창에서 고친 마스크로 자가 학습할 수 있어요."/>
+                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 글자 지움·기본 검열 제거 — LaMa(만화·애니 학습판): 지운 자리를 주변과 어울리게 메워요. '엔진 LaMa'는 ComfyUI 원본 레시피(GPU), '재생성'은 SDXL로 다시 그리기, '커스텀'은 내 ComfyUI 워크플로예요."/>
                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 번역 — Google(무료) / DeepL / DeepSeek / Grok 중 선택."/>
                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 자동 채색 — SDXL(WAI-illustrious) + ControlNet 2단: 원고의 선을 따라 컬러로 그려요. WD14 태거가 장면 태그를 뽑아 프롬프트를 만들어요."/>
                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 식자 — 내장 렌더러(GDI+): 번역문을 말풍선에 어절 단위 줄바꿈·외곽선과 함께 그려요."/>

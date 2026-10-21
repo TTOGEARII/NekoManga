@@ -61,19 +61,36 @@ public class ComponentInstaller(AppSettings settings)
             case ComponentKind.Archive7z:
             {
                 // ComfyUI 포터블은 그래픽카드 종류(설정 GpuVendor, auto면 감지)에 맞는 묶음을 받는다 (2026-10-21 AMD·구형 NVIDIA 지원)
-                if (c.Id == ComponentCatalog.ComfyPortable.Id)
+                bool isComfy = c.Id == ComponentCatalog.ComfyPortable.Id;
+                string vendor = "nvidia";
+                if (isComfy)
                 {
-                    var vendor = settings.GpuVendor == "auto" ? SystemCheck.DetectVendor().Vendor : settings.GpuVendor;
+                    vendor = settings.GpuVendor == "auto" ? SystemCheck.DetectVendor().Vendor : settings.GpuVendor;
                     c = c with { Url = ComponentCatalog.ComfyPortableUrl(vendor) };
                 }
-                var tmp = Resolve($"tmp/{c.Id}.7z");
-                await DownloadAsync(c, tmp, progress, ct);
-                progress.Report(new(c.Id, "압축 푸는 중... (수 분 걸려요)", 99, 0, 0));
-                await Extract7zAsync(tmp, Resolve(c.Target), ct);
-                File.Delete(tmp);
-                // AMD 묶음은 `ComfyUI_windows_portable_amd`로 풀린다 → 나머지 구성요소·실행 경로가 기대하는 이름으로 맞춘다
                 var amdDir = Resolve(ComponentCatalog.ComfyAmdDirName); var stdDir = Resolve(ComponentCatalog.ComfyDirName);
-                if (Directory.Exists(amdDir) && !Directory.Exists(stdDir)) Directory.Move(amdDir, stdDir);
+                // 지난번에 풀어 두고 이름만 못 바꾼 AMD 폴더가 있으면(백신이 파일을 잡고 있던 경우 등) 1.8GB를 다시 받지 않고 이름 변경부터 한다
+                bool amdExtracted = isComfy && File.Exists(Path.Combine(amdDir, "ComfyUI", "main.py"));
+                if (!amdExtracted)
+                {
+                    // 임시 파일 이름에 벤더를 넣는다 — 받다 만 NVIDIA .part에 AMD 묶음을 이어 붙이면 깨진 7z가 된다
+                    var tmp = Resolve(isComfy ? $"tmp/{c.Id}-{vendor}.7z" : $"tmp/{c.Id}.7z");
+                    await DownloadAsync(c, tmp, progress, ct);
+                    progress.Report(new(c.Id, "압축 푸는 중... (수 분 걸려요)", 99, 0, 0));
+                    await Extract7zAsync(tmp, Resolve(c.Target), ct);
+                    File.Delete(tmp);
+                }
+                // AMD 묶음은 `ComfyUI_windows_portable_amd`로 풀린다 → 나머지 구성요소·실행 경로가 기대하는 이름으로 맞춘다.
+                // 판정은 폴더 유무가 아니라 Probe(main.py)로 — 받다 만 표준 폴더가 남아 있으면 그게 설치를 영원히 '필요'로 묶는다.
+                if (isComfy && Directory.Exists(amdDir) && !File.Exists(Resolve(c.Probe)))
+                {
+                    if (Directory.Exists(stdDir)) Directory.Delete(stdDir, true);
+                    for (int attempt = 0; ; attempt++)
+                    {
+                        try { Directory.Move(amdDir, stdDir); break; }
+                        catch (IOException) when (attempt < 5) { await Task.Delay(1000, ct); }   // 백신이 갓 풀린 파일을 잡고 있는 동안
+                    }
+                }
                 break;
             }
         }

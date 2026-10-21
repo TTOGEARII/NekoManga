@@ -64,7 +64,7 @@ public class ComfyServer(AppSettings settings) : IAsyncDisposable
             if (_proc.HasExited)
             {
                 // 흔한 원인(드라이버·VC++ 런타임·VRAM)은 로그에서 읽어 바로 할 일을 알려 준다 (2026-10-20, 다른 PC의 c10.dll 1114 사고)
-                var hint = Runtime.SystemCheck.DiagnoseComfyLog(LogPath);
+                var hint = Runtime.SystemCheck.DiagnoseComfyLog(LogPath, settings.GpuVendor);
                 throw new InvalidOperationException(
                     $"ComfyUI가 시작하자마자 종료됐어요 (exit {_proc.ExitCode}). " + (hint != null ? hint + " " : "") + $"로그: {LogPath}");
             }

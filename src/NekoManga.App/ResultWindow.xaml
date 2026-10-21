@@ -61,11 +61,11 @@
                                 <TextBlock Text="여유(px)" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                 <TextBox x:Name="TxtGrow" Text="6" Width="56" VerticalAlignment="Center"/>
                                 <TextBlock Text="모델" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="20,0,6,0"/>
-                                <ComboBox x:Name="CmbEngine" Width="280" VerticalAlignment="Center">
-                                    <ComboBoxItem Tag="Basic" Content="기본 LaMa 만화판 (빠름·항상 같은 결과)" IsSelected="True"/>
-                                    <ComboBoxItem Tag="ComfyLama" Content="엔진 LaMa (GPU·원본 레시피)"/>
-                                    <ComboBoxItem Tag="ComfyRegen" Content="재생성 (SDXL·내장 레시피)"/>
-                                    <ComboBoxItem Tag="ComfyCustom" Content="커스텀 ComfyUI (설정의 워크플로 파일)"/>
+                                <ComboBox x:Name="CmbEngine" Width="250" VerticalAlignment="Center">
+                                    <ComboBoxItem Tag="Basic" Content="기본 LaMa 만화판 (빠름)" IsSelected="True" ToolTip="내장 모델, 항상 같은 결과"/>
+                                    <ComboBoxItem Tag="ComfyLama" Content="엔진 LaMa (GPU)" ToolTip="ComfyUI 원본 레시피"/>
+                                    <ComboBoxItem Tag="ComfyRegen" Content="재생성 (SDXL·GPU)" ToolTip="내장 재생성 레시피로 다시 그려요"/>
+                                    <ComboBoxItem Tag="ComfyCustom" Content="커스텀 ComfyUI" ToolTip="설정 → 검열 제거의 커스텀 워크플로 파일"/>
                                 </ComboBox>
                             </WrapPanel>
                         </StackPanel>

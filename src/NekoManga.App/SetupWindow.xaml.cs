@@ -148,7 +148,10 @@ public partial class SetupWindow
         _installer = new ComponentInstaller(App.Settings);
         RefreshList();
         UpdateLocationInfo();
+        _ = RefreshTuneSafeAsync();   // 설치 대상이 바뀌면 맞춤 패널도 다시 (이미 설치된 위치면 숨김)
     }
+
+    private async Task RefreshTuneSafeAsync() { try { await RefreshTuneAsync(); } catch { } }
 
     /// <summary>선택 위치 전체 경로 + 필요/여유 용량을 보여준다. 공간이 부족하면 경고색.</summary>
     private void UpdateLocationInfo()
@@ -248,8 +251,8 @@ public partial class SetupWindow
         var tag = (string)it.Tag;
         if (tag == App.Settings.GpuVendor) return;
         App.Settings.GpuVendor = tag; if (!_demo) App.Settings.Save();
-        await CheckRequirementsAsync();
-        try { await RefreshTuneAsync(); } catch { }
+        try { await CheckRequirementsAsync(); } catch { }
+        await RefreshTuneSafeAsync();
     }
     private void BtnReqVc_Click(object sender, RoutedEventArgs e) =>
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(SystemCheck.VcRedistUrl) { UseShellExecute = true });
@@ -260,6 +263,7 @@ public partial class SetupWindow
         if (_running) return;
         _running = true;
         BtnInstall.IsEnabled = false;
+        CmbGpu.IsEnabled = false;   // 받는 도중 종류를 바꾸면 저장도 안 되고 콤보만 달라져 혼란 — 끝나면 다시 켠다
         BtnSkip.Content = "숨기기";
 
         var progress = new Progress<InstallProgress>(p =>
@@ -304,7 +308,7 @@ public partial class SetupWindow
             TxtNote.Text = "문제가 생겼어요: " + ex.Message;
             BtnInstall.IsEnabled = true;
         }
-        finally { _running = false; }
+        finally { _running = false; CmbGpu.IsEnabled = true; }
     }
 
     private void BtnSkip_Click(object sender, RoutedEventArgs e) => Close();

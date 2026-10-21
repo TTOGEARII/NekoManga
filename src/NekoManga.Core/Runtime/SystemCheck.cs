@@ -33,8 +33,9 @@ public static class SystemCheck
             { UseShellExecute = false, RedirectStandardOutput = true, CreateNoWindow = true };
             using var p = Process.Start(psi);
             if (p == null) return null;
-            var line = p.StandardOutput.ReadLine();
+            // 출력은 한 줄뿐이라 파이프가 차지 않는다 — 먼저 기다려야 nvidia-smi가 멈춘 경우(드라이버 크래시 뒤 흔함) 8초 타임아웃이 먹는다
             if (!p.WaitForExit(8000)) { try { p.Kill(); } catch { } return null; }
+            var line = p.StandardOutput.ReadLine();
             if (string.IsNullOrWhiteSpace(line)) return null;
             var parts = line.Split(',').Select(s => s.Trim()).ToArray();
             if (parts.Length < 3) return null;
@@ -105,22 +106,42 @@ public static class SystemCheck
             {
                 using var k = cls.OpenSubKey(sub);
                 if (k?.GetValue("DriverDesc") is not string d || d != adapterName) continue;
-                var v = k.GetValue("HardwareInformation.qwMemorySize");
-                long bytes = v switch { long l => l, int i => (uint)i, byte[] b when b.Length >= 8 => BitConverter.ToInt64(b, 0), _ => 0 };
-                return (int)(bytes / 1048576);
+                // 같은 이름의 000N 키가 여럿(드라이버 재설치 흔적)일 수 있다 — 값이 없는 유령 키는 건너뛰고 계속 찾는다
+                var v = k.GetValue("HardwareInformation.qwMemorySize") ?? k.GetValue("HardwareInformation.MemorySize");
+                long bytes = v switch
+                {
+                    long l => l,
+                    int i => (uint)i,
+                    byte[] b when b.Length >= 8 => BitConverter.ToInt64(b, 0),
+                    byte[] b when b.Length == 4 => BitConverter.ToUInt32(b, 0),
+                    _ => 0,
+                };
+                if (bytes > 0) return (int)(bytes / 1048576);
             }
         }
         catch { }
         return 0;
     }
 
-    /// <summary>그래픽카드 종류 감지: "nvidia"(RTX 20+) / "nvidia-old"(GTX 10 이하) / "amd" / "none". 가상 어댑터(Parsec 등)는 무시.</summary>
+    private static bool IsNvidiaName(string a) => a.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase) || a.Contains("GeForce", StringComparison.OrdinalIgnoreCase);
+    private static bool IsAmdName(string a) => a.Contains("AMD", StringComparison.OrdinalIgnoreCase) || a.Contains("Radeon", StringComparison.OrdinalIgnoreCase);
+    private static bool IsVirtualName(string a) => a.Contains("Virtual", StringComparison.OrdinalIgnoreCase) || a.Contains("Parsec", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>고른 벤더("nvidia"/"nvidia-old"/"amd")에 해당하는 어댑터 이름 — 없으면 "". 사용자가 종류를 직접 골랐을 때 다른 벤더 카드 이름으로 판정하지 않게.</summary>
+    public static string AdapterNameFor(string vendor)
+    {
+        var list = DisplayAdapters().Where(a => !IsVirtualName(a));
+        return (vendor == "amd" ? list.FirstOrDefault(IsAmdName) : list.FirstOrDefault(IsNvidiaName)) ?? "";
+    }
+
+    /// <summary>그래픽카드 종류 감지: "nvidia"(RTX 20+) / "nvidia-old"(GTX 10 이하) / "amd" / "none". 가상 어댑터(Parsec 등)는 무시.
+    /// 레지스트리 000N 키는 뽑아낸 카드도 남기므로, NVIDIA 이름이 있어도 nvidia-smi가 없고 Radeon이 있으면 AMD로 본다(카드 교체 PC).</summary>
     public static (string Vendor, string Name) DetectVendor()
     {
-        var adapters = DisplayAdapters().Where(a => !a.Contains("Virtual", StringComparison.OrdinalIgnoreCase) && !a.Contains("Parsec", StringComparison.OrdinalIgnoreCase)).ToList();
-        var nv = adapters.FirstOrDefault(a => a.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase) || a.Contains("GeForce", StringComparison.OrdinalIgnoreCase));
-        if (nv != null) return (LooksUnsupportedByCuda13(nv) ? "nvidia-old" : "nvidia", nv);
-        var amd = adapters.FirstOrDefault(a => a.Contains("AMD", StringComparison.OrdinalIgnoreCase) || a.Contains("Radeon", StringComparison.OrdinalIgnoreCase));
+        var adapters = DisplayAdapters().Where(a => !IsVirtualName(a)).ToList();
+        var nv = adapters.FirstOrDefault(IsNvidiaName);
+        var amd = adapters.FirstOrDefault(IsAmdName);
+        if (nv != null && (amd == null || QueryNvidia() != null)) return (LooksUnsupportedByCuda13(nv) ? "nvidia-old" : "nvidia", nv);
         if (amd != null) return ("amd", amd);
         return ("none", adapters.FirstOrDefault() ?? "");
     }
@@ -141,24 +162,21 @@ public static class SystemCheck
         var items = new List<Item>();
         var (detected, detName) = DetectVendor();
         if (vendor == "auto") vendor = detected;
-        else
-        {
-            // 사용자가 종류를 직접 골랐으면 그 벤더의 어댑터 이름만 쓴다 (NVIDIA PC에서 AMD를 골라도 NVIDIA 이름으로 판정하지 않게)
-            bool wantAmd = vendor == "amd";
-            detName = DisplayAdapters().FirstOrDefault(a => wantAmd
-                ? a.Contains("AMD", StringComparison.OrdinalIgnoreCase) || a.Contains("Radeon", StringComparison.OrdinalIgnoreCase)
-                : a.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase) || a.Contains("GeForce", StringComparison.OrdinalIgnoreCase)) ?? "";
-        }
+        else detName = AdapterNameFor(vendor);   // 사용자가 종류를 직접 골랐으면 그 벤더의 어댑터 이름만 쓴다
         if (vendor == "amd")
         {
             bool win11 = Environment.OSVersion.Version.Build >= 22000;
-            items.Add(new("그래픽카드", true, false, detName.Length > 0 ? detName + " (AMD — ROCm 포터블)" : "AMD Radeon을 찾지 못했지만 AMD용(ROCm) 포터블을 받아요", null, null));
+            bool found = detName.Length > 0;
+            items.Add(new("그래픽카드", found, false, found ? detName + " (AMD — ROCm 포터블)" : "AMD Radeon을 찾지 못했어요 — 그래도 AMD용(ROCm) 포터블을 받아요. 종류를 잘못 고른 건 아닌지 확인하세요.", null, null));
             items.Add(new("Windows 11", win11, true,
                 win11 ? $"빌드 {Environment.OSVersion.Version.Build} (충분)" : $"빌드 {Environment.OSVersion.Version.Build} — AMD용 엔진(ROCm)은 Windows 11이 필요해요.", null, null));
-            bool genOk = detName.Length == 0 || LooksRocmSupported(detName);
+            bool genOk = !found || LooksRocmSupported(detName);
             items.Add(new("Radeon 세대", genOk, true,
                 genOk ? "RDNA2 이상(RX 6000/7000/9000)으로 보여요. AMD Software(Adrenalin)를 최신으로 유지하세요." : $"{detName} — ROCm(Windows)이 지원하지 않는 세대예요(RX 5000·Vega 등). 번역·검열제거는 되지만 채색·재생성은 돌릴 수 없어요.",
                 genOk ? AmdDriverUrl : null, "AMD 드라이버 받기"));
+            int vram = found ? AdapterVramMb(detName) : 0;
+            if (vram > 0)
+                items.Add(new("VRAM", vram >= 8000, false, $"{vram / 1024.0:0.#}GB" + (vram < 8000 ? " — ROCm은 메모리를 넉넉히 써서 8GB 미만이면 채색·재생성이 실패하기 쉬워요 (--lowvram·1.0MP 권장)" : ""), null, null));
             items.Add(new("참고", true, false, "AMD용 엔진은 ComfyUI 공식 ROCm 포터블(초기 지원)이라 NVIDIA보다 느리거나 일부 노드가 안 될 수 있어요. VRAM 8GB 이상 권장.", null, null));
         }
         else if (vendor == "none")
@@ -178,7 +196,11 @@ public static class SystemCheck
                 items.Add(new("NVIDIA 드라이버", drvOk, true,
                     drvOk ? $"{gpu.Driver} (충분)" : $"{gpu.Driver} — 엔진의 {(old ? "CUDA 12.6" : "CUDA 13")} 런타임은 {minDrv} 이상이 필요해요. 최신 GeForce 드라이버로 올린 뒤 재부팅하세요.",
                     drvOk ? null : DriverUrl, "드라이버 받기"));
-                items.Add(new("그래픽카드", true, false, gpu.Name + (old ? " — GTX 10 이하용 CUDA 12.6 포터블을 받아요 (느릴 수 있어요)" : " — CUDA 13 포터블"), null, null));
+                // 사용자가 'RTX 20 이상'을 골랐는데 실제로는 CUDA 13이 버린 세대면 막는다 — 설치하면 c10.dll 1114로 죽는 바로 그 경우
+                bool genBad = !old && LooksUnsupportedByCuda13(gpu.Name);
+                items.Add(new("그래픽카드", !genBad, true, genBad
+                    ? $"{gpu.Name} — CUDA 13이 지원하지 않는 세대예요. 그래픽카드 종류를 'NVIDIA GTX 10 이하 (구형)'으로 바꿔 주세요."
+                    : gpu.Name + (old ? " — GTX 10 이하용 CUDA 12.6 포터블을 받아요 (느릴 수 있어요)" : " — CUDA 13 포터블"), null, null));
                 bool vramOk = gpu.MemoryMb >= 6000;
                 items.Add(new("VRAM", vramOk, false,
                     vramOk ? $"{gpu.MemoryMb / 1024.0:0.#}GB" + (gpu.MemoryMb < 8000 ? " — 6GB는 빠듯해요: 엔진 인자 --lowvram, 채색 해상도 1.0MP, 재생성 축소 MP 1.0을 권해요" : "")
@@ -198,7 +220,7 @@ public static class SystemCheck
     }
 
     /// <summary>ComfyUI가 시작 직후 죽었을 때 로그 꼬리에서 흔한 원인을 읽어 사람이 할 일을 알려 준다.</summary>
-    public static string? DiagnoseComfyLog(string logPath)
+    public static string? DiagnoseComfyLog(string logPath, string vendor = "auto")
     {
         try
         {
@@ -206,10 +228,13 @@ public static class SystemCheck
             var txt = File.ReadAllText(logPath);
             if (txt.Contains("WinError 1114") || txt.Contains("c10.dll") || txt.Contains("DLL load failed") || txt.Contains("WinError 126"))
             {
-                var r = CheckForComfy();
+                var r = CheckForComfy(vendor);
                 var why = r.Items.Where(i => !i.Ok && i.Blocking).Select(i => i.Title + ": " + i.Detail).ToList();
+                bool amd = (vendor == "auto" ? DetectVendor().Vendor : vendor) == "amd";
                 return "엔진의 torch DLL을 올리지 못했어요. " + (why.Count > 0 ? string.Join(" / ", why)
-                    : $"NVIDIA 드라이버 {MinDriverMajor} 이상과 VC++ 2015–2022 x64 런타임이 필요해요.") + $" (드라이버: {DriverUrl}, VC++: {VcRedistUrl})";
+                    : amd ? "최신 AMD Software(Adrenalin)와 VC++ 2015–2022 x64 런타임이 필요해요."
+                          : $"NVIDIA 드라이버 {MinDriverMajor} 이상과 VC++ 2015–2022 x64 런타임이 필요해요.")
+                    + $" (드라이버: {(amd ? AmdDriverUrl : DriverUrl)}, VC++: {VcRedistUrl})";
             }
             if (txt.Contains("CUDA out of memory") || txt.Contains("OutOfMemoryError"))
                 return "GPU 메모리가 부족했어요 — 설정 → 엔진 → 고급 옵션의 추가 실행 인자에 --lowvram 을 넣고, 채색 해상도 상한·재생성 축소 MP를 1.0으로 낮춰 보세요.";

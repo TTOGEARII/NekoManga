@@ -251,6 +251,9 @@ public class AppSettings
         if (TranslateEngine is not ("Google" or "DeepL" or "DeepSeek" or "Grok")) TranslateEngine = "Google";
         // 옛 '강력'(SDXL+LoRA)·DeepCream 모드는 2026-10-19 폐기 — 둘 다 기본(내장 LaMa)으로 돌린다
         if (DecensorMode is not ("Basic" or "ComfyLama" or "ComfyRegen" or "ComfyCustom")) DecensorMode = "Basic";
+        // 손으로 고친 settings.json에 "…": null 이 들어오면 문자열 속성이 null이 돼 .Contains/.Trim에서 앱이 죽는다 — 전부 ""로
+        foreach (var p in GetType().GetProperties().Where(p => p.PropertyType == typeof(string) && p.CanWrite && p.GetIndexParameters().Length == 0))
+            if (p.GetValue(this) == null) p.SetValue(this, "");
         if (GpuVendor is not ("auto" or "nvidia" or "nvidia-old" or "amd")) GpuVendor = "auto";
         CustomDecensorReach = Math.Clamp(CustomDecensorReach, 0, 512);
         SelfTrainEpochs = Math.Clamp(SelfTrainEpochs, 1, 50); SelfTrainLr = Math.Clamp(SelfTrainLr, 0.00001, 0.01);

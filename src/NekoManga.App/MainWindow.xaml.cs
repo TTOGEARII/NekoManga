@@ -129,15 +129,21 @@ public partial class MainWindow
     }
 
     /// <summary>탐색기와 같은 자연 정렬(2 < 10)로 목록을 이름 오름차순 정렬. 같은 Row 객체를 재사용해 썸네일·상태를 유지한다.</summary>
+    private bool _sortingRows;
     private void SortRowsByName()
     {
-        if (_rows.Count < 2) return;
-        var selected = FileList.SelectedItem;
+        if (_cts != null || _rows.Count < 2) return;   // 작업 중엔 목록을 흔들지 않는다 (진행 표시는 이름으로 찾으므로 정렬 자체는 안전)
         var sorted = _rows.OrderBy(r => r.Name, Comparer<string>.Create(StrCmpLogicalW)).ToList();
         if (sorted.SequenceEqual(_rows)) return;
-        _rows.Clear();
-        foreach (var r in sorted) _rows.Add(r);
-        if (selected != null) FileList.SelectedItem = selected;
+        var selected = FileList.SelectedItems.Cast<FileRow>().ToList();
+        _sortingRows = true;   // Clear/Add가 일으키는 선택 변경으로 미리보기가 깜빡이며 다시 디코딩되지 않게
+        try
+        {
+            _rows.Clear();
+            foreach (var r in sorted) _rows.Add(r);
+            foreach (var r in selected) FileList.SelectedItems.Add(r);
+        }
+        finally { _sortingRows = false; }
     }
 
     private void AddFile(string path)
@@ -226,7 +232,10 @@ public partial class MainWindow
     }
 
     private void FileList_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        => ShowPreview(FileList.SelectedItem as FileRow);
+    {
+        if (_sortingRows) return;
+        ShowPreview(FileList.SelectedItem as FileRow);
+    }
 
     /// <summary>큰 미리보기. 디코딩은 백그라운드에서 — 결과물 PNG(2000×3000 채색본)를 UI 스레드에서 풀면 0.5~1.5초 멈춘다.
     /// 디코딩 높이는 패널 크기에 맞춘다(기본 380px 폭 패널에 1400px을 풀던 것은 낭비). 늦게 끝난 옛 요청은 세대 번호로 버린다.</summary>
