@@ -847,12 +847,17 @@ public partial class ResultWindow
     /// <summary>이 페이지에 기억된 값이 있으면 그것을, 없으면 ⚙ 설정의 재생성 값을 칸에 채운다.</summary>
     private void LoadRegenFields()
     {
-        var v = _regenPerPage.TryGetValue(_index, out var saved) ? saved : RegenPageValues.From(App.Settings);
+        bool own = _regenPerPage.TryGetValue(_index, out var saved);
+        var v = own ? saved! : RegenPageValues.From(App.Settings);
         var ic = System.Globalization.CultureInfo.InvariantCulture;
         TxtRgPrompt.Text = v.Prompt; TxtRgBody.Text = v.Body; TxtRgNeg.Text = v.Negative;
         TxtRgDenoise.Text = v.Denoise.ToString(ic); TxtRgSteps.Text = v.Steps.ToString(); TxtRgCfg.Text = v.Cfg.ToString(ic);
         TxtRgSeed.Text = v.Seed.ToString(); TxtRgCnStr.Text = v.CnStr.ToString(ic); TxtRgCnEnd.Text = v.CnEnd.ToString(ic);
+        UpdateRegenHeader(own);
     }
+
+    private void UpdateRegenHeader(bool own) =>
+        TxtRegenHdr.Text = own ? "✎ 이 페이지 값 사용 중 — 펼쳐서 확인·수정" : "⚙ 설정값 그대로 — 펼쳐서 이 페이지만 바꾸기";
 
     /// <summary>칸의 값을 읽어(범위 밖은 설정값으로) 이 페이지 값으로 기억하고 돌려준다. 설정과 같으면 기억에서 뺀다.</summary>
     private RegenPageValues ReadRegenFields()
@@ -865,6 +870,7 @@ public partial class ResultWindow
             D(TxtRgDenoise.Text, d.Denoise, 0.05, 1.0), I(TxtRgSteps.Text, d.Steps, 1, 150), D(TxtRgCfg.Text, d.Cfg, 0, 30),
             long.TryParse(TxtRgSeed.Text.Trim(), out var seed) ? seed : -1, D(TxtRgCnStr.Text, d.CnStr, 0, 2), D(TxtRgCnEnd.Text, d.CnEnd, 0, 1));
         if (v == d) _regenPerPage.Remove(_index); else _regenPerPage[_index] = v;
+        UpdateRegenHeader(v != d);
         return v;
     }
 

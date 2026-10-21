@@ -70,43 +70,47 @@
                             </WrapPanel>
 
                             <!-- 재생성(SDXL)일 때만: 이 페이지에만 쓰는 프롬프트·수치 (설정에는 저장 안 함, 페이지마다 따로 기억) -->
-                            <Border x:Name="PnlRegen" Visibility="Collapsed" Margin="0,8,0,0" Padding="10,6" BorderThickness="2"
+                            <!-- 접이식: 그림 영역을 덜 가리게 기본은 접힘, 머리글에 '이 페이지 값 사용 중' 표시. 글상자는 줄 수로 크기를 정해 글자가 잘리지 않는다. -->
+                            <Border x:Name="PnlRegen" Visibility="Collapsed" Margin="0,8,0,0" BorderThickness="2"
                                     BorderBrush="{DynamicResource NekoStroke}" Background="{DynamicResource NekoCard}">
-                                <StackPanel>
-                                    <DockPanel>
-                                        <Border Style="{StaticResource MangaTag}" Margin="0,0,10,0" VerticalAlignment="Center"><TextBlock Style="{StaticResource MangaTagText}" Text="재생성 설정 — 이 페이지만"/></Border>
-                                        <ui:Button DockPanel.Dock="Right" Content="설정값으로 되돌리기" Click="BtnRegenReset_Click" Padding="10,3"
+                                <Expander x:Name="ExpRegen" IsExpanded="False" Padding="10,4,10,8">
+                                    <Expander.Header>
+                                        <DockPanel>
+                                            <Border Style="{StaticResource MangaTag}" Margin="0,0,10,0" VerticalAlignment="Center"><TextBlock Style="{StaticResource MangaTagText}" Text="재생성 설정 — 이 페이지만"/></Border>
+                                            <TextBlock x:Name="TxtRegenHdr" Style="{StaticResource HintText}" VerticalAlignment="Center" Text="⚙ 설정값 그대로"/>
+                                        </DockPanel>
+                                    </Expander.Header>
+                                    <Grid Margin="0,4,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="100"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Style="{StaticResource HintText}" Margin="0,0,0,6"
+                                                   Text="여기서 바꾼 값은 이 페이지의 재생성에만 쓰여요 (⚙ 설정에는 저장 안 함). 페이지마다 따로 기억하고, 창을 닫으면 사라져요."/>
+                                        <TextBlock Grid.Row="1" Text="프롬프트" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,8,10,0"/>
+                                        <TextBox Grid.Row="1" Grid.Column="1" x:Name="TxtRgPrompt" TextWrapping="Wrap" AcceptsReturn="True" MinLines="2" MaxLines="4" VerticalScrollBarVisibility="Auto"
+                                                 ToolTip="SDXL에 주는 기본 프롬프트 — 원고 풍·선화 유지 같은 전체 지시"/>
+                                        <TextBlock Grid.Row="2" Text="신체 태그" Style="{StaticResource FieldLabel}" Margin="0,6,10,0"/>
+                                        <TextBox Grid.Row="2" Grid.Column="1" x:Name="TxtRgBody" Margin="0,6,0,0" ToolTip="복원할 부위를 나타내는 태그 — 프롬프트 뒤에 붙어요"/>
+                                        <TextBlock Grid.Row="3" Text="부정 프롬프트" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,14,10,0"/>
+                                        <TextBox Grid.Row="3" Grid.Column="1" x:Name="TxtRgNeg" Margin="0,6,0,0" TextWrapping="Wrap" AcceptsReturn="True" MinLines="2" MaxLines="4" VerticalScrollBarVisibility="Auto"
+                                                 ToolTip="그리지 말아야 할 것 — 검열 흔적·글자·효과음 등"/>
+                                        <UniformGrid Grid.Row="4" Grid.ColumnSpan="2" Columns="3" Margin="0,8,0,0">
+                                            <DockPanel Margin="0,0,12,6"><TextBlock Text="Denoise (0.05 ~ 1)" Style="{StaticResource FieldLabel}" Width="140"/><TextBox x:Name="TxtRgDenoise" Width="70" HorizontalAlignment="Left" ToolTip="높을수록 많이 다시 그려요. 0.62가 기본"/></DockPanel>
+                                            <DockPanel Margin="0,0,12,6"><TextBlock Text="스텝 (1 ~ 150)" Style="{StaticResource FieldLabel}" Width="140"/><TextBox x:Name="TxtRgSteps" Width="70" HorizontalAlignment="Left"/></DockPanel>
+                                            <DockPanel Margin="0,0,0,6"><TextBlock Text="CFG (0 ~ 30)" Style="{StaticResource FieldLabel}" Width="140"/><TextBox x:Name="TxtRgCfg" Width="70" HorizontalAlignment="Left"/></DockPanel>
+                                            <DockPanel Margin="0,0,12,0"><TextBlock Text="시드 (-1 = 랜덤)" Style="{StaticResource FieldLabel}" Width="140"/><TextBox x:Name="TxtRgSeed" Width="120" HorizontalAlignment="Left" ToolTip="같은 시드면 같은 결과 — 마음에 든 결과를 다시 내고 싶을 때 고정"/></DockPanel>
+                                            <DockPanel Margin="0,0,12,0"><TextBlock Text="선화 강도 (0 ~ 2)" Style="{StaticResource FieldLabel}" Width="140"/><TextBox x:Name="TxtRgCnStr" Width="70" HorizontalAlignment="Left" ToolTip="원고 선을 얼마나 따를지 (ControlNet)"/></DockPanel>
+                                            <DockPanel><TextBlock Text="선화 구간 끝 (0 ~ 1)" Style="{StaticResource FieldLabel}" Width="140"/><TextBox x:Name="TxtRgCnEnd" Width="70" HorizontalAlignment="Left" ToolTip="샘플링의 몇 %까지 선화를 따를지"/></DockPanel>
+                                        </UniformGrid>
+                                        <ui:Button Grid.Row="5" Grid.ColumnSpan="2" Content="↺ 이 페이지 값을 설정값으로 되돌리기" Click="BtnRegenReset_Click" Padding="10,4" Margin="0,8,0,0" HorizontalAlignment="Left"
                                                    ToolTip="이 페이지의 값을 ⚙ 설정의 재생성 값으로 되돌려요"/>
-                                        <TextBlock Style="{StaticResource HintText}" VerticalAlignment="Center"
-                                                   Text="여기서 바꾼 값은 이 페이지의 재생성에만 쓰이고 ⚙ 설정에는 저장되지 않아요. 다른 페이지로 넘어가도 이 페이지 값은 창을 닫을 때까지 기억해요."/>
-                                    </DockPanel>
-                                    <DockPanel Margin="0,6,0,0">
-                                        <TextBlock Text="프롬프트" Style="{StaticResource FieldLabel}" Width="90"/>
-                                        <TextBox x:Name="TxtRgPrompt" TextWrapping="Wrap" AcceptsReturn="True" MaxHeight="48" VerticalScrollBarVisibility="Auto"/>
-                                    </DockPanel>
-                                    <DockPanel Margin="0,4,0,0">
-                                        <TextBlock Text="신체 태그" Style="{StaticResource FieldLabel}" Width="90"/>
-                                        <TextBox x:Name="TxtRgBody" ToolTip="복원할 부위를 나타내는 태그 — 프롬프트 뒤에 붙어요"/>
-                                    </DockPanel>
-                                    <DockPanel Margin="0,4,0,0">
-                                        <TextBlock Text="부정 프롬프트" Style="{StaticResource FieldLabel}" Width="90"/>
-                                        <TextBox x:Name="TxtRgNeg" TextWrapping="Wrap" AcceptsReturn="True" MaxHeight="48" VerticalScrollBarVisibility="Auto"/>
-                                    </DockPanel>
-                                    <WrapPanel Margin="0,6,0,0">
-                                        <TextBlock Text="Denoise (0.05 ~ 1)" Style="{StaticResource FieldLabel}"/>
-                                        <TextBox x:Name="TxtRgDenoise" Width="60" Margin="0,0,14,0"/>
-                                        <TextBlock Text="스텝 (1 ~ 150)" Style="{StaticResource FieldLabel}"/>
-                                        <TextBox x:Name="TxtRgSteps" Width="52" Margin="0,0,14,0"/>
-                                        <TextBlock Text="CFG (0 ~ 30)" Style="{StaticResource FieldLabel}"/>
-                                        <TextBox x:Name="TxtRgCfg" Width="52" Margin="0,0,14,0"/>
-                                        <TextBlock Text="시드 (-1=랜덤)" Style="{StaticResource FieldLabel}"/>
-                                        <TextBox x:Name="TxtRgSeed" Width="110" Margin="0,0,14,0"/>
-                                        <TextBlock Text="선화 강도 (0 ~ 2)" Style="{StaticResource FieldLabel}"/>
-                                        <TextBox x:Name="TxtRgCnStr" Width="52" Margin="0,0,14,0"/>
-                                        <TextBlock Text="선화 구간 끝 (0 ~ 1)" Style="{StaticResource FieldLabel}"/>
-                                        <TextBox x:Name="TxtRgCnEnd" Width="52"/>
-                                    </WrapPanel>
-                                </StackPanel>
+                                    </Grid>
+                                </Expander>
                             </Border>
                         </StackPanel>
                     </TabItem>
