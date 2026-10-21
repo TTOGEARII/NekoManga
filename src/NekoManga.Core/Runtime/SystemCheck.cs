@@ -94,6 +94,26 @@ public static class SystemCheck
         return list;
     }
 
+    /// <summary>레지스트리 `HardwareInformation.qwMemorySize`로 어댑터 VRAM(MB)을 읽는다 — nvidia-smi가 없는 AMD도 된다. 모르면 0.</summary>
+    public static int AdapterVramMb(string adapterName)
+    {
+        try
+        {
+            using var cls = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}");
+            if (cls == null) return 0;
+            foreach (var sub in cls.GetSubKeyNames().Where(n => n.Length == 4 && n.All(char.IsDigit)))
+            {
+                using var k = cls.OpenSubKey(sub);
+                if (k?.GetValue("DriverDesc") is not string d || d != adapterName) continue;
+                var v = k.GetValue("HardwareInformation.qwMemorySize");
+                long bytes = v switch { long l => l, int i => (uint)i, byte[] b when b.Length >= 8 => BitConverter.ToInt64(b, 0), _ => 0 };
+                return (int)(bytes / 1048576);
+            }
+        }
+        catch { }
+        return 0;
+    }
+
     /// <summary>그래픽카드 종류 감지: "nvidia"(RTX 20+) / "nvidia-old"(GTX 10 이하) / "amd" / "none". 가상 어댑터(Parsec 등)는 무시.</summary>
     public static (string Vendor, string Name) DetectVendor()
     {

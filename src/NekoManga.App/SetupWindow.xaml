@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-        Title="NekoManga 첫 준비" Height="660" Width="730"
+        Title="NekoManga 첫 준비" Height="720" Width="730"
         WindowStartupLocation="CenterScreen"
         ExtendsContentIntoTitleBar="True"
         WindowBackdropType="None"
@@ -53,6 +53,17 @@
                         <ui:Button x:Name="BtnReqVc" Content="⬇ VC++ 런타임 받기" Click="BtnReqVc_Click" Padding="10,4" Margin="8,0,0,0" Visibility="Collapsed"/>
                         <ui:Button x:Name="BtnReqRecheck" Content="↻ 다시 확인" Click="BtnReqRecheck_Click" Padding="10,4" Margin="8,0,0,0"/>
                     </WrapPanel>
+                </StackPanel>
+            </Border>
+            <!-- PC 사양 맞춤 설정 (VRAM·RAM 등급별 해상도·엔진 인자·미리 켜기) — [준비 시작!] 때 적용 -->
+            <Border x:Name="PnlTune" Visibility="Collapsed" Margin="0,8,0,0" Padding="12,8" BorderThickness="2"
+                    BorderBrush="{StaticResource NekoStroke}" Background="{StaticResource NekoCard}">
+                <StackPanel>
+                    <CheckBox x:Name="ChkTune" IsChecked="True" Foreground="{StaticResource NekoText}" FontWeight="SemiBold"
+                              Content="이 PC 사양에 맞춰 설정을 자동으로 조정하기 (권장)"
+                              ToolTip="준비 시작을 누를 때 아래 항목을 바꿔요. 나중에 설정 → 엔진 탭의 [이 PC에 맞게 조정]으로 다시 할 수 있어요."/>
+                    <TextBlock x:Name="TxtTuneHw" Style="{StaticResource HintText}" Margin="0,4,0,0"/>
+                    <TextBlock x:Name="TxtTune" Style="{StaticResource HintText}" Margin="0,2,0,0" TextWrapping="Wrap"/>
                 </StackPanel>
             </Border>
         </StackPanel>

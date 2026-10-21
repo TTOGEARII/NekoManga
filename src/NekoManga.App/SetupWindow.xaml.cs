@@ -39,7 +39,24 @@ public partial class SetupWindow
         CompList.ItemsSource = _rows;
         PopulateDrives();
         RefreshList();
-        Loaded += async (_, _) => { try { await CheckRequirementsAsync(); } catch { /* 점검 실패는 설치를 막지 않는다 */ } };
+        Loaded += async (_, _) =>
+        {
+            try { await CheckRequirementsAsync(); } catch { /* 점검 실패는 설치를 막지 않는다 */ }
+            try { await RefreshTuneAsync(); } catch { }
+        };
+    }
+
+    // ── PC 사양 맞춤 설정 (2026-10-21) — 설치 대상이 있을 때만 보여 주고 [준비 시작!] 때 적용한다 ──
+    private AutoTune.Plan? _tune;
+
+    private async Task RefreshTuneAsync()
+    {
+        if (!_rows.Any(r => r.Status == "필요")) { PnlTune.Visibility = Visibility.Collapsed; _tune = null; return; }
+        var s = App.Settings;
+        _tune = await Task.Run(() => AutoTune.Build(s));
+        TxtTuneHw.Text = "감지: " + _tune.HardwareLine;
+        TxtTune.Text = _tune.Summary;
+        PnlTune.Visibility = Visibility.Visible;
     }
 
     /// <summary>드라이브 문자 → SSD/HDD 종류. 볼륨 핸들에 IOCTL_STORAGE_QUERY_PROPERTY —
@@ -232,6 +249,7 @@ public partial class SetupWindow
         if (tag == App.Settings.GpuVendor) return;
         App.Settings.GpuVendor = tag; if (!_demo) App.Settings.Save();
         await CheckRequirementsAsync();
+        try { await RefreshTuneAsync(); } catch { }
     }
     private void BtnReqVc_Click(object sender, RoutedEventArgs e) =>
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(SystemCheck.VcRedistUrl) { UseShellExecute = true });
@@ -258,6 +276,14 @@ public partial class SetupWindow
             bool blocked = await CheckRequirementsAsync();
             if (blocked)
                 foreach (var row in _rows.Where(r => r.Component.ForComfy && r.Status == "필요")) row.Status = "조건 미충족 — 위 안내 참고";
+
+            // PC 사양 맞춤 설정 적용 (체크돼 있을 때만; demo는 저장 안 함)
+            if (ChkTune.IsChecked == true && _tune is { Changes.Count: > 0 })
+            {
+                AutoTune.Apply(App.Settings, _tune);
+                if (!_demo) App.Settings.Save();
+                TxtTune.Text = "적용했어요:\n" + _tune.Summary;
+            }
 
             foreach (var row in _rows.Where(r => r.Status == "필요").ToList())
             {

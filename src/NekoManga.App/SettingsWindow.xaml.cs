@@ -567,6 +567,34 @@ public partial class SettingsWindow
         AppTheme.RefreshLogo();      // 로고는 스냅샷 브러시라 전환 때 새로 그린다
     }
 
+    /// <summary>[이 PC에 맞게 조정] — 화면 값을 설정에 반영한 뒤 AutoTune 계획을 보여 주고, 확인하면 적용해 관련 칸을 다시 채운다.</summary>
+    private async void BtnAutoTune_Click(object sender, RoutedEventArgs e)
+    {
+        Apply();
+        var s = App.Settings;
+        var plan = await Task.Run(() => AutoTune.Build(s));
+        if (plan.Changes.Count == 0)
+        {
+            MessageBox.Show(this, "감지: " + plan.HardwareLine + "\n\n" + plan.Summary, "이 PC에 맞게 조정", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var ok = MessageBox.Show(this, "감지: " + plan.HardwareLine + "\n\n이렇게 바꿀까요?\n\n" + plan.Summary,
+                                 "이 PC에 맞게 조정", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+        if (ok != MessageBoxResult.OK) return;
+        AutoTune.Apply(s, plan);
+        s.Save();
+        // 바뀐 칸만 다시 채운다
+        TxtMegapixels.Text = s.ColorMegapixels.ToString(CultureInfo.InvariantCulture);
+        TxtRegenMp.Text = s.RegenMegapixels.ToString(CultureInfo.InvariantCulture);
+        TxtAdvPreRes.Text = s.PreprocResolution.ToString();
+        TxtAdvExtraArgs.Text = s.ComfyExtraArgs;
+        ChkPrewarm.IsChecked = s.PrewarmComfyOnLaunch;
+        ChkKeepWarm.IsChecked = s.KeepComfyWarm;
+        ChkSelfTrain.IsChecked = s.EnableSelfTraining; ChkSelfTrain_Changed(ChkSelfTrain, null!);
+        SelectComboByTag(CmbDecensorMode, s.DecensorMode); CmbDecensorMode_Changed(CmbDecensorMode, null!);
+        TxtGpuDetected.Text = "조정 완료: " + plan.HardwareLine;
+    }
+
     // ── 엔진 탭 ──────────────────────────────────────────────
     private void LoadEngineTab(NekoManga.Core.AppSettings s)
     {

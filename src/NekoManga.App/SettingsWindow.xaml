@@ -473,6 +473,8 @@
                                       Foreground="{StaticResource NekoText}" Margin="0,6,0,0"/>
                             <DockPanel Margin="0,10,0,0">
                                 <TextBlock Text="그래픽카드 종류" Style="{StaticResource FieldLabel}" Width="110"/>
+                                <ui:Button DockPanel.Dock="Right" Content="이 PC에 맞게 조정" Click="BtnAutoTune_Click" Padding="10,4" Margin="8,0,0,0"
+                                           ToolTip="그래픽카드 VRAM·RAM을 읽어 채색 해상도·재생성 축소·엔진 인자·미리 켜기를 이 PC에 맞는 값으로 바꿔요. 바꾸기 전에 목록을 보여 줘요."/>
                                 <ComboBox x:Name="CmbGpuVendor" Width="260" HorizontalAlignment="Left"
                                           ToolTip="엔진(ComfyUI) 묶음을 어떤 빌드로 받을지 정해요. 이미 설치된 엔진은 바뀌지 않아요 — 바꾸려면 ComfyUI 포터블 폴더를 지우고 구성요소를 다시 설치하세요.">
                                     <ComboBoxItem Tag="auto" Content="자동 감지"/>
