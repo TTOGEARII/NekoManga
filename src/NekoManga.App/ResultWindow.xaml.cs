@@ -583,7 +583,29 @@ public partial class ResultWindow
             if (preview.Count >= 2) Overlay.Children.Add(MakePolygon([.. preview], finished: false));
             foreach (var p in _pending) Overlay.Children.Add(MakeDot(p));
         }
+        UpdateBrushCursor();   // Clear로 지워진 브러시 커서를 다시 올린다
     }
+
+    // ── 브러시 커서: 칠해질 범위를 원 테두리로 (검토 창과 같은 모양, 사용자 요청 2026-10-21) ──
+    private readonly System.Windows.Shapes.Ellipse _cursorOuter = new() { Stroke = Brushes.White, StrokeThickness = 3, IsHitTestVisible = false };
+    private readonly System.Windows.Shapes.Ellipse _cursorInner = new() { Stroke = Brushes.OrangeRed, StrokeThickness = 1.5, IsHitTestVisible = false };
+    private bool _cursorVisible;
+
+    private void UpdateBrushCursor()
+    {
+        bool show = _cursorVisible && BrushMode && !LetterMode && !_img.Empty();
+        double r = BrushRadius * _scale;
+        foreach (var el in new[] { _cursorOuter, _cursorInner })
+        {
+            if (!Overlay.Children.Contains(el)) Overlay.Children.Add(el);
+            el.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+            if (!show) continue;
+            el.Width = el.Height = r * 2;
+            Canvas.SetLeft(el, _hover.X - r); Canvas.SetTop(el, _hover.Y - r);
+        }
+    }
+
+    private void Host_MouseLeave(object sender, MouseEventArgs e) { _cursorVisible = false; UpdateBrushCursor(); }
 
     private System.Windows.Shapes.Polygon MakePolygon(CvPoint[] pts, bool finished)
     {
@@ -678,6 +700,7 @@ public partial class ResultWindow
 
     private void Tool_Changed(object sender, RoutedEventArgs e)
     {
+        if (IsLoaded) UpdateBrushCursor();
         if (!IsLoaded) return;
         _pending.Clear();
         DrawShapes();
@@ -755,19 +778,21 @@ public partial class ResultWindow
             return;
         }
 
+        _hover = e.GetPosition(ImageHost); _cursorVisible = true;
+
         // 브러시 칠하는 중 — 2px 이상 움직였을 때만 점 추가 (과밀 방지)
         if (_brushing && e.LeftButton == MouseButtonState.Pressed && _brushStrokes.Count > 0)
         {
-            var p = ToImage(e.GetPosition(ImageHost));
+            var p = ToImage(_hover);
             var pts = _brushStrokes[^1].Pts;
             var last = pts[^1];
             if (Math.Abs(p.X - last.X) + Math.Abs(p.Y - last.Y) >= 2) { pts.Add(p); DrawShapes(); }
+            else UpdateBrushCursor();
             return;
         }
 
-        if (LetterMode || _pending.Count == 0 || _img.Empty()) return;
-        _hover = e.GetPosition(ImageHost);
-        DrawShapes();
+        if (LetterMode || _img.Empty()) return;
+        if (_pending.Count > 0) DrawShapes(); else UpdateBrushCursor();
     }
 
     private void CloseShape()

@@ -47,8 +47,30 @@ public partial class MaskReviewWindow
             _rows.Add(new Row { Page = p, Original = p.Mask?.Clone() });
         LstPages.ItemsSource = _rows;
         foreach (var r in _rows) UpdateStatus(r);
-        SldBrush.ValueChanged += (_, _) => TxtBrush.Text = $"{(int)SldBrush.Value}px";
+        SldBrush.ValueChanged += (_, _) => { TxtBrush.Text = $"{(int)SldBrush.Value}px"; UpdateBrushCursor(); };
+        foreach (var rb in new[] { RbAdd, RbErase, RbPoly }) rb.Checked += (_, _) => UpdateBrushCursor();
         if (_rows.Count > 0) LstPages.SelectedIndex = 0;
+    }
+
+    // ── 브러시 커서: 칠해질 범위를 원 테두리로 보여 준다 (사용자 요청 2026-10-21) ──
+    // 흰 굵은 테두리 위에 색 가는 테두리(칠하기=빨강, 지우개=하늘색) — 원고가 희든 검든 보이게. 오버레이가 지워질 때마다 다시 올린다.
+    private readonly Ellipse _cursorOuter = new() { Stroke = Brushes.White, StrokeThickness = 3, IsHitTestVisible = false };
+    private readonly Ellipse _cursorInner = new() { Stroke = Brushes.Red, StrokeThickness = 1.5, IsHitTestVisible = false };
+    private WinPoint _cursorPos; private bool _cursorVisible;
+
+    private void UpdateBrushCursor()
+    {
+        bool show = _cursorVisible && RbPoly.IsChecked != true && _cur?.Page.Mask != null;
+        double r = SldBrush.Value * _dispScale * _zoom;
+        foreach (var el in new[] { _cursorOuter, _cursorInner })
+        {
+            if (!Overlay.Children.Contains(el)) Overlay.Children.Add(el);
+            el.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+            if (!show) continue;
+            el.Width = el.Height = r * 2;
+            Canvas.SetLeft(el, _cursorPos.X - r); Canvas.SetTop(el, _cursorPos.Y - r);
+        }
+        _cursorInner.Stroke = RbErase.IsChecked == true ? Brushes.DeepSkyBlue : Brushes.Red;
     }
 
     // ── 페이지 전환 ───────────────────────────────────────────
@@ -159,11 +181,13 @@ public partial class MaskReviewWindow
             Scroller.ScrollToVerticalOffset(_panV - (p.Y - _panStart.Y));
             return;
         }
+        _cursorPos = e.GetPosition(ImageHost); _cursorVisible = true;
         if (_painting && e.LeftButton == MouseButtonState.Pressed)
         {
-            var p = ToImage(e.GetPosition(ImageHost));
-            Dab(_last, p); _last = p;
+            var p = ToImage(_cursorPos);
+            Dab(_last, p); _last = p;   // Dab → Redraw → DrawPolyPreview가 커서도 다시 올린다
         }
+        else UpdateBrushCursor();
     }
 
     private void Host_MouseUp(object sender, MouseButtonEventArgs e)
@@ -172,7 +196,7 @@ public partial class MaskReviewWindow
         if (e.ChangedButton == MouseButton.Left && _painting) { _painting = false; ImageHost.ReleaseMouseCapture(); if (_cur != null) UpdateStatus(_cur); }
     }
 
-    private void Host_MouseLeave(object sender, MouseEventArgs e) { }
+    private void Host_MouseLeave(object sender, MouseEventArgs e) { _cursorVisible = false; UpdateBrushCursor(); }
 
     private void Dab(CvPoint a, CvPoint b)
     {
@@ -188,16 +212,19 @@ public partial class MaskReviewWindow
     private void DrawPolyPreview()
     {
         Overlay.Children.Clear();
-        if (_poly.Count == 0) return;
-        var pl = new Polyline { Stroke = Brushes.Yellow, StrokeThickness = 2, StrokeDashArray = [4, 2] };
-        foreach (var p in _poly) pl.Points.Add(new WinPoint(p.X * _dispScale * _zoom, p.Y * _dispScale * _zoom));
-        Overlay.Children.Add(pl);
-        foreach (var p in _poly)
+        if (_poly.Count > 0)
         {
-            var dot = new Ellipse { Width = 8, Height = 8, Fill = Brushes.Yellow };
-            Canvas.SetLeft(dot, p.X * _dispScale * _zoom - 4); Canvas.SetTop(dot, p.Y * _dispScale * _zoom - 4);
-            Overlay.Children.Add(dot);
+            var pl = new Polyline { Stroke = Brushes.Yellow, StrokeThickness = 2, StrokeDashArray = [4, 2] };
+            foreach (var p in _poly) pl.Points.Add(new WinPoint(p.X * _dispScale * _zoom, p.Y * _dispScale * _zoom));
+            Overlay.Children.Add(pl);
+            foreach (var p in _poly)
+            {
+                var dot = new Ellipse { Width = 8, Height = 8, Fill = Brushes.Yellow };
+                Canvas.SetLeft(dot, p.X * _dispScale * _zoom - 4); Canvas.SetTop(dot, p.Y * _dispScale * _zoom - 4);
+                Overlay.Children.Add(dot);
+            }
         }
+        UpdateBrushCursor();   // Clear로 지워진 커서를 다시 올린다
     }
 
     private void ClosePolygon()
