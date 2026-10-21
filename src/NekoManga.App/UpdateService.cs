@@ -110,7 +110,7 @@ public class UpdateService
                 $f.ClientSize = New-Object System.Drawing.Size($gif.Width, $gif.Height)
                 $f.TopMost = $true
                 $f.ShowInTaskbar = $false
-                $f.BackColor = [System.Drawing.Color]::FromArgb(14, 14, 18)
+                $f.BackColor = [System.Drawing.Color]::White   # 스플래시가 종이 흰색(만화 원고풍)이라 창 바탕도 흰색
                 $f.Controls.Add($pb)
 
                 $sq = '{{sqVersion}}'

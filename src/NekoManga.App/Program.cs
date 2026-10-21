@@ -260,6 +260,14 @@ public static class Program
             return;
         }
 
+        // 설치·업데이트 스플래시 프레임 재생성: NekoManga.exe --gen-splash <출력폴더> → tools/make-splash-gif.py로 GIF 조립
+        var splashIdx = Array.IndexOf(args, "--gen-splash");
+        if (splashIdx >= 0 && splashIdx + 1 < args.Length)
+        {
+            SplashArt.WriteFrames(args[splashIdx + 1]);
+            return;
+        }
+
         // 워크플로 덤프 (원본 ComfyUI 셋팅과 대조 검증용): NekoManga.exe --dumpwf <출력.json>
         var dumpIdx = Array.IndexOf(args, "--dumpwf");
         if (dumpIdx >= 0 && dumpIdx + 1 < args.Length)

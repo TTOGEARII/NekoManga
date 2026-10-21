@@ -3,73 +3,129 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         Title="검열 마스크 검토" Width="1280" Height="860" MinWidth="900" MinHeight="600"
-        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica"
-        Background="{StaticResource NekoBg}" KeyDown="Window_KeyDown">
-    <DockPanel>
-        <ui:TitleBar DockPanel.Dock="Top" Title="검열 마스크 검토 — 빨간 곳이 지워져요"/>
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True"
+        WindowBackdropType="None" WindowCornerPreference="Round"
+        Background="{DynamicResource NekoBg}" KeyDown="Window_KeyDown">
+    <ui:FluentWindow.Resources>
+        <!-- 페이지 목록 항목: WPF-UI 기본 선택색(액센트=먹색)이 글자를 삼켜서, 메인 목록(ListViewItem)과 같은 옅은 반전으로 -->
+        <Style TargetType="ListBoxItem">
+            <Setter Property="Foreground" Value="{DynamicResource NekoText}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource NekoCardHover}"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}">
+                            <DockPanel>
+                                <Rectangle x:Name="Mark" DockPanel.Dock="Left" Width="3" Margin="0,0,8,0" Fill="{DynamicResource NekoStroke}" Visibility="Hidden"/>
+                                <ContentPresenter/>
+                            </DockPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#18808080"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#20808080"/>
+                                <Setter TargetName="Mark" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- 도구 바의 작은 먹색 라벨 (설정 창 MangaTag와 같은 모양, 한 줄 안에 들어가게 여백만 줄임) -->
+        <Style TargetType="Border" x:Key="BarTag" BasedOn="{StaticResource MangaTag}">
+            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Padding" Value="7,2"/>
+        </Style>
+    </ui:FluentWindow.Resources>
+    <Grid>
+        <!-- 창 전체 톤망점 (원고 질감) — 메인·설정·설치 창과 동일 -->
+        <Rectangle Fill="{DynamicResource MangaDots}" IsHitTestVisible="False"/>
+        <DockPanel>
+            <ui:TitleBar DockPanel.Dock="Top" Title="검열 마스크 검토 — 빨간 곳이 지워져요">
+                <ui:TitleBar.Icon>
+                    <ui:ImageIcon Source="{DynamicResource NekoLogo}"/>
+                </ui:TitleBar.Icon>
+            </ui:TitleBar>
 
-        <!-- 아래 버튼 바: DockPanel 바닥부터 자리 잡아 창이 작아도 안 잘린다 (ResultWindow 교훈) -->
-        <Border DockPanel.Dock="Bottom" Padding="16,10" BorderBrush="{DynamicResource NekoStroke}" BorderThickness="0,2,0,0">
-            <DockPanel>
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" DockPanel.Dock="Right">
-                    <ui:Button x:Name="BtnStart" Content="✔ 검열 제거 시작" Appearance="Primary" Click="BtnStart_Click" Padding="16,6"/>
-                    <ui:Button Content="취소" Click="BtnCancel_Click" Padding="16,6" Margin="10,0,0,0"/>
-                </StackPanel>
-                <TextBlock x:Name="TxtStatus" VerticalAlignment="Center" Foreground="{DynamicResource NekoText}" TextTrimming="CharacterEllipsis"/>
-            </DockPanel>
-        </Border>
-
-        <!-- 도구 바 -->
-        <Border DockPanel.Dock="Top" Padding="16,8" BorderBrush="{DynamicResource NekoStroke}" BorderThickness="0,0,0,2">
-            <WrapPanel VerticalAlignment="Center">
-                <ui:Button x:Name="BtnPrev" Content="◀ 이전" Click="BtnPrev_Click" Padding="12,4"/>
-                <TextBlock x:Name="TxtPage" Text="1 / 1" VerticalAlignment="Center" Margin="10,0" Foreground="{DynamicResource NekoText}" FontWeight="SemiBold"/>
-                <ui:Button x:Name="BtnNext" Content="다음 ▶" Click="BtnNext_Click" Padding="12,4" Margin="0,0,20,0"/>
-
-                <RadioButton x:Name="RbAdd" Content="🖌 칠하기" IsChecked="True" GroupName="tool" Margin="0,0,10,0" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center"/>
-                <RadioButton x:Name="RbErase" Content="🧽 지우개" GroupName="tool" Margin="0,0,10,0" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center"/>
-                <RadioButton x:Name="RbPoly" Content="⬠ 다각형" GroupName="tool" Margin="0,0,16,0" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center"
-                             ToolTip="꼭짓점을 클릭해 영역을 그리고 더블클릭(또는 Enter)으로 닫아요"/>
-                <TextBlock Text="브러시" VerticalAlignment="Center" Foreground="{DynamicResource NekoText}" Margin="0,0,6,0"/>
-                <Slider x:Name="SldBrush" Minimum="4" Maximum="120" Value="24" Width="140" VerticalAlignment="Center" ToolTip="브러시 반지름(원본 px)"/>
-                <TextBlock x:Name="TxtBrush" Text="24px" VerticalAlignment="Center" Foreground="{DynamicResource NekoText}" Margin="6,0,16,0"/>
-
-                <ui:Button Content="↶ 되돌리기" Click="BtnUndo_Click" Padding="12,4" ToolTip="Ctrl+Z"/>
-                <ui:Button Content="자동 감지로" Click="BtnReset_Click" Padding="12,4" Margin="8,0,0,0" ToolTip="이 페이지 마스크를 감지 결과로 되돌려요"/>
-                <ui:Button Content="전부 지우기" Click="BtnClear_Click" Padding="12,4" Margin="8,0,0,0"/>
-                <CheckBox x:Name="ChkSkip" Content="이 페이지는 검열 없음 (건너뛰기)" Margin="16,0,0,0" VerticalAlignment="Center"
-                          Foreground="{DynamicResource NekoText}" Checked="ChkSkip_Changed" Unchecked="ChkSkip_Changed"/>
-                <TextBlock Text="확대" VerticalAlignment="Center" Foreground="{DynamicResource NekoText}" Margin="16,0,6,0"/>
-                <Slider x:Name="SldZoom" Minimum="0.2" Maximum="4" Value="1" Width="120" VerticalAlignment="Center" ValueChanged="Zoom_Changed"/>
-            </WrapPanel>
-        </Border>
-
-        <!-- 왼쪽 페이지 목록 -->
-        <ListBox x:Name="LstPages" DockPanel.Dock="Left" Width="230" Margin="16,8,0,8" SelectionChanged="LstPages_Changed"
-                 Background="{DynamicResource NekoCard}" BorderBrush="{DynamicResource NekoStroke}" BorderThickness="2">
-            <ListBox.ItemTemplate>
-                <DataTemplate>
-                    <StackPanel Margin="2">
-                        <TextBlock Text="{Binding Name}" Foreground="{DynamicResource NekoText}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                        <TextBlock Text="{Binding Status}" Foreground="{DynamicResource NekoText}" Opacity="0.7" FontSize="11"/>
+            <!-- 아래 버튼 바: DockPanel 바닥부터 자리 잡아 창이 작아도 안 잘린다 (ResultWindow 교훈) -->
+            <Border DockPanel.Dock="Bottom" Padding="16,10" BorderBrush="{DynamicResource NekoStroke}" BorderThickness="0,2,0,0">
+                <DockPanel>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" DockPanel.Dock="Right">
+                        <ui:Button x:Name="BtnStart" Content="✔ 검열 제거 시작" Appearance="Primary" FontWeight="Bold" Click="BtnStart_Click" Padding="16,6"/>
+                        <ui:Button Content="취소" Click="BtnCancel_Click" Padding="16,6" Margin="10,0,0,0"/>
                     </StackPanel>
-                </DataTemplate>
-            </ListBox.ItemTemplate>
-        </ListBox>
+                    <TextBlock x:Name="TxtStatus" VerticalAlignment="Center" Foreground="{DynamicResource NekoText}" TextTrimming="CharacterEllipsis"/>
+                </DockPanel>
+            </Border>
 
-        <!-- 원고 작업대 -->
-        <Border Background="{DynamicResource NekoCanvas}" Margin="16,8,16,8" ClipToBounds="True"
-                BorderBrush="{DynamicResource NekoStroke}" BorderThickness="2">
-            <ScrollViewer x:Name="Scroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
-                          PreviewMouseWheel="Scroller_PreviewMouseWheel" Padding="20">
-                <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <Grid x:Name="ImageHost" HorizontalAlignment="Center" VerticalAlignment="Center" Background="Transparent" Cursor="Cross"
-                          MouseDown="Host_MouseDown" MouseUp="Host_MouseUp" MouseMove="Host_MouseMove" MouseLeave="Host_MouseLeave">
-                        <Image x:Name="ImgView" Stretch="Fill" SnapsToDevicePixels="True"/>
-                        <Canvas x:Name="Overlay" IsHitTestVisible="False"/>
-                    </Grid>
+            <!-- 도구 바 -->
+            <Border DockPanel.Dock="Top" Padding="16,8" BorderBrush="{DynamicResource NekoStroke}" BorderThickness="0,0,0,2">
+                <WrapPanel VerticalAlignment="Center">
+                    <Border Style="{StaticResource BarTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="페이지"/></Border>
+                    <ui:Button x:Name="BtnPrev" Content="◀ 이전" Click="BtnPrev_Click" Padding="12,4"/>
+                    <TextBlock x:Name="TxtPage" Text="1 / 1" VerticalAlignment="Center" Margin="10,0" Foreground="{DynamicResource NekoText}" FontWeight="SemiBold"/>
+                    <ui:Button x:Name="BtnNext" Content="다음 ▶" Click="BtnNext_Click" Padding="12,4" Margin="0,0,20,0"/>
+
+                    <Border Style="{StaticResource BarTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="도구"/></Border>
+                    <RadioButton x:Name="RbAdd" Content="🖌 칠하기" IsChecked="True" GroupName="tool" Margin="0,0,10,0" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center"/>
+                    <RadioButton x:Name="RbErase" Content="🧽 지우개" GroupName="tool" Margin="0,0,10,0" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center"/>
+                    <RadioButton x:Name="RbPoly" Content="⬠ 다각형" GroupName="tool" Margin="0,0,16,0" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center"
+                                 ToolTip="꼭짓점을 클릭해 영역을 그리고 더블클릭(또는 Enter)으로 닫아요"/>
+                    <TextBlock Text="브러시" VerticalAlignment="Center" Foreground="{DynamicResource NekoText}" Margin="0,0,6,0"/>
+                    <Slider x:Name="SldBrush" Minimum="4" Maximum="120" Value="24" Width="140" VerticalAlignment="Center" ToolTip="브러시 반지름(원본 px)"/>
+                    <TextBlock x:Name="TxtBrush" Text="24px" VerticalAlignment="Center" Foreground="{DynamicResource NekoText}" Margin="6,0,20,0"/>
+
+                    <Border Style="{StaticResource BarTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="마스크"/></Border>
+                    <ui:Button Content="↶ 되돌리기" Click="BtnUndo_Click" Padding="12,4" ToolTip="Ctrl+Z"/>
+                    <ui:Button Content="자동 감지로" Click="BtnReset_Click" Padding="12,4" Margin="8,0,0,0" ToolTip="이 페이지 마스크를 감지 결과로 되돌려요"/>
+                    <ui:Button Content="전부 지우기" Click="BtnClear_Click" Padding="12,4" Margin="8,0,0,0"/>
+                    <CheckBox x:Name="ChkSkip" Content="이 페이지는 검열 없음 (건너뛰기)" Margin="12,0,20,0" VerticalAlignment="Center"
+                              Foreground="{DynamicResource NekoText}" Checked="ChkSkip_Changed" Unchecked="ChkSkip_Changed"/>
+
+                    <Border Style="{StaticResource BarTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="보기"/></Border>
+                    <TextBlock Text="확대" VerticalAlignment="Center" Foreground="{DynamicResource NekoText}" Margin="0,0,6,0"/>
+                    <Slider x:Name="SldZoom" Minimum="0.2" Maximum="4" Value="1" Width="120" VerticalAlignment="Center" ValueChanged="Zoom_Changed"/>
+                </WrapPanel>
+            </Border>
+
+            <!-- 왼쪽 페이지 목록 (먹선 패널) -->
+            <ListBox x:Name="LstPages" DockPanel.Dock="Left" Width="230" Margin="16,8,0,8" SelectionChanged="LstPages_Changed"
+                     Background="{DynamicResource NekoCard}" BorderBrush="{DynamicResource NekoStroke}" BorderThickness="2" Padding="0">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel>
+                            <TextBlock Text="{Binding Name}" Foreground="{DynamicResource NekoText}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding Status}" Foreground="{DynamicResource NekoHint}" FontSize="11"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <!-- 원고 작업대: 격자 원고지 위에 페이지 -->
+            <Border Background="{DynamicResource NekoCanvas}" Margin="16,8,16,8" ClipToBounds="True"
+                    BorderBrush="{DynamicResource NekoStroke}" BorderThickness="2">
+                <Grid>
+                    <Rectangle Fill="{DynamicResource MangaGrid}" IsHitTestVisible="False"/>
+                    <ScrollViewer x:Name="Scroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                                  PreviewMouseWheel="Scroller_PreviewMouseWheel" Padding="20" Background="Transparent">
+                        <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Grid x:Name="ImageHost" HorizontalAlignment="Center" VerticalAlignment="Center" Background="Transparent" Cursor="Cross"
+                                  MouseDown="Host_MouseDown" MouseUp="Host_MouseUp" MouseMove="Host_MouseMove" MouseLeave="Host_MouseLeave">
+                                <Image x:Name="ImgView" Stretch="Fill" SnapsToDevicePixels="True"/>
+                                <Canvas x:Name="Overlay" IsHitTestVisible="False"/>
+                            </Grid>
+                        </Grid>
+                    </ScrollViewer>
                 </Grid>
-            </ScrollViewer>
-        </Border>
-    </DockPanel>
+            </Border>
+        </DockPanel>
+    </Grid>
 </ui:FluentWindow>

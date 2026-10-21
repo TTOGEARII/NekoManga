@@ -36,7 +36,7 @@ jobs:
         continue-on-error: true
 
       - name: Pack installer
-        run: vpk pack -u NekoManga -v ${{ steps.ver.outputs.version }} -p publish -e NekoManga.exe --packTitle "NekoManga" --packAuthors "TTOGEARII" --shortcuts Desktop,StartMenuRoot --splashImage assets/splash-setup.gif --splashProgressColor "#FF77A8"
+        run: vpk pack -u NekoManga -v ${{ steps.ver.outputs.version }} -p publish -e NekoManga.exe --packTitle "NekoManga" --packAuthors "TTOGEARII" --shortcuts Desktop,StartMenuRoot --splashImage assets/splash-setup.gif --splashProgressColor "#111111"
 
       - name: Upload to GitHub Release
         run: vpk upload github --repoUrl https://github.com/TTOGEARII/NekoManga --publish --releaseName "NekoManga v${{ steps.ver.outputs.version }}" --tag ${{ github.ref_name }} --token ${{ secrets.GITHUB_TOKEN }}
