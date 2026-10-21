@@ -118,14 +118,26 @@ public partial class MainWindow
             if (Directory.Exists(p))
             {
                 foreach (var f in Directory.EnumerateFiles(p, "*", SearchOption.AllDirectories)
-                         .Where(f => ImageExts.Contains(Path.GetExtension(f).ToLowerInvariant()))
-                         .OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+                         .Where(f => ImageExts.Contains(Path.GetExtension(f).ToLowerInvariant())))
                     AddFile(f);
             }
             else if (File.Exists(p) && ImageExts.Contains(Path.GetExtension(p).ToLowerInvariant()))
                 AddFile(p);
         }
+        SortRowsByName();   // 불러온 순서(드롭·탐색기 선택 순서)와 무관하게 늘 이름 오름차순 (사용자 요청 2026-10-21)
         UpdateDropHint();
+    }
+
+    /// <summary>탐색기와 같은 자연 정렬(2 < 10)로 목록을 이름 오름차순 정렬. 같은 Row 객체를 재사용해 썸네일·상태를 유지한다.</summary>
+    private void SortRowsByName()
+    {
+        if (_rows.Count < 2) return;
+        var selected = FileList.SelectedItem;
+        var sorted = _rows.OrderBy(r => r.Name, Comparer<string>.Create(StrCmpLogicalW)).ToList();
+        if (sorted.SequenceEqual(_rows)) return;
+        _rows.Clear();
+        foreach (var r in sorted) _rows.Add(r);
+        if (selected != null) FileList.SelectedItem = selected;
     }
 
     private void AddFile(string path)
@@ -247,9 +259,7 @@ public partial class MainWindow
     private void BtnSort_Click(object sender, RoutedEventArgs e)
     {
         if (_cts != null || _rows.Count < 2) return;
-        var sorted = _rows.OrderBy(r => r.Name, Comparer<string>.Create(StrCmpLogicalW)).ToList();
-        _rows.Clear();
-        foreach (var r in sorted) _rows.Add(r);   // 같은 Row 객체 재사용 — 썸네일·상태 유지
+        SortRowsByName();
         TxtStatus.Text = "이름순으로 정렬했어요";
     }
 

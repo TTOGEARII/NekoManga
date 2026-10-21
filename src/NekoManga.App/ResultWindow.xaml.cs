@@ -89,11 +89,64 @@ public partial class ResultWindow
     }
 
     // ── 페이지 ──────────────────────────────────────────────
-    private void LoadPage(int idx, bool fit)
+    /// <summary>디스크에서 읽은 한 페이지 묶음(결과물 + 식자 사이드카 + 식자 전 원고). 읽기는 백그라운드.</summary>
+    private sealed record PageData(Mat Img, LetterSidecar? Sidecar, Mat? Base)
+    {
+        public void Dispose() { Img.Dispose(); Base?.Dispose(); }
+    }
+    private readonly Dictionary<int, Task<PageData>> _prefetch = [];   // 이웃 페이지 미리 읽기 (2026-10-21: 페이지 넘김 지연 해소)
+    private int _loadGen;
+
+    private static PageData ReadPage(string path)
+    {
+        var img = File.Exists(path) ? ImgIo.Read(path, ImreadModes.Color) : new Mat();
+        if (img.Empty()) return new PageData(img, null, null);
+        var sc = LetterSidecar.Load(path);                       // 번역을 돌린 페이지에만 있다
+        var b = sc != null ? ImgIo.Read(sc.BasePath) : null;
+        if (b is { } bm && bm.Empty()) { bm.Dispose(); b = null; }
+        return new PageData(img, sc, b);
+    }
+
+    private Task<PageData> FetchPage(int i)
+    {
+        if (!_prefetch.TryGetValue(i, out var t)) { var p = _pages[i]; t = Task.Run(() => ReadPage(p)); _prefetch[i] = t; }
+        return t;
+    }
+
+    /// <summary>현재 페이지의 양옆을 미리 읽어 둔다 — ◀ ▶로 넘길 때 디스크·PNG 디코딩을 기다리지 않게. 멀어진 것은 버린다.</summary>
+    private void PrefetchNeighbors()
+    {
+        foreach (var k in _prefetch.Keys.Where(k => Math.Abs(k - _index) > 1).ToList())
+        {
+            var t = _prefetch[k]; _prefetch.Remove(k);
+            t.ContinueWith(x => { if (x.Status == TaskStatus.RanToCompletion) x.Result.Dispose(); });
+        }
+        if (_index > 0) FetchPage(_index - 1);
+        if (_index < _pages.Count - 1) FetchPage(_index + 1);
+    }
+
+    /// <summary>페이지 전환. 읽기는 백그라운드(미리 읽어 둔 것이 있으면 즉시) — 읽는 동안은 넘김 버튼만 잠근다.
+    /// 2026-10-21 이전엔 UI 스레드에서 PNG 두 장(결과물·식자 전 원고)을 동기로 읽어 큰 페이지에서 0.5초쯤 멈췄다.</summary>
+    private async void LoadPage(int idx, bool fit)
     {
         if (!ConfirmDiscard()) return;
+        int gen = ++_loadGen;
 
         _index = Math.Clamp(idx, 0, _pages.Count - 1);
+        TxtFile.Text = System.IO.Path.GetFileName(_pages[_index]);
+        TxtFile.ToolTip = _pages[_index];
+        TxtCount.Text = $"{_index + 1} / {_pages.Count}";
+        BtnPrev.IsEnabled = BtnNext.IsEnabled = false;
+        if (CmbPages.SelectedIndex != _index) CmbPages.SelectedIndex = _index;
+
+        var task = FetchPage(_index);
+        if (!task.IsCompleted) TxtStatus.Text = "읽는 중...";
+        PageData data;
+        try { data = await task; }
+        catch (Exception ex) { data = new PageData(new Mat(), null, null); TxtStatus.Text = "읽기 실패: " + ex.Message; }
+        _prefetch.Remove(_index);
+        if (gen != _loadGen) { data.Dispose(); return; }   // 기다리는 사이 또 넘겼다
+
         _img.Dispose();
         while (_undo.Count > 0) _undo.Pop().Dispose();
         _shapes.Clear();
@@ -102,14 +155,12 @@ public partial class ResultWindow
         _dirty = false;
         BtnSave.IsEnabled = false;
         BtnUndo.IsEnabled = false;
+        InvalidateBitmap();
 
-        _img = File.Exists(_pages[_index]) ? ImgIo.Read(_pages[_index], ImreadModes.Color) : new Mat();
-        TxtFile.Text = System.IO.Path.GetFileName(_pages[_index]);
-        TxtFile.ToolTip = _pages[_index];
-        TxtCount.Text = $"{_index + 1} / {_pages.Count}";
+        _img = data.Img;
         BtnPrev.IsEnabled = _index > 0;
         BtnNext.IsEnabled = _index < _pages.Count - 1;
-        if (CmbPages.SelectedIndex != _index) CmbPages.SelectedIndex = _index;
+        PrefetchNeighbors();
 
         if (_img.Empty())
         {
@@ -118,12 +169,10 @@ public partial class ResultWindow
             Overlay.Children.Clear();
             return;
         }
-        // 식자 사이드카 로드 — 번역을 돌린 페이지에만 있다
-        _sidecar = LetterSidecar.Load(_pages[_index]);
+        _sidecar = data.Sidecar;
         _letterBlocks = _sidecar?.Blocks.ToList() ?? [];
         _baseImg?.Dispose();
-        _baseImg = _sidecar != null ? ImgIo.Read(_sidecar.BasePath) : null;
-        if (_baseImg is { } bm && bm.Empty()) { bm.Dispose(); _baseImg = null; }
+        _baseImg = data.Base;
         _letterPreview = false;
         TabLetter.IsEnabled = _sidecar != null && _baseImg != null;
         if (!TabLetter.IsEnabled && TabMode.SelectedItem == TabLetter) TabMode.SelectedIndex = 0;
@@ -881,6 +930,8 @@ public partial class ResultWindow
         _img.Dispose();
         _baseImg?.Dispose();
         while (_undo.Count > 0) _undo.Pop().Dispose();
+        foreach (var t in _prefetch.Values) t.ContinueWith(x => { if (x.Status == TaskStatus.RanToCompletion) x.Result.Dispose(); });
+        _prefetch.Clear();
     }
 
     // ── 확대/축소 ───────────────────────────────────────────
