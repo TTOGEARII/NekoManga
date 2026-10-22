@@ -202,9 +202,19 @@
                     </DockPanel>
                     <TextBlock Style="{StaticResource HintText}"
                                Text="감지된 영역 둘레를 조금 더 넓게 지워 경계를 자연스럽게 해요 (AI·수동 공통)."/>
-                    <CheckBox x:Name="ChkReview" Content="제거 전에 감지된 마스크를 직접 확인·추가하기 (검토 창)" Margin="0,12,0,0"/>
+                    <CheckBox x:Name="ChkReview" Content="제거 전에 감지된 마스크를 직접 확인·추가하기" Margin="0,12,0,0"/>
+                    <WrapPanel Margin="0,6,0,0">
+                        <TextBlock Text="검토 방식" Style="{StaticResource FieldLabel}"/>
+                        <ComboBox x:Name="CmbReviewMode" Width="330">
+                            <ComboBoxItem Tag="PerPage" Content="페이지별 — 감지된 장만 '검토 대기', 나머지는 바로 진행" IsSelected="True"/>
+                            <ComboBoxItem Tag="Window" Content="검토 창 — 모든 장을 먼저 찾고 창 하나에서 한꺼번에"/>
+                        </ComboBox>
+                    </WrapPanel>
                     <TextBlock Style="{StaticResource HintText}"
-                               Text="모든 페이지의 검열을 먼저 찾은 뒤 검토 창이 떠요. 놓친 검열은 브러시·다각형으로 칠하고, 잘못 잡힌 곳은 지우고 나서 제거를 시작해요."/>
+                               Text="페이지별: 검열이 없는 장은 기다리지 않고 채색·식자까지 바로 끝나요. 감지된 장은 '검토 대기'로 남으니 목록에서 더블클릭 → 🎭 마스크 수정 탭에서 고친 뒤 [검열 제거 진행]을 누르세요. 메인 창의 [대기 중 전부 진행]으로 한꺼번에 보낼 수도 있어요."/>
+                    <CheckBox x:Name="ChkReuseMasks" Content="다시 돌릴 때 저장된 마스크(내가 고친 것 포함)를 감지 대신 쓰기" Margin="0,4,0,0"/>
+                    <TextBlock Style="{StaticResource HintText}"
+                               Text="마스크는 결과 폴더의 .neko에 남아요. 끄면 매번 새로 감지해요."/>
                     <CheckBox x:Name="ChkCollect" Content="검토에서 고친 마스크를 학습 재료로 모으기 (내 PC에만 저장)" Margin="0,8,0,0"/>
                     <TextBlock Style="{StaticResource HintText}"
                                Text="원고·자동 감지·최종 마스크를 %AppData%\NekoManga\training\corrections 에 저장해요. 모인 재료로 감지 모델을 다시 학습하면 내 원고에 맞게 좋아져요."/>

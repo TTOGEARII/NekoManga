@@ -43,6 +43,8 @@ public partial class SettingsWindow
         TxtMaskGrow.Text = s.DecensorMaskGrow.ToString();
         ChkBubbleFilter.IsChecked = s.DecensorBubbleFilter;
         ChkReview.IsChecked = s.DecensorReview;
+        SelectComboByTag(CmbReviewMode, s.DecensorReviewMode);
+        ChkReuseMasks.IsChecked = s.ReuseStoredMasks;
         ChkCollect.IsChecked = s.CollectCorrections;
         ChkSelfTrain.IsChecked = s.EnableSelfTraining;
         TxtSelfEpochs.Text = s.SelfTrainEpochs.ToString();
@@ -149,6 +151,8 @@ public partial class SettingsWindow
         s.DecensorMaskGrow = ParseI(TxtMaskGrow.Text, s.DecensorMaskGrow, 0, 64);
         s.DecensorBubbleFilter = ChkBubbleFilter.IsChecked == true;
         s.DecensorReview = ChkReview.IsChecked == true;
+        s.DecensorReviewMode = ComboTag(CmbReviewMode, s.DecensorReviewMode);
+        s.ReuseStoredMasks = ChkReuseMasks.IsChecked == true;
         s.CollectCorrections = ChkCollect.IsChecked == true;
         s.EnableSelfTraining = ChkSelfTrain.IsChecked == true;
         s.SelfTrainEpochs = ParseI(TxtSelfEpochs.Text, s.SelfTrainEpochs, 1, 50);

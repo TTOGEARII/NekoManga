@@ -96,6 +96,10 @@
                 <ui:Button x:Name="BtnStop" Click="BtnStop_Click" IsEnabled="False"
                            Margin="0,6,0,0" Padding="22,6" HorizontalAlignment="Stretch"
                            Content="멈추기"/>
+                <!-- 검토 대기 페이지가 있을 때만: 전부 현재 마스크 그대로 검열 제거로 보낸다 (2026-10-21 페이지별 검토) -->
+                <ui:Button x:Name="BtnProceedAll" Click="BtnProceedAll_Click" Visibility="Collapsed"
+                           Margin="0,6,0,0" Padding="22,6" HorizontalAlignment="Stretch" Appearance="Caution"
+                           Content="대기 중 전부 진행" ToolTip="검토 대기 중인 장을 지금 마스크 그대로 검열 제거로 보내요"/>
             </StackPanel>
         </Grid>
 

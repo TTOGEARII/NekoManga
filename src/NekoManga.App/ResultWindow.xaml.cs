@@ -36,8 +36,15 @@ namespace NekoManga.App;
 /// 축에 나란한 사각형으로는 주변 그림까지 넣어야 하지만, 네 점을 찍으면 막대만 딱 감싼다.</summary>
 public partial class ResultWindow
 {
-    private readonly List<string> _pages;
+    /// <summary>결과 창 한 페이지: 보여 줄 그림(결과물 또는 원본)과 결과물 경로(.neko 사이드카 위치 기준).</summary>
+    public sealed record PageRef(string ViewPath, string OutPath);
+
+    private readonly List<PageRef> _refs;
     private int _index;
+    // 페이지별 검토(2026-10-21): 메인 창이 넘겨 주는 러너 훅 — 원고 경로로 '검토 대기 중인지'와 '진행 확인'
+    private readonly Func<string, bool>? _confirmPage;
+    private readonly Func<string, bool>? _isWaiting;
+    private bool _startOnMask;
 
     private Mat _img = new();
     private readonly Stack<Mat> _undo = new();
@@ -51,6 +58,10 @@ public partial class ResultWindow
 
     public ResultWindow(string imagePath) : this([imagePath], 0) { }
 
+    /// <summary>--result 등 결과물 경로만 있을 때: 사이드카는 그 파일 옆 .neko에서 찾는다.</summary>
+    public ResultWindow(IReadOnlyList<string> pages, int startIndex)
+        : this(pages.Select(p => new PageRef(p, p)).ToList(), startIndex) { }
+
     // ── 식자 탭 상태 ─────────────────────────────────────────
     private LetterSidecar? _sidecar;              // 현재 페이지의 식자 사이드카 (없으면 탭 비활성)
     private List<TextBlockInfo> _letterBlocks = [];
@@ -59,13 +70,16 @@ public partial class ResultWindow
     private PipelineRunner? _runner;              // 수동 복원용 러너 — 창 수명 동안 ONNX 세션 재사용
     private bool _letterPreview;                  // true면 [다시 식자] 결과(_img)를 보여준다
 
-    public ResultWindow(IReadOnlyList<string> pages, int startIndex)
+    public ResultWindow(IReadOnlyList<PageRef> pages, int startIndex,
+        Func<string, bool>? confirmPage = null, Func<string, bool>? isWaiting = null, bool startOnMask = false)
     {
         InitializeComponent();
-        _pages = pages.Count > 0 ? [.. pages] : [""];
-        _index = Math.Clamp(startIndex, 0, _pages.Count - 1);
+        _refs = pages.Count > 0 ? [.. pages] : [new PageRef("", "")];
+        _index = Math.Clamp(startIndex, 0, _refs.Count - 1);
+        _confirmPage = confirmPage; _isWaiting = isWaiting; _startOnMask = startOnMask;
 
-        foreach (var p in _pages) CmbPages.Items.Add(Path.GetFileName(p));
+        foreach (var p in _refs) CmbPages.Items.Add(Path.GetFileName(p.ViewPath));
+        SldMBrush.ValueChanged += (_, _) => { TxtMBrush.Text = $"{(int)SldMBrush.Value}px"; if (IsLoaded) UpdateBrushCursor(); };
 
         foreach (var f in System.Drawing.FontFamily.Families.Select(f => f.Name).OrderBy(n => n))
             CmbLFont.Items.Add(f);
@@ -90,27 +104,56 @@ public partial class ResultWindow
 
     // ── 페이지 ──────────────────────────────────────────────
     /// <summary>디스크에서 읽은 한 페이지 묶음(결과물 + 식자 사이드카 + 식자 전 원고). 읽기는 백그라운드.</summary>
-    private sealed record PageData(Mat Img, LetterSidecar? Sidecar, Mat? Base)
+    private sealed record PageData(Mat Img, LetterSidecar? Sidecar, Mat? Base,
+        MaskSidecar? MaskSc = null, Mat? Mask = null, Mat? Pre = null, Mat? PreDisp = null)
     {
-        public void Dispose() { Img.Dispose(); Base?.Dispose(); }
+        public void Dispose() { Img.Dispose(); Base?.Dispose(); Mask?.Dispose(); Pre?.Dispose(); PreDisp?.Dispose(); }
     }
     private readonly Dictionary<int, Task<PageData>> _prefetch = [];   // 이웃 페이지 미리 읽기 (2026-10-21: 페이지 넘김 지연 해소)
     private int _loadGen;
 
-    private static PageData ReadPage(string path)
+    private const int MaskDispMax = 1600;
+
+    private static PageData ReadPage(PageRef r)
     {
+        var path = r.ViewPath;
         var img = File.Exists(path) ? ImgIo.Read(path, ImreadModes.Color) : new Mat();
         if (img.Empty()) return new PageData(img, null, null);
-        var sc = LetterSidecar.Load(path);                       // 번역을 돌린 페이지에만 있다
+        var sc = LetterSidecar.Load(r.OutPath);                   // 번역을 돌린 페이지에만 있다
         var b = sc != null ? ImgIo.Read(sc.BasePath) : null;
         if (b is { } bm && bm.Empty()) { bm.Dispose(); b = null; }
-        return new PageData(img, sc, b);
+
+        // 검열 마스크 사이드카 — 검열 제거를 켜고 돌린 페이지에만 있다. 표시용 축소본(긴 변 1600)도 미리 만든다
+        MaskSidecar? msc = MaskSidecar.Load(r.OutPath);
+        Mat? mask = null, pre = null, preDisp = null;
+        if (msc != null)
+        {
+            mask = MaskSidecar.LoadMask(r.OutPath);
+            if (MaskSidecar.HasPre(r.OutPath)) pre = ImgIo.Read(MaskSidecar.PrePathFor(r.OutPath), ImreadModes.Color);
+            if (pre is { } pm && pm.Empty()) { pm.Dispose(); pre = null; }
+            if (mask != null && pre != null && mask.Size() != pre.Size()) { mask.Dispose(); mask = null; }
+            if (mask == null || pre == null) { mask?.Dispose(); pre?.Dispose(); mask = pre = null; msc = null; }
+            else
+            {
+                double ds = Math.Min(1.0, (double)MaskDispMax / Math.Max(pre.Width, pre.Height));
+                preDisp = new Mat();
+                Cv2.Resize(pre, preDisp, new Size((int)Math.Round(pre.Width * ds), (int)Math.Round(pre.Height * ds)), 0, 0, InterpolationFlags.Area);
+            }
+        }
+        return new PageData(img, sc, b, msc, mask, pre, preDisp);
     }
 
     private Task<PageData> FetchPage(int i)
     {
-        if (!_prefetch.TryGetValue(i, out var t)) { var p = _pages[i]; t = Task.Run(() => ReadPage(p)); _prefetch[i] = t; }
+        if (!_prefetch.TryGetValue(i, out var t)) { var p = _refs[i]; t = Task.Run(() => ReadPage(p)); _prefetch[i] = t; }
         return t;
+    }
+
+    /// <summary>미리 읽어 둔 이 페이지를 버린다 — 디스크의 결과물·사이드카가 바뀐 뒤 다시 읽게.</summary>
+    private void InvalidatePrefetch(int i)
+    {
+        if (_prefetch.Remove(i, out var t))
+            t.ContinueWith(x => { if (x.Status == TaskStatus.RanToCompletion) x.Result.Dispose(); });
     }
 
     /// <summary>현재 페이지의 양옆을 미리 읽어 둔다 — ◀ ▶로 넘길 때 디스크·PNG 디코딩을 기다리지 않게. 멀어진 것은 버린다.</summary>
@@ -122,7 +165,7 @@ public partial class ResultWindow
             t.ContinueWith(x => { if (x.Status == TaskStatus.RanToCompletion) x.Result.Dispose(); });
         }
         if (_index > 0) FetchPage(_index - 1);
-        if (_index < _pages.Count - 1) FetchPage(_index + 1);
+        if (_index < _refs.Count - 1) FetchPage(_index + 1);
     }
 
     /// <summary>페이지 전환. 읽기는 백그라운드(미리 읽어 둔 것이 있으면 즉시) — 읽는 동안은 넘김 버튼만 잠근다.
@@ -136,12 +179,12 @@ public partial class ResultWindow
         StashRegenFields();                // 떠나는 페이지의 재생성 값을 기억
         int gen = ++_loadGen;
 
-        idx = Math.Clamp(idx, 0, _pages.Count - 1);
+        idx = Math.Clamp(idx, 0, _refs.Count - 1);
         _index = idx;
         _loading = true;
-        TxtFile.Text = System.IO.Path.GetFileName(_pages[idx]);
-        TxtFile.ToolTip = _pages[idx];
-        TxtCount.Text = $"{idx + 1} / {_pages.Count}";
+        TxtFile.Text = System.IO.Path.GetFileName(_refs[idx].ViewPath);
+        TxtFile.ToolTip = _refs[idx].ViewPath;
+        TxtCount.Text = $"{idx + 1} / {_refs.Count}";
         BtnPrev.IsEnabled = BtnNext.IsEnabled = false;
         if (CmbPages.SelectedIndex != idx) CmbPages.SelectedIndex = idx;
 
@@ -165,15 +208,16 @@ public partial class ResultWindow
         BtnSave.IsEnabled = false;
         BtnUndo.IsEnabled = false;
         InvalidateBitmap();
+        ResetMaskState(data);
 
         _img = data.Img;
         BtnPrev.IsEnabled = _index > 0;
-        BtnNext.IsEnabled = _index < _pages.Count - 1;
+        BtnNext.IsEnabled = _index < _refs.Count - 1;
         PrefetchNeighbors();
 
         if (_img.Empty())
         {
-            TxtStatus.Text = "이미지를 읽지 못했어요: " + Path.GetFileName(_pages[_index]) + (readError != null ? " — " + readError : "");
+            TxtStatus.Text = "이미지를 읽지 못했어요: " + Path.GetFileName(_refs[_index].ViewPath) + (readError != null ? " — " + readError : "");
             ImgView.Source = null;
             Overlay.Children.Clear();
             return;
@@ -185,12 +229,20 @@ public partial class ResultWindow
         _letterPreview = false;
         TabLetter.IsEnabled = _sidecar != null && _baseImg != null;
         if (!TabLetter.IsEnabled && TabMode.SelectedItem == TabLetter) TabMode.SelectedIndex = 0;
+        TabMask.IsEnabled = _maskMat != null && _maskPre != null;
+        if (!TabMask.IsEnabled && TabMode.SelectedItem == TabMask) TabMode.SelectedIndex = 0;
+        // 검토 대기 페이지(또는 마스크 탭으로 열라는 요청)는 마스크 탭부터 보여 준다
+        if (TabMask.IsEnabled && (_startOnMask || IsWaitingPage) && TabMode.SelectedItem != TabMask) TabMode.SelectedItem = TabMask;
+        _startOnMask = false;
         RefreshBlockCombo();
+        UpdateMaskInfo();
+        UpdateModeButtons();
 
         if (fit) FitToWindow();
         Redraw();
         if (RegenMode) LoadRegenFields();   // 새 페이지의 재생성 값(기억된 것 또는 설정값)
-        TxtStatus.Text = "지울 검열의 꼭짓점을 클릭하세요";
+        TxtStatus.Text = MaskMode ? (IsWaitingPage ? "검토 대기 중 — 빨간 마스크를 고친 뒤 [검열 제거 진행]을 누르세요" : "저장된 마스크 — 고친 뒤 [저장 마스크로 다시 검열 제거]")
+                       : "지울 검열의 꼭짓점을 클릭하세요";
     }
 
     // ── 식자 탭 ─────────────────────────────────────────────
@@ -198,16 +250,31 @@ public partial class ResultWindow
 
     private void TabMode_Changed(object sender, SelectionChangedEventArgs e)
     {
-        if (!IsLoaded) return;
-        BtnApply.Content = LetterMode ? "✍ 다시 식자" : "✨ 선택 영역 지우기";
-        BtnClearSel.Visibility = LetterMode ? Visibility.Collapsed : Visibility.Visible;
+        if (!IsLoaded || _loading) return;
+        UpdateModeButtons();
         _pending.Clear();
         _letterPreview = false;      // 탭에 들어오면 항상 편집 모드부터
+        if (!_img.Empty()) FitToWindow();   // 마스크 탭은 검열 제거 전 원고(원본 크기)를, 다른 탭은 결과물을 보여 줘 크기가 다를 수 있다
         Redraw();
         if (LetterMode)
             TxtStatus.Text = _letterBlocks.Count > 0
                 ? $"번역 블록 {_letterBlocks.Count}개 — 말풍선의 텍스트박스를 바로 고치세요"
                 : "이 장은 보일 블록이 없어요";
+        else if (MaskMode)
+            TxtStatus.Text = IsWaitingPage ? "검토 대기 중 — 빨간 마스크를 고친 뒤 [검열 제거 진행]을 누르세요"
+                                           : "저장된 마스크를 고친 뒤 [저장 마스크로 다시 검열 제거] 또는 [채색부터 다시]";
+    }
+
+    /// <summary>탭에 따라 아래 버튼 바의 글자·표시를 맞춘다.</summary>
+    private void UpdateModeButtons()
+    {
+        BtnApply.Content = LetterMode ? "✍ 다시 식자"
+                         : MaskMode ? (IsWaitingPage ? "✔ 검열 제거 진행" : "✨ 저장 마스크로 다시 검열 제거")
+                         : "✨ 선택 영역 지우기";
+        BtnClearSel.Visibility = LetterMode || MaskMode ? Visibility.Collapsed : Visibility.Visible;
+        BtnSave.Content = MaskMode ? "💾 마스크 저장" : "💾 저장";
+        BtnSave.IsEnabled = MaskMode ? _maskDirty : _dirty;
+        BtnUndo.IsEnabled = MaskMode ? _maskUndo.Count > 0 : _undo.Count > 0;
     }
 
     /// <summary>스타일 입력(글꼴·크기·색 등)이 바뀌면 편집 중인 텍스트박스에 즉시 반영한다.</summary>
@@ -363,6 +430,13 @@ public partial class ResultWindow
     /// <summary>저장 안 한 수정이 있으면 물어본다. 계속해도 되면 true.</summary>
     private bool ConfirmDiscard()
     {
+        if (_maskDirty)
+        {
+            var mr = MessageBox.Show("고친 마스크를 저장할까요?", "마스크 수정", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+            if (mr == MessageBoxResult.Cancel) return false;
+            if (mr == MessageBoxResult.Yes) SaveMaskSidecar();
+            _maskDirty = false;
+        }
         if (!_dirty) return true;
         var r = MessageBox.Show("저장하지 않은 수정이 있어요. 저장할까요?", "결과 보기",
             MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
@@ -377,13 +451,31 @@ public partial class ResultWindow
     {
         double w = Math.Max(200, Scroller.ActualWidth - 24);
         double h = Math.Max(200, Scroller.ActualHeight - 24);
-        _scale = Math.Min(Math.Min(w / _img.Width, h / _img.Height), 1.0);
+        var (sw, sh) = ShownSize;
+        _scale = Math.Min(Math.Min(w / Math.Max(1, sw), h / Math.Max(1, sh)), 1.0);
         SldZoom.Value = _scale;
     }
+
+    /// <summary>지금 화면에 깔리는 그림의 원본 크기 — 마스크 탭은 검열 제거 전 원고, 식자 편집은 base, 그 외 결과물.</summary>
+    private (int W, int H) ShownSize =>
+        MaskMode && _maskPre != null ? (_maskPre.Width, _maskPre.Height)
+        : LetterMode && !_letterPreview && _baseImg != null ? (_baseImg.Width, _baseImg.Height)
+        : (_img.Width, _img.Height);
 
     private void Redraw()
     {
         if (_img.Empty()) return;
+        if (MaskMode && _maskPre != null && _maskMat != null)
+        {
+            // 마스크 탭: 검열 제거 전 원고(축소본) 위에 빨간 마스크 합성 — 결과물이 아니라 마스크 좌표계(원본 크기)의 그림
+            ImgView.Source = RenderMaskComposite();
+            ImageHost.Width = ImgView.Width = Overlay.Width = EditLayer.Width = _maskPre.Width * _scale;
+            ImageHost.Height = ImgView.Height = Overlay.Height = EditLayer.Height = _maskPre.Height * _scale;
+            TxtZoom.Text = $"{_scale * 100:0}%";
+            EditLayer.Visibility = Visibility.Collapsed;
+            DrawShapes();
+            return;
+        }
         // 식자 편집 모드에서는 글자가 안 구워진 원고(base)를 깔고 그 위에 텍스트박스를 띄운다
         bool editView = LetterMode && !_letterPreview && _baseImg != null;
         var shown = editView ? _baseImg! : _img;
@@ -572,6 +664,18 @@ public partial class ResultWindow
 
         // 식자 모드의 블록 표시는 EditLayer의 텍스트박스 자체가 담당한다
         if (LetterMode) return;
+        if (MaskMode)
+        {
+            if (_maskPoly.Count > 0)
+            {
+                var pl = new System.Windows.Shapes.Polyline { Stroke = Brushes.Gold, StrokeThickness = 2, StrokeDashArray = [4, 2] };
+                foreach (var p in _maskPoly) pl.Points.Add(new WinPoint(p.X * _scale, p.Y * _scale));
+                Overlay.Children.Add(pl);
+                foreach (var p in _maskPoly) Overlay.Children.Add(MakeDot(p));
+            }
+            UpdateBrushCursor();
+            return;
+        }
 
         foreach (var s in _shapes) Overlay.Children.Add(MakePolygon(s, finished: true));
         foreach (var (pts, r) in _brushStrokes) Overlay.Children.Add(MakeStroke(pts, r));
@@ -595,8 +699,10 @@ public partial class ResultWindow
 
     private void UpdateBrushCursor()
     {
-        bool show = _cursorVisible && BrushMode && !LetterMode && !_img.Empty();
-        double r = BrushRadius * _scale;
+        bool show = _cursorVisible && !_img.Empty() && !LetterMode
+                    && (MaskMode ? (_maskMat != null && RbMPoly.IsChecked != true) : BrushMode);
+        double r = (MaskMode ? SldMBrush.Value : BrushRadius) * _scale;
+        _cursorInner.Stroke = MaskMode ? (RbMErase.IsChecked == true ? Brushes.DeepSkyBlue : Brushes.Red) : Brushes.OrangeRed;
         foreach (var el in new[] { _cursorOuter, _cursorInner })
         {
             if (!Overlay.Children.Contains(el)) Overlay.Children.Add(el);
@@ -658,9 +764,12 @@ public partial class ResultWindow
     }
 
     // ── 점 찍기 ─────────────────────────────────────────────
-    private CvPoint ToImage(WinPoint p) => new(
-        Math.Clamp((int)Math.Round(p.X / _scale), 0, Math.Max(0, _img.Width - 1)),
-        Math.Clamp((int)Math.Round(p.Y / _scale), 0, Math.Max(0, _img.Height - 1)));
+    private CvPoint ToImage(WinPoint p)
+    {
+        var (w, h) = ShownSize;
+        return new(Math.Clamp((int)Math.Round(p.X / _scale), 0, Math.Max(0, w - 1)),
+                   Math.Clamp((int)Math.Round(p.Y / _scale), 0, Math.Max(0, h - 1)));
+    }
 
     // ── 휠(가운데) 버튼 드래그 = 화면 이동(패닝). 좌클릭은 기존 동작 그대로 ──
     private bool _panning;
@@ -680,6 +789,14 @@ public partial class ResultWindow
 
     private void Host_MouseUp(object sender, MouseButtonEventArgs e)
     {
+        if (e.ChangedButton == MouseButton.Left && _maskPainting)
+        {
+            _maskPainting = false;
+            ImageHost.ReleaseMouseCapture();
+            UpdateMaskInfo();
+            e.Handled = true;
+            return;
+        }
         if (e.ChangedButton == MouseButton.Left && _brushing)
         {
             _brushing = false;
@@ -715,6 +832,8 @@ public partial class ResultWindow
     {
         if (_img.Empty() || _busy) return;
 
+        if (MaskMode) { MaskLeftClick(e); return; }
+
         if (LetterMode)
         {
             // 미리보기 중이면 편집 모드로 (편집 모드의 클릭은 텍스트박스가 직접 받는다)
@@ -748,6 +867,11 @@ public partial class ResultWindow
     private void Host_RightClick(object sender, MouseButtonEventArgs e)
     {
         if (LetterMode) return;
+        if (MaskMode)
+        {
+            if (_maskPoly.Count > 0) { _maskPoly.RemoveAt(_maskPoly.Count - 1); DrawShapes(); }
+            return;
+        }
         if (BrushMode && _brushStrokes.Count > 0)
         {
             _brushStrokes.RemoveAt(_brushStrokes.Count - 1);
@@ -782,6 +906,18 @@ public partial class ResultWindow
 
         _hover = e.GetPosition(ImageHost); _cursorVisible = true;
 
+        if (MaskMode)
+        {
+            if (_maskPainting && e.LeftButton == MouseButtonState.Pressed)
+            {
+                var p = ToImage(_hover);
+                MaskDab(_maskLast, p); _maskLast = p;   // Redraw → DrawShapes가 커서도 다시 올린다
+            }
+            else if (_maskPoly.Count > 0) DrawShapes();
+            else UpdateBrushCursor();
+            return;
+        }
+
         // 브러시 칠하는 중 — 2px 이상 움직였을 때만 점 추가 (과밀 방지)
         if (_brushing && e.LeftButton == MouseButtonState.Pressed && _brushStrokes.Count > 0)
         {
@@ -810,6 +946,18 @@ public partial class ResultWindow
 
     private void Window_KeyDown(object sender, KeyEventArgs e)
     {
+        if (MaskMode && Keyboard.FocusedElement is not TextBox)
+        {
+            switch (e.Key)
+            {
+                case Key.Enter: MaskClosePolygon(); e.Handled = true; return;
+                case Key.Escape: _maskPoly.Clear(); DrawShapes(); e.Handled = true; return;
+                case Key.Z when Keyboard.Modifiers == ModifierKeys.Control: MaskUndo(); e.Handled = true; return;
+                case Key.B: RbMAdd.IsChecked = true; return;
+                case Key.E: RbMErase.IsChecked = true; return;
+                case Key.P: RbMPoly.IsChecked = true; return;
+            }
+        }
         switch (e.Key)
         {
             case Key.Enter: CloseShape(); break;
@@ -902,6 +1050,7 @@ public partial class ResultWindow
         if (_img.Empty() || _busy || _loading) return;
 
         if (LetterMode) { ApplyLettering(); return; }
+        if (MaskMode) { await MaskApplyAsync(); return; }
 
         if (_pending.Count >= 3) CloseShape();   // 찍다 만 도형도 살려 준다
         if (_shapes.Count == 0 && _brushStrokes.Count == 0)
@@ -1004,6 +1153,7 @@ public partial class ResultWindow
 
     private void BtnUndo_Click(object sender, RoutedEventArgs e)
     {
+        if (MaskMode) { MaskUndo(); return; }
         if (_undo.Count == 0) return;
         _img.Dispose();
         _img = _undo.Pop();
@@ -1012,16 +1162,20 @@ public partial class ResultWindow
         TxtStatus.Text = "되돌렸어요";
     }
 
-    private void BtnSave_Click(object sender, RoutedEventArgs e) => Save();
+    private void BtnSave_Click(object sender, RoutedEventArgs e)
+    {
+        if (MaskMode) { SaveMaskSidecar(); TxtStatus.Text = "마스크를 저장했어요 — 다음에 다시 돌려도 이 마스크를 써요"; return; }
+        Save();
+    }
 
     private void Save()
     {
         try
         {
-            ImgIo.Write(_pages[_index], _img);
+            ImgIo.Write(_refs[_index].ViewPath, _img);
             _dirty = false;
             BtnSave.IsEnabled = false;
-            TxtStatus.Text = "저장했어요 → " + Path.GetFileName(_pages[_index]);
+            TxtStatus.Text = "저장했어요 → " + Path.GetFileName(_refs[_index].ViewPath);
         }
         catch (Exception ex) { TxtStatus.Text = "저장 실패: " + ex.Message; }
     }
@@ -1034,9 +1188,261 @@ public partial class ResultWindow
         // 복원이 돌고 있으면 그 Mat·러너는 해제하지 않는다(작업이 끝나면 GC가 거둔다) — 쓰는 중인 네이티브 메모리를 해제하면 죽는다
         if (!_busy) { _runner?.Dispose(); _img.Dispose(); }
         _baseImg?.Dispose();
+        ResetMaskState(null);
         while (_undo.Count > 0) _undo.Pop().Dispose();
         foreach (var t in _prefetch.Values) t.ContinueWith(x => { if (x.Status == TaskStatus.RanToCompletion) x.Result.Dispose(); });
         _prefetch.Clear();
+    }
+
+    // ── 🎭 마스크 수정 탭 (2026-10-21, 사용자 요청) ───────────────────────────────
+    // 검토 대기 페이지: 러너가 .neko에 남긴 마스크(원본 좌표)와 검열 제거 전 원고를 보여 주고, 고친 마스크를 사이드카에 저장한 뒤 러너에 '진행'을 알린다.
+    // 끝난 페이지: 같은 마스크를 고쳐 결과물에 바로 다시 제거(빠름)하거나, 보존된 원고에서 2차 전체를 다시 돌린다(채색부터 다시).
+    private MaskSidecar? _maskSc;
+    private Mat? _maskMat;        // 원본 크기 CV_8UC1, 255=지울 곳 (창이 소유)
+    private Mat? _maskPre;        // 검열 제거 전 원고 (원본 크기)
+    private Mat? _maskPreDisp;    // 표시용 축소본
+    private readonly List<Mat> _maskUndo = [];
+    private readonly List<CvPoint> _maskPoly = [];
+    private bool _maskDirty, _maskEdited, _maskPainting;
+    private CvPoint _maskLast;
+
+    private bool MaskMode => TabMode.SelectedItem == TabMask;
+    private bool IsWaitingPage => _maskSc != null && _isWaiting?.Invoke(_maskSc.Source) == true;
+
+    private void ResetMaskState(PageData? data)
+    {
+        _maskMat?.Dispose(); _maskPre?.Dispose(); _maskPreDisp?.Dispose();
+        foreach (var u in _maskUndo) u.Dispose();
+        _maskUndo.Clear(); _maskPoly.Clear();
+        _maskDirty = _maskEdited = _maskPainting = false;
+        _maskSc = data?.MaskSc; _maskMat = data?.Mask; _maskPre = data?.Pre; _maskPreDisp = data?.PreDisp;
+        if (data != null) ChkMSkip.IsChecked = data.MaskSc?.Skip == true;
+    }
+
+    private void UpdateMaskInfo()
+    {
+        if (_maskSc == null || _maskMat == null)
+        {
+            TxtMaskInfo.Text = "이 페이지는 저장된 마스크가 없어요 (검열 제거를 켜고 돌린 페이지만)";
+            BtnMRedo.Visibility = Visibility.Collapsed;
+            return;
+        }
+        bool waiting = IsWaitingPage;
+        int px = Cv2.CountNonZero(_maskMat);
+        TxtMaskInfo.Text = (waiting ? "검토 대기 중 — 고친 뒤 [검열 제거 진행]" : _maskSc.Confirmed ? "제거에 쓴 마스크" : "저장된 마스크")
+                         + $" · {px:N0}px" + (_maskEdited || _maskSc.Edited ? " · 수정됨" : "") + (ChkMSkip.IsChecked == true ? " · 검열 없음 표시" : "");
+        BtnMRedo.Visibility = waiting ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private BitmapSource RenderMaskComposite()
+    {
+        using var over = _maskPreDisp!.Clone();
+        using var mSmall = new Mat();
+        Cv2.Resize(_maskMat!, mSmall, over.Size(), 0, 0, InterpolationFlags.Nearest);
+        using var red = new Mat(over.Size(), MatType.CV_8UC3, new Scalar(40, 40, 230));
+        using var blended = new Mat();
+        Cv2.AddWeighted(over, 0.45, red, 0.55, 0, blended);
+        blended.CopyTo(over, mSmall);
+        // 마스크 테두리를 진하게 — 어디까지 지워지는지 또렷하게 (FindContours는 입력을 망가뜨리므로 축소본에만)
+        Cv2.FindContours(mSmall, out var cs, out _, RetrievalModes.External, ContourApproximationModes.ApproxSimple);
+        Cv2.DrawContours(over, cs, -1, new Scalar(0, 0, 255), 2);
+        return ToBitmap(over);
+    }
+
+    private void MaskPushUndo()
+    {
+        if (_maskMat == null) return;
+        _maskUndo.Add(_maskMat.Clone());
+        while (_maskUndo.Count > 25) { _maskUndo[0].Dispose(); _maskUndo.RemoveAt(0); }
+    }
+
+    private void MaskTouched()
+    {
+        _maskDirty = _maskEdited = true;
+        BtnSave.IsEnabled = true; BtnUndo.IsEnabled = true;
+    }
+
+    private void MaskDab(CvPoint a, CvPoint b)
+    {
+        if (_maskMat == null) return;
+        int r = (int)SldMBrush.Value;
+        var color = RbMErase.IsChecked == true ? Scalar.Black : Scalar.White;
+        Cv2.Line(_maskMat, a, b, color, r * 2, LineTypes.Link8);
+        Cv2.Circle(_maskMat, b, r, color, -1);
+        MaskTouched();
+        Redraw();
+    }
+
+    private void MaskLeftClick(MouseButtonEventArgs e)
+    {
+        if (_maskMat == null) return;
+        var p = ToImage(e.GetPosition(ImageHost));
+        if (RbMPoly.IsChecked == true)
+        {
+            if (e.ClickCount >= 2) { MaskClosePolygon(); return; }
+            _maskPoly.Add(p); DrawShapes();
+            TxtStatus.Text = $"{_maskPoly.Count}점 — 더블클릭(또는 Enter)으로 닫으면 {(RbMErase.IsChecked == true ? "지워져요" : "마스크에 더해져요")}";
+            return;
+        }
+        MaskPushUndo();
+        _maskPainting = true; _maskLast = p;
+        MaskDab(p, p);
+        ImageHost.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void MaskClosePolygon()
+    {
+        if (_maskMat == null || _maskPoly.Count < 3) { _maskPoly.Clear(); DrawShapes(); return; }
+        MaskPushUndo();
+        Cv2.FillPoly(_maskMat, [_maskPoly.ToArray()], RbMErase.IsChecked == true ? Scalar.Black : Scalar.White);
+        _maskPoly.Clear();
+        MaskTouched();
+        Redraw(); UpdateMaskInfo();
+    }
+
+    private void MaskUndo()
+    {
+        if (_maskMat == null) return;
+        if (_maskPoly.Count > 0) { _maskPoly.RemoveAt(_maskPoly.Count - 1); DrawShapes(); return; }
+        if (_maskUndo.Count == 0) return;
+        var prev = _maskUndo[^1]; _maskUndo.RemoveAt(_maskUndo.Count - 1);
+        prev.CopyTo(_maskMat); prev.Dispose();
+        _maskDirty = true; BtnSave.IsEnabled = true; BtnUndo.IsEnabled = _maskUndo.Count > 0;
+        Redraw(); UpdateMaskInfo();
+        TxtStatus.Text = "마스크를 되돌렸어요";
+    }
+
+    private void MaskTool_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        _maskPoly.Clear(); DrawShapes();
+    }
+
+    private void BtnMReset_Click(object sender, RoutedEventArgs e)
+    {
+        if (_maskMat == null || _maskSc == null) return;
+        using var auto = MaskSidecar.LoadAuto(_refs[_index].OutPath);
+        MaskPushUndo();
+        if (auto != null && auto.Size() == _maskMat.Size()) auto.CopyTo(_maskMat); else _maskMat.SetTo(Scalar.Black);
+        MaskTouched(); Redraw(); UpdateMaskInfo();
+        TxtStatus.Text = auto != null ? "자동 감지 결과로 되돌렸어요" : "자동 감지 사본이 없어 마스크를 비웠어요";
+    }
+
+    private void BtnMClear_Click(object sender, RoutedEventArgs e)
+    {
+        if (_maskMat == null) return;
+        MaskPushUndo(); _maskMat.SetTo(Scalar.Black); _maskPoly.Clear();
+        MaskTouched(); Redraw(); UpdateMaskInfo();
+    }
+
+    private void ChkMSkip_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded || _maskSc == null) return;
+        _maskDirty = true; BtnSave.IsEnabled = true;
+        UpdateMaskInfo();
+    }
+
+    /// <summary>지금 마스크·건너뜀을 .neko 사이드카에 쓴다 (자동 감지 사본·원고 PNG는 그대로).</summary>
+    private void SaveMaskSidecar()
+    {
+        if (_maskSc == null || _maskMat == null) return;
+        if (_maskPoly.Count >= 3) MaskClosePolygon();
+        try
+        {
+            _maskSc = MaskSidecar.Write(_refs[_index].OutPath, _maskSc.Source, _maskMat, null, null,
+                _maskSc.Summary, ChkMSkip.IsChecked == true, _maskEdited || _maskSc.Edited, _maskSc.Confirmed);
+            _maskDirty = false;
+            BtnSave.IsEnabled = false;
+            UpdateMaskInfo();
+        }
+        catch (Exception ex) { TxtStatus.Text = "마스크 저장 실패: " + ex.Message; }
+    }
+
+    /// <summary>[검열 제거 진행](대기 페이지) 또는 [저장 마스크로 다시 검열 제거](끝난 페이지).</summary>
+    private async Task MaskApplyAsync()
+    {
+        if (_maskSc == null || _maskMat == null) return;
+        SaveMaskSidecar();
+        if (IsWaitingPage)
+        {
+            if (_confirmPage?.Invoke(_maskSc.Source) == true)
+            {
+                TxtStatus.Text = "검열 제거를 시작했어요 — 메인 창 목록에서 진행을 확인하세요. 다음 장으로 넘겨 계속 검토할 수 있어요";
+                UpdateMaskInfo(); UpdateModeButtons();
+            }
+            else TxtStatus.Text = "이 페이지는 지금 검토 대기 중이 아니에요";
+            return;
+        }
+        if (ChkMSkip.IsChecked == true) { TxtStatus.Text = "'검열 없음'으로 표시된 페이지라 지울 곳이 없어요"; return; }
+        int px = Cv2.CountNonZero(_maskMat);
+        if (px == 0) { TxtStatus.Text = "마스크가 비어 있어요 — 지울 곳을 칠해 주세요"; return; }
+
+        // 결과물에 바로 적용 (채색은 그대로) — 마스크는 원본 좌표라 결과물 크기로 맞춘다
+        string engineMode = (CmbEngine.SelectedItem as ComboBoxItem)?.Tag as string ?? "Basic";
+        using var mask = new Mat();
+        if (_maskMat.Size() == _img.Size()) _maskMat.CopyTo(mask);
+        else Cv2.Resize(_maskMat, mask, _img.Size(), 0, 0, InterpolationFlags.Nearest);
+
+        _busy = true;
+        BtnApply.IsEnabled = false;
+        TxtStatus.Text = $"{px:N0}px 복원 중...";
+        var before = _img.Clone();
+        var status = new Progress<string>(m => TxtStatus.Text = m);
+        try
+        {
+            var img = _img;
+            _runner ??= new PipelineRunner(App.Settings);
+            var runner = _runner;
+            var regenSettings = engineMode == "ComfyRegen" ? ReadRegenFields().ApplyTo(App.Settings) : null;
+            await Task.Run(async () => await runner.ManualDecensorAsync(img, mask, engineMode, status, CancellationToken.None, regenSettings));
+            _undo.Push(before);
+            _dirty = true;
+            InvalidateBitmap();
+            try { _maskSc = _maskSc with { Confirmed = true }; _maskSc.Save(_refs[_index].OutPath); } catch { }
+            TabMode.SelectedIndex = 0;   // 결과를 보여 준다 (마스크 탭은 제거 전 원고를 보여 주므로)
+            TxtStatus.Text = $"저장된 마스크로 지웠어요 ({px:N0}px) — 마음에 들면 [저장]을 눌러주세요";
+        }
+        catch (Exception ex)
+        {
+            before.Dispose();
+            TxtStatus.Text = "실패: " + ex.Message;
+        }
+        finally { _busy = false; BtnApply.IsEnabled = true; UpdateModeButtons(); }
+    }
+
+    /// <summary>[채색부터 다시]: 보존된 검열 제거 전 원고에 이 마스크를 적용해 채색·식자까지 다시 돌리고 결과물을 다시 읽는다.</summary>
+    private async void BtnMRedo_Click(object sender, RoutedEventArgs e)
+    {
+        if (_maskSc == null || _maskMat == null || _busy || _loading) return;
+        if (!ConfirmDiscard()) return;
+        SaveMaskSidecar();
+        var source = _maskSc.Source;
+        _busy = true;
+        BtnApply.IsEnabled = BtnMRedo.IsEnabled = false;
+        BtnPrev.IsEnabled = BtnNext.IsEnabled = false;
+        var progress = new Progress<PageProgress>(p => TxtStatus.Text = p.Error != null ? "실패: " + p.Error : $"{p.Stage} ({p.Percent:0}%)");
+        try
+        {
+            _runner ??= new PipelineRunner(App.Settings);
+            var runner = _runner;
+            await Task.Run(() => runner.RedoPageAsync(source, progress, CancellationToken.None));
+            _busy = false;
+            _dirty = false;
+            InvalidatePrefetch(_index);
+            LoadPage(_index, fit: false);
+            TxtStatus.Text = "다시 돌렸어요 — 결과물이 갱신됐어요";
+        }
+        catch (Exception ex)
+        {
+            TxtStatus.Text = "실패: " + ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+            BtnApply.IsEnabled = BtnMRedo.IsEnabled = true;
+            BtnPrev.IsEnabled = _index > 0; BtnNext.IsEnabled = _index < _refs.Count - 1;
+        }
     }
 
     // ── 확대/축소 ───────────────────────────────────────────

@@ -95,6 +95,11 @@ public class AppSettings
     /// <summary>검열 제거 전에 감지된 마스크를 사용자가 확인·추가·삭제하는 검토 창을 띄운다 (2026-10-20 사용자 요청: 감지가 놓치는 검열을 직접 칠하고 제거).
     /// 흐름: 모든 페이지 번역+감지 → 검토 창(페이지 넘기며 브러시·다각형으로 마스크 편집) → 제거+채색+식자. 헤드리스(--run)에서는 무시.</summary>
     public bool DecensorReview { get; set; } = true;
+    /// <summary>검토 방식 (2026-10-21 사용자 요청). "PerPage" = 감지 0인 페이지는 바로 2단계로, 감지된 페이지만 '검토 대기'로 두고
+    /// 결과 창의 '마스크 수정' 탭에서 페이지별로 고친 뒤 진행 (기본). "Window" = 옛 방식 — 모든 페이지 감지 뒤 검토 창 하나로 한꺼번에.</summary>
+    public string DecensorReviewMode { get; set; } = "PerPage";
+    /// <summary>같은 원고를 다시 돌릴 때 결과 폴더 .neko에 남은 마스크(사용자가 고친 것 포함)를 감지 대신 쓴다 — 고친 마스크가 재실행에도 유지되게.</summary>
+    public bool ReuseStoredMasks { get; set; } = true;
     /// <summary>검토 창에서 고친 마스크를 학습 재료로 모은다 (2026-10-20 사용자 요청 "검열 추적이 자동으로 향상되게"): 번역 뒤 원고 + 자동 감지 마스크 + 최종 마스크를
     /// %AppData%\NekoManga\training\corrections\&lt;날짜&gt;\ 에 저장하고 index.jsonl에 한 줄씩 적는다. 전부 로컬 파일이며 어디로도 보내지 않는다.
     /// 학습 자체는 D:\NekoManga-train 의 파이프라인(또는 추후 앱 내 학습)이 이 폴더를 읽어 한다.</summary>
@@ -258,6 +263,7 @@ public class AppSettings
         foreach (var p in GetType().GetProperties().Where(p => p.PropertyType == typeof(string) && p.CanWrite && p.GetIndexParameters().Length == 0))
             if (p.GetValue(this) == null) p.SetValue(this, "");
         if (GpuVendor is not ("auto" or "nvidia" or "nvidia-old" or "amd")) GpuVendor = "auto";
+        if (DecensorReviewMode is not ("PerPage" or "Window")) DecensorReviewMode = "PerPage";
         CustomDecensorReach = Math.Clamp(CustomDecensorReach, 0, 512);
         SelfTrainEpochs = Math.Clamp(SelfTrainEpochs, 1, 50); SelfTrainLr = Math.Clamp(SelfTrainLr, 0.00001, 0.01);
         SelfTrainFreeze = Math.Clamp(SelfTrainFreeze, 0, 22); SelfTrainMinPages = Math.Clamp(SelfTrainMinPages, 5, 500);

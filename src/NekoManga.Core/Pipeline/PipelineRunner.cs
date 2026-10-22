@@ -24,11 +24,66 @@ public class PipelineRunner(AppSettings settings) : IDisposable
     private string? _refImageName;   // IPAdapter용으로 업로드한 표지 (서버에 없으면 null)
     private readonly ComfyServer _server = new(settings);
 
+    /// <summary>한 실행의 공유 상태 — PrepareAsync가 채우고 Stage1/Stage2가 같이 쓴다.</summary>
+    private sealed class RunContext
+    {
+        public required IProgress<PageProgress> Progress;
+        public EmbeddedTranslator? Translator;
+        public required LamaInpainter Lama;
+        public bool ComfyLama, ComfyRegen, ComfyCustom;
+        public JsonObject? CustomDecensor, CustomColor;
+        public ComfyClient? Client;
+        public string ComfyOutputDir = "";
+        public required string WorkDir;
+        public CancellationToken Ct;
+        /// <summary>검토 흐름 — 감지가 비어도 사용자가 칠할 수 있게 빈 마스크를 만들고, 마스크 사이드카를 남긴다.</summary>
+        public bool Review;
+        /// <summary>페이지별 검토 흐름 (검토 대기 알림은 RunPerPageAsync가 한다).</summary>
+        public bool PerPage;
+    }
+
     public async Task RunAsync(IReadOnlyList<string> files, IProgress<PageProgress> progress, CancellationToken ct)
     {
         if (files.Count == 0) return;
+        var cx = await PrepareAsync(files, progress, needTranslator: settings.EnableTranslate, ct);
+        var pages = files.Select(f => new ReviewPage(f) { OutPath = OutputPathFor(f) }).ToList();
 
-        var translator = settings.EnableTranslate ? new EmbeddedTranslator(settings, _onnx) : null;
+        // ── 검토 흐름 (2026-10-20 "감지 → 사용자가 마스크 추가 → 제거", 2026-10-21 페이지별 방식 추가)
+        //    Window: 모든 페이지 1차 → 검토 창 하나(ReviewMasks) → 모든 페이지 2차 (옛 방식)
+        //    PerPage: 1차를 돌리며 감지 0인 페이지는 곧장 2차 큐로, 감지된 페이지는 '검토 대기'(PageWaiting)로 두고 ConfirmPage가 오면 2차 큐로.
+        //    둘 다 아니면(설정 꺼짐·헤드리스) 페이지마다 1차·2차를 이어서 돈다.
+        bool windowReview = settings.EnableDecensor && settings.DecensorReview && settings.DecensorReviewMode == "Window" && ReviewMasks != null;
+        bool perPage = settings.EnableDecensor && settings.DecensorReview && settings.DecensorReviewMode == "PerPage" && PageWaiting != null;
+        cx.Review = windowReview || perPage;
+        cx.PerPage = perPage;
+        try
+        {
+            if (windowReview) await RunWindowReviewAsync(cx, pages, ct);
+            else if (perPage) await RunPerPageAsync(cx, pages, ct);
+            else
+            {
+                for (int i = 0; i < pages.Count; i++)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    try { await Stage1(cx, pages[i], i); await Stage2(cx, pages[i], i); }
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception ex) { Fail(cx, pages[i], ex); }
+                }
+            }
+        }
+        finally
+        {
+            foreach (var pg in pages) pg.DisposeMats();
+            lock (_waiting) _waiting.Clear();
+        }
+
+        await _server.DisposeAsync();
+    }
+
+    /// <summary>모델·구성요소 확인, ComfyUI 기동, 표지 색 참조 준비. RunAsync와 RedoPageAsync가 공유한다.</summary>
+    private async Task<RunContext> PrepareAsync(IReadOnlyList<string> files, IProgress<PageProgress> progress, bool needTranslator, CancellationToken ct)
+    {
+        var translator = needTranslator ? new EmbeddedTranslator(settings, _onnx) : null;
         var lama = new LamaInpainter(_onnx);
 
         bool comfyLama = settings.EnableDecensor && settings.DecensorMode == "ComfyLama";
@@ -46,18 +101,26 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                 (settings.EnableAutoColor ? "자동 채색" : comfyRegen ? "재생성 검열제거" : comfyCustom ? "커스텀 워크플로 검열제거" : "엔진 LaMa 검열제거") +
                 " 기능은 ComfyUI가 필요해요 — 설정 → 구성요소에서 ComfyUI를 설치해 주세요.");
         if (comfyRegen) CheckRegenModels();
-        // 커스텀 워크플로 파일은 시작 전에 한 번 읽어 규약(LoadImage/SaveImage)을 검사한다 — 페이지마다 같은 오류로 실패하지 않게
-        JsonObject? customDecensor = comfyCustom ? CustomWorkflow.Load(settings.CustomDecensorWorkflow) : null;
-        JsonObject? customColor = colorCustom ? CustomWorkflow.Load(settings.ColorCustomWorkflow) : null;
 
-        ComfyClient? client = null;
-        string comfyOutputDir = "";
+        var cx = new RunContext
+        {
+            Progress = progress,
+            Translator = translator,
+            Lama = lama,
+            ComfyLama = comfyLama, ComfyRegen = comfyRegen, ComfyCustom = comfyCustom,
+            // 커스텀 워크플로 파일은 시작 전에 한 번 읽어 규약(LoadImage/SaveImage)을 검사한다 — 페이지마다 같은 오류로 실패하지 않게
+            CustomDecensor = comfyCustom ? CustomWorkflow.Load(settings.CustomDecensorWorkflow) : null,
+            CustomColor = colorCustom ? CustomWorkflow.Load(settings.ColorCustomWorkflow) : null,
+            WorkDir = Path.Combine(AppSettings.DataDir, "work", $"job-{DateTime.Now:yyyyMMdd-HHmmss}"),
+            Ct = ct,
+        };
+
         if (needComfy)
         {
             var status = new Progress<string>(m => Report(progress, files, m, 10));
             await _server.EnsureRunningAsync(status, ct);
-            client = new ComfyClient(_server.BaseUrl);
-            comfyOutputDir = Path.Combine(settings.ComfyRoot, "ComfyUI", "output");
+            cx.Client = new ComfyClient(_server.BaseUrl);
+            cx.ComfyOutputDir = Path.Combine(settings.ComfyRoot, "ComfyUI", "output");
 
             // 표지가 등록돼 있는데 색 태그를 아직 안 뽑았으면 여기서 한 번 뽑아 캐시한다
             if (settings.EnableAutoColor && settings.ColorRefTags.Trim().Length == 0
@@ -75,198 +138,351 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                 && File.Exists(settings.ColorRefImage) && ColorRefHelper.IpAdapterAvailable(settings))
                 try
                 {
-                    if (await client.HasNodeAsync("IPAdapter", ct))
+                    if (await cx.Client.HasNodeAsync("IPAdapter", ct))
                     {
                         var refBytes = await File.ReadAllBytesAsync(settings.ColorRefImage, ct);
-                        _refImageName = await client.UploadImageAsync(refBytes, "nm_cover_ref.png", ct);
+                        _refImageName = await cx.Client.UploadImageAsync(refBytes, "nm_cover_ref.png", ct);
                     }
                     // 노드를 모르면 = 서버가 설치 전부터 떠 있던 것 — 이번 실행은 태그만으로 간다
                 }
                 catch { _refImageName = null; }
         }
+        return cx;
+    }
 
-        var workDir = Path.Combine(AppSettings.DataDir, "work",
-            $"job-{DateTime.Now:yyyyMMdd-HHmmss}");
+    private static void Fail(RunContext cx, ReviewPage pg, Exception ex)
+    {
+        pg.Error = ex.Message;
+        cx.Progress.Report(new(pg.Name, "실패", 100, Done: true, Error: ex.Message));
+    }
 
-        // ── 페이지별 상태. 검토 흐름(2026-10-20, 사용자 요청 "감지 → 사용자가 마스크 추가 → 제거")이면
-        //    1차: 모든 페이지 번역+감지 → 검토 창(ReviewMasks) → 2차: 제거+채색+식자. 아니면 페이지마다 1차·2차를 이어서 돈다.
-        var pages = files.Select(f => new ReviewPage(f)).ToList();
-        bool review = settings.EnableDecensor && settings.DecensorReview && ReviewMasks != null;
-
-        // 1차: 번역 + 검열 감지 (마스크는 페이지가 들고 있다 — 검토 창이 편집한다)
-        async Task Stage1(ReviewPage pg, int i)
+    // ── 검토 흐름 A: 검토 창 하나로 한꺼번에 (옛 방식, DecensorReviewMode="Window") ──
+    private async Task RunWindowReviewAsync(RunContext cx, List<ReviewPage> pages, CancellationToken ct)
+    {
+        for (int i = 0; i < pages.Count; i++)
         {
-            var name = pg.Name;
-            if (translator != null)
-            {
-                var status = new Progress<string>(m => progress.Report(new(name, m, 25)));
-                var tr = await translator.TranslatePageAsync(pg.WorkPath, workDir, status, ct);
-                pg.WorkPath = tr.InpaintedPath;
-                pg.Blocks = tr.Blocks;
-            }
-            if (!settings.EnableDecensor) return;
-            progress.Report(new(name, "검열 영역 찾는 중", 45));
-            using var img = ImgIo.Read(pg.WorkPath, ImreadModes.Color);
-            // 말풍선은 흰 막대로 오인되기 쉬우므로 감지된 글자 블록을 제외 영역으로 넘긴다.
-            var exclude = pg.Blocks.Select(b =>
-                new Rect(b.X1, b.Y1, Math.Max(1, b.X2 - b.X1), Math.Max(1, b.Y2 - b.Y1))).ToList();
-            // 검열 추적: AI 모델(합성 학습 전용 모델)이 있으면 그게 1순위 — 흰/검/모자이크를 한 번에 찾는다. 없거나 못 찾으면 규칙 기반으로 폴백.
-            // autoBubbles는 말풍선 필터를 켠 경우에만 — 필터가 꺼져 있으면 글자 감지는 검/모자이크의 글자 상자 빼기에만 쓰여 비용 대비 효과가 작다
-            var mask = DetectCensorMask(img, exclude, out var kindUsed, autoBubbles: settings.DecensorBubbleFilter);
-            pg.Summary = kindUsed;
-            if (settings.DecensorTarget == "Auto")
-                progress.Report(new(name, $"검열 분석: {kindUsed}", 46));
-            // 검토 흐름에서는 감지가 비었어도 사용자가 칠할 수 있게 빈 마스크를 준다
-            pg.Mask = mask ?? (review ? new Mat(img.Rows, img.Cols, MatType.CV_8UC1, Scalar.Black) : null);
-            if (review && settings.CollectCorrections) pg.AutoMask = pg.Mask?.Clone();   // 수정 전 사본 — 학습 재료의 '자동 감지' 쪽
-            if (review) progress.Report(new(name, mask == null ? "검토 대기 (감지 없음)" : "검토 대기", 48));
+            ct.ThrowIfCancellationRequested();
+            try { await Stage1(cx, pages[i], i); }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex) { Fail(cx, pages[i], ex); }
         }
-
-        // 2차: 검열 제거 + 채색 + 식자/저장
-        async Task Stage2(ReviewPage pg, int i)
+        var toReview = pages.Where(p => p.Error == null && p.Mask != null && !p.StoredConfirmed).ToList();
+        if (toReview.Count > 0)
         {
-            var name = pg.Name; var file = pg.File; var work = pg.WorkPath; var blocks = pg.Blocks;
-            if (settings.EnableDecensor && pg.Mask != null && !pg.Skip && Cv2.CountNonZero(pg.Mask) > 0)
-            {
-                using var img = ImgIo.Read(work, ImreadModes.Color);
-                var mask = pg.Mask;
-                if (mask.Size() != img.Size())
-                {
-                    var rs = new Mat(); Cv2.Resize(mask, rs, img.Size(), 0, 0, InterpolationFlags.Nearest); mask = rs;
-                }
-                if (comfyCustom)
-                {
-                    progress.Report(new(name, "검열 지우는 중 (커스텀 워크플로·GPU)", 50));
-                    await ComfyCustomDecensorAsync(client!, comfyOutputDir, customDecensor!, img, mask, i, ct);
-                }
-                else if (comfyRegen)
-                {
-                    progress.Report(new(name, "검열 자리 재생성 중 (SDXL·GPU)", 50));
-                    await ComfyRegenDecensorAsync(client!, comfyOutputDir, img, mask, i, ct);
-                }
-                else if (comfyLama)
-                {
-                    progress.Report(new(name, "검열 지우는 중 (엔진 LaMa·GPU)", 50));
-                    await ComfyLamaDecensorAsync(client!, comfyOutputDir, img, mask, i, ct);
-                }
-                else
-                {
-                    progress.Report(new(name, "검열 지우는 중 (기본·LaMa)", 50));
-                    await Task.Run(() => lama.Inpaint(img, mask), ct);
-                }
-                if (!ReferenceEquals(mask, pg.Mask)) mask.Dispose();
-                work = Path.Combine(workDir, Path.GetFileNameWithoutExtension(file) + ".decensored.png");
-                Directory.CreateDirectory(workDir);
-                ImgIo.Write(work, img);
-            }
-
-            // ── 자동채색 (ComfyUI) ──
-            if (settings.EnableAutoColor && client != null)
-            {
-                progress.Report(new(name, customColor != null ? "채색 중 (커스텀 워크플로)" : "채색 중 (페이지당 1~2분)", 60));
-                var png = await File.ReadAllBytesAsync(work, ct);
-                var up = await client.UploadImageAsync(png, $"nm_cl_{i}.png", ct);
-                var pid = await client.QueuePromptAsync(customColor != null
-                    ? CustomWorkflow.Prepare(customColor, up, $"nm_color_{i}").Prompt
-                    : WorkflowBuilder.BuildAutoColor(settings, up, $"nm_color_{i}", _refImageName), ct);
-                var r = await client.WaitAsync(pid, comfyOutputDir, TimeSpan.FromMinutes(20), ct);
-                if (r.OutputFiles.Count == 0)
-                    throw new InvalidOperationException("채색 결과 파일이 없어요.");
-                work = r.OutputFiles[^1];
-            }
-
-            // ── 식자(번역문 렌더) 및 최종 저장 ──
-            var outPath = OutputPathFor(file);
-            if (blocks.Count > 0)
-            {
-                progress.Report(new(name, "식자 중", 92));
-                Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
-
-                // 식자 전 원고와 블록을 남겨 둔다 — 결과 보기 창의 식자 탭이
-                // 글꼴·색·번역문을 바꿔 다시 식자할 때 쓴다 (없으면 번역부터 다시 돌려야 한다).
-                using (var baseImg = ImgIo.Read(work))
-                using (var srcImg = ImgIo.Read(file))
-                    if (!baseImg.Empty() && !srcImg.Empty())
-                    {
-                        ImgIo.Write(LetterSidecar.BasePathFor(outPath), baseImg);
-                        new LetterSidecar(file, srcImg.Width, srcImg.Height,
-                            LetterSidecar.BasePathFor(outPath), [.. blocks]).Save(outPath);
-                    }
-
-                TextRenderer.RenderBlocks(work, file, blocks, outPath, settings);
-            }
-            else if (work == file)
-            {
-                // 아무것도 감지·수정되지 않았다 (work가 원본 그대로) — 다시 인코딩하지 않고
-                // 원본을 확장자까지 그대로 내보낸다. 손댈 게 없는데 jpg를 png로 재인코딩하면
-                // 파일만 커지고 화질에도 득이 없다.
-                var asIs = Path.Combine(Path.GetDirectoryName(outPath)!, Path.GetFileName(file));
-                Directory.CreateDirectory(Path.GetDirectoryName(asIs)!);
-                if (!string.Equals(asIs, file, StringComparison.OrdinalIgnoreCase))
-                    File.Copy(file, asIs, overwrite: true);
-                progress.Report(new(name, "검열 없음 — 원본 그대로", 100, Done: true));
-                return;
-            }
-            else
-            {
-                // 결과는 항상 png로 저장한다 — 원본이 webp/avif여도 확장자만 png가 되지 않도록
-                // 그대로 복사하지 않고 OpenCV로 다시 인코딩한다.
-                Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
-                using var done = ImgIo.Read(work, ImreadModes.Color);
-                if (done.Empty())
-                    throw new InvalidDataException($"결과 이미지를 읽지 못했어요: {Path.GetFileName(work)}");
-                ImgIo.Write(outPath, done);
-            }
-
-            progress.Report(new(name, "완료", 100, Done: true));
+            bool go = await ReviewMasks!(toReview, ct);
+            if (!go) throw new OperationCanceledException("사용자가 검토 창에서 취소했어요.");
+            if (settings.CollectCorrections)
+                try { SaveCorrections(toReview); }
+                catch (Exception ex) { cx.Progress.Report(new(toReview[0].Name, $"학습 재료 저장 실패: {ex.Message}", 48)); }
+            foreach (var pg in toReview) SaveMaskSidecar(pg, confirmed: true, edited: pg.AutoMask != null && !MasksEqual(pg.AutoMask, pg.Mask!));
         }
+        for (int i = 0; i < pages.Count; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (pages[i].Error != null) continue;
+            try { await Stage2(cx, pages[i], i); }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex) { Fail(cx, pages[i], ex); }
+        }
+    }
 
+    // ── 검토 흐름 B: 페이지별 (2026-10-21 사용자 요청) ──
+    // 1차(번역+감지)를 돌리는 생산자와 2차(제거+채색+식자)를 돌리는 소비자 큐. 감지 0·건너뜀·이미 확인된 마스크는 곧장 큐로,
+    // 감지된 페이지는 사이드카(.neko)를 남기고 PageWaiting을 알린 뒤 ConfirmPage/ConfirmAll을 기다린다 — 다른 페이지 처리는 멈추지 않는다.
+    private readonly Dictionary<string, (ReviewPage Page, TaskCompletionSource<bool> Tcs)> _waiting = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>감지된 페이지가 검토를 기다리기 시작할 때 (러너 스레드에서 호출 — UI는 Dispatcher로 옮길 것). PerPage 방식은 이 훅이 있어야 켜진다.</summary>
+    public event Action<ReviewPage>? PageWaiting;
+
+    /// <summary>지금 검토를 기다리는 원고 파일 경로들.</summary>
+    public IReadOnlyList<string> WaitingFiles { get { lock (_waiting) return _waiting.Keys.ToList(); } }
+
+    /// <summary>검토 대기 중인 페이지를 2차로 보낸다. 결과 창이 .neko 사이드카에 저장한 마스크·건너뜀을 다시 읽어 쓴다. 대기 중이 아니면 false.</summary>
+    public bool ConfirmPage(string file)
+    {
+        lock (_waiting)
+            return _waiting.TryGetValue(file, out var w) && w.Tcs.TrySetResult(true);
+    }
+
+    /// <summary>검토 대기 중인 페이지를 전부 현재 마스크 그대로 2차로 보낸다. 보낸 수를 돌려준다.</summary>
+    public int ConfirmAll()
+    {
+        lock (_waiting)
+            return _waiting.Values.Count(w => w.Tcs.TrySetResult(true));
+    }
+
+    private async Task RunPerPageAsync(RunContext cx, List<ReviewPage> pages, CancellationToken ct)
+    {
+        var queue = System.Threading.Channels.Channel.CreateUnbounded<ReviewPage>(
+            new System.Threading.Channels.UnboundedChannelOptions { SingleReader = true });
+        var consumer = Task.Run(async () =>
+        {
+            await foreach (var pg in queue.Reader.ReadAllAsync(ct))
+            {
+                try { await Stage2(cx, pg, pages.IndexOf(pg)); }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex) { Fail(cx, pg, ex); }
+            }
+        }, ct);
+
+        var confirms = new List<Task>();
         try
         {
-            if (review)
+            for (int i = 0; i < pages.Count; i++)
             {
-                for (int i = 0; i < pages.Count; i++)
+                ct.ThrowIfCancellationRequested();
+                var pg = pages[i];
+                try { await Stage1(cx, pg, i); }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex) { Fail(cx, pg, ex); continue; }
+
+                int px = pg.Mask == null ? 0 : Cv2.CountNonZero(pg.Mask);
+                if (px == 0 || pg.Skip || pg.StoredConfirmed)
                 {
-                    ct.ThrowIfCancellationRequested();
-                    try { await Stage1(pages[i], i); }
-                    catch (OperationCanceledException) { throw; }
-                    catch (Exception ex) { pages[i].Error = ex.Message; progress.Report(new(pages[i].Name, "실패", 100, Done: true, Error: ex.Message)); }
+                    // 마스크가 없거나(검열 없음) 이미 확인된 마스크면 기다리지 않고 바로 2차 — 사용자 요청 "마스크 없는 페이지는 바로 넘어가게"
+                    if (px == 0 && !pg.Skip) cx.Progress.Report(new(pg.Name, "검열 없음 — 바로 진행", 49));
+                    await queue.Writer.WriteAsync(pg, ct);
+                    continue;
                 }
-                var toReview = pages.Where(p => p.Error == null && p.Mask != null).ToList();
-                if (toReview.Count > 0)
-                {
-                    bool go = await ReviewMasks!(toReview, ct);
-                    if (!go) throw new OperationCanceledException("사용자가 검토 창에서 취소했어요.");
-                    if (settings.CollectCorrections)
-                        try { SaveCorrections(toReview); }
-                        catch (Exception ex) { progress.Report(new(toReview[0].Name, $"학습 재료 저장 실패: {ex.Message}", 48)); }
-                }
-                for (int i = 0; i < pages.Count; i++)
-                {
-                    ct.ThrowIfCancellationRequested();
-                    if (pages[i].Error != null) continue;
-                    try { await Stage2(pages[i], i); }
-                    catch (OperationCanceledException) { throw; }
-                    catch (Exception ex) { progress.Report(new(pages[i].Name, "실패", 100, Done: true, Error: ex.Message)); }
-                }
+                var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                lock (_waiting) _waiting[pg.File] = (pg, tcs);
+                cx.Progress.Report(new(pg.Name, $"검토 대기 · {pg.Summary}", 48));
+                PageWaiting?.Invoke(pg);
+                confirms.Add(WaitThenEnqueueAsync(cx, pg, tcs, queue.Writer, ct));
+            }
+            await Task.WhenAll(confirms);
+        }
+        catch
+        {
+            // 중지·오류: 소비자가 끝날 때까지 기다린 뒤 던진다 — 2차가 쓰는 Mat을 finally가 먼저 해제하면 안 된다
+            queue.Writer.TryComplete();
+            try { await consumer; } catch { }
+            throw;
+        }
+        queue.Writer.TryComplete();
+        await consumer;
+    }
+
+    private async Task WaitThenEnqueueAsync(RunContext cx, ReviewPage pg, TaskCompletionSource<bool> tcs,
+        System.Threading.Channels.ChannelWriter<ReviewPage> writer, CancellationToken ct)
+    {
+        using var reg = ct.Register(() => tcs.TrySetCanceled(ct));
+        await tcs.Task;
+        lock (_waiting) _waiting.Remove(pg.File);
+        ReloadMaskFromSidecar(pg);   // 결과 창의 '마스크 수정' 탭이 고쳐 저장한 마스크·건너뜀을 받아 온다
+        if (settings.CollectCorrections)
+            try { SaveCorrections([pg]); }
+            catch (Exception ex) { cx.Progress.Report(new(pg.Name, $"학습 재료 저장 실패: {ex.Message}", 48)); }
+        MarkSidecarConfirmed(pg);
+        await writer.WriteAsync(pg, ct);
+    }
+
+    /// <summary>결과 창에서 '채색부터 다시': 보존해 둔 검열 제거 전 원고(.pre.png)와 저장된 마스크로 이 페이지의 2차(제거→채색→식자→저장)를 다시 돌린다.</summary>
+    public async Task RedoPageAsync(string file, IProgress<PageProgress> progress, CancellationToken ct)
+    {
+        var outPath = OutputPathFor(file);
+        var sc = MaskSidecar.Load(outPath) ?? throw new FileNotFoundException("이 페이지의 저장된 마스크가 없어요 — 먼저 한 번 돌려야 해요.");
+        if (!MaskSidecar.HasPre(outPath)) throw new FileNotFoundException("검열 제거 전 원고(.pre.png)가 없어요 — 먼저 한 번 돌려야 해요.");
+        var cx = await PrepareAsync([file], progress, needTranslator: false, ct);
+        var pg = new ReviewPage(file)
+        {
+            OutPath = outPath,
+            WorkPath = MaskSidecar.PrePathFor(outPath),
+            Mask = MaskSidecar.LoadMask(outPath),
+            Skip = sc.Skip,
+            Summary = sc.Summary,
+            Blocks = LetterSidecar.Load(outPath)?.Blocks ?? [],
+        };
+        try { await Stage2(cx, pg, 0); }
+        finally { pg.DisposeMats(); }
+        MarkSidecarConfirmed(pg);
+    }
+
+    // ── 1차: 번역 + 검열 감지 (마스크는 페이지가 들고 있다 — 검토 창/마스크 탭이 편집한다) ──
+    private async Task Stage1(RunContext cx, ReviewPage pg, int i)
+    {
+        var name = pg.Name;
+        var progress = cx.Progress;
+        if (cx.Translator != null)
+        {
+            var status = new Progress<string>(m => progress.Report(new(name, m, 25)));
+            var tr = await cx.Translator.TranslatePageAsync(pg.WorkPath, cx.WorkDir, status, cx.Ct);
+            pg.WorkPath = tr.InpaintedPath;
+            pg.Blocks = tr.Blocks;
+        }
+        if (!settings.EnableDecensor) return;
+        using var img = ImgIo.Read(pg.WorkPath, ImreadModes.Color);
+
+        // 같은 원고를 다시 돌릴 때: .neko에 남은 마스크(사용자가 고친 것 포함)가 있으면 감지 대신 쓴다 — 고친 마스크가 재실행에도 유지된다
+        if (settings.ReuseStoredMasks && MaskSidecar.Load(pg.OutPath) is { } stored
+            && stored.SrcW == img.Width && stored.SrcH == img.Height && MaskSidecar.LoadMask(pg.OutPath) is { } storedMask)
+        {
+            pg.Mask = storedMask;
+            pg.AutoMask = MaskSidecar.LoadAuto(pg.OutPath);
+            pg.Skip = stored.Skip;
+            pg.StoredConfirmed = stored.Confirmed;
+            pg.Summary = "저장된 마스크" + (stored.Edited ? " (수정됨)" : "") + $" {Cv2.CountNonZero(storedMask):N0}px";
+            progress.Report(new(name, pg.Skip ? "저장된 마스크 — 검열 없음으로 표시됨" : $"저장된 마스크 사용{(stored.Edited ? " (수정됨)" : "")}", 46));
+            if (cx.Review) ImgIo.Write(MaskSidecar.PrePathFor(pg.OutPath), img);   // 원고는 이번 번역 결과로 갱신
+            return;
+        }
+
+        progress.Report(new(name, "검열 영역 찾는 중", 45));
+        // 말풍선은 흰 막대로 오인되기 쉬우므로 감지된 글자 블록을 제외 영역으로 넘긴다.
+        var exclude = pg.Blocks.Select(b =>
+            new Rect(b.X1, b.Y1, Math.Max(1, b.X2 - b.X1), Math.Max(1, b.Y2 - b.Y1))).ToList();
+        // 검열 추적: AI 모델(합성 학습 전용 모델)이 있으면 그게 1순위 — 흰/검/모자이크를 한 번에 찾는다. 없거나 못 찾으면 규칙 기반으로 폴백.
+        // autoBubbles는 말풍선 필터를 켠 경우에만 — 필터가 꺼져 있으면 글자 감지는 검/모자이크의 글자 상자 빼기에만 쓰여 비용 대비 효과가 작다
+        var mask = DetectCensorMask(img, exclude, out var kindUsed, autoBubbles: settings.DecensorBubbleFilter);
+        pg.Summary = kindUsed;
+        if (settings.DecensorTarget == "Auto")
+            progress.Report(new(name, $"검열 분석: {kindUsed}", 46));
+        // 검토 흐름에서는 감지가 비었어도 사용자가 칠할 수 있게 빈 마스크를 준다
+        pg.Mask = mask ?? (cx.Review ? new Mat(img.Rows, img.Cols, MatType.CV_8UC1, Scalar.Black) : null);
+        if (cx.Review)
+        {
+            pg.AutoMask = pg.Mask?.Clone();   // 수정 전 사본 — '자동 감지로' 되돌리기 + 학습 재료의 '자동 감지' 쪽
+            // 감지가 없어도 사이드카를 남긴다 — 나중에 결과 창의 마스크 탭에서 놓친 검열을 칠해 다시 돌릴 수 있게
+            SaveMaskSidecar(pg, confirmed: false, edited: false, pre: img);
+            if (!cx.PerPage) progress.Report(new(name, mask == null ? "검토 대기 (감지 없음)" : "검토 대기", 48));   // 페이지별은 호출부가 대기/진행을 알린다
+        }
+    }
+
+    // ── 2차: 검열 제거 + 채색 + 식자/저장 ──
+    private async Task Stage2(RunContext cx, ReviewPage pg, int i)
+    {
+        var name = pg.Name; var file = pg.File; var work = pg.WorkPath; var blocks = pg.Blocks;
+        var progress = cx.Progress;
+        if (settings.EnableDecensor && pg.Mask != null && !pg.Skip && Cv2.CountNonZero(pg.Mask) > 0)
+        {
+            using var img = ImgIo.Read(work, ImreadModes.Color);
+            var mask = pg.Mask;
+            if (mask.Size() != img.Size())
+            {
+                var rs = new Mat(); Cv2.Resize(mask, rs, img.Size(), 0, 0, InterpolationFlags.Nearest); mask = rs;
+            }
+            if (cx.ComfyCustom)
+            {
+                progress.Report(new(name, "검열 지우는 중 (커스텀 워크플로·GPU)", 50));
+                await ComfyCustomDecensorAsync(cx.Client!, cx.ComfyOutputDir, cx.CustomDecensor!, img, mask, i, cx.Ct);
+            }
+            else if (cx.ComfyRegen)
+            {
+                progress.Report(new(name, "검열 자리 재생성 중 (SDXL·GPU)", 50));
+                await ComfyRegenDecensorAsync(cx.Client!, cx.ComfyOutputDir, img, mask, i, cx.Ct);
+            }
+            else if (cx.ComfyLama)
+            {
+                progress.Report(new(name, "검열 지우는 중 (엔진 LaMa·GPU)", 50));
+                await ComfyLamaDecensorAsync(cx.Client!, cx.ComfyOutputDir, img, mask, i, cx.Ct);
             }
             else
             {
-                for (int i = 0; i < pages.Count; i++)
-                {
-                    ct.ThrowIfCancellationRequested();
-                    try { await Stage1(pages[i], i); await Stage2(pages[i], i); }
-                    catch (OperationCanceledException) { throw; }
-                    catch (Exception ex) { progress.Report(new(pages[i].Name, "실패", 100, Done: true, Error: ex.Message)); }
-                }
+                progress.Report(new(name, "검열 지우는 중 (기본·LaMa)", 50));
+                await Task.Run(() => cx.Lama.Inpaint(img, mask), cx.Ct);
             }
-        }
-        finally
-        {
-            foreach (var pg in pages) { pg.Mask?.Dispose(); pg.AutoMask?.Dispose(); }
+            if (!ReferenceEquals(mask, pg.Mask)) mask.Dispose();
+            work = Path.Combine(cx.WorkDir, Path.GetFileNameWithoutExtension(file) + ".decensored.png");
+            Directory.CreateDirectory(cx.WorkDir);
+            ImgIo.Write(work, img);
         }
 
-        await _server.DisposeAsync();
+        // ── 자동채색 (ComfyUI) ──
+        if (settings.EnableAutoColor && cx.Client != null)
+        {
+            progress.Report(new(name, cx.CustomColor != null ? "채색 중 (커스텀 워크플로)" : "채색 중 (페이지당 1~2분)", 60));
+            var png = await File.ReadAllBytesAsync(work, cx.Ct);
+            var up = await cx.Client.UploadImageAsync(png, $"nm_cl_{i}.png", cx.Ct);
+            var pid = await cx.Client.QueuePromptAsync(cx.CustomColor != null
+                ? CustomWorkflow.Prepare(cx.CustomColor, up, $"nm_color_{i}").Prompt
+                : WorkflowBuilder.BuildAutoColor(settings, up, $"nm_color_{i}", _refImageName), cx.Ct);
+            var r = await cx.Client.WaitAsync(pid, cx.ComfyOutputDir, TimeSpan.FromMinutes(20), cx.Ct);
+            if (r.OutputFiles.Count == 0)
+                throw new InvalidOperationException("채색 결과 파일이 없어요.");
+            work = r.OutputFiles[^1];
+        }
+
+        // ── 식자(번역문 렌더) 및 최종 저장 ──
+        var outPath = OutputPathFor(file);
+        if (blocks.Count > 0)
+        {
+            progress.Report(new(name, "식자 중", 92));
+            Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
+
+            // 식자 전 원고와 블록을 남겨 둔다 — 결과 보기 창의 식자 탭이
+            // 글꼴·색·번역문을 바꿔 다시 식자할 때 쓴다 (없으면 번역부터 다시 돌려야 한다).
+            using (var baseImg = ImgIo.Read(work))
+            using (var srcImg = ImgIo.Read(file))
+                if (!baseImg.Empty() && !srcImg.Empty())
+                {
+                    ImgIo.Write(LetterSidecar.BasePathFor(outPath), baseImg);
+                    new LetterSidecar(file, srcImg.Width, srcImg.Height,
+                        LetterSidecar.BasePathFor(outPath), [.. blocks]).Save(outPath);
+                }
+
+            TextRenderer.RenderBlocks(work, file, blocks, outPath, settings);
+        }
+        else if (work == file)
+        {
+            // 아무것도 감지·수정되지 않았다 (work가 원본 그대로) — 다시 인코딩하지 않고
+            // 원본을 확장자까지 그대로 내보낸다. 손댈 게 없는데 jpg를 png로 재인코딩하면
+            // 파일만 커지고 화질에도 득이 없다.
+            var asIs = Path.Combine(Path.GetDirectoryName(outPath)!, Path.GetFileName(file));
+            Directory.CreateDirectory(Path.GetDirectoryName(asIs)!);
+            if (!string.Equals(asIs, file, StringComparison.OrdinalIgnoreCase))
+                File.Copy(file, asIs, overwrite: true);
+            progress.Report(new(name, "검열 없음 — 원본 그대로", 100, Done: true));
+            return;
+        }
+        else
+        {
+            // 결과는 항상 png로 저장한다 — 원본이 webp/avif여도 확장자만 png가 되지 않도록
+            // 그대로 복사하지 않고 OpenCV로 다시 인코딩한다.
+            Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
+            using var done = ImgIo.Read(work, ImreadModes.Color);
+            if (done.Empty())
+                throw new InvalidDataException($"결과 이미지를 읽지 못했어요: {Path.GetFileName(work)}");
+            ImgIo.Write(outPath, done);
+        }
+
+        progress.Report(new(name, "완료", 100, Done: true));
+    }
+
+    // ── 마스크 사이드카 (.neko) ──
+    private void SaveMaskSidecar(ReviewPage pg, bool confirmed, bool edited, Mat? pre = null)
+    {
+        if (pg.Mask == null) return;
+        try
+        {
+            if (pre != null) { MaskSidecar.Write(pg.OutPath, pg.File, pg.Mask, pg.AutoMask, pre, pg.Summary, pg.Skip, edited, confirmed); return; }
+            using var img = ImgIo.Read(pg.WorkPath, ImreadModes.Color);
+            MaskSidecar.Write(pg.OutPath, pg.File, pg.Mask, pg.AutoMask, img.Empty() ? null : img, pg.Summary, pg.Skip, edited, confirmed);
+        }
+        catch { /* 사이드카는 편의 기능 — 못 써도 파이프라인은 계속 간다 */ }
+    }
+
+    /// <summary>결과 창이 사이드카에 저장한 마스크·건너뜀을 페이지에 되읽는다 (크기가 같을 때만).</summary>
+    private static void ReloadMaskFromSidecar(ReviewPage pg)
+    {
+        var sc = MaskSidecar.Load(pg.OutPath);
+        if (sc == null) return;
+        pg.Skip = sc.Skip;
+        using var m = MaskSidecar.LoadMask(pg.OutPath);
+        if (m != null && pg.Mask != null && m.Size() == pg.Mask.Size()) m.CopyTo(pg.Mask);
+    }
+
+    private static void MarkSidecarConfirmed(ReviewPage pg)
+    {
+        try { if (MaskSidecar.Load(pg.OutPath) is { } sc && !sc.Confirmed) (sc with { Confirmed = true, Skip = pg.Skip }).Save(pg.OutPath); }
+        catch { }
+    }
+
+    private static bool MasksEqual(Mat a, Mat b)
+    {
+        if (a.Size() != b.Size()) return false;
+        using var diff = new Mat();
+        Cv2.BitwiseXor(a, b, diff);
+        return Cv2.CountNonZero(diff) == 0;
     }
 
     /// <summary>검토 창의 결과를 학습 재료로 저장한다 — 페이지마다 (원고 png, 자동 감지 마스크, 최종 마스크) 세 파일 + index.jsonl 한 줄.
@@ -300,7 +516,7 @@ public class PipelineRunner(AppSettings settings) : IDisposable
         if (lines.Count > 0) File.AppendAllLines(Path.Combine(dir, "index.jsonl"), lines);
     }
 
-    /// <summary>검토 창 훅 — 검열 제거 전에 감지된 마스크를 사용자가 확인·편집한다. null이면(헤드리스) 검토 없이 진행.
+    /// <summary>검토 창 훅(DecensorReviewMode="Window") — 검열 제거 전에 감지된 마스크를 사용자가 확인·편집한다. null이면(헤드리스) 검토 없이 진행.
     /// 페이지 목록의 Mask(CV_8UC1, 255=지울 곳)를 제자리에서 바꾸고, 진행하면 true·취소면 false를 돌려준다.</summary>
     public Func<IReadOnlyList<ReviewPage>, CancellationToken, Task<bool>>? ReviewMasks { get; set; }
 
@@ -309,16 +525,22 @@ public class PipelineRunner(AppSettings settings) : IDisposable
     {
         public string File { get; } = file;
         public string Name { get; } = Path.GetFileName(file);
+        /// <summary>결과물 경로 — .neko 사이드카(마스크·식자)가 이 옆에 놓인다.</summary>
+        public string OutPath { get; set; } = "";
         /// <summary>번역(글자 지움) 뒤의 원고 경로 — 검토 창이 보여 주는 그림이자 검열 제거 입력.</summary>
         public string WorkPath { get; set; } = file;
         public IReadOnlyList<TextBlockInfo> Blocks { get; set; } = Array.Empty<TextBlockInfo>();
         public Mat? Mask { get; set; }
-        /// <summary>자동 감지 결과 사본(검토 전) — 학습 재료 저장용. CollectCorrections일 때만 채워진다.</summary>
+        /// <summary>자동 감지 결과 사본(검토 전) — '자동 감지로' 되돌리기 + 학습 재료 저장용. 검토 흐름에서만 채워진다.</summary>
         public Mat? AutoMask { get; set; }
         public string Summary { get; set; } = "";
         /// <summary>사용자가 '이 페이지는 검열 없음'으로 표시 — 제거를 건너뛴다.</summary>
         public bool Skip { get; set; }
+        /// <summary>.neko에서 읽은 마스크가 이미 확인된(제거를 돌렸던) 것 — 검토를 다시 기다리지 않는다.</summary>
+        public bool StoredConfirmed { get; set; }
         public string? Error { get; set; }
+
+        public void DisposeMats() { Mask?.Dispose(); Mask = null; AutoMask?.Dispose(); AutoMask = null; }
     }
 
     /// <summary>검열 마스크 — AI 전용 모델(CensorNet) 1순위, 규칙 기반 폴백.
@@ -505,10 +727,13 @@ public class PipelineRunner(AppSettings settings) : IDisposable
         resized.CopyTo(img, mask);
     }
 
-    public string OutputPathFor(string inputFile)
+    public string OutputPathFor(string inputFile) => OutputPathFor(settings, inputFile);
+
+    /// <summary>원고 → 결과물 경로 (러너 없이도 계산 가능 — 결과 창이 .neko 사이드카 위치를 알아야 할 때).</summary>
+    public static string OutputPathFor(AppSettings s, string inputFile)
     {
-        var dir = !string.IsNullOrWhiteSpace(settings.OutputRoot)
-            ? settings.OutputRoot
+        var dir = !string.IsNullOrWhiteSpace(s.OutputRoot)
+            ? s.OutputRoot
             : Path.Combine(Path.GetDirectoryName(inputFile)!,
                 Path.GetFileName(Path.GetDirectoryName(inputFile)!) + "_neko");
         return Path.Combine(dir, Path.GetFileNameWithoutExtension(inputFile) + ".png");

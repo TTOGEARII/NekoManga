@@ -115,6 +115,36 @@
                         </StackPanel>
                     </TabItem>
 
+                    <!-- 검열 마스크 수정 (2026-10-21): 검토 대기 페이지는 여기서 고친 뒤 [검열 제거 진행], 끝난 페이지는 저장 마스크로 다시 제거 -->
+                    <TabItem x:Name="TabMask" Header="🎭 마스크 수정">
+                        <StackPanel Margin="0,8,0,0">
+                            <TextBlock x:Name="TxtMaskHint" Style="{StaticResource HintText}" Margin="0,0,0,6"
+                                       Text="빨간 곳이 지워져요. 놓친 검열은 칠하고(B), 잘못 잡힌 곳은 지우개(E)로 지우세요. 다각형(P)은 꼭짓점 클릭 → 더블클릭/Enter로 닫기. 우클릭=취소, Ctrl+Z=되돌리기."/>
+                            <WrapPanel>
+                                <TextBlock Text="도구" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <RadioButton x:Name="RbMAdd" Content="🖌 칠하기" IsChecked="True" GroupName="MaskTool"
+                                             Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,10,0" Checked="MaskTool_Changed"/>
+                                <RadioButton x:Name="RbMErase" Content="🧽 지우개" GroupName="MaskTool"
+                                             Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,10,0" Checked="MaskTool_Changed"/>
+                                <RadioButton x:Name="RbMPoly" Content="⬠ 다각형" GroupName="MaskTool"
+                                             Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,14,0" Checked="MaskTool_Changed"/>
+                                <TextBlock Text="브러시" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <Slider x:Name="SldMBrush" Minimum="4" Maximum="120" Value="24" Width="130" VerticalAlignment="Center" ToolTip="브러시 반지름(원본 px)"/>
+                                <TextBlock x:Name="TxtMBrush" Text="24px" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="6,0,18,0"/>
+                                <ui:Button Content="자동 감지로" Click="BtnMReset_Click" Padding="10,4" ToolTip="이 페이지 마스크를 자동 감지 결과로 되돌려요"/>
+                                <ui:Button Content="전부 지우기" Click="BtnMClear_Click" Padding="10,4" Margin="8,0,0,0"/>
+                                <CheckBox x:Name="ChkMSkip" Content="이 페이지는 검열 없음" Foreground="{StaticResource NekoText}"
+                                          VerticalAlignment="Center" Margin="14,0,0,0" Checked="ChkMSkip_Changed" Unchecked="ChkMSkip_Changed"
+                                          ToolTip="마스크가 있어도 검열 제거를 건너뛰어요"/>
+                            </WrapPanel>
+                            <DockPanel Margin="0,8,0,0">
+                                <ui:Button x:Name="BtnMRedo" DockPanel.Dock="Right" Content="🎨 채색부터 다시 (느림)" Click="BtnMRedo_Click" Padding="10,4"
+                                           ToolTip="보존해 둔 검열 제거 전 원고에 이 마스크를 적용하고 채색·식자까지 다시 돌려요 — 페이지당 2~3분"/>
+                                <TextBlock x:Name="TxtMaskInfo" Foreground="{StaticResource NekoPink}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                            </DockPanel>
+                        </StackPanel>
+                    </TabItem>
+
                     <TabItem x:Name="TabLetter" Header="💬 식자 다시 하기">
                         <StackPanel Margin="0,8,0,0">
                             <TextBlock x:Name="TxtLetterHint" Style="{StaticResource HintText}" Margin="0,0,0,6"

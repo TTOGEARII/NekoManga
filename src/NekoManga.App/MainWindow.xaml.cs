@@ -48,6 +48,8 @@ public partial class MainWindow
     private UpdateInfo? _pendingUpdate;
     private CancellationTokenSource? _cts;
     private string? _lastOutputDir;
+    /// <summary>실행 중인 러너 — 페이지별 검토의 '진행' 확인(ConfirmPage/ConfirmAll)을 결과 창·툴바가 보낼 수 있게 (2026-10-21).</summary>
+    private PipelineRunner? _runner;
 
     public MainWindow()
     {
@@ -202,7 +204,7 @@ public partial class MainWindow
     /// <summary>이 장의 결과물 경로 (없으면 원본). 검열이 없던 장은 원본이 확장자 그대로 복사된다.</summary>
     private static string ResolveViewPath(PipelineRunner runner, FileRow row)
     {
-        var outPath = runner.OutputPathFor(row.Path);
+        var outPath = PipelineRunner.OutputPathFor(App.Settings, row.Path);
         if (File.Exists(outPath)) return outPath;
         var sameName = Path.Combine(Path.GetDirectoryName(outPath)!, Path.GetFileName(row.Path));
         return File.Exists(sameName) ? sameName : row.Path;
@@ -330,6 +332,7 @@ public partial class MainWindow
         TxtStatus.Text = "작업 중... (ฅ'ω'ฅ)";
 
         using var runner = new PipelineRunner(s);
+        _runner = runner;
         // 멈췄다 재시작하면 이미 끝난 장은 건너뛴다 (상태가 "완료"인 행 — 이번 세션에서 끝난 것)
         var pending = _rows.Where(r => r.Stage != "완료").ToList();
         int skipped = _rows.Count - pending.Count;
@@ -347,9 +350,19 @@ public partial class MainWindow
         {
             var row = _rows.FirstOrDefault(r => r.Name == p.File);
             if (row == null) return;
-            row.Stage = p.Error != null ? $"실패 — {p.Error}" : p.Stage;
+            row.Stage = p.Error != null ? $"실패 — {p.Error}"
+                      : p.Stage.StartsWith("검토 대기 · ") ? "검토 대기 (더블클릭해 수정) · " + p.Stage["검토 대기 · ".Length..]
+                      : p.Stage;
             row.Percent = p.Percent;
             if (p.Done && p.Error == null) ShowResultFor(runner, row);   // 끝난 장은 바로 결과물로
+            RefreshWaitingUi();
+        });
+
+        // 페이지별 검토(DecensorReviewMode=PerPage): 감지된 장은 '검토 대기'로 남는다 — 더블클릭 → 결과 창 마스크 탭에서 고친 뒤 [검열 제거 진행]
+        runner.PageWaiting += pg => Dispatcher.BeginInvoke(() =>
+        {
+            RefreshWaitingUi();   // 행 상태 글은 진행 보고(progress)가 쓴다 — 두 경로가 순서 없이 겹치지 않게
+            TxtStatus.Text = "검열이 감지된 장은 '검토 대기'예요 — 더블클릭해 마스크를 확인·수정하고 진행하세요 (나머지 장은 계속 처리 중)";
         });
 
         // 검토 흐름(설정 DecensorReview): 러너가 1차(번역+감지)를 끝내면 UI 스레드에서 검토 창을 띄워 마스크를 고치게 한다
@@ -372,6 +385,10 @@ public partial class MainWindow
         catch (OperationCanceledException)
         {
             TxtStatus.Text = "멈췄어요";
+            // 진행 중이던 장이 '번역 중' 같은 상태로 남지 않게 — 끝난(완료/실패) 장만 그대로 둔다
+            foreach (var r in _rows)
+                if (r.Stage != "완료" && !r.Stage.StartsWith("실패") && r.Stage != "대기")
+                    r.Stage = "멈춤";
         }
         catch (Exception ex)
         {
@@ -380,12 +397,31 @@ public partial class MainWindow
         finally
         {
             _cts = null;
+            _runner = null;
             BtnRun.IsEnabled = true;
             BtnStop.IsEnabled = false;
+            RefreshWaitingUi();
         }
     }
 
     private void BtnStop_Click(object sender, RoutedEventArgs e) => _cts?.Cancel();
+
+    /// <summary>검토 대기 중인 장이 있을 때만 [대기 중 전부 진행] 버튼을 보인다.</summary>
+    private void RefreshWaitingUi()
+    {
+        int n = _runner?.WaitingFiles.Count ?? 0;
+        BtnProceedAll.Visibility = n > 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (n > 0) BtnProceedAll.Content = $"대기 중 {n}장 전부 진행";
+    }
+
+    private void BtnProceedAll_Click(object sender, RoutedEventArgs e)
+    {
+        int n = _runner?.ConfirmAll() ?? 0;
+        TxtStatus.Text = n > 0 ? $"검토 대기 {n}장을 지금 마스크 그대로 검열 제거로 보냈어요" : "검토 대기 중인 장이 없어요";
+        RefreshWaitingUi();
+    }
+
+    private bool IsWaiting(string file) => _runner?.WaitingFiles.Contains(file, StringComparer.OrdinalIgnoreCase) == true;
 
     private void BtnOpenOutput_Click(object sender, RoutedEventArgs e)
     {
@@ -407,9 +443,12 @@ public partial class MainWindow
             return;
         }
 
-        // 창 안에서 ◀ ▶로 넘겨볼 수 있게 목록 전체를 넘긴다
-        var pages = _rows.Select(r => r.ViewPath).ToList();
-        var win = new ResultWindow(pages, Math.Max(0, _rows.IndexOf(row))) { Owner = this };
+        // 창 안에서 ◀ ▶로 넘겨볼 수 있게 목록 전체를 넘긴다 (결과물 경로도 함께 — .neko 사이드카 위치)
+        var pages = _rows.Select(r => new ResultWindow.PageRef(r.ViewPath, PipelineRunner.OutputPathFor(App.Settings, r.Path))).ToList();
+        var win = new ResultWindow(pages, Math.Max(0, _rows.IndexOf(row)),
+            confirmPage: f => { var ok = _runner?.ConfirmPage(f) == true; if (ok) RefreshWaitingUi(); return ok; },
+            isWaiting: IsWaiting,
+            startOnMask: IsWaiting(row.Path)) { Owner = this };
         win.ShowDialog();
 
         // 창에서 고친 내용이 목록에도 바로 보이게
