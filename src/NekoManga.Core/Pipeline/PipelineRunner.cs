@@ -66,7 +66,7 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                 {
                     ct.ThrowIfCancellationRequested();
                     try { await Stage1(cx, pages[i], i); await Stage2(cx, pages[i], i); }
-                    catch (OperationCanceledException) { throw; }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }   // 사용자 취소만 전체 중단 — HTTP 타임아웃 같은 취소 예외는 그 장만 실패
                     catch (Exception ex) { Fail(cx, pages[i], ex); }
                 }
             }
@@ -163,7 +163,7 @@ public class PipelineRunner(AppSettings settings) : IDisposable
         {
             ct.ThrowIfCancellationRequested();
             try { await Stage1(cx, pages[i], i); }
-            catch (OperationCanceledException) { throw; }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (Exception ex) { Fail(cx, pages[i], ex); }
         }
         var toReview = pages.Where(p => p.Error == null && p.Mask != null && !p.StoredConfirmed).ToList();
@@ -181,7 +181,7 @@ public class PipelineRunner(AppSettings settings) : IDisposable
             ct.ThrowIfCancellationRequested();
             if (pages[i].Error != null) continue;
             try { await Stage2(cx, pages[i], i); }
-            catch (OperationCanceledException) { throw; }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (Exception ex) { Fail(cx, pages[i], ex); }
         }
     }
@@ -220,7 +220,7 @@ public class PipelineRunner(AppSettings settings) : IDisposable
             await foreach (var pg in queue.Reader.ReadAllAsync(ct))
             {
                 try { await Stage2(cx, pg, pages.IndexOf(pg)); }
-                catch (OperationCanceledException) { throw; }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
                 catch (Exception ex) { Fail(cx, pg, ex); }
             }
         }, ct);
@@ -233,7 +233,7 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                 ct.ThrowIfCancellationRequested();
                 var pg = pages[i];
                 try { await Stage1(cx, pg, i); }
-                catch (OperationCanceledException) { throw; }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
                 catch (Exception ex) { Fail(cx, pg, ex); continue; }
 
                 int px = pg.Mask == null ? 0 : Cv2.CountNonZero(pg.Mask);
@@ -277,6 +277,8 @@ public class PipelineRunner(AppSettings settings) : IDisposable
         await writer.WriteAsync(pg, ct);
     }
 
+    private const int RedoPageIndex = 950;
+
     /// <summary>결과 창에서 '채색부터 다시': 보존해 둔 검열 제거 전 원고(.pre.png)와 저장된 마스크로 이 페이지의 2차(제거→채색→식자→저장)를 다시 돌린다.</summary>
     public async Task RedoPageAsync(string file, IProgress<PageProgress> progress, CancellationToken ct)
     {
@@ -293,7 +295,8 @@ public class PipelineRunner(AppSettings settings) : IDisposable
             Summary = sc.Summary,
             Blocks = LetterSidecar.Load(outPath)?.Blocks ?? [],
         };
-        try { await Stage2(cx, pg, 0); }
+        // ComfyUI 업로드 이름(nm_cl_<i> 등)은 페이지 번호로 구분된다 — 본 작업이 쓰는 0~N·수동 제거의 900번대와 겹치지 않게 950
+        try { await Stage2(cx, pg, RedoPageIndex); }
         finally { pg.DisposeMats(); }
         MarkSidecarConfirmed(pg);
     }
@@ -314,9 +317,13 @@ public class PipelineRunner(AppSettings settings) : IDisposable
         using var img = ImgIo.Read(pg.WorkPath, ImreadModes.Color);
 
         // 같은 원고를 다시 돌릴 때: .neko에 남은 마스크(사용자가 고친 것 포함)가 있으면 감지 대신 쓴다 — 고친 마스크가 재실행에도 유지된다
-        if (settings.ReuseStoredMasks && MaskSidecar.Load(pg.OutPath) is { } stored
+        // 사이드카는 결과 파일 이름으로만 찾아지므로 **같은 원고인지**(경로 또는 이름+바이트 길이)를 꼭 확인한다 — 출력 폴더를 고정해 두고
+        // 1화·2화처럼 파일 이름·해상도가 같은 다른 원고를 돌리면 남의 마스크로 감지·검토를 건너뛰는 사고가 난다
+        if (settings.ReuseStoredMasks && MaskSidecar.Load(pg.OutPath) is { } stored && stored.MatchesSource(pg.File)
             && stored.SrcW == img.Width && stored.SrcH == img.Height && MaskSidecar.LoadMask(pg.OutPath) is { } storedMask)
         {
+            if (!string.Equals(stored.Source, pg.File, StringComparison.OrdinalIgnoreCase) || stored.SrcLen == 0)
+                try { (stored with { Source = pg.File, SrcLen = MaskSidecar.LengthOf(pg.File) }).Save(pg.OutPath); } catch { }   // 폴더를 옮긴 경우 경로 갱신 (결과 창의 대기 판정이 이 경로를 쓴다)
             pg.Mask = storedMask;
             pg.AutoMask = MaskSidecar.LoadAuto(pg.OutPath);
             pg.Skip = stored.Skip;

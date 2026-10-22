@@ -125,6 +125,13 @@ public class LlmTranslator(string endpoint, string apiKey, string model, string 
                 await Task.Delay(2000, ct);
                 continue;
             }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                // HttpClient 타임아웃(150초)은 TaskCanceledException으로 와서 사용자 취소와 구분이 안 된다 — 그대로 던지면
+                // 러너가 '멈춤'으로 보고 작업 전체를 조용히 끝낸다. 한 번 더 보내고, 또 넘기면 이 페이지는 Google로 메운다.
+                if (attempt == 0) continue;
+                break;
+            }
             using var _ = resp;
             var text = await resp.Content.ReadAsStringAsync(ct);
             if (!resp.IsSuccessStatusCode)
@@ -157,8 +164,8 @@ public class LlmTranslator(string endpoint, string apiKey, string model, string 
         {
             IReadOnlyList<string> fb = Array.Empty<string>();
             try { fb = await new GoogleTranslator().TranslateAsync(missing.Select(k => nonEmpty[k].t).ToList(), sourceLang, targetLang, ct); }
-            catch (OperationCanceledException) { throw; }
-            catch { }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch { }   // Google 타임아웃·오류 — 원문으로 둔다
             for (int m = 0; m < missing.Count; m++)
             {
                 var k = missing[m];

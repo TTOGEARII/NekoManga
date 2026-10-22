@@ -17,8 +17,28 @@ public record MaskSidecar(
     bool Skip,              // 사용자가 '이 페이지는 검열 없음'으로 표시
     bool Edited,            // 사용자가 마스크를 손으로 고쳤는지
     bool Confirmed,         // 검열 제거를 진행한(또는 진행하라고 확인한) 마스크인지 — 재실행 때 검토를 다시 기다리지 않는다
-    DateTime SavedAt)
+    DateTime SavedAt,
+    long SrcLen = 0)        // 원본 파일 바이트 길이 — 폴더를 옮겨 경로가 달라져도 같은 원고인지 가리는 근거 (옛 사이드카는 0)
 {
+    /// <summary>이 사이드카가 그 원고의 것인가 — 경로가 같거나, 파일 이름과 바이트 길이가 같으면(폴더를 옮긴 경우) 같은 원고.
+    /// 이름만 같은 다른 원고(1화·2화의 001.jpg)는 길이가 달라 걸러진다. 길이를 모르는 옛 사이드카는 경로로만 본다.</summary>
+    public bool MatchesSource(string file)
+    {
+        if (string.Equals(Norm(Source), Norm(file), StringComparison.OrdinalIgnoreCase)) return true;
+        if (SrcLen <= 0 || !string.Equals(Path.GetFileName(Source), Path.GetFileName(file), StringComparison.OrdinalIgnoreCase)) return false;
+        return LengthOf(file) == SrcLen;
+    }
+
+    public static long LengthOf(string file)
+    {
+        try { return new FileInfo(file).Length; } catch { return 0; }
+    }
+
+    private static string Norm(string p)
+    {
+        try { return Path.GetFullPath(p).TrimEnd(Path.DirectorySeparatorChar); } catch { return p; }
+    }
+
     private static string Base(string outPath) =>
         Path.Combine(Path.GetDirectoryName(outPath)!, ".neko", Path.GetFileNameWithoutExtension(outPath));
 
@@ -43,7 +63,7 @@ public record MaskSidecar(
         ImgIo.Write(MaskPathFor(outPath), mask);
         if (autoMask != null) ImgIo.Write(AutoPathFor(outPath), autoMask);
         if (pre != null) ImgIo.Write(PrePathFor(outPath), pre);
-        var sc = new MaskSidecar(source, mask.Width, mask.Height, summary, skip, edited, confirmed, DateTime.Now);
+        var sc = new MaskSidecar(source, mask.Width, mask.Height, summary, skip, edited, confirmed, DateTime.Now, LengthOf(source));
         sc.Save(outPath);
         return sc;
     }
