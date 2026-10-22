@@ -132,19 +132,22 @@ public static class TextRenderer
         }
 
         float minRun = float.MaxValue;
+        float runMid = cx;   // 가장 좁게 잰 줄의 흰 구간 중심 — 넓힌 블록은 글 기둥이 아니라 풍선 중심에 맞춘다
         foreach (var fy in new[] { 0.25f, 0.5f, 0.75f })
         {
             int y = Math.Clamp((int)(r.Y + r.Height * fy), 0, img.Rows - 1);
-            if (!Bright(cx, y)) { minRun = Math.Min(minRun, r.Width); continue; }
+            if (!Bright(cx, y)) { if (r.Width < minRun) { minRun = r.Width; runMid = cx; } continue; }
             int xl = cx, xr = cx;
             while (xl - 1 >= 0 && cx - xl < capL && Bright(xl - 1, y) && !Blocked(xl - 1, y)) xl--;
             while (xr + 1 < img.Cols && xr - cx < capL && Bright(xr + 1, y) && !Blocked(xr + 1, y)) xr++;
-            minRun = Math.Min(minRun, xr - xl);
+            if (xr - xl < minRun) { minRun = xr - xl; runMid = (xl + xr) / 2f; }
         }
 
         float newW = minRun * 0.86f;
         if (newW <= r.Width) return r;
-        float nx = Math.Max(0, cx - newW / 2);
+        // 기둥 중심(cx)이 아니라 흰 구간 중심에 둔다 — 풍선 오른쪽 끝 기둥(일본어 첫 줄)을 기준으로 넓히면
+        // 글이 오른쪽으로 쏠려 테두리를 넘어갔다. 단, 원래 블록은 반드시 안에 들어가게 한다.
+        float nx = Math.Clamp(runMid - newW / 2, Math.Max(0, r.Right - newW), Math.Max(0, r.X));
         return new RectangleF(nx, r.Y, Math.Min(newW, img.Cols - nx), r.Height);
     }
 
@@ -172,19 +175,20 @@ public static class TextRenderer
         }
 
         float minRun = float.MaxValue;
+        float runMid = cy;
         foreach (var fx in new[] { 0.25f, 0.5f, 0.75f })
         {
             int x = Math.Clamp((int)(r.X + r.Width * fx), 0, img.Cols - 1);
-            if (!Bright(x, cy)) { minRun = Math.Min(minRun, r.Height); continue; }
+            if (!Bright(x, cy)) { if (r.Height < minRun) { minRun = r.Height; runMid = cy; } continue; }
             int yt = cy, yb = cy;
             while (yt - 1 >= 0 && cy - yt < capL && Bright(x, yt - 1) && !Blocked(x, yt - 1)) yt--;
             while (yb + 1 < img.Rows && yb - cy < capL && Bright(x, yb + 1) && !Blocked(x, yb + 1)) yb++;
-            minRun = Math.Min(minRun, yb - yt);
+            if (yb - yt < minRun) { minRun = yb - yt; runMid = (yt + yb) / 2f; }
         }
 
         float newH = minRun * 0.86f;
         if (newH <= r.Height) return r;
-        float ny = Math.Max(0, cy - newH / 2);
+        float ny = Math.Clamp(runMid - newH / 2, Math.Max(0, r.Bottom - newH), Math.Max(0, r.Y));
         return new RectangleF(r.X, ny, r.Width, Math.Min(newH, img.Rows - ny));
     }
 

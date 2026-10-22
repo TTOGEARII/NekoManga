@@ -96,6 +96,162 @@ public static class BubbleSplitter
         }
     }
 
+    /// <summary>같은 풍선 안에서 따로 잡힌 이웃 블록을 하나로 합친다 — Split의 반대 방향 보정.
+    ///
+    /// 실측(401ちゃん 05·06·11·12·13·22p): 세로쓰기 풍선의 글 기둥들이 기둥마다 블록으로 갈라졌다
+    /// ("ここんとこ" | "ずっとじゃないですかー", "そう" | "だなぁ...", "して" | "いっぱい", "すまんな..." | "不器用で").
+    /// 기둥 하나는 폭이 40~60px뿐이라 각 블록이 좁은 세로 띠 안에 번역문을 억지로 넣고, 옆 기둥의 번역과
+    /// 겹쳐 그려졌다. 원문도 반 토막씩 번역돼 "요즘" / "맨날이잖아요ー"처럼 문장이 끊긴다.
+    ///
+    /// 기준: 두 블록이 ① 나란히(세로 겹침 ≥ 작은 쪽 높이의 35%, 가로 틈 ≤ 글자 크기)거나
+    /// ② 위아래로(가로 겹침 ≥ 작은 쪽 폭의 절반, 세로 틈 ≤ 글자 크기) 붙어 있고, ③ 사이에 먹선(풍선 테두리)이
+    /// 없으면 같은 풍선이다. 글자 크기는 블록의 짧은 변(세로쓰기면 기둥 폭, 가로쓰기면 줄 높이)으로 잡는다.
+    /// 다른 풍선끼리는 테두리가 사이를 지나가거나(결합 풍선 포함) 틈이 글자 크기보다 훨씬 넓다.</summary>
+    public static List<DetectedBlock> MergeSiblings(Mat img, Mat textMask, IReadOnlyList<DetectedBlock> blocks)
+    {
+        if (blocks.Count < 2) return blocks.ToList();
+        try
+        {
+            using var gray = new Mat();
+            Cv2.CvtColor(img, gray, ColorConversionCodes.BGR2GRAY);
+
+            var parent = Enumerable.Range(0, blocks.Count).ToArray();
+            int Find(int i) => parent[i] == i ? i : parent[i] = Find(parent[i]);
+            for (int a = 0; a < blocks.Count; a++)
+                for (int b = a + 1; b < blocks.Count; b++)
+                    if (Adjacent(blocks[a], blocks[b]) && SameWhiteRegion(gray, textMask, blocks[a], blocks[b]))
+                        parent[Find(a)] = Find(b);
+
+            var merged = blocks
+                .Select((blk, i) => (Blk: blk, Root: Find(i)))
+                .GroupBy(t => t.Root)
+                .Select(grp => grp.Select(t => t.Blk).Aggregate((x, y) => new DetectedBlock(
+                    Math.Min(x.X1, y.X1), Math.Min(x.Y1, y.Y1), Math.Max(x.X2, y.X2), Math.Max(x.Y2, y.Y2),
+                    Math.Max(x.Confidence, y.Confidence), x.LangJa || y.LangJa)))
+                .ToList();
+            if (merged.Count == blocks.Count) return blocks.ToList();
+            merged.Sort((a, b2) => a.Y1 != b2.Y1 ? a.Y1.CompareTo(b2.Y1) : b2.X1.CompareTo(a.X1)); // 위→아래, 오른→왼
+            return merged;
+        }
+        catch
+        {
+            return blocks.ToList(); // 합치기는 보너스 — 실패하면 그대로
+        }
+    }
+
+    private static bool Adjacent(DetectedBlock a, DetectedBlock b)
+    {
+        int wa = a.X2 - a.X1, ha = a.Y2 - a.Y1, wb = b.X2 - b.X1, hb = b.Y2 - b.Y1;
+        double charSize = Math.Max(Math.Min(wa, ha), Math.Min(wb, hb)); // 글자 한 자 크기 ≈ 짧은 변
+        double maxGap = Math.Max(12, charSize * 0.9);
+
+        int oy = Math.Min(a.Y2, b.Y2) - Math.Max(a.Y1, b.Y1);
+        int gapX = Math.Max(a.X1, b.X1) - Math.Min(a.X2, b.X2);
+        if (oy >= 0.35 * Math.Min(ha, hb) && gapX <= maxGap) return true;   // 나란한 기둥
+
+        int ox = Math.Min(a.X2, b.X2) - Math.Max(a.X1, b.X1);
+        int gapY = Math.Max(a.Y1, b.Y1) - Math.Min(a.Y2, b.Y2);
+        return ox >= 0.5 * Math.Min(wa, wb) && gapY <= maxGap;               // 위아래로 이어진 줄
+    }
+
+    /// <summary>두 블록이 같은 흰 영역(풍선 내부) 안에 있는가 — 밝은 픽셀(≥200) 또는 글자 획(textMask)을
+    /// 지나갈 수 있는 길로 보고, 두 블록 주변을 4-연결 성분으로 나눠 같은 성분이면 같은 풍선.
+    /// 풍선 테두리·결합 풍선의 이음선은 연속된 먹선이라 성분을 가른다. 망점 톤은 점 사이가 밝아 이어진다
+    /// (프레임 없는 글이 톤 위에 나란히 있으면 합쳐지는데, 틈이 글자 크기 이하라 한 대사일 가능성이 높다).
+    /// 틈 사이만 훑던 이전 방식은 이음선이 블록 bbox 안쪽(글자 옆 여백)에 걸리면 못 봤다 — 실측 21p 결합 풍선
+    /// "しおいたち…"|"どうなっちゃうか"가 합쳐져 글이 두 풍선에 걸쳐 그려짐.</summary>
+    private static bool SameWhiteRegion(Mat gray, Mat textMask, DetectedBlock a, DetectedBlock b)
+    {
+        const int Margin = 24;
+        int x1 = Math.Max(0, Math.Min(a.X1, b.X1) - Margin), y1 = Math.Max(0, Math.Min(a.Y1, b.Y1) - Margin);
+        int x2 = Math.Min(gray.Cols, Math.Max(a.X2, b.X2) + Margin), y2 = Math.Min(gray.Rows, Math.Max(a.Y2, b.Y2) + Margin);
+        var roi = new Rect(x1, y1, x2 - x1, y2 - y1);
+        if (roi.Width < 2 || roi.Height < 2) return false;
+
+        // 밝은 픽셀만 통로 — 글자 마스크(검출기가 7px 팽창)를 통로에 넣으면 글자 옆에 바짝 붙은 이음선까지
+        // 덮어 두 풍선이 이어진다 (실측 21p "…" 옆 이음선). 글자 획은 벽이어도 자간의 흰 틈으로 풍선 안이 이어진다.
+        using var g = new Mat(gray, roi);
+        using var passable = new Mat();
+        Cv2.Threshold(g, passable, 199, 255, ThresholdTypes.Binary);
+        using var labels = new Mat();
+        int n = Cv2.ConnectedComponents(passable, labels, PixelConnectivity.Connectivity4);
+        if (n < 2) return false;
+
+        // 블록 안에서 가장 넓은 흰 성분 = 그 블록이 놓인 풍선 내부 (획 안 구멍 같은 작은 성분에 속지 않게)
+        int DominantLabel(DetectedBlock blk)
+        {
+            var r = new Rect(blk.X1 - roi.X, blk.Y1 - roi.Y, blk.X2 - blk.X1, blk.Y2 - blk.Y1)
+                .Intersect(new Rect(0, 0, labels.Cols, labels.Rows));
+            if (r.Width <= 0 || r.Height <= 0) return 0;
+            var count = new Dictionary<int, int>();
+            for (int y = r.Y; y < r.Bottom; y++)
+                for (int x = r.X; x < r.Right; x++)
+                {
+                    int lb = labels.At<int>(y, x);
+                    if (lb == 0) continue;
+                    count[lb] = count.TryGetValue(lb, out var c) ? c + 1 : 1;
+                }
+            return count.Count == 0 ? 0 : count.MaxBy(kv => kv.Value).Key;
+        }
+
+        int la = DominantLabel(a), lb2 = DominantLabel(b);
+        return la != 0 && la == lb2;
+    }
+
+    /// <summary>(보관) 두 블록 사이 틈에 먹선이 지나가는가 — 마주 보는 변 사이만 훑어 bbox 안쪽 이음선을 놓친다.</summary>
+    private static bool InkBetween(Mat gray, Mat textMask, DetectedBlock a, DetectedBlock b)
+    {
+        int gapX = Math.Max(a.X1, b.X1) - Math.Min(a.X2, b.X2);
+        int gapY = Math.Max(a.Y1, b.Y1) - Math.Min(a.Y2, b.Y2);
+        var samples = new List<(Point From, Point To)>();
+        if (gapX > 0 && gapX >= gapY)
+        {
+            // 나란히: 세로 겹침 구간을 따라 가로로 훑는다
+            var (l, r) = a.X2 <= b.X1 ? (a, b) : (b, a);
+            int y1 = Math.Max(a.Y1, b.Y1), y2 = Math.Min(a.Y2, b.Y2);
+            if (y2 <= y1) { y1 = Math.Min(a.Y1, b.Y1); y2 = Math.Max(a.Y2, b.Y2); }
+            for (int k = 0; k < 9; k++)
+            {
+                int y = y1 + (y2 - y1) * (k + 1) / 10;
+                samples.Add((new Point(l.X2, y), new Point(r.X1, y)));
+            }
+        }
+        else if (gapY > 0)
+        {
+            var (t, d) = a.Y2 <= b.Y1 ? (a, b) : (b, a);
+            int x1 = Math.Max(a.X1, b.X1), x2 = Math.Min(a.X2, b.X2);
+            if (x2 <= x1) { x1 = Math.Min(a.X1, b.X1); x2 = Math.Max(a.X2, b.X2); }
+            for (int k = 0; k < 9; k++)
+            {
+                int x = x1 + (x2 - x1) * (k + 1) / 10;
+                samples.Add((new Point(x, t.Y2), new Point(x, d.Y1)));
+            }
+        }
+        else
+        {
+            samples.Add((new Point((a.X1 + a.X2) / 2, (a.Y1 + a.Y2) / 2), new Point((b.X1 + b.X2) / 2, (b.Y1 + b.Y2) / 2)));
+        }
+
+        int inked = 0;
+        foreach (var (p, q) in samples)
+        {
+            int steps = Math.Max(Math.Abs(q.X - p.X), Math.Abs(q.Y - p.Y));
+            int darkRun = 0;
+            bool hit = false;
+            for (int s = 0; s <= steps && !hit; s++)
+            {
+                int x = p.X + (q.X - p.X) * s / Math.Max(1, steps);
+                int y = p.Y + (q.Y - p.Y) * s / Math.Max(1, steps);
+                if (x < 0 || y < 0 || x >= gray.Cols || y >= gray.Rows) continue;
+                if (textMask.At<byte>(y, x) != 0) { darkRun = 0; continue; } // 글자 획은 먹선이 아니다
+                if (gray.At<byte>(y, x) < 160) { if (++darkRun >= 2) hit = true; }
+                else darkRun = 0;
+            }
+            if (hit) inked++;
+        }
+        return inked * 2 >= samples.Count;
+    }
+
     /// <summary>두 텍스트 덩어리가 같은 풍선 안인가 — 같은 글 기둥(x 겹침 ≥ 절반)이고
     /// 중심을 잇는 길에 먹선(어두운 픽셀 2연속)이 없으면 같은 풍선으로 본다.</summary>
     private static bool SameBubble(Mat gray, Rect a, Rect b)
