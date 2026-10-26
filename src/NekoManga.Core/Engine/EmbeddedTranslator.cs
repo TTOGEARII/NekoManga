@@ -39,8 +39,9 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         { TextDetector.ModelFile, MangaOcr.EncoderFile, MangaOcr.DecoderFile, MangaOcr.VocabFile, LamaInpainter.ModelFile };
 
     /// <summary>한 페이지를 처리한다. 글자 지운 이미지를 workDir에 저장하고 블록·번역을 돌려준다.</summary>
+    /// <param name="stem">작업 폴더에 남길 중간 파일 이름(확장자 없이). 비우면 원고 이름 — 러너는 결과물 이름을 넘겨 01.jpg·01.png가 서로 덮어쓰지 않게 한다.</param>
     public async Task<PageTranslation> TranslatePageAsync(
-        string imagePath, string workDir, IProgress<string>? status, CancellationToken ct)
+        string imagePath, string workDir, IProgress<string>? status, CancellationToken ct, string? stem = null)
     {
         if (!IsReady)
             throw new FileNotFoundException("내장 엔진 모델이 없어요. 설정 → 구성요소에서 설치해 주세요.");
@@ -154,7 +155,7 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         }
 
         Directory.CreateDirectory(workDir);
-        var outPath = Path.Combine(workDir, Path.GetFileNameWithoutExtension(imagePath) + ".inpainted.png");
+        var outPath = Path.Combine(workDir, (stem ?? Path.GetFileNameWithoutExtension(imagePath)) + ".inpainted.png");
         ImgIo.Write(outPath, img);
         return new PageTranslation(outPath, result);
     }

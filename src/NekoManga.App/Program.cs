@@ -32,7 +32,7 @@ public static class Program
             var log = new StreamWriter(files[0] + ".runlog.txt", false, System.Text.Encoding.UTF8) { AutoFlush = true };
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var progress = new Progress<NekoManga.Core.Pipeline.PageProgress>(p =>
-                log.WriteLine($"[{sw.Elapsed:mm\\:ss}] {p.File} | {p.Stage}" + (p.Error != null ? $" | ERR: {p.Error}" : "")));
+                log.WriteLine($"[{sw.Elapsed:mm\\:ss}] {Path.GetFileName(p.File)} | {p.Stage}" + (p.Error != null ? $" | ERR: {p.Error}" : "")));
             try
             {
                 using var runner = new NekoManga.Core.Pipeline.PipelineRunner(s);

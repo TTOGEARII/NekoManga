@@ -25,6 +25,12 @@ public class FileRow : INotifyPropertyChanged
     private double _percent;
     public double Percent { get => _percent; set { _percent = value; Notify(nameof(Percent)); } }
 
+    /// <summary>이번 세션에서 끝난 장(러너가 Done·오류 없음으로 보고) — 멈췄다 재시작할 때 건너뛴다.
+    /// 상태 문자열로 가리면 "검열 없음 — 원본 그대로"·경고 달린 완료가 빠져서 플래그로 둔다.</summary>
+    public bool Done { get; set; }
+    /// <summary>끝난 장의 결과물 경로(사이드카 위치) — 작업 뒤 설정의 출력 폴더를 바꿔도 이 장의 결과·사이드카는 여기 있다.</summary>
+    public string? OutPath { get; set; }
+
     /// <summary>목록에 띄우는 작은 그림. 결과물이 있으면 결과물을, 없으면 원본을 보여준다.</summary>
     private BitmapSource? _thumb;
     public BitmapSource? Thumb { get => _thumb; set { _thumb = value; Notify(nameof(Thumb)); } }
@@ -39,9 +45,8 @@ public class FileRow : INotifyPropertyChanged
 
 public partial class MainWindow
 {
-    /// <summary>OpenCV(ImRead)가 읽을 수 있는 포맷. 식자·검열 단계도 전부 OpenCV를 쓰므로 동일 목록이다.</summary>
-    private static readonly string[] ImageExts =
-        [".png", ".jpg", ".jpeg", ".jpe", ".webp", ".bmp", ".tif", ".tiff", ".jp2", ".ppm", ".pgm", ".pbm", ".pnm", ".avif"];
+    /// <summary>OpenCV가 읽을 수 있는 포맷 — Core와 같은 목록.</summary>
+    private static string[] ImageExts => NekoManga.Core.ImgIo.ImageExts;
 
     private readonly ObservableCollection<FileRow> _rows = [];
     private readonly UpdateService _update = new();
@@ -120,10 +125,10 @@ public partial class MainWindow
             if (Directory.Exists(p))
             {
                 foreach (var f in Directory.EnumerateFiles(p, "*", SearchOption.AllDirectories)
-                         .Where(f => ImageExts.Contains(Path.GetExtension(f).ToLowerInvariant())))
+                         .Where(NekoManga.Core.ImgIo.IsImageFile))
                     AddFile(f);
             }
-            else if (File.Exists(p) && ImageExts.Contains(Path.GetExtension(p).ToLowerInvariant()))
+            else if (File.Exists(p) && NekoManga.Core.ImgIo.IsImageFile(p))
                 AddFile(p);
         }
         SortRowsByName();   // 불러온 순서(드롭·탐색기 선택 순서)와 무관하게 늘 이름 오름차순 (사용자 요청 2026-10-21)
@@ -202,30 +207,31 @@ public partial class MainWindow
     }
 
     /// <summary>이 장의 결과물 경로 (없으면 원본). 검열이 없던 장은 원본이 확장자 그대로 복사된다.</summary>
-    private static string ResolveViewPath(PipelineRunner runner, FileRow row)
-    {
-        var outPath = PipelineRunner.OutputPathFor(App.Settings, row.Path);
-        if (File.Exists(outPath)) return outPath;
-        var sameName = Path.Combine(Path.GetDirectoryName(outPath)!, Path.GetFileName(row.Path));
-        return File.Exists(sameName) ? sameName : row.Path;
-    }
+    private string ResolveViewPath(FileRow row) => PipelineRunner.ResolveResultPath(OutPathOf(row), row.Path);
+
+    /// <summary>행의 결과물 경로 — 끝난 장은 끝날 때 기억한 경로(그 뒤 출력 폴더 설정이 바뀌어도), 아니면 지금 설정으로 계산 (이름은 원고 하나로 정해진다).</summary>
+    private string OutPathOf(FileRow row) =>
+        row.Done && row.OutPath != null ? row.OutPath : PipelineRunner.OutputPathFor(_runPathSettings ?? App.Settings, row.Path);
+
+    /// <summary>작업 중 경로 계산에 쓰는 설정 — 러너가 쓰는 출력 폴더(시작 때 값)로 고정. 설정 창에서 출력 폴더를 바꿔도 이번 작업의 결과물은 옛 폴더에 쓰이므로.</summary>
+    private NekoManga.Core.AppSettings? _runPathSettings;
 
     /// <summary>한 장이 끝날 때마다 그 장만 결과물로 바꿔 보여 준다 — 전체가 끝날 때까지 기다리지 않는다 (2026-10-21).</summary>
-    private void ShowResultFor(PipelineRunner runner, FileRow row)
+    private void ShowResultFor(FileRow row)
     {
-        var path = ResolveViewPath(runner, row);
-        if (path == row.ViewPath) return;
+        // 경로가 같아도 다시 읽는다 — 결과 창이 먼저 저장해 둔 자리에 2차가 최종본을 덮어쓴 경우 중간본이 남지 않게
+        var path = ResolveViewPath(row);
         row.ViewPath = path;
         _ = LoadThumbAsync(row);
         if (ReferenceEquals(FileList.SelectedItem, row)) ShowPreview(row);
     }
 
     /// <summary>작업이 끝난 뒤 결과물 쪽을 보도록 경로를 바꾸고 썸네일·미리보기를 갱신한다 (진행 중 놓친 장 보정용).</summary>
-    private void RefreshResultViews(PipelineRunner runner)
+    private void RefreshResultViews()
     {
-        foreach (var row in _rows)
+        foreach (var row in _rows.Where(r => r.Done))   // 끝난 장만 — 멈춤·실패·대기 행까지 풀면 지난 세션 결과물이 이번 결과인 양 보인다
         {
-            var path = ResolveViewPath(runner, row);
+            var path = ResolveViewPath(row);
             if (path == row.ViewPath) continue;
             row.ViewPath = path;
             _ = LoadThumbAsync(row);
@@ -310,7 +316,8 @@ public partial class MainWindow
             TxtStatus.Text = "먼저 이미지를 올려주세요 (・ω・`)";
             return;
         }
-        var s = App.Settings;
+        var s = App.Settings;   // 러너는 살아 있는 설정을 쓴다 — 표지 색 태그 캐시(ColorRefTags)를 거기 써서 저장하므로 사본이면 캐시가 안 남는다
+        var pathSnapshot = App.Settings.ShallowClone();   // 경로 계산만 시작 때 출력 폴더로 고정 — 작업 중 설정 창에서 바꿔도 이 작업의 결과물은 옛 폴더에 쓰인다 (러너도 같은 값을 박제한다)
         if (!s.EnableAutoColor && !s.EnableDecensor && !s.EnableTranslate)
         {
             TxtStatus.Text = "켜진 기능이 없어요 — 위 토글을 하나 이상 켜주세요";
@@ -326,35 +333,46 @@ public partial class MainWindow
             return;
         }
 
-        _cts = new CancellationTokenSource();
-        BtnRun.IsEnabled = false;
-        BtnStop.IsEnabled = true;
-        TxtStatus.Text = "작업 중... (ฅ'ω'ฅ)";
-
-        using var runner = new PipelineRunner(s);
-        _runner = runner;
-        // 멈췄다 재시작하면 이미 끝난 장은 건너뛴다 (상태가 "완료"인 행 — 이번 세션에서 끝난 것)
-        var pending = _rows.Where(r => r.Stage != "완료").ToList();
+        // 멈췄다 재시작하면 이미 끝난 장은 건너뛴다 (Done 행 — 이번 세션에서 끝난 것; "검열 없음 — 원본 그대로"도 끝난 장이다)
+        var pending = _rows.Where(r => !r.Done).ToList();
         int skipped = _rows.Count - pending.Count;
         if (pending.Count == 0)
         {
-            TxtStatus.Text = "모든 장이 이미 완료됐어요 — 다시 돌리려면 목록을 비우고 새로 올려주세요";
-            _cts = null; BtnRun.IsEnabled = true; BtnStop.IsEnabled = false;
-            return;
+            // 전부 끝난 목록에서 다시 [작업 시작] = 전부 다시 돌리라는 뜻(설정을 바꿔 다시 돌리는 흔한 흐름) — 결과물을 덮어쓰니 한 번 묻는다
+            if (System.Windows.MessageBox.Show($"모든 장({_rows.Count}장)이 이미 완료됐어요. 전부 다시 돌릴까요?\n결과물과 저장된 마스크가 새 결과로 바뀝니다.", "다시 돌리기",
+                    System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question) != System.Windows.MessageBoxResult.Yes)
+            {
+                TxtStatus.Text = "그대로 두었어요";
+                return;
+            }
+            foreach (var r in _rows)
+            {
+                r.Done = false; r.OutPath = null; r.Stage = "대기"; r.Percent = 0;
+                if (r.ViewPath != r.Path) { r.ViewPath = r.Path; _ = LoadThumbAsync(r); }   // 이번에 실패·멈춘 장이 지난 결과를 이번 것인 양 보이지 않게
+            }
+            pending = _rows.ToList(); skipped = 0;
         }
-        if (skipped > 0) TxtStatus.Text = $"완료된 {skipped}장은 건너뛰고 {pending.Count}장 작업 중...";
+        _cts = new CancellationTokenSource();
+        BtnRun.IsEnabled = false;
+        BtnStop.IsEnabled = true;
+        TxtStatus.Text = skipped > 0 ? $"완료된 {skipped}장은 건너뛰고 {pending.Count}장 작업 중..." : "작업 중... (ฅ'ω'ฅ)";
+
+        using var runner = new PipelineRunner(s);
+        _runner = runner;
         var files = pending.Select(r => r.Path).ToList();
-        _lastOutputDir = Path.GetDirectoryName(runner.OutputPathFor(files[0]));
+        _runPathSettings = pathSnapshot;
+        _lastOutputDir = PipelineRunner.OutputDirFor(pathSnapshot, files[0]);
 
         var progress = new Progress<PageProgress>(p =>
         {
-            var row = _rows.FirstOrDefault(r => r.Name == p.File);
+            // 전체 경로로 찾는다 — 이름만 보면 vol1\01.jpg·vol2\01.jpg가 한 행에 겹친다
+            var row = _rows.FirstOrDefault(r => string.Equals(r.Path, p.File, StringComparison.OrdinalIgnoreCase));
             if (row == null) return;
             row.Stage = p.Error != null ? $"실패 — {p.Error}"
                       : p.Stage.StartsWith("검토 대기 · ") ? "검토 대기 (더블클릭해 수정) · " + p.Stage["검토 대기 · ".Length..]
                       : p.Stage;
-            row.Percent = p.Percent;
-            if (p.Done && p.Error == null) ShowResultFor(runner, row);   // 끝난 장은 바로 결과물로
+            if (p.Percent >= 0) row.Percent = p.Percent;   // 경고 보고(-1)는 진행률을 건드리지 않는다
+            if (p.Done && p.Error == null) { row.Done = true; row.OutPath = PipelineRunner.OutputPathFor(pathSnapshot, row.Path); ShowResultFor(row); }   // 끝난 장은 바로 결과물로 (경로는 이 작업의 폴더로 박제)
             RefreshWaitingUi();
         });
 
@@ -376,7 +394,7 @@ public partial class MainWindow
         try
         {
             await Task.Run(() => runner.RunAsync(files, progress, _cts.Token));
-            RefreshResultViews(runner);   // 목록 썸네일·미리보기를 결과물로 바꿔 바로 확인할 수 있게
+            RefreshResultViews();         // 목록 썸네일·미리보기를 결과물로 바꿔 바로 확인할 수 있게
             var failed = _rows.Count(r => r.Stage.StartsWith("실패"));
             TxtStatus.Text = failed == 0
                 ? $"전부 완료! 총 {_rows.Count}장 (ﾉ´ヮ`)ﾉ*:･ﾟ✧"
@@ -387,7 +405,7 @@ public partial class MainWindow
             TxtStatus.Text = "멈췄어요";
             // 진행 중이던 장이 '번역 중' 같은 상태로 남지 않게 — 끝난(완료/실패) 장만 그대로 둔다
             foreach (var r in _rows)
-                if (r.Stage != "완료" && !r.Stage.StartsWith("실패") && r.Stage != "대기")
+                if (!r.Done && !r.Stage.StartsWith("실패") && r.Stage != "대기")
                     r.Stage = "멈춤";
         }
         catch (Exception ex)
@@ -398,6 +416,7 @@ public partial class MainWindow
         {
             _cts = null;
             _runner = null;
+            _runPathSettings = null;
             BtnRun.IsEnabled = true;
             BtnStop.IsEnabled = false;
             RefreshWaitingUi();
@@ -444,15 +463,23 @@ public partial class MainWindow
         }
 
         // 창 안에서 ◀ ▶로 넘겨볼 수 있게 목록 전체를 넘긴다 (결과물 경로도 함께 — .neko 사이드카 위치)
-        var pages = _rows.Select(r => new ResultWindow.PageRef(r.ViewPath, PipelineRunner.OutputPathFor(App.Settings, r.Path))).ToList();
+        var pages = _rows.Select(r => new ResultWindow.PageRef(r.ViewPath, OutPathOf(r), r.Path)).ToList();
         var win = new ResultWindow(pages, Math.Max(0, _rows.IndexOf(row)),
             confirmPage: f => { var ok = _runner?.ConfirmPage(f) == true; if (ok) RefreshWaitingUi(); return ok; },
             isWaiting: IsWaiting,
-            startOnMask: IsWaiting(row.Path)) { Owner = this };
+            startOnMask: IsWaiting(row.Path),
+            isDone: f => _rows.Any(r => r.Done && string.Equals(r.Path, f, StringComparison.OrdinalIgnoreCase))) { Owner = this };
         win.ShowDialog();
 
-        // 창에서 고친 내용이 목록에도 바로 보이게
-        foreach (var r in _rows) _ = LoadThumbAsync(r);
+        // 창에서 고친 내용이 목록에도 바로 보이게 — 창이 저장하거나 다시 돌린 행만 결과물로 다시 푼다
+        // (전 행을 풀면 아직 안 돌린 '대기' 행이 지난 세션 결과를 보여 주고, 썸네일을 전부 다시 풀면 바뀐 장의 미리보기가 뒤로 밀린다)
+        foreach (var r in _rows)
+        {
+            if (!win.ChangedSources.Contains(r.Path)) continue;
+            var path = ResolveViewPath(r);
+            if (path != r.ViewPath) r.ViewPath = path;
+            _ = LoadThumbAsync(r);
+        }
         ShowPreview(FileList.SelectedItem as FileRow ?? row);
     }
 

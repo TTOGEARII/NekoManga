@@ -37,13 +37,17 @@ namespace NekoManga.App;
 public partial class ResultWindow
 {
     /// <summary>결과 창 한 페이지: 보여 줄 그림(결과물 또는 원본)과 결과물 경로(.neko 사이드카 위치 기준).</summary>
-    public sealed record PageRef(string ViewPath, string OutPath);
+    /// <param name="ViewPath">지금 보여 주는 파일(결과물이 있으면 결과물, 아직 없으면 원본). 창이 열린 뒤 결과물이 생기면 결과물로 갈아탄다.</param>
+    /// <param name="OutPath">결과물 경로 — .neko 사이드카 위치. --result 모드는 ViewPath와 같다.</param>
+    /// <param name="Source">원본 원고 경로(메인 창에서 열 때). 원본에는 절대 저장하지 않는다 — 비어 있으면 ViewPath가 곧 결과물.</param>
+    public sealed record PageRef(string ViewPath, string OutPath, string Source = "");
 
     private readonly List<PageRef> _refs;
     private int _index;
     // 페이지별 검토(2026-10-21): 메인 창이 넘겨 주는 러너 훅 — 원고 경로로 '검토 대기 중인지'와 '진행 확인'
     private readonly Func<string, bool>? _confirmPage;
     private readonly Func<string, bool>? _isWaiting;
+    private readonly Func<string, bool>? _isDone;   // 메인 창 행의 Done — 끝나지 않은 장이 지난 작업 결과물을 보여 줄 때 안내한다
     private bool _startOnMask;
 
     private Mat _img = new();
@@ -71,12 +75,12 @@ public partial class ResultWindow
     private bool _letterPreview;                  // true면 [다시 식자] 결과(_img)를 보여준다
 
     public ResultWindow(IReadOnlyList<PageRef> pages, int startIndex,
-        Func<string, bool>? confirmPage = null, Func<string, bool>? isWaiting = null, bool startOnMask = false)
+        Func<string, bool>? confirmPage = null, Func<string, bool>? isWaiting = null, bool startOnMask = false, Func<string, bool>? isDone = null)
     {
         InitializeComponent();
         _refs = pages.Count > 0 ? [.. pages] : [new PageRef("", "")];
         _index = Math.Clamp(startIndex, 0, _refs.Count - 1);
-        _confirmPage = confirmPage; _isWaiting = isWaiting; _startOnMask = startOnMask;
+        _confirmPage = confirmPage; _isWaiting = isWaiting; _startOnMask = startOnMask; _isDone = isDone;
 
         foreach (var p in _refs) CmbPages.Items.Add(Path.GetFileName(p.ViewPath));
         SldMBrush.ValueChanged += (_, _) => { TxtMBrush.Text = $"{(int)SldMBrush.Value}px"; if (IsLoaded) UpdateBrushCursor(); };
@@ -105,9 +109,51 @@ public partial class ResultWindow
     // ── 페이지 ──────────────────────────────────────────────
     /// <summary>디스크에서 읽은 한 페이지 묶음(결과물 + 식자 사이드카 + 식자 전 원고). 읽기는 백그라운드.</summary>
     private sealed record PageData(Mat Img, LetterSidecar? Sidecar, Mat? Base,
-        MaskSidecar? MaskSc = null, Mat? Mask = null, Mat? Pre = null, Mat? PreDisp = null)
+        MaskSidecar? MaskSc = null, Mat? Mask = null, Mat? Pre = null, Mat? PreDisp = null, DiskStamp Stamp = default, string ViewPath = "")
     {
         public void Dispose() { Img.Dispose(); Base?.Dispose(); Mask?.Dispose(); Pre?.Dispose(); PreDisp?.Dispose(); }
+    }
+
+    /// <summary>원본 원고 경로 — Source가 비어 있으면(--result 모드) ViewPath.</summary>
+    private static string SourceOf(PageRef r) => string.IsNullOrEmpty(r.Source) ? r.ViewPath : r.Source;
+
+    /// <summary>검열이 없어 원본을 확장자 그대로 복사한 결과물 경로 — 러너 규칙 그대로. 확장자는 원본(Source)에서 — ViewPath는 결과물로 바뀔 수 있다.</summary>
+    private static string AsIsOf(PageRef r) => PipelineRunner.AsIsPathFor(r.OutPath, SourceOf(r));
+
+    /// <summary>지금 보여 줄 파일 — 이 원고의 결과물이 있으면 결과물(창을 연 뒤 생겼든 지난 작업 것이든), 없으면 보던 파일.
+    /// 결과 이름은 원고 하나로 정해지므로 그 자리의 결과물은 이 원고 것이다. --result 모드(원본 모름)는 보던 파일 그대로.
+    /// 저장도 결과물 자리에 하므로, 끝난 장을 고쳐 원본 파일에 덮어쓰는 일이 없다.</summary>
+    private static string ResolveView(PageRef r)
+    {
+        if (string.IsNullOrEmpty(r.OutPath) || string.IsNullOrEmpty(r.Source)) return r.ViewPath;
+        var p = PipelineRunner.ResolveResultPath(r.OutPath, SourceOf(r));   // 메인 창 ResolveViewPath와 같은 규칙 (Core 한 곳)
+        if (!string.Equals(p, SourceOf(r), StringComparison.OrdinalIgnoreCase)) return p;
+        return File.Exists(r.ViewPath) ? r.ViewPath : p;   // 결과물이 없다 — 보던 파일(지워졌으면 원본)
+    }
+
+    /// <summary>이 창에서 저장하거나 다시 돌린 페이지의 원본 경로 — 메인 창이 닫힌 뒤 그 행들만 결과물로 다시 푼다 (시계·mtime에 기대지 않는다).</summary>
+    public HashSet<string> ChangedSources { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>이 페이지가 디스크에서 바뀌었는지 가리는 도장 — Result: 결과물 파일들(OutPath·원본 그대로 복사본)만, All: 보던 파일·사이드카까지 전부(이름으로 나눠 위치에 기대지 않는다).
+    /// 미리 읽어 둔 이웃 장이 그 사이 '검토 대기'가 되거나(러너가 마스크 사이드카를 씀) 작업이 끝나 결과물이 생기면 All이 달라져 캐시를 버리고 다시 읽는다.
+    /// 해시로 접지 않고 값을 그대로 이어 붙인다 — 32비트 해시는 바뀐 파일이 같은 값으로 떨어질 수 있다. 기본값(빈 문자열)은 '모름 = 다시 읽어라'.</summary>
+    private readonly record struct DiskStamp(string Result, string All)
+    {
+        public bool IsEmpty => string.IsNullOrEmpty(All);
+    }
+
+    private static DiskStamp StampOf(PageRef r)
+    {
+        if (string.IsNullOrEmpty(r.OutPath)) return default;   // 빈 자리표(페이지 없음) — 사이드카 경로를 만들 수 없다
+        static string Stat(string p)
+        {
+            try { var fi = new FileInfo(p); return fi.Exists ? $"{fi.LastWriteTimeUtc.Ticks}:{fi.Length};" : "-;"; }
+            catch { return "!;"; }
+        }
+        var result = Stat(r.OutPath) + Stat(AsIsOf(r));
+        var rest = Stat(r.ViewPath) + Stat(LetterSidecar.JsonPathFor(r.OutPath)) + Stat(LetterSidecar.BasePathFor(r.OutPath))
+                 + Stat(MaskSidecar.JsonPathFor(r.OutPath)) + Stat(MaskSidecar.MaskPathFor(r.OutPath)) + Stat(MaskSidecar.PrePathFor(r.OutPath));
+        return new DiskStamp(result, result + rest);
     }
     private readonly Dictionary<int, Task<PageData>> _prefetch = [];   // 이웃 페이지 미리 읽기 (2026-10-21: 페이지 넘김 지연 해소)
     private int _loadGen;
@@ -116,15 +162,33 @@ public partial class ResultWindow
 
     private static PageData ReadPage(PageRef r)
     {
-        var path = r.ViewPath;
+        var stamp = StampOf(r);   // 읽기 시작 시점에 찍는다 — 읽는 동안 바뀐 것은 다음 비교에서 잡힌다 (경합에 져 캐시에 남는 결과도 있어 늘 찍는다)
+        var path = ResolveView(r);
         var img = File.Exists(path) ? ImgIo.Read(path, ImreadModes.Color) : new Mat();
-        if (img.Empty()) return new PageData(img, null, null);
+        if (img.Empty() && !string.Equals(path, r.ViewPath, StringComparison.OrdinalIgnoreCase))
+        {
+            // 결과물을 못 읽었다(쓰는 중이거나 깨짐) — 보여 주던 파일로. 빈 도장 = 다음 방문 때 다시 읽어라
+            img.Dispose(); path = r.ViewPath; stamp = default;
+            img = File.Exists(path) ? ImgIo.Read(path, ImreadModes.Color) : new Mat();
+        }
+        if (img.Empty()) return new PageData(img, null, null, Stamp: stamp, ViewPath: path);
         var sc = LetterSidecar.Load(r.OutPath);                   // 번역을 돌린 페이지에만 있다
+        // 사이드카는 **이 원고의** 것만 — 남의(다른 화) 마스크·식자 블록을 보여 주거나 [다시 식자]로 구워 넣지 않는다 (폴더를 옮긴 경우는 이름+길이/크기로 허용)
+        MaskSidecar? msc = MaskSidecar.Load(r.OutPath);   // 아래 마스크 탭도 이것을 쓴다
+        if (msc != null && !string.IsNullOrEmpty(r.Source) && !msc.MatchesSource(r.Source)) msc = null;
+        (int, int)? dims = msc != null ? (msc.SrcW, msc.SrcH) : (img.Width, img.Height);
+        if (sc != null && !string.IsNullOrEmpty(r.Source) && !sc.BelongsTo(r.Source, dims))
+        {
+            // 길이 기록이 없는 옛 사이드카: 보던 그림은 채색으로 크기가 달라졌을 수 있으니 원고 파일의 실제 크기로 한 번 더
+            (int, int)? srcDims = null;
+            if (sc.SrcLen == 0 && msc == null)
+                try { if (File.Exists(r.Source)) { using var si = ImgIo.Read(r.Source); if (!si.Empty()) srcDims = (si.Width, si.Height); } } catch { }
+            if (srcDims == null || !sc.BelongsTo(r.Source, srcDims)) sc = null;
+        }
         var b = sc != null ? ImgIo.Read(sc.BasePath) : null;
         if (b is { } bm && bm.Empty()) { bm.Dispose(); b = null; }
 
         // 검열 마스크 사이드카 — 검열 제거를 켜고 돌린 페이지에만 있다. 표시용 축소본(긴 변 1600)도 미리 만든다
-        MaskSidecar? msc = MaskSidecar.Load(r.OutPath);
         Mat? mask = null, pre = null, preDisp = null;
         if (msc != null)
         {
@@ -140,13 +204,21 @@ public partial class ResultWindow
                 Cv2.Resize(pre, preDisp, new Size((int)Math.Round(pre.Width * ds), (int)Math.Round(pre.Height * ds)), 0, 0, InterpolationFlags.Area);
             }
         }
-        return new PageData(img, sc, b, msc, mask, pre, preDisp);
+        return new PageData(img, sc, b, msc, mask, pre, preDisp, stamp, path);
     }
 
-    private Task<PageData> FetchPage(int i)
+    private Task<PageData> FetchPage(int i) => FetchPage(i, out _);
+
+    /// <param name="cached">이미 미리 읽어 둔 것을 돌려줬는지 — 그때만 디스크 도장 비교가 의미 있다.</param>
+    private Task<PageData> FetchPage(int i, out bool cached)
     {
-        if (!_prefetch.TryGetValue(i, out var t)) { var p = _refs[i]; t = Task.Run(() => ReadPage(p)); _prefetch[i] = t; }
-        return t;
+        cached = _prefetch.TryGetValue(i, out var t);
+        if (!cached)
+        {
+            var p = _refs[i];
+            t = Task.Run(() => ReadPage(p)); _prefetch[i] = t;
+        }
+        return t!;
     }
 
     /// <summary>미리 읽어 둔 이 페이지를 버린다 — 디스크의 결과물·사이드카가 바뀐 뒤 다시 읽게.</summary>
@@ -174,6 +246,7 @@ public partial class ResultWindow
 
     private async void LoadPage(int idx, bool fit)
     {
+        var statusAfter = _statusAfterLoad; _statusAfterLoad = null;   // 이 호출의 안내 — 일찍 끝나면(경합·취소) 버린다, 다른 페이지에 새지 않게
         if (_busy) return;                 // 복원이 돌고 있으면 _img를 건드리지 않는다
         if (!ConfirmDiscard()) return;
         StashRegenFields();                // 떠나는 페이지의 재생성 값을 기억
@@ -188,7 +261,7 @@ public partial class ResultWindow
         BtnPrev.IsEnabled = BtnNext.IsEnabled = false;
         if (CmbPages.SelectedIndex != idx) CmbPages.SelectedIndex = idx;
 
-        var task = FetchPage(idx);
+        var task = FetchPage(idx, out bool cached);
         if (!task.IsCompleted) TxtStatus.Text = "읽는 중...";
         PageData data; string? readError = null;
         try { data = await task; }
@@ -196,8 +269,32 @@ public partial class ResultWindow
         // 기다리는 사이 또 넘겼거나 창이 닫혔다 — 결과는 사전(_prefetch)이 계속 소유하므로 여기서 해제·제거하지 않는다
         // (지는 쪽이 이기는 쪽 키를 지우고 Mat을 해제해 ObjectDisposedException으로 죽던 경로)
         if (gen != _loadGen) return;
+        // 도장 비교는 미리 읽어 둔 것(cached)에만 — 방금 읽은 것은 달라질 수 없다. 파일 stat 여덟 번이라 느린 드라이브에서 UI를 막지 않게 백그라운드에서
+        DiskStamp? nowStamp = null;
+        if (cached && readError == null) { var pr = _refs[idx]; nowStamp = await Task.Run(() => StampOf(pr)); if (gen != _loadGen) return; }
+        if (nowStamp is { } now && (data.Stamp.IsEmpty || data.Stamp.All != now.All))
+        {
+            // 미리 읽어 둔 뒤 디스크가 바뀌었다(이웃 장이 '검토 대기'가 됐거나 작업이 끝남) — 캐시를 버리고 다시 읽는다.
+            // 이 시점엔 우리가 최신 LoadPage(gen 일치)라 사전에서 뺀 결과는 우리만 쥔다.
+            _prefetch.Remove(idx);
+            data.Dispose();
+            var pr2 = _refs[idx];
+            var again = Task.Run(() => ReadPage(pr2));
+            _prefetch[idx] = again;
+            try { data = await again; }
+            catch (Exception ex) { data = new PageData(new Mat(), null, null); readError = ex.Message; }
+            if (gen != _loadGen) return;
+        }
         _loading = false;
         _prefetch.Remove(idx);
+        // 읽기에 실패한 경로(아직 쓰는 중인 결과물 등)로는 갈아타지 않는다 — 원래 보여 주던 파일을 유지
+        if (!data.Img.Empty() && !string.IsNullOrEmpty(data.ViewPath) && !string.Equals(data.ViewPath, _refs[idx].ViewPath, StringComparison.OrdinalIgnoreCase))
+        {
+            // 창을 연 뒤 결과물이 생긴 장 — 보여 주는 파일과 저장 대상을 결과물로 바꾼다
+            bool previousSession = _isDone?.Invoke(SourceOf(_refs[idx])) != true;   // 메인 창은 아직 원본('대기'·'검토 대기')인데 지난 작업의 결과물을 보여 주는 경우
+            SetViewPath(idx, data.ViewPath);
+            if (previousSession) statusAfter ??= "지난 작업의 결과물을 보여 주고 있어요 — 이 장을 다시 돌리면 새 결과물로 바뀝니다";
+        }
 
         _img.Dispose();
         while (_undo.Count > 0) _undo.Pop().Dispose();
@@ -241,9 +338,12 @@ public partial class ResultWindow
         if (fit) FitToWindow();
         Redraw();
         if (RegenMode) LoadRegenFields();   // 새 페이지의 재생성 값(기억된 것 또는 설정값)
-        TxtStatus.Text = MaskMode ? (IsWaitingPage ? "검토 대기 중 — 빨간 마스크를 고친 뒤 [검열 제거 진행]을 누르세요" : "저장된 마스크 — 고친 뒤 [저장 마스크로 다시 검열 제거]")
-                       : "지울 검열의 꼭짓점을 클릭하세요";
+        TxtStatus.Text = statusAfter ?? (MaskMode ? (IsWaitingPage ? "검토 대기 중 — 빨간 마스크를 고친 뒤 [검열 제거 진행]을 누르세요" : "저장된 마스크 — 고친 뒤 [저장 마스크로 다시 검열 제거]")
+                       : "지울 검열의 꼭짓점을 클릭하세요");
     }
+
+    /// <summary>LoadPage가 끝난 뒤 상태 줄에 둘 안내 — 중간에 두면 LoadPage 끝의 기본 문구가 덮어쓴다 (다시 돌리기 완료·지난 결과물 표시).</summary>
+    private string? _statusAfterLoad;
 
     // ── 식자 탭 ─────────────────────────────────────────────
     private bool LetterMode => TabMode.SelectedItem == TabLetter;
@@ -1170,14 +1270,50 @@ public partial class ResultWindow
 
     private void Save()
     {
+        // 페이지를 읽는 동안(_index는 새 장, 그림·마스크는 아직 옛 장)에는 저장하지 않는다 — 옛 장의 그림이 새 장의 결과로 들어간다
+        if (_loading) { TxtStatus.Text = "페이지를 읽는 중이에요 — 잠시 뒤 다시 저장해 주세요"; return; }
         try
         {
-            ImgIo.Write(_refs[_index].ViewPath, _img);
+            var r = _refs[_index];
+            // 원본 원고에는 절대 쓰지 않는다 — 원본을 아는 페이지는 늘 결과물 png(OutPath)에 (결과 이름은 원고 하나로 정해져 이 원고만 쓰는 자리;
+            // '원본 그대로' 복사본 jpg/webp 위에 쓰면 손실 재인코딩된다). --result 모드도 png로, 그 자리에 다른 파일이 있으면 옆 이름으로
+            var target = string.IsNullOrEmpty(r.Source) ? Path.ChangeExtension(r.ViewPath, ".png") : r.OutPath;
+            if (string.IsNullOrEmpty(r.Source) && !string.Equals(target, r.ViewPath, StringComparison.OrdinalIgnoreCase) && File.Exists(target))
+                target = Path.Combine(Path.GetDirectoryName(r.ViewPath) ?? "", Path.GetFileNameWithoutExtension(r.ViewPath) + ".edited.png");
+            if (!string.IsNullOrEmpty(r.Source) && string.Equals(PipelineRunner.FileKey(target), PipelineRunner.FileKey(r.Source), StringComparison.Ordinal))
+            {
+                TxtStatus.Text = "원본 원고와 같은 경로라 저장하지 않았어요 — 설정에서 출력 폴더를 따로 지정해 주세요";
+                return;
+            }
+            ImgIo.Write(target, _img);
             _dirty = false;
             BtnSave.IsEnabled = false;
-            TxtStatus.Text = "저장했어요 → " + Path.GetFileName(_refs[_index].ViewPath);
+            ChangedSources.Add(SourceOf(r));
+            // 남아 있던 '원본 그대로' 복사본은 치운다 — 이제 이 장의 결과는 png다 (출력 폴더=원고 폴더면 AsIsOf가 원본 자신이라 건드리지 않는다)
+            if (!string.IsNullOrEmpty(r.Source))
+            {
+                var asIs = AsIsOf(r);
+                if (!string.Equals(asIs, r.Source, StringComparison.OrdinalIgnoreCase) && !string.Equals(asIs, target, StringComparison.OrdinalIgnoreCase))
+                    try { if (File.Exists(asIs)) File.Delete(asIs); } catch { }
+            }
+            bool redirect = !string.Equals(target, r.ViewPath, StringComparison.OrdinalIgnoreCase);   // 최종 목적지 기준
+            if (redirect)
+            {
+                SetViewPath(_index, target);
+                TxtStatus.Text = "결과물로 저장했어요 → " + Path.GetFileName(target) + " (원본은 그대로)"
+                               + (IsWaitingPage ? " — 검열 제거를 진행하면 이 결과물은 다시 만들어져요" : "");
+            }
+            else TxtStatus.Text = "저장했어요 → " + Path.GetFileName(target);
         }
         catch (Exception ex) { TxtStatus.Text = "저장 실패: " + ex.Message; }
+    }
+
+    /// <summary>이 페이지가 보여 주는(=저장하는) 파일을 바꾼다 — 제목·페이지 콤보도 같이.</summary>
+    private void SetViewPath(int idx, string path)
+    {
+        _refs[idx] = _refs[idx] with { ViewPath = path };
+        if (idx == _index) { TxtFile.Text = Path.GetFileName(path); TxtFile.ToolTip = path; }
+        if (idx < CmbPages.Items.Count) { CmbPages.Items[idx] = Path.GetFileName(path); if (idx == _index) CmbPages.SelectedIndex = idx; }
     }
 
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
@@ -1204,10 +1340,13 @@ public partial class ResultWindow
     private readonly List<Mat> _maskUndo = [];
     private readonly List<CvPoint> _maskPoly = [];
     private bool _maskDirty, _maskEdited, _maskPainting;
+    private bool _maskResetting;   // 페이지를 읽어 체크박스를 맞추는 중 — 이때 Checked/Unchecked는 사용자 수정이 아니다
     private CvPoint _maskLast;
 
     private bool MaskMode => TabMode.SelectedItem == TabMask;
-    private bool IsWaitingPage => _maskSc != null && _isWaiting?.Invoke(_maskSc.Source) == true;
+    /// <summary>러너가 대기·확인에 쓰는 키 — 창이 아는 원본 경로. 사이드카 안의 Source는 폴더를 옮긴 뒤 경로 갱신 저장이 실패하면 옛 경로라 못 믿는다 (--result 모드만 사이드카 값)</summary>
+    private string WaitKey => !string.IsNullOrEmpty(_refs[_index].Source) ? _refs[_index].Source : _maskSc?.Source ?? "";
+    private bool IsWaitingPage => _maskSc != null && _isWaiting?.Invoke(WaitKey) == true;
 
     private void ResetMaskState(PageData? data)
     {
@@ -1216,7 +1355,14 @@ public partial class ResultWindow
         _maskUndo.Clear(); _maskPoly.Clear();
         _maskDirty = _maskEdited = _maskPainting = false;
         _maskSc = data?.MaskSc; _maskMat = data?.Mask; _maskPre = data?.Pre; _maskPreDisp = data?.PreDisp;
-        if (data != null) ChkMSkip.IsChecked = data.MaskSc?.Skip == true;
+        // 체크박스를 사이드카 값으로 맞추는 것은 수정이 아니다 — 가드 없이 바꾸면 ChkMSkip_Changed가 _maskDirty를 켜서
+        // 손도 안 댄 페이지를 넘길 때마다 "고친 마스크를 저장할까요?"를 물었다
+        if (data != null)
+        {
+            _maskResetting = true;
+            try { ChkMSkip.IsChecked = data.MaskSc?.Skip == true; }
+            finally { _maskResetting = false; }
+        }
     }
 
     private void UpdateMaskInfo()
@@ -1338,7 +1484,7 @@ public partial class ResultWindow
 
     private void ChkMSkip_Changed(object sender, RoutedEventArgs e)
     {
-        if (!IsLoaded || _maskSc == null) return;
+        if (!IsLoaded || _maskSc == null || _maskResetting) return;
         _maskDirty = true; BtnSave.IsEnabled = true;
         UpdateMaskInfo();
     }
@@ -1347,10 +1493,13 @@ public partial class ResultWindow
     private void SaveMaskSidecar()
     {
         if (_maskSc == null || _maskMat == null) return;
+        if (_loading) return;   // 페이지를 넘기는 중 — 옛 장의 마스크를 새 장 사이드카에 쓰지 않는다 (넘기기 전 저장은 ConfirmDiscard가 먼저 한다)
         if (_maskPoly.Count >= 3) MaskClosePolygon();
         try
         {
-            _maskSc = MaskSidecar.Write(_refs[_index].OutPath, _maskSc.Source, _maskMat, null, null,
+            // Source는 창이 아는 원본 경로로 — 단 사이드카가 아직 존재하는 다른 경로의 원고 것이면(폴더를 복사해 러너가 빌려 쓰기만 한 마스크) 소유는 그대로 둔다
+            var keepSource = !string.IsNullOrEmpty(_refs[_index].Source) && !_maskSc.SourceIs(WaitKey) && _maskSc.SrcLen > 0 && File.Exists(_maskSc.Source);
+            _maskSc = MaskSidecar.Write(_refs[_index].OutPath, keepSource ? _maskSc.Source : WaitKey, _maskMat, null, null,
                 _maskSc.Summary, ChkMSkip.IsChecked == true, _maskEdited || _maskSc.Edited, _maskSc.Confirmed);
             _maskDirty = false;
             BtnSave.IsEnabled = false;
@@ -1366,7 +1515,7 @@ public partial class ResultWindow
         SaveMaskSidecar();
         if (IsWaitingPage)
         {
-            if (_confirmPage?.Invoke(_maskSc.Source) == true)
+            if (_confirmPage?.Invoke(WaitKey) == true)
             {
                 TxtStatus.Text = "검열 제거를 시작했어요 — 메인 창 목록에서 진행을 확인하세요. 다음 장으로 넘겨 계속 검토할 수 있어요";
                 UpdateMaskInfo(); UpdateModeButtons();
@@ -1417,21 +1566,30 @@ public partial class ResultWindow
         if (_maskSc == null || _maskMat == null || _busy || _loading) return;
         if (!ConfirmDiscard()) return;
         SaveMaskSidecar();
-        var source = _maskSc.Source;
+        var source = WaitKey;
         _busy = true;
         BtnApply.IsEnabled = BtnMRedo.IsEnabled = false;
         BtnPrev.IsEnabled = BtnNext.IsEnabled = false;
-        var progress = new Progress<PageProgress>(p => TxtStatus.Text = p.Error != null ? "실패: " + p.Error : $"{p.Stage} ({p.Percent:0}%)");
+        var progress = new Progress<PageProgress>(p => TxtStatus.Text = p.Error != null ? "실패: " + p.Error : p.Percent < 0 ? p.Stage : $"{p.Stage} ({p.Percent:0}%)");
         try
         {
             _runner ??= new PipelineRunner(App.Settings);
             var runner = _runner;
-            await Task.Run(() => runner.RedoPageAsync(source, progress, CancellationToken.None));
+            var outPath = _refs[_index].OutPath;
+            await Task.Run(() => runner.RedoPageAsync(source, progress, CancellationToken.None, outPath));
             _busy = false;
             _dirty = false;
+            ChangedSources.Add(SourceOf(_refs[_index]));
+            if (string.IsNullOrEmpty(_refs[_index].Source) && !string.Equals(Path.GetExtension(outPath), ".png", StringComparison.OrdinalIgnoreCase))
+            {
+                // --result 모드에서 jpg를 보고 있었다면 결과는 png로 새로 생겼다 — 그걸 보고 저장하게 (사이드카 이름은 같다)
+                var png = Path.ChangeExtension(outPath, ".png");
+                _refs[_index] = _refs[_index] with { OutPath = png };
+                SetViewPath(_index, png);
+            }
             InvalidatePrefetch(_index);
-            LoadPage(_index, fit: false);
-            TxtStatus.Text = "다시 돌렸어요 — 결과물이 갱신됐어요";
+            _statusAfterLoad = "다시 돌렸어요 — 결과물이 갱신됐어요";
+            LoadPage(_index, fit: false);   // 상태 줄은 LoadPage가 읽기를 마친 뒤 _statusAfterLoad로 바꾼다 — 여기서 덧쓰면 바로 지워진다
         }
         catch (Exception ex)
         {
@@ -1440,8 +1598,8 @@ public partial class ResultWindow
         finally
         {
             _busy = false;
-            BtnApply.IsEnabled = BtnMRedo.IsEnabled = true;
-            BtnPrev.IsEnabled = _index > 0; BtnNext.IsEnabled = _index < _refs.Count - 1;
+            BtnApply.IsEnabled = BtnMRedo.IsEnabled = true;   // 적용 자체는 _loading 중 거부되므로 켜 둬도 안전
+            if (!_loading) { BtnPrev.IsEnabled = _index > 0; BtnNext.IsEnabled = _index < _refs.Count - 1; }   // 다시 읽는 중이면 LoadPage가 끝날 때 켠다
         }
     }
 

@@ -24,10 +24,14 @@ public record MaskSidecar(
     /// 이름만 같은 다른 원고(1화·2화의 001.jpg)는 길이가 달라 걸러진다. 길이를 모르는 옛 사이드카는 경로로만 본다.</summary>
     public bool MatchesSource(string file)
     {
-        if (string.Equals(Norm(Source), Norm(file), StringComparison.OrdinalIgnoreCase)) return true;
+        if (SourceIs(file)) return true;
         if (SrcLen <= 0 || !string.Equals(Path.GetFileName(Source), Path.GetFileName(file), StringComparison.OrdinalIgnoreCase)) return false;
         return LengthOf(file) == SrcLen;
     }
+
+    /// <summary>경로가 정확히 같은 원고의 것인가 — 이름+길이 폴백 없이. 다른 이름의 사이드카를 **옮겨 올** 때는 이걸로 본다
+    /// (이름·길이만 같은 다른 폴더의 복제 원고가 남의 사이드카를 가져가 지우면 안 된다).</summary>
+    public bool SourceIs(string file) => string.Equals(Norm(Source), Norm(file), StringComparison.OrdinalIgnoreCase);
 
     public static long LengthOf(string file)
     {
@@ -52,7 +56,7 @@ public record MaskSidecar(
     {
         var path = JsonPathFor(outPath);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, JsonSerializer.Serialize(this));
+        ImgIo.WriteAllTextAtomic(path, JsonSerializer.Serialize(this));
     }
 
     /// <summary>마스크(+자동 감지 사본, 검열 제거 전 원고)를 PNG로 쓰고 json을 저장한다. 넘기지 않은 PNG는 있던 그대로 둔다.</summary>
@@ -81,6 +85,17 @@ public record MaskSidecar(
     }
 
     public static bool HasPre(string outPath) => File.Exists(PrePathFor(outPath));
+
+    /// <summary>옛 이름(v1.5.5까지의 <c>&lt;원고 이름&gt;</c>)의 사이드카 네 파일을 새 이름으로 옮긴다 — 결과 이름 규칙이 바뀐 뒤 한 번만 쓰인다.
+    /// 새 이름 자리에 이미 마스크 사이드카가 있으면 건드리지 않는다(json을 마지막에 옮겨, 도중에 멈추면 다음 실행이 이어서 옮긴다).</summary>
+    public static void MoveLegacy(string fromOut, string toOut)
+    {
+        if (File.Exists(JsonPathFor(toOut))) return;
+        Directory.CreateDirectory(Path.GetDirectoryName(JsonPathFor(toOut))!);
+        foreach (var (a, b) in new[] { (MaskPathFor(fromOut), MaskPathFor(toOut)), (AutoPathFor(fromOut), AutoPathFor(toOut)), (PrePathFor(fromOut), PrePathFor(toOut)),
+                                       (JsonPathFor(fromOut), JsonPathFor(toOut)) })
+            if (File.Exists(a)) File.Move(a, b, overwrite: true);
+    }
 
     /// <summary>마스크 PNG → CV_8UC1 (255=지울 곳). 없거나 못 읽으면 null.</summary>
     public static Mat? LoadMask(string outPath) => LoadGray(MaskPathFor(outPath));
