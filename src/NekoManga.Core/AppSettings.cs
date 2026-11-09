@@ -224,6 +224,9 @@ public class AppSettings
     public bool LetterItalic { get; set; } = false;
     /// <summary>식자 기본 줄간격 배율.</summary>
     public double LetterLineSpacing { get; set; } = 1.0;
+    /// <summary>식자 어절 간격 배율 — 글꼴의 띄어쓰기 폭에 곱한다(1 = 글꼴 그대로). 사람이 식자한 원고는 띄어쓰기가 글꼴 기본보다 좁아서
+    /// 기본값을 0.75로 둔다 (2026-11-09, 사용자 예시 원고 실측: 띄어쓰기 ≈ 글자 높이의 0.16~0.25배).</summary>
+    public double LetterWordSpacing { get; set; } = 0.75;
 
     /// <summary>UI 테마 — "Light"(기본, 만화 원고풍 흑백) / "Dark"(반전).</summary>
     public string Theme { get; set; } = "Light";
@@ -315,6 +318,7 @@ public class AppSettings
         IpaEndAt = Math.Clamp(IpaEndAt, 0, 1);
         if (LetterAlign is not ("Left" or "Center" or "Right")) LetterAlign = "Center";
         LetterLineSpacing = Math.Clamp(LetterLineSpacing, 0.6, 3.0);
+        LetterWordSpacing = LetterWordSpacing <= 0 ? 0.75 : Math.Clamp(LetterWordSpacing, 0.3, 2.0);
     }
 
     public void Save()

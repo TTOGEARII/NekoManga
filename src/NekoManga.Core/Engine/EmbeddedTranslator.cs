@@ -50,8 +50,14 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         if (img.Empty())
             throw new InvalidDataException($"이미지를 읽지 못했어요: {Path.GetFileName(imagePath)}");
 
+        // 진단: NEKO_TIMING=<파일>이면 단계별로 걸린 시간을 적는다 (어디가 느린지 볼 때)
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var laps = new List<string>();
+        void Lap(string name) { laps.Add($"{name}={clock.ElapsedMilliseconds}ms"); clock.Restart(); }
+
         status?.Report("말풍선 찾는 중");
         var det = await Task.Run(() => _detector.Detect(img), ct);
+        Lap("감지");
         using var textMask = det.TextMask;
 
         // 맞닿은 말풍선 묶음이 한 블록으로 잡히면 풍선별로 나눈다 — 안 나누면
@@ -64,24 +70,44 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         // 반대로 한 풍선의 글 기둥이 기둥마다 따로 잡힌 것은 다시 하나로 — 따로 두면 반 토막 번역이
         // 좁은 띠에 억지로 들어가 옆 기둥의 번역과 겹친다 (실측 401ちゃん 05·11·12·22p).
         detBlocks = await Task.Run(() => BubbleSplitter.MergeSiblings(img, textMask, detBlocks), ct);
+        Lap("풍선 나누기·합치기");
 
         // ── OCR ──
+        // 한 쪽의 블록을 한 묶음으로 읽는다 — 블록마다 따로 읽으면 디코더 실행 횟수가 블록 수만큼 곱해진다 (MangaOcr 주석).
         var blocks = new List<(DetectedBlock Box, string Text)>();
-        foreach (var b in detBlocks)
+        var readable = new List<DetectedBlock>();
+        var crops = new List<Mat>();
+        try
         {
+            foreach (var b in detBlocks)
+            {
+                var pad = BubbleSolver.Enlarge(new Rect(b.X1, b.Y1, b.X2 - b.X1, b.Y2 - b.Y1), 1.1, img.Width, img.Height);
+                var crop = new Mat(img, pad);
+                // 거의 단색(새까만 페이지의 노이즈, 흰 여백)인 블록은 글자가 있을 수 없다 — OCR·번역을 건너뛴다.
+                // 실사고: 검은 페이지에서 CTD가 노이즈 두 덩어리를 말풍선으로 잡아 쓰레기 글자를 DeepSeek에 보내 몇 분씩 기다렸다.
+                if (IsFlatCrop(crop)) { crop.Dispose(); continue; }
+                readable.Add(b);
+                crops.Add(crop);
+            }
             ct.ThrowIfCancellationRequested();
-            status?.Report($"글자 읽는 중 ({blocks.Count + 1}/{detBlocks.Count})");
-            var pad = BubbleSolver.Enlarge(new Rect(b.X1, b.Y1, b.X2 - b.X1, b.Y2 - b.Y1), 1.1, img.Width, img.Height);
-            using var crop = new Mat(img, pad);
-            // 거의 단색(새까만 페이지의 노이즈, 흰 여백)인 블록은 글자가 있을 수 없다 — OCR·번역을 건너뛴다.
-            // 실사고: 검은 페이지에서 CTD가 노이즈 두 덩어리를 말풍선으로 잡아 쓰레기 글자를 DeepSeek에 보내 몇 분씩 기다렸다.
-            if (IsFlatCrop(crop)) continue;
-            var text = await Task.Run(() => _ocr.Recognize(crop), ct);
-            if (string.IsNullOrWhiteSpace(text)) continue;
-            // OCR 결과에 원문 언어의 글자가 하나도 없으면(기호·숫자·알파벳 잡음) 번역할 것이 없다
-            if (!LooksLikeSource(text, settings.TranslateSource)) continue;
-            blocks.Add((b, text));
+            if (crops.Count > 0)
+            {
+                status?.Report($"글자 읽는 중 ({crops.Count}개 말풍선)");
+                var texts = await Task.Run(() => _ocr.RecognizeBatch(crops), ct);
+                for (int i = 0; i < texts.Length; i++)
+                {
+                    if (string.IsNullOrWhiteSpace(texts[i])) continue;
+                    // OCR 결과에 원문 언어의 글자가 하나도 없으면(기호·숫자·알파벳 잡음) 번역할 것이 없다
+                    if (!LooksLikeSource(texts[i], settings.TranslateSource)) continue;
+                    blocks.Add((readable[i], texts[i]));
+                }
+            }
         }
+        finally
+        {
+            foreach (var crop in crops) crop.Dispose();
+        }
+        Lap($"글자 읽기({detBlocks.Count}블록)");
 
         // ── 번역 (배치) ──
         IReadOnlyList<string> translations = Array.Empty<string>();
@@ -114,6 +140,8 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
             }
             finally { tick.Cancel(); await ticker; }
         }
+
+        Lap($"번역({blocks.Count}개·{TranslatorFactory.EngineLabel(settings)})");
 
         // ── 글자 색 추출 + 글자 지우기 ──
         status?.Report("글자 지우는 중");
@@ -148,15 +176,20 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
                 color));
         }
 
+        Lap("글자 지우기(단색)");
         if (needLama)
         {
             status?.Report("배경 복원 중 (LaMa)");
             await Task.Run(() => _lama.Inpaint(img, lamaMask), ct);
+            Lap("배경 복원(LaMa)");
         }
 
         Directory.CreateDirectory(workDir);
         var outPath = Path.Combine(workDir, (stem ?? Path.GetFileNameWithoutExtension(imagePath)) + ".inpainted.png");
         ImgIo.Write(outPath, img);
+        Lap("저장");
+        if (Environment.GetEnvironmentVariable("NEKO_TIMING") is { Length: > 0 } timing)
+            try { File.AppendAllText(timing, Path.GetFileName(imagePath) + ": " + string.Join(", ", laps) + Environment.NewLine); } catch { }
         return new PageTranslation(outPath, result);
     }
 

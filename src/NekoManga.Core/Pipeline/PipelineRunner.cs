@@ -150,6 +150,14 @@ public class PipelineRunner(AppSettings settings) : IDisposable
             cx.Client = new ComfyClient(_server.BaseUrl);
             cx.ComfyOutputDir = Path.Combine(settings.ComfyRoot, "ComfyUI", "output");
 
+            // 커스텀 워크플로: 화면 저장 포맷이면 여기서 API 포맷으로 바꾸고, 서버에 없는 노드·모델 파일을 첫 페이지 전에 알린다
+            if (cx.CustomDecensor != null || cx.CustomColor != null)
+            {
+                var nodeInfo = await cx.Client.GetObjectInfoAsync(ct);
+                if (cx.CustomDecensor != null) cx.CustomDecensor = CustomWorkflow.Resolve(cx.CustomDecensor, nodeInfo);
+                if (cx.CustomColor != null) cx.CustomColor = CustomWorkflow.Resolve(cx.CustomColor, nodeInfo);
+            }
+
             // 표지가 등록돼 있는데 색 태그를 아직 안 뽑았으면 여기서 한 번 뽑아 캐시한다
             if (settings.EnableAutoColor && settings.ColorRefTags.Trim().Length == 0
                 && settings.ColorRefImage.Trim().Length > 0 && File.Exists(settings.ColorRefImage))
@@ -801,6 +809,7 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                 var wf = CustomWorkflow.Load(settings.CustomDecensorWorkflow);
                 await _server.EnsureRunningAsync(status, ct);
                 var client = new ComfyClient(_server.BaseUrl);
+                wf = CustomWorkflow.Resolve(wf, await client.GetObjectInfoAsync(ct));   // 화면 포맷 변환 + 없는 노드·파일 점검
                 var outDir = Path.Combine(settings.ComfyRoot, "ComfyUI", "output");
                 status?.Report("커스텀 워크플로로 복원 중...");
                 await ComfyCustomDecensorAsync(client, outDir, wf, img, mask, 902, ct);

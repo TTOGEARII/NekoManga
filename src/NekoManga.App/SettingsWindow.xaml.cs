@@ -104,6 +104,7 @@ public partial class SettingsWindow
         TxtLetterOutlineColor.Text = s.LetterOutlineColorHex;
         SelectComboByTag(CmbLetterAlign, s.LetterAlign);
         TxtLetterLineSp.Text = s.LetterLineSpacing.ToString(CultureInfo.InvariantCulture);
+        TxtLetterWordSp.Text = s.LetterWordSpacing.ToString(CultureInfo.InvariantCulture);
         ChkLetterItalic.IsChecked = s.LetterItalic;
         TxtDeepLKey.Text = s.DeepLApiKey;
         TxtDeepSeekKey.Text = s.DeepSeekApiKey;
@@ -218,6 +219,7 @@ public partial class SettingsWindow
         s.LetterOutlineColorHex = NormalizeHex(TxtLetterOutlineColor.Text, "#FFFFFF");
         s.LetterAlign = ComboTag(CmbLetterAlign, s.LetterAlign);
         s.LetterLineSpacing = ParseD(TxtLetterLineSp.Text, s.LetterLineSpacing, 0.6, 3.0);
+        s.LetterWordSpacing = ParseD(TxtLetterWordSp.Text, s.LetterWordSpacing, 0.3, 2.0);
         s.LetterItalic = ChkLetterItalic.IsChecked == true;
 
         s.OutputRoot = TxtOutputRoot.Text.Trim();
@@ -257,7 +259,7 @@ public partial class SettingsWindow
         R(TxtAdvCnScrStr, 0, 2, false); R(TxtAdvCnScrStart, 0, 1, false); R(TxtAdvPreRes, 256, 4096, true);
         R(TxtAdvXdog, 1, 128, true); R(TxtAdvIpaEnd, 0, 1, false);
         // 식자
-        R(TxtLetterSize, 0.3, 3.0, false); R(TxtLetterOutline, 0, 4.0, false); R(TxtLetterLineSp, 0.6, 3.0, false);
+        R(TxtLetterSize, 0.3, 3.0, false); R(TxtLetterOutline, 0, 4.0, false); R(TxtLetterLineSp, 0.6, 3.0, false); R(TxtLetterWordSp, 0.3, 2.0, false);
         // 자가 학습
         R(TxtSelfEpochs, 1, 50, true); R(TxtSelfLr, 0.00001, 0.01, false); R(TxtSelfFreeze, 0, 22, true); R(TxtSelfMinPages, 5, 500, true);
     }
@@ -481,7 +483,7 @@ public partial class SettingsWindow
             if (!await NekoManga.Core.Comfy.EngineManager.IsAliveAsync(App.Settings))
                 await NekoManga.Core.Comfy.EngineManager.StartAsync(App.Settings, status);
             NekoManga.Core.Comfy.CustomWorkflow.OpenUi(App.Settings);
-            TxtWfStatus.Text = $"브라우저에서 http://127.0.0.1:{App.Settings.ComfyPort}/ 를 열었어요. 워크플로를 만든 뒤 메뉴 → Export (API)로 저장하세요.";
+            TxtWfStatus.Text = $"브라우저에서 http://127.0.0.1:{App.Settings.ComfyPort}/ 를 열었어요. 워크플로를 만들어 저장한 파일(그냥 저장한 것이든 Export (API)든)을 커스텀 워크플로로 고르면 돼요.";
         }
         catch (Exception ex) { TxtWfStatus.Text = "열지 못했어요: " + ex.Message; }
     }
@@ -558,19 +560,30 @@ public partial class SettingsWindow
     private void BtnColorCustomPick_Click(object sender, RoutedEventArgs e) => PickWorkflow(TxtColorCustom);
     private void BtnColorCustomClear_Click(object sender, RoutedEventArgs e) => TxtColorCustom.Text = "";
 
-    private void PickWorkflow(System.Windows.Controls.TextBox target)
+    /// <summary>워크플로 파일을 고른다. API 포맷과 화면 저장 포맷 둘 다 받는다(2026-11-09 — 화면 포맷은 실행 직전에 변환).
+    /// 엔진이 켜져 있으면 그 자리에서 변환·점검까지 해 보고, 없는 노드·모델 파일이 있으면 바로 알려 준다.</summary>
+    private async void PickWorkflow(System.Windows.Controls.TextBox target)
     {
         var dlg = new Microsoft.Win32.OpenFileDialog
         {
-            Filter = "ComfyUI API 워크플로 (*.json)|*.json",
+            Filter = "ComfyUI 워크플로 (*.json)|*.json",
             InitialDirectory = System.IO.Path.Combine(App.Settings.ComfyRoot, "ComfyUI", "user", "default", "workflows"),
         };
         if (dlg.ShowDialog(this) != true) return;
         try
         {
-            NekoManga.Core.Comfy.CustomWorkflow.Load(dlg.FileName);   // 규약 검사 — 화면 포맷이면 여기서 알려 준다
+            var workflow = NekoManga.Core.Comfy.CustomWorkflow.Load(dlg.FileName);   // 규약 검사 (LoadImage·SaveImage)
+            bool screenFormat = NekoManga.Core.Comfy.WorkflowConverter.IsUiFormat(workflow);
+            string kind = screenFormat ? "화면 저장 포맷이라 실행할 때 자동으로 변환해요" : "API 포맷";
+            if (await NekoManga.Core.Comfy.EngineManager.IsAliveAsync(App.Settings))
+            {
+                var client = new NekoManga.Core.Comfy.ComfyClient($"http://127.0.0.1:{App.Settings.ComfyPort}");
+                NekoManga.Core.Comfy.CustomWorkflow.Resolve(workflow, await client.GetObjectInfoAsync(CancellationToken.None));
+                TxtWfStatus.Text = $"워크플로를 확인했어요 ({kind} · 노드와 모델 파일이 모두 있어요).";
+            }
+            else
+                TxtWfStatus.Text = $"워크플로를 확인했어요 ({kind}). 엔진이 꺼져 있어 노드·모델 파일은 실행할 때 확인해요.";
             target.Text = dlg.FileName;
-            TxtWfStatus.Text = "워크플로를 확인했어요 (LoadImage·SaveImage 규약 OK).";
         }
         catch (Exception ex)
         {

@@ -6,8 +6,9 @@ namespace NekoManga.Core.Comfy;
 
 /// <summary>사용자가 ComfyUI 화면에서 직접 짠 워크플로를 앱 파이프라인에 끼우는 다리 (2026-10-20).
 ///
-/// 입력은 ComfyUI의 **API 포맷** JSON(워크플로 메뉴 → "Export (API)")이다. 화면 저장 포맷(nodes/links 배열)은 노드 정의 없이는
-/// 위젯 값의 이름을 알 수 없어 받지 않는다 — 대신 어떤 포맷인지 알려 주는 오류를 낸다.
+/// 입력은 ComfyUI의 **API 포맷** JSON(워크플로 메뉴 → "Export (API)")이거나 **화면 저장 포맷**(nodes/links 배열 — 화면에서 그냥 저장한 파일)이다.
+/// 화면 포맷은 노드 정의가 있어야 풀 수 있어서, 파일을 읽을 때(<see cref="Load"/>)는 그대로 두고 엔진이 켜진 뒤 <see cref="Resolve"/>가
+/// 서버의 /object_info로 API 포맷으로 바꾼다(<see cref="WorkflowConverter"/>, 2026-11-09 — 그전에는 화면 포맷을 거절했다).
 ///
 /// 규약(둘만 지키면 된다):
 ///  · LoadImage 노드 하나 = 앱이 넣어 주는 입력. 여러 개면 제목(_meta.title)에 "neko"나 "입력"이 든 것, 없으면 첫 번째.
@@ -19,7 +20,8 @@ public static class CustomWorkflow
 {
     public sealed record Prepared(JsonObject Prompt, string InputNodeId, string OutputNodeId, int LoadImageCount, int SaveImageCount);
 
-    /// <summary>API 포맷 JSON 파일을 읽고 규약을 검사한다. 문제가 있으면 사람이 읽을 메시지의 InvalidDataException.</summary>
+    /// <summary>워크플로 JSON 파일을 읽고 규약(LoadImage·SaveImage)을 검사한다. 문제가 있으면 사람이 읽을 메시지의 InvalidDataException.
+    /// 화면 저장 포맷이면 변환하지 않은 채로 돌려준다 — 실행하려면 엔진을 켠 뒤 <see cref="Resolve"/>를 거쳐야 한다.</summary>
     public static JsonObject Load(string path)
     {
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
@@ -29,8 +31,31 @@ public static class CustomWorkflow
         catch (JsonException ex) { throw new InvalidDataException($"워크플로 JSON을 읽지 못했어요: {ex.Message}"); }
         if (root is not JsonObject obj)
             throw new InvalidDataException("워크플로 JSON의 최상위가 객체가 아니에요.");
-        if (obj.ContainsKey("nodes") && obj.ContainsKey("links"))
-            throw new InvalidDataException("화면 저장 포맷(nodes/links)이에요. ComfyUI에서 워크플로 메뉴 → 'Export (API)'로 내보낸 파일을 골라 주세요.");
+        if (WorkflowConverter.IsUiFormat(obj))
+        {
+            // 화면 포맷: 켜져 있는(mode 0) LoadImage·SaveImage가 하나씩은 있어야 한다
+            var active = obj["nodes"]!.AsArray().OfType<JsonObject>()
+                .Where(n => (n["mode"]?.GetValue<int>() ?? 0) == 0).Select(n => n["type"]?.GetValue<string>()).ToList();
+            if (!active.Contains("LoadImage")) throw new InvalidDataException("LoadImage 노드가 없어요 — 앱이 원고를 넣어 줄 LoadImage 노드가 하나 필요해요.");
+            if (!active.Contains("SaveImage")) throw new InvalidDataException("SaveImage 노드가 없어요 — 앱이 결과를 받아 올 SaveImage 노드가 하나 필요해요.");
+            return obj;
+        }
+        CheckApi(obj);
+        return obj;
+    }
+
+    /// <summary>읽어 둔 워크플로를 실행할 수 있는 API 포맷으로 확정한다: 화면 포맷이면 변환하고, 서버에 없는 노드·파일을 미리 찾아 알린다.
+    /// objectInfo는 켜져 있는 엔진의 /object_info (<see cref="ComfyClient.GetObjectInfoAsync"/>).</summary>
+    public static JsonObject Resolve(JsonObject workflow, JsonObject objectInfo)
+    {
+        var api = WorkflowConverter.IsUiFormat(workflow) ? WorkflowConverter.ToApi(workflow, objectInfo) : (JsonObject)workflow.DeepClone();
+        CheckApi(api);
+        WorkflowConverter.Validate(api, objectInfo);
+        return api;
+    }
+
+    private static void CheckApi(JsonObject obj)
+    {
         int loads = 0, saves = 0;
         foreach (var (_, node) in obj)
         {
@@ -41,7 +66,6 @@ public static class CustomWorkflow
         }
         if (loads == 0) throw new InvalidDataException("LoadImage 노드가 없어요 — 앱이 원고를 넣어 줄 LoadImage 노드가 하나 필요해요.");
         if (saves == 0) throw new InvalidDataException("SaveImage 노드가 없어요 — 앱이 결과를 받아 올 SaveImage 노드가 하나 필요해요.");
-        return obj;
     }
 
     /// <summary>업로드한 입력 파일 이름과 출력 접두사를 끼운 실행용 그래프를 만든다 (원본 JsonObject는 건드리지 않는다).</summary>

@@ -24,6 +24,15 @@ public class ComfyClient(string baseUrl)
         catch { return false; }
     }
 
+    /// <summary>서버가 아는 모든 노드의 정의(입력 이름·순서·고를 수 있는 값). 화면 포맷 워크플로 변환과 실행 전 점검에 쓴다.</summary>
+    public async Task<JsonObject> GetObjectInfoAsync(CancellationToken ct)
+    {
+        using var r = await Http.GetAsync($"{baseUrl}/object_info", ct);
+        r.EnsureSuccessStatusCode();
+        return JsonNode.Parse(await r.Content.ReadAsStringAsync(ct)) as JsonObject
+               ?? throw new InvalidDataException("ComfyUI의 노드 정보(/object_info)를 읽지 못했어요.");
+    }
+
     public async Task<string> UploadImageAsync(byte[] png, string fileName, CancellationToken ct)
     {
         using var form = new MultipartFormDataContent();

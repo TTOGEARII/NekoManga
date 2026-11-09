@@ -499,6 +499,7 @@ public partial class ResultWindow
             LetterAlign = App.Settings.LetterAlign,
             LetterItalic = App.Settings.LetterItalic,
             LetterLineSpacing = App.Settings.LetterLineSpacing,
+            LetterWordSpacing = App.Settings.LetterWordSpacing,
         };
     }
 
@@ -605,25 +606,16 @@ public partial class ResultWindow
         double bs = (double)_baseImg.Width / Math.Max(1, _sidecar.SrcW);   // 원본 → 결과 좌표
         var style = LetterStyle();
         var family = new FontFamily(style.LetterFontFamily);
-        // 파이프라인과 동일: 페이지 공통 글자 크기 (중앙값)
-        float px = TextRenderer.UniformSize(_letterBlocks, bs, style);
-
-        var allRects = _letterBlocks.Select(lb => new System.Drawing.RectangleF(
-            (float)(lb.X1 * bs), (float)(lb.Y1 * bs),
-            (float)((lb.X2 - lb.X1) * bs), (float)((lb.Y2 - lb.Y1) * bs))).ToList();
+        // 파이프라인과 동일: 말풍선마다의 자리와 글자 크기를 같은 계산으로 구한다
+        var layouts = TextRenderer.PlanLayout(_baseImg, _letterBlocks, bs, bs, style);
 
         for (int i = 0; i < _letterBlocks.Count; i++)
         {
             var b = _letterBlocks[i];
 
-            // 자동 폭·높이 넓히기(세로 블록)는 렌더와 같은 규칙으로 — 손으로 잡은 블록은 그대로
-            var rect = allRects[i];
-            if (b.Vertical && !b.ManualRect)
-            {
-                var others = allRects.Where((_, j) => j != i).ToList();
-                rect = TextRenderer.WidenToBubble(_baseImg, rect, others);
-                rect = TextRenderer.HeightenToBubble(_baseImg, rect, others);
-            }
+            // 자리(풍선 쪽으로 넓힌 사각형)와 크기는 렌더와 같은 값 — 손으로 잡은 블록은 그 좌표 그대로
+            var rect = layouts[i].Rect;
+            float px = layouts[i].Size > 0 ? layouts[i].Size : 16;
             double w = rect.Width * _scale, h = rect.Height * _scale;
             if (w < 8 || h < 8) continue;
 
@@ -643,7 +635,7 @@ public partial class ResultWindow
                 FontFamily = family,
                 FontWeight = bold ? FontWeights.Bold : FontWeights.Normal,
                 FontStyle = b.Italic || style.LetterItalic ? FontStyles.Italic : FontStyles.Normal,
-                FontSize = Math.Max(6, px * Math.Clamp(b.StyleScale, 0.3, 3.0) * _scale),
+                FontSize = Math.Max(6, px * _scale),
                 Foreground = new SolidColorBrush(fg),
                 Background = new SolidColorBrush(Color.FromArgb(70, 255, 255, 255)),
                 BorderBrush = Brushes.DeepSkyBlue,

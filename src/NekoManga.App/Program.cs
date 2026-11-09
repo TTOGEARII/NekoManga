@@ -346,6 +346,48 @@ public static class Program
             return;
         }
 
+        // 식자만 다시 (번역 없음): NekoManga.exe --reletter <결과.png> <출력.png>
+        //   <결과.png> 옆 .neko 폴더의 사이드카(식자 전 원고 + 번역 블록)를 읽어 지금 설정·지금 코드로 식자한다 — 글자 모양을 고칠 때 번역을 다시 돌리지 않으려고.
+        var reIdx = Array.IndexOf(args, "--reletter");
+        if (reIdx >= 0 && reIdx + 2 < args.Length)
+        {
+            var sc = NekoManga.Core.Pipeline.LetterSidecar.Load(args[reIdx + 1]);
+            if (sc == null) { File.WriteAllText(args[reIdx + 2] + ".txt", "사이드카가 없어요"); return; }
+            NekoManga.Core.Pipeline.TextRenderer.RenderBlocks(sc.BasePath, sc.Source, sc.Blocks, args[reIdx + 2], NekoManga.Core.AppSettings.Load());
+            return;
+        }
+
+        // 커스텀 워크플로 변환·점검만 (실행 없음): NekoManga.exe --wfcheck <워크플로.json>
+        //   → <워크플로>.api.json(변환 결과) + <워크플로>.wfcheck.txt(OK 또는 문제 목록). 엔진이 켜져 있어야 한다.
+        var wfIdx = Array.IndexOf(args, "--wfcheck");
+        if (wfIdx >= 0 && wfIdx + 1 < args.Length)
+        {
+            var path = args[wfIdx + 1];
+            var s = NekoManga.Core.AppSettings.Load();
+            string report;
+            try
+            {
+                var raw = NekoManga.Core.Comfy.CustomWorkflow.Load(path);
+                var client = new NekoManga.Core.Comfy.ComfyClient($"http://127.0.0.1:{s.ComfyPort}");
+                var info = client.GetObjectInfoAsync(CancellationToken.None).GetAwaiter().GetResult();
+                bool screen = NekoManga.Core.Comfy.WorkflowConverter.IsUiFormat(raw);
+                if (screen)
+                {
+                    // 점검에서 걸리더라도 변환 결과는 남겨 눈으로 볼 수 있게 한다
+                    var converted = NekoManga.Core.Comfy.WorkflowConverter.ToApi(raw, info);
+                    File.WriteAllText(path + ".api.json", converted.ToJsonString(new System.Text.Json.JsonSerializerOptions
+                    {
+                        WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+                    }));
+                }
+                NekoManga.Core.Comfy.CustomWorkflow.Resolve(raw, info);
+                report = "OK (" + (screen ? "화면 저장 포맷 → 변환됨" : "API 포맷") + ")";
+            }
+            catch (Exception ex) { report = ex.GetType().Name + ": " + ex.Message; }
+            File.WriteAllText(path + ".wfcheck.txt", report);
+            return;
+        }
+
         // 표지 색 태그 추출 확인용: NekoManga.exe --colorref <이미지> → <이미지>.colorref.txt
         var colorrefIdx = Array.IndexOf(args, "--colorref");
         if (colorrefIdx >= 0 && colorrefIdx + 1 < args.Length)

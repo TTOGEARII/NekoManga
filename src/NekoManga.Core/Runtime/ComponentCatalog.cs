@@ -85,27 +85,30 @@ public static class ComponentCatalog
         "models/censor_seg.onnx", "models/censor_seg.onnx", 14_060_000);
 
     // ── Aletheia Lens (https://github.com/Cec1c/Aletheia-Lens, GPL-3.0) — 2026-11-09부터 검열 감지·기본 복원의 주력 엔진 ──
-    // 모델은 그 프로젝트가 배포하는 파일을 그대로 받는다(이름만 aletheia_*로 바꿔 models\에 둔다).
-    //   감지: hent-AI Mask R-CNN을 ONNX로 내보낸 weights.onnx — 모델 전용 릴리스 `models-v1` 자산
+    // 모델은 그 프로젝트가 배포하는 파일 그대로다(이름만 aletheia_*로 바꿨다 — SHA-256이 원본과 같다).
+    //   감지: hent-AI Mask R-CNN을 ONNX로 내보낸 weights.onnx — 원본은 그 저장소의 모델 전용 릴리스 `models-v1` 자산
     //         (SHA-256 94E49F37…EFC87B, 그 저장소 .github/model-assets.sha256 기록값과 일치 확인).
-    //   복원: DeepCreamPy bar/mosaic ONNX — 저장소에 직접 들어 있는 파일이라 **커밋을 고정**해 받는다(main이 바뀌어도 같은 파일).
-    private const string AletheiaCommit = "94871aad41290fa9210852906a0dce3e909c7c59";
+    //   복원: DeepCreamPy bar/mosaic ONNX — 원본은 그 저장소 커밋 94871aa의 models/deepcreampy/.
+    // **받는 곳은 우리 `models` 사전 릴리스다 (2026-11-09 사용자 결정).** 처음에는 그 저장소에서 직접 받았는데, 그쪽이 간헐적으로 504를 내서
+    // 새 설치가 막힐 수 있었다. 세 파일을 `D:\NekoManga-train\lama_manga\gh_release_aletheia.py`로 올렸다(해시 확인 → 업로드 → 주소 확인).
+    // 모델을 바꾸면 같은 스크립트로 다시 올리고 아래 Sha256을 고칠 것. 릴리스 설명에 출처와 라이선스(GPL-3.0)를 적어 두었다.
+    private const string ModelAssets = "https://github.com/TTOGEARII/NekoManga/releases/download/models";
 
     public static readonly Component ModelAletheiaDetector = new(
         "model-aletheia-mrcnn", "검열 감지 모델 (Aletheia Lens · Mask R-CNN)", ComponentKind.File,
-        "https://github.com/Cec1c/Aletheia-Lens/releases/download/models-v1/weights.onnx",
+        ModelAssets + "/aletheia_mrcnn.onnx",
         "models/aletheia_mrcnn.onnx", "models/aletheia_mrcnn.onnx", 254_400_000,
         Sha256: "94E49F37B2454C1964385673E80C2F6664AD5D5153F4D2C9DB85661AC5EFC87B");
 
     public static readonly Component ModelAletheiaBar = new(
         "model-aletheia-bar", "검열 복원 모델 1/2 — 막대 (Aletheia Lens · DeepCreamPy)", ComponentKind.File,
-        $"https://raw.githubusercontent.com/Cec1c/Aletheia-Lens/{AletheiaCommit}/models/deepcreampy/bar.onnx",
+        ModelAssets + "/aletheia_bar.onnx",
         "models/aletheia_bar.onnx", "models/aletheia_bar.onnx", 14_647_000,
         Sha256: "BA32B5ABE0303CD452C466516C2F88F3CBF0337B34867470DBDF4FFA6EC55B2A");
 
     public static readonly Component ModelAletheiaMosaic = new(
         "model-aletheia-mosaic", "검열 복원 모델 2/2 — 모자이크 (Aletheia Lens · DeepCreamPy)", ComponentKind.File,
-        $"https://raw.githubusercontent.com/Cec1c/Aletheia-Lens/{AletheiaCommit}/models/deepcreampy/mosaic.onnx",
+        ModelAssets + "/aletheia_mosaic.onnx",
         "models/aletheia_mosaic.onnx", "models/aletheia_mosaic.onnx", 14_647_000,
         Sha256: "339503F625AD0AEA902B5ACD4ADC491741E53235E47B6C4DDD77AA3CC1D351F2");
 
