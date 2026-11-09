@@ -79,20 +79,15 @@ public static class SelfTest
                 var exclude = result.Blocks.Select(b =>
                     new Rect(b.X1, b.Y1, Math.Max(1, b.X2 - b.X1), Math.Max(1, b.Y2 - b.Y1))).ToList();
 
-                // AI 전용 모델이 있으면 1순위 (파이프라인과 같은 CensorNet.BuildMask 정책)
-                Mat? mask = null;
-                string kindUsed = "";
-                var net = new CensorNet(env);
-                bool ai = settings.DecensorTarget == "Auto" && net.IsReady;
-                if (ai) mask = net.BuildMask(img2, exclude, settings.DecensorMaskGrow, out kindUsed);
-                else mask = MosaicDetector.BuildMaskForTarget(settings, img2, exclude, out kindUsed);
-                using var _maskDispose = mask;
+                // 파이프라인과 같은 경로로 — 감지(DecensorEngine이 정한 감지기) + 기본 복원
+                using var runner = new PipelineRunner(settings);
+                using var mask = runner.DetectCensorMask(img2, exclude, out var kindUsed, out var kindsMap);
+                using var _kindsDispose = kindsMap;
                 L($"검열 감지({settings.DecensorTarget}→{kindUsed}): {(mask == null ? "없음" : Cv2.CountNonZero(mask) + "px")}");
                 if (mask != null)
                 {
                     ImgIo.Write(stem + ".selftest.censormask.png", mask);
-                    using var maskCopy = mask.Clone(); // FindContours가 원본을 변형하므로 LaMa엔 복사본
-                    new LamaInpainter(env).Inpaint(img2, maskCopy);
+                    runner.ManualDecensorAsync(img2, mask, "Basic", null, CancellationToken.None, kinds: kindsMap).GetAwaiter().GetResult();
                     ImgIo.Write(stem + ".selftest.decensor.png", img2);
                     L($"검열제거(기본): {sw.ElapsedMilliseconds}ms");
                 }

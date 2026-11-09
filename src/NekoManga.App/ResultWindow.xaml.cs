@@ -82,6 +82,12 @@ public partial class ResultWindow
         _index = Math.Clamp(startIndex, 0, _refs.Count - 1);
         _confirmPage = confirmPage; _isWaiting = isWaiting; _startOnMask = startOnMask; _isDone = isDone;
 
+        // '기본' 모델 이름은 감지·복원 엔진 설정을 따른다 (Aletheia Lens / 이전 방식 LaMa) — 손으로 고른 자리는 Aletheia에선 막대 모델로 지운다
+        ItemEngineBasic.Content = DecensorLabels.BasicModelLabel(App.Settings.DecensorEngine);
+        ItemEngineBasic.ToolTip = DecensorLabels.IsAletheia(App.Settings.DecensorEngine)
+            ? "Aletheia Lens 복원 모델 — 고른 자리를 비우고 주변 그림에 맞춰 채워요 (내장, 항상 같은 결과)"
+            : "내장 LaMa 모델, 항상 같은 결과";
+
         foreach (var p in _refs) CmbPages.Items.Add(Path.GetFileName(p.ViewPath));
         SldMBrush.ValueChanged += (_, _) => { TxtMBrush.Text = $"{(int)SldMBrush.Value}px"; if (IsLoaded) UpdateBrushCursor(); };
 
@@ -1208,6 +1214,8 @@ public partial class ResultWindow
         }
         catch (Exception ex)
         {
+            // 복원은 그림을 제자리에서 단계별로 고친다 — 도중에 실패하면 반쯤 고친 그림이 남아 저장될 수 있으므로 되돌린다
+            try { if (before.Size() == _img.Size()) { before.CopyTo(_img); InvalidateBitmap(); Redraw(); } } catch { }
             before.Dispose();
             TxtStatus.Text = "실패: " + ex.Message;
         }
@@ -1544,7 +1552,9 @@ public partial class ResultWindow
             _runner ??= new PipelineRunner(App.Settings);
             var runner = _runner;
             var regenSettings = engineMode == "ComfyRegen" ? ReadRegenFields().ApplyTo(App.Settings) : null;
-            await Task.Run(async () => await runner.ManualDecensorAsync(img, mask, engineMode, status, CancellationToken.None, regenSettings));
+            // 저장 마스크에는 자동 감지의 종류 지도(.kind.png)가 딸려 있다 — 기본 방식이 파이프라인과 같은 모델(막대/모자이크/보완)로 지우게 넘긴다
+            using var kinds = engineMode == "Basic" ? MaskSidecar.LoadKinds(_refs[_index].OutPath) : null;
+            await Task.Run(async () => await runner.ManualDecensorAsync(img, mask, engineMode, status, CancellationToken.None, regenSettings, kinds));
             _undo.Push(before);
             _dirty = true;
             InvalidateBitmap();
@@ -1554,6 +1564,7 @@ public partial class ResultWindow
         }
         catch (Exception ex)
         {
+            try { if (before.Size() == _img.Size()) { before.CopyTo(_img); InvalidateBitmap(); } } catch { }   // 반쯤 고친 그림을 남기지 않는다
             before.Dispose();
             TxtStatus.Text = "실패: " + ex.Message;
         }

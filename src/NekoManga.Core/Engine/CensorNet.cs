@@ -38,7 +38,10 @@ public class CensorNet(OnnxEnv env)
     /// 요약 문자열(흰 n·검 n·모자이크 n)을 함께 돌려준다. 충분한 검출이 없으면 null.</summary>
     /// <param name="bubbleFilter">false면 흰 성분의 말풍선 필터를 건너뛴다(검/모자이크의 글자 상자 빼기는 유지). 2026-10-20 실측: CTD가 흰 검열 막대를 글자로
     /// 잡아 필터가 진짜 흰선을 지웠다(Confusion 실라벨 78개 중 15% 기준 11개·60% 기준 6개 손실) → 설정 DecensorBubbleFilter로 끌 수 있게.</param>
-    public Mat? BuildMask(Mat imgBgr, IReadOnlyList<Rect>? exclude, int grow, out string summary, bool bubbleFilter = true)
+    /// <param name="white">false면 흰 검출을 마스크에서 뺀다. <paramref name="black"/>·<paramref name="mosaic"/>도 같다 — 2026-11-09부터 감지 주력이
+    /// Aletheia Lens이고, 이 모델은 Aletheia가 놓치는 종류(기본: 가는 흰 막대선)만 골라 보완하는 데 쓴다(AletheiaDecensor.Detect). 셋 다 true면 교체 전과 같다.</param>
+    public Mat? BuildMask(Mat imgBgr, IReadOnlyList<Rect>? exclude, int grow, out string summary, bool bubbleFilter = true,
+        bool white = true, bool black = true, bool mosaic = true)
     {
         float strongConf = ConfOverride ?? 0.40f;
         var (w, b, m, dets) = Detect(imgBgr, strongConf);
@@ -98,16 +101,20 @@ public class CensorNet(OnnxEnv env)
             // AI가 이미 찾은 막대의 두께를 기준 삼아 그와 비슷한 규칙 기반 후보만 더한다 —
             // 효과음 붓획은 두께·비율이 딴판이라 이 조건에서 걸러진다.
             // 흰 보강의 글자 블록 제외도 말풍선 필터와 함께 끈다(2026-10-20 실측: 제외만으로도 17-P2(144×282)·17-P3·22-P5 흰선을 잃었다).
-            AugmentBars(imgBgr, dets, w, isWhite: true, bubbleFilter ? exclude : null, strongConf);
-            AugmentBars(imgBgr, dets, b, isWhite: false, exclude, strongConf);
+            if (white) AugmentBars(imgBgr, dets, w, isWhite: true, bubbleFilter ? exclude : null, strongConf);
+            if (black) AugmentBars(imgBgr, dets, b, isWhite: false, exclude, strongConf);
 
-            int pw = Cv2.CountNonZero(w), pb = Cv2.CountNonZero(b), pm = Cv2.CountNonZero(m);
-            summary = $"AI(흰 {dets.Count(d => d.Cls == 0)}·검 {dets.Count(d => d.Cls == 1)}·모자이크 {dets.Count(d => d.Cls == 2)} → {pw + pb + pm}px)";
+            int pw = white ? Cv2.CountNonZero(w) : 0, pb = black ? Cv2.CountNonZero(b) : 0, pm = mosaic ? Cv2.CountNonZero(m) : 0;
+            if (white && black && mosaic)
+                summary = $"AI(흰 {dets.Count(d => d.Cls == 0)}·검 {dets.Count(d => d.Cls == 1)}·모자이크 {dets.Count(d => d.Cls == 2)} → {pw + pb + pm}px)";
+            else
+                summary = string.Join("·", new[] { white ? $"흰 {dets.Count(d => d.Cls == 0)}" : null, black ? $"검 {dets.Count(d => d.Cls == 1)}" : null,
+                    mosaic ? $"모자이크 {dets.Count(d => d.Cls == 2)}" : null }.Where(s => s != null)) + $" → {pw + pb + pm}px";
             if (pw + pb + pm < 300) return null;
             var mask = new Mat(imgBgr.Rows, imgBgr.Cols, MatType.CV_8UC1, Scalar.Black);
-            Cv2.BitwiseOr(mask, w, mask);
-            Cv2.BitwiseOr(mask, b, mask);
-            Cv2.BitwiseOr(mask, m, mask);
+            if (white) Cv2.BitwiseOr(mask, w, mask);
+            if (black) Cv2.BitwiseOr(mask, b, mask);
+            if (mosaic) Cv2.BitwiseOr(mask, m, mask);
             if (grow > 0)
                 Cv2.Dilate(mask, mask, Cv2.GetStructuringElement(MorphShapes.Ellipse,
                     new Size(grow * 2 + 1, grow * 2 + 1)));
@@ -536,9 +543,12 @@ public class CensorNet(OnnxEnv env)
             }
         }
 
-        var session = env.Get(ModelFile);
-        using var results = session.Run(new[] { NamedOnnxValue.CreateFromTensor(
-            session.InputMetadata.Keys.First(), input) });
+        // Guard: GPU에서 실행 오류가 나면 CPU로 내려 한 번 더 (OnnxEnv.Guard)
+        using var results = env.Guard(() =>
+        {
+            var session = env.Get(ModelFile);
+            return session.Run(new[] { NamedOnnxValue.CreateFromTensor(session.InputMetadata.Keys.First(), input) });
+        }, ModelFile);
         var outs = results.ToList();
         // output0: [1, 39, N], output1(proto): [1, 32, 256, 256] — 이름이 아니라 모양으로 찾는다
         var flat0 = outs.Select(o => o.AsTensor<float>()).First(t => t.Dimensions.Length == 3 && t.Dimensions[1] == 4 + NumClasses + ProtoC);

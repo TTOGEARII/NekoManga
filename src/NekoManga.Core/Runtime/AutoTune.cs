@@ -44,7 +44,7 @@ public static class AutoTune
         {
             string why = vendor == "none" ? "전용 그래픽카드가 없어요" : "엔진 빌드가 이 그래픽카드를 지원하지 않아요";
             if (s.EnableAutoColor) ch.Add(new("color-off", "자동 채색", "켬", "끔", why, x => x.EnableAutoColor = false));
-            if (s.DecensorMode is "ComfyLama" or "ComfyRegen" or "ComfyCustom") ch.Add(new("decensor-basic", "검열 제거 방식", s.DecensorMode, "기본 (내장 LaMa)", why, x => x.DecensorMode = "Basic"));
+            if (s.DecensorMode is "ComfyLama" or "ComfyRegen" or "ComfyCustom") ch.Add(new("decensor-basic", "검열 제거 방식", s.DecensorMode, "기본 (내장 모델)", why, x => x.DecensorMode = "Basic"));
             if (s.EnableSelfTraining) ch.Add(new("selftrain-off", "자가 학습", "켬", "끔", why, x => x.EnableSelfTraining = false));
         }
         else if (vram > 0)

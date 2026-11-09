@@ -112,13 +112,135 @@
             <TabItem Header="🙈 검열 제거">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="8,8,18,8">
-                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="제거 방식"/></Border>
-                    <ComboBox x:Name="CmbDecensorMode" Width="400" HorizontalAlignment="Left" SelectionChanged="CmbDecensorMode_Changed">
-                        <ComboBoxItem Content="기본 — 내장 LaMa 만화판 (빠름, 추가 설치 불필요)" Tag="Basic"/>
-                        <ComboBoxItem Content="엔진 LaMa — GPU 복원 (원본 레시피, 엔진 필요)" Tag="ComfyLama"/>
-                        <ComboBoxItem Content="재생성 — SDXL로 검열 자리를 그려 넣기 (내장 재생성 레시피, 엔진 필요)" Tag="ComfyRegen"/>
-                        <ComboBoxItem Content="커스텀 ComfyUI — 내가 ComfyUI에서 짠 워크플로 파일로 (API JSON, 엔진 필요)" Tag="ComfyCustom"/>
-                    </ComboBox>
+                    <!-- 지금 설정 요약 (2026-11-09): 감지·복원 엔진이 따로 골라져 헷갈린다는 피드백 — 고른 값이 실제로 무엇을 돌리는지 두 줄로 풀어 보여 준다 -->
+                    <Border x:Name="CardFlow" Background="{DynamicResource NekoCard}"
+                            BorderBrush="{DynamicResource NekoStroke}" BorderThickness="2" CornerRadius="0"
+                            Padding="14,10" Margin="0,2,0,0">
+                        <StackPanel>
+                            <TextBlock Text="지금 설정으로는 이렇게 돌아가요" FontWeight="SemiBold" Foreground="{DynamicResource NekoText}"/>
+                            <DockPanel Margin="0,8,0,0">
+                                <TextBlock Text="① 찾기" FontWeight="SemiBold" Foreground="{DynamicResource NekoText}" Width="76" VerticalAlignment="Top"/>
+                                <TextBlock x:Name="TxtFlowFind" Foreground="{DynamicResource NekoText}" TextWrapping="Wrap" Text=""/>
+                            </DockPanel>
+                            <DockPanel Margin="0,4,0,0">
+                                <TextBlock Text="② 지우기" FontWeight="SemiBold" Foreground="{DynamicResource NekoText}" Width="76" VerticalAlignment="Top"/>
+                                <TextBlock x:Name="TxtFlowFix" Foreground="{DynamicResource NekoText}" TextWrapping="Wrap" Text=""/>
+                            </DockPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ── ① 검열 찾기 ── -->
+                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="① 검열 찾기"/></Border>
+                    <DockPanel Margin="0,2,0,0">
+                        <TextBlock Text="감지 엔진" Style="{StaticResource FieldLabel}" Width="130"/>
+                        <ComboBox x:Name="CmbDecensorEngine" MinWidth="430" HorizontalAlignment="Left" SelectionChanged="DecensorUi_Changed">
+                            <ComboBoxItem Tag="Aletheia" Content="Aletheia Lens — 막대·모자이크 감지 AI (권장)"/>
+                            <ComboBoxItem Tag="Legacy" Content="이전 방식 — NekoManga 전용 AI·규칙 감지기"/>
+                        </ComboBox>
+                    </DockPanel>
+                    <DockPanel Margin="0,6,0,0">
+                        <TextBlock Text="무엇을 찾을까요" Style="{StaticResource FieldLabel}" Width="130"/>
+                        <ComboBox x:Name="CmbDecensorTarget" MinWidth="430" HorizontalAlignment="Left"
+                                  SelectionChanged="CmbDecensorTarget_Changed">
+                            <ComboBoxItem Tag="Auto" Content="자동 — 전부 찾기 (권장)"/>
+                            <ComboBoxItem Tag="BlackBar" Content="검은색 막대(먹줄)만"/>
+                            <ComboBoxItem Tag="WhiteBar" Content="흰색 막대만"/>
+                            <ComboBoxItem Tag="Mosaic" Content="모자이크만"/>
+                            <ComboBoxItem Tag="Color" Content="색 검열만 (파란·빨간 막대·틴트 모자이크)"/>
+                        </ComboBox>
+                    </DockPanel>
+                    <!-- Aletheia + 자동일 때만: 놓치는 종류를 전용 AI(CensorNet)가 보완 -->
+                    <StackPanel x:Name="PnlAssist">
+                        <DockPanel Margin="0,6,0,0">
+                            <TextBlock Text="놓친 검열 보완" Style="{StaticResource FieldLabel}" Width="130"/>
+                            <ComboBox x:Name="CmbLegacyAssist" MinWidth="430" HorizontalAlignment="Left" SelectionChanged="DecensorUi_Changed">
+                                <ComboBoxItem Tag="White" Content="가는 흰 막대선만 전용 AI로 보완 (권장)"/>
+                                <ComboBoxItem Tag="WhiteMosaic" Content="흰 막대선 + 모자이크를 전용 AI로 보완"/>
+                                <ComboBoxItem Tag="All" Content="전용 AI가 찾은 것 전부 합치기 (흰·검·모자이크)"/>
+                                <ComboBoxItem Tag="None" Content="보완 안 함 — Aletheia Lens만"/>
+                            </ComboBox>
+                        </DockPanel>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="Aletheia Lens는 검은 막대는 잘 찾지만 가는 흰 막대선과 흑백 원고의 모자이크를 놓칠 때가 있어요. 모자이크가 자주 남으면 '흰 막대선 + 모자이크'로 바꿔 보세요 (그만큼 잘못 잡는 곳도 늘 수 있어요)."/>
+                    </StackPanel>
+
+                    <!-- 감지 모델 상태 카드 — 설치 여부와 지금 맡은 일을 보여 준다 -->
+                    <Border x:Name="CardCensorAi" Background="{DynamicResource NekoCard}"
+                            BorderBrush="{DynamicResource NekoStroke}" BorderThickness="2" CornerRadius="0"
+                            Padding="14,10" Margin="0,8,0,0">
+                        <StackPanel>
+                            <DockPanel>
+                                <Ellipse x:Name="DotCensorAi" Width="12" Height="12" Fill="Gray" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="TxtCensorAi" Margin="10,0,0,0" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" TextWrapping="Wrap"
+                                           Text="검열 감지 AI 상태 확인 중..."/>
+                            </DockPanel>
+                            <DockPanel x:Name="RowAssistAi" Margin="0,6,0,0">
+                                <Ellipse x:Name="DotAssistAi" Width="12" Height="12" Fill="Gray" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="TxtAssistAi" Margin="10,0,0,0" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" TextWrapping="Wrap" Text=""/>
+                            </DockPanel>
+                            <TextBlock x:Name="TxtCensorAiHint" Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,8,0,0" Text=""/>
+                            <ui:Button x:Name="BtnInstallCensorAi" Content="⬇ 검열 감지·복원 모델 설치"
+                                       Click="BtnOpenSetup_Click" Padding="14,6" Margin="0,10,0,0"
+                                       HorizontalAlignment="Left" Visibility="Collapsed"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 마스크 확장: LaMa·GPU 방식처럼 넓은 마스크가 필요한 복원에만 쓴다 (Aletheia 복원은 원본처럼 1px) -->
+                    <DockPanel Margin="0,12,0,0">
+                        <TextBlock Text="마스크 확장 px (0 ~ 64)" Style="{StaticResource FieldLabel}" Width="160"/>
+                        <TextBox x:Name="TxtMaskGrow" Width="90" HorizontalAlignment="Left"/>
+                    </DockPanel>
+                    <TextBlock Style="{StaticResource HintText}"
+                               Text="찾은 영역 둘레를 조금 더 넓게 지워요. LaMa·GPU 방식(엔진 LaMa·재생성·커스텀)과 이전 방식 엔진에 쓰여요 — Aletheia Lens 복원으로 지우는 자리는 원본 프로그램처럼 1px만 넓혀요 (넓게 칠할수록 그림이 뭉개져요)."/>
+                    <CheckBox x:Name="ChkBubbleFilter" Content="흰 말풍선 필터 (전용 AI의 흰 검출 중 글자 블록과 겹치는 것 버리기)" Margin="0,8,0,0"/>
+                    <TextBlock Style="{StaticResource HintText}"
+                               Text="기본 꺼짐. 켜면 흰 말풍선 오탐은 줄지만 진짜 흰선 검열도 일부 지워져요. 말풍선이 자꾸 지워지는 원고에서만."/>
+
+                    <!-- 규칙 감지기 전용 세부값 — 이전 방식이나 흰 막대 규칙 감지에만 쓰이므로 접어 둔다 -->
+                    <ui:Button x:Name="BtnManualDetect" Content="▸ 규칙 감지기 세부 설정 (이전 방식용)"
+                               Click="BtnManualDetect_Click" Margin="0,12,0,0" Padding="14,6"/>
+                    <StackPanel x:Name="PnlManualDetect" Visibility="Collapsed">
+                    <TextBlock Style="{StaticResource HintText}" Margin="0,6,0,0"
+                               Text="아래 값들은 규칙 감지기에만 쓰여요 — 감지 엔진이 '이전 방식'이고 자동이 아닌 종류를 골랐을 때, 그리고 Aletheia Lens에서 '흰색 막대만'을 골랐을 때의 흰 막대 규칙 감지(막대 비율·크기). AI 감지에는 영향이 없어요."/>
+                    <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
+                        <DockPanel>
+                            <TextBlock Text="막대 최소 비율 (1 ~ 10)" Style="{StaticResource FieldLabel}" Width="160"/>
+                            <TextBox x:Name="TxtBarAspect" Width="80" HorizontalAlignment="Left"/>
+                        </DockPanel>
+                        <DockPanel>
+                            <TextBlock Text="막대 최소 크기 (50 ~ 500000)" Style="{StaticResource FieldLabel}" Width="160"/>
+                            <TextBox x:Name="TxtBarMinArea" Width="80" HorizontalAlignment="Left"/>
+                        </DockPanel>
+                    </UniformGrid>
+                    <TextBlock Style="{StaticResource HintText}"
+                               Text="비율은 가로세로 길이의 비(1.8이면 긴 쪽이 짧은 쪽의 1.8배 이상). 정사각형에 가까운 검열도 잡으려면 1.2까지 낮춰보세요. 크기는 px² 단위."/>
+
+                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="모자이크 규칙 감지 세부 (이전 방식)"/></Border>
+                    <DockPanel Margin="0,4">
+                        <TextBlock Text="블록 크기 px (2 ~ 64)" Style="{StaticResource FieldLabel}" Width="160"/>
+                        <TextBox x:Name="TxtBlockSize" Width="90" HorizontalAlignment="Left"/>
+                    </DockPanel>
+                    <TextBlock Style="{StaticResource HintText}" Text="모자이크 격자 한 칸의 픽셀 크기. 이미지를 확대해서 재보세요 (보통 4~16)."/>
+                    <DockPanel Margin="0,4">
+                        <TextBlock Text="감지 민감도 (1 ~ 80)" Style="{StaticResource FieldLabel}" Width="160"/>
+                        <TextBox x:Name="TxtThreshold" Width="90" HorizontalAlignment="Left"/>
+                    </DockPanel>
+                    <TextBlock Style="{StaticResource HintText}" Text="낮을수록 더 많은 영역을 모자이크로 판단해요 (기본 15)."/>
+                    </StackPanel>
+
+                    <!-- ── ② 검열 지우기 ── -->
+                    <Border Style="{StaticResource MangaTag}" Margin="0,18,0,0"><TextBlock Style="{StaticResource MangaTagText}" Text="② 검열 지우기"/></Border>
+                    <DockPanel Margin="0,2,0,0">
+                        <TextBlock Text="제거 방식" Style="{StaticResource FieldLabel}" Width="130"/>
+                        <ComboBox x:Name="CmbDecensorMode" MinWidth="430" HorizontalAlignment="Left" SelectionChanged="CmbDecensorMode_Changed">
+                            <ComboBoxItem x:Name="ItemModeBasic" Content="기본 — Aletheia Lens 복원 (빠름, 추가 설치 불필요)" Tag="Basic"/>
+                            <ComboBoxItem Content="엔진 LaMa — GPU 복원 (원본 레시피, 엔진 필요)" Tag="ComfyLama"/>
+                            <ComboBoxItem Content="재생성 — SDXL로 검열 자리를 그려 넣기 (내장 재생성 레시피, 엔진 필요)" Tag="ComfyRegen"/>
+                            <ComboBoxItem Content="커스텀 ComfyUI — 내가 ComfyUI에서 짠 워크플로 파일로 (API JSON, 엔진 필요)" Tag="ComfyCustom"/>
+                        </ComboBox>
+                    </DockPanel>
                     <StackPanel x:Name="PnlCustomDecensor" Visibility="Collapsed">
                         <DockPanel Margin="0,6,0,0">
                             <TextBlock Text="워크플로 파일" Style="{StaticResource FieldLabel}" Width="110"/>
@@ -133,79 +255,20 @@
                                    Text="ComfyUI 메뉴 → Export (API)로 내보낸 파일. 규칙: LoadImage 1개(원고, 알파=마스크) + SaveImage 1개(결과). 되돌릴 범위는 마스크 둘레 px (0 = 전체)."/>
                     </StackPanel>
                     <TextBlock x:Name="TxtDecensorModeHint" Style="{StaticResource HintText}" Text=""/>
-
-                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="무엇을 검열로 볼까요"/></Border>
-                    <ComboBox x:Name="CmbDecensorTarget" Width="340" HorizontalAlignment="Left"
-                              SelectionChanged="CmbDecensorTarget_Changed">
-                        <ComboBoxItem Tag="Auto" Content="자동 (AI 감지) — 권장"/>
-                        <ComboBoxItem Tag="BlackBar" Content="검은색 막대 (먹줄) — 수동"/>
-                        <ComboBoxItem Tag="WhiteBar" Content="흰색 막대 — 수동"/>
-                        <ComboBoxItem Tag="Mosaic" Content="모자이크 (격자) — 수동"/>
-                        <ComboBoxItem Tag="Color" Content="색 검열 (파란·빨간 막대·틴트 모자이크) — 수동"/>
-                    </ComboBox>
-
-                    <!-- AI 감지 상태 카드 — 모델 유무에 따라 안내가 바뀐다 -->
-                    <Border x:Name="CardCensorAi" Background="{DynamicResource NekoCard}"
-                            BorderBrush="{DynamicResource NekoStroke}" BorderThickness="2" CornerRadius="0"
-                            Padding="14,10" Margin="0,8,0,0">
-                        <StackPanel>
-                            <DockPanel>
-                                <Ellipse x:Name="DotCensorAi" Width="12" Height="12" Fill="Gray" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="TxtCensorAi" Margin="10,0,0,0" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource NekoText}" VerticalAlignment="Center"
-                                           Text="검열 감지 AI 상태 확인 중..."/>
-                            </DockPanel>
-                            <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,8,0,0"
-                                       Text="이 앱 전용으로 직접 학습한 모델이에요 — 흰 막대·흰 박스·단색 밀기·검은 막대·모자이크를 한 번에 찾고, 말풍선이나 체크무늬 옷 같은 건 검열로 보지 않아요. 수동 모드는 AI가 놓치는 특이한 검열을 직접 겨냥할 때만 쓰세요."/>
-                            <ui:Button x:Name="BtnInstallCensorAi" Content="⬇ 검열 감지 AI 설치"
-                                       Click="BtnOpenSetup_Click" Padding="14,6" Margin="0,10,0,0"
-                                       HorizontalAlignment="Left" Visibility="Collapsed"/>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- 수동 모드 전용 세부값 — 자동(AI)에서는 쓰이지 않으므로 접어 둔다 -->
-                    <ui:Button x:Name="BtnManualDetect" Content="▸ 수동 감지 세부 설정"
-                               Click="BtnManualDetect_Click" Margin="0,14,0,0" Padding="14,6"/>
-                    <StackPanel x:Name="PnlManualDetect" Visibility="Collapsed">
-                    <TextBlock Style="{StaticResource HintText}" Margin="0,6,0,0"
-                               Text="아래 값들은 위에서 '수동'을 고른 경우에만 쓰여요 (AI 자동 감지에는 영향 없음). 수동은 한 번에 한 종류만 추적해요 — 섞으면 서로의 오탐이 결과를 망가뜨려요."/>
-                    <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
-                        <DockPanel>
-                            <TextBlock Text="막대 최소 비율 (1 ~ 10)" Style="{StaticResource FieldLabel}" Width="160"/>
-                            <TextBox x:Name="TxtBarAspect" Width="80" HorizontalAlignment="Left"/>
-                        </DockPanel>
-                        <DockPanel>
-                            <TextBlock Text="막대 최소 크기 (50 ~ 500000)" Style="{StaticResource FieldLabel}" Width="160"/>
-                            <TextBox x:Name="TxtBarMinArea" Width="80" HorizontalAlignment="Left"/>
-                        </DockPanel>
-                    </UniformGrid>
-                    <TextBlock Style="{StaticResource HintText}"
-                               Text="비율은 가로세로 길이의 비(1.8이면 긴 쪽이 짧은 쪽의 1.8배 이상). 정사각형에 가까운 검열도 잡으려면 1.2까지 낮춰보세요. 크기는 px² 단위."/>
-
-                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="모자이크 감지 세부 (수동)"/></Border>
-                    <DockPanel Margin="0,4">
-                        <TextBlock Text="블록 크기 px (2 ~ 64)" Style="{StaticResource FieldLabel}" Width="160"/>
-                        <TextBox x:Name="TxtBlockSize" Width="90" HorizontalAlignment="Left"/>
-                    </DockPanel>
-                    <TextBlock Style="{StaticResource HintText}" Text="모자이크 격자 한 칸의 픽셀 크기. 이미지를 확대해서 재보세요 (보통 4~16)."/>
-                    <DockPanel Margin="0,4">
-                        <TextBlock Text="감지 민감도 (1 ~ 80)" Style="{StaticResource FieldLabel}" Width="160"/>
-                        <TextBox x:Name="TxtThreshold" Width="90" HorizontalAlignment="Left"/>
-                    </DockPanel>
-                    <TextBlock Style="{StaticResource HintText}" Text="낮을수록 더 많은 영역을 모자이크로 판단해요 (기본 15)."/>
+                    <!-- 기본 + Aletheia + 보완이 있을 때만: 보완으로 찾은 자리를 무엇으로 지울지 -->
+                    <StackPanel x:Name="PnlAssistRepair">
+                        <CheckBox x:Name="ChkAssistRepair" Content="보완으로 찾은 자리(흰 막대선 등)도 Aletheia Lens로 지우기" Margin="0,6,0,0"
+                                  Checked="DecensorUi_Toggled" Unchecked="DecensorUi_Toggled"/>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="기본 켜짐 — 전용 AI·규칙 감지기가 보완으로 찾은 자리도 Aletheia 막대 모델로 지워요. 끄면 그 자리만 LaMa(만화·애니 학습판)로 지워요 — 더 매끈하지만 뭉개져 보일 수 있어요."/>
                     </StackPanel>
 
-                    <!-- 마스크 확장은 AI·수동 공통 (복원 경계를 자연스럽게) -->
-                    <DockPanel Margin="0,14,0,0">
-                        <TextBlock Text="마스크 확장 px (0 ~ 64)" Style="{StaticResource FieldLabel}" Width="160"/>
-                        <TextBox x:Name="TxtMaskGrow" Width="90" HorizontalAlignment="Left"/>
-                    </DockPanel>
-                    <TextBlock Style="{StaticResource HintText}"
-                               Text="감지된 영역 둘레를 조금 더 넓게 지워 경계를 자연스럽게 해요 (AI·수동 공통)."/>
-                    <CheckBox x:Name="ChkReview" Content="제거 전에 감지된 마스크를 직접 확인·추가하기" Margin="0,12,0,0"/>
+                    <!-- ── ③ 확인하고 고치기 ── -->
+                    <Border Style="{StaticResource MangaTag}" Margin="0,18,0,0"><TextBlock Style="{StaticResource MangaTagText}" Text="③ 지우기 전에 확인하기"/></Border>
+                    <CheckBox x:Name="ChkReview" Content="제거 전에 감지된 마스크를 직접 확인·추가하기" Margin="0,4,0,0"/>
                     <WrapPanel Margin="0,6,0,0">
                         <TextBlock Text="검토 방식" Style="{StaticResource FieldLabel}"/>
-                        <ComboBox x:Name="CmbReviewMode" Width="330">
+                        <ComboBox x:Name="CmbReviewMode" MinWidth="430">
                             <ComboBoxItem Tag="PerPage" Content="페이지별 — 감지된 장만 '검토 대기', 나머지는 바로 진행" IsSelected="True"/>
                             <ComboBoxItem Tag="Window" Content="검토 창 — 모든 장을 먼저 찾고 창 하나에서 한꺼번에"/>
                         </ComboBox>
@@ -217,13 +280,13 @@
                                Text="마스크는 결과 폴더의 .neko에 남아요. 끄면 매번 새로 감지해요."/>
                     <CheckBox x:Name="ChkCollect" Content="검토에서 고친 마스크를 학습 재료로 모으기 (내 PC에만 저장)" Margin="0,8,0,0"/>
                     <TextBlock Style="{StaticResource HintText}"
-                               Text="원고·자동 감지·최종 마스크를 %AppData%\NekoManga\training\corrections 에 저장해요. 모인 재료로 감지 모델을 다시 학습하면 내 원고에 맞게 좋아져요."/>
+                               Text="원고·자동 감지·최종 마스크를 %AppData%\NekoManga\training\corrections 에 저장해요. 모인 재료로 전용 AI를 다시 학습하면 내 원고에 맞게 좋아져요."/>
 
-                    <Border Style="{StaticResource MangaTag}" Margin="0,14,0,0"><TextBlock Style="{StaticResource MangaTagText}" Text="자가 학습 (반자동)"/></Border>
+                    <Border Style="{StaticResource MangaTag}" Margin="0,18,0,0"><TextBlock Style="{StaticResource MangaTagText}" Text="전용 AI 자가 학습 (반자동)"/></Border>
                     <CheckBox x:Name="ChkSelfTrain" Content="자가 학습 기능 켜기" Margin="0,6,0,0" Checked="ChkSelfTrain_Changed" Unchecked="ChkSelfTrain_Changed"/>
                     <StackPanel x:Name="PnlSelfTrain" Visibility="Collapsed">
                         <TextBlock Style="{StaticResource HintText}"
-                                   Text="모은 재료로 감지 모델을 짧게 미세조정하고, 보류해 둔 페이지에서 전/후를 비교해 보여 줘요. [적용]을 눌러야 모델이 바뀌고 언제든 되돌릴 수 있어요. 학습 중엔 GPU를 쓰고(엔진은 잠시 꺼요) 수 분~수십 분 걸려요."/>
+                                   Text="모은 재료로 NekoManga 전용 AI(흰 막대선 보완·이전 방식 감지를 맡는 모델)를 짧게 미세조정하고, 보류해 둔 페이지에서 전/후를 비교해 보여 줘요. Aletheia Lens 모델은 학습되지 않아요. [적용]을 눌러야 모델이 바뀌고 언제든 되돌릴 수 있어요. 학습 중엔 GPU를 쓰고(엔진은 잠시 꺼요) 수 분~수십 분 걸려요."/>
                         <TextBlock x:Name="TxtTrainMaterial" Style="{StaticResource HintText}" Margin="0,4,0,0" Text=""/>
                         <WrapPanel Margin="0,6,0,0">
                             <ui:Button x:Name="BtnSelfTrain" Content="🎓 지금까지 모은 재료로 학습" Click="BtnSelfTrain_Click" Padding="12,5"/>
@@ -254,9 +317,6 @@
                         <TextBlock Style="{StaticResource HintText}"
                                    Text="기본값(5에폭·0.0002·백본 동결)은 재료가 적을 때 기존 실력을 잊지 않게 보수적으로 잡은 값이에요."/>
                     </StackPanel>
-                    <CheckBox x:Name="ChkBubbleFilter" Content="흰 말풍선 필터 (글자 블록과 겹치는 흰 검출 버리기)" Margin="0,10,0,0"/>
-                    <TextBlock Style="{StaticResource HintText}"
-                               Text="기본 꺼짐. 켜면 흰 말풍선 오탐은 줄지만 진짜 흰선 검열도 일부 지워져요. 말풍선이 자꾸 지워지는 원고에서만."/>
 
                     <!-- 고급: 워크플로를 아는 사용자용 — 접힌 상태가 기본 -->
                     <ui:Button x:Name="BtnDecensorAdv" Content="▸ 고급 옵션 — 워크플로 직접 제어"
@@ -494,6 +554,17 @@
                                 </ComboBox>
                             </DockPanel>
                             <TextBlock x:Name="TxtGpuDetected" Style="{StaticResource HintText}" Margin="0,4,0,0" Text=""/>
+                            <!-- 내장 AI(ONNX)의 그래픽카드 사용 (2026-11-09) — ComfyUI 엔진과 별개로, 번역·검열 감지·기본 복원 모델을 DirectML로 돌릴지 -->
+                            <DockPanel Margin="0,10,0,0">
+                                <TextBlock Text="내장 AI 가속" Style="{StaticResource FieldLabel}" Width="110"/>
+                                <ComboBox x:Name="CmbOnnxGpu" MinWidth="430" HorizontalAlignment="Left">
+                                    <ComboBoxItem Tag="Auto" Content="자동 — 채색·GPU 검열 제거를 안 쓸 때만 그래픽카드 (권장)"/>
+                                    <ComboBoxItem Tag="On" Content="항상 그래픽카드 (VRAM 12GB 이상 권장)"/>
+                                    <ComboBoxItem Tag="Off" Content="항상 CPU"/>
+                                </ComboBox>
+                            </DockPanel>
+                            <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,0"
+                                       Text="번역(글자 감지·인식)·검열 감지·기본 검열 제거를 그래픽카드로 돌리면 훨씬 빨라요 (검열 감지 쪽당 약 9초 → 1초 미만). 다만 VRAM을 5GB쯤 써서, '자동'은 전용 VRAM이 6GB 이상이고 채색·재생성 같은 엔진(ComfyUI) 작업을 같이 돌리지 않을 때만 그래픽카드를 써요. 그래픽카드에서 오류가 나면 알아서 CPU로 바꿔 계속해요."/>
                         </StackPanel>
                     </Border>
 
@@ -653,8 +724,9 @@
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="내장 AI 모듈"/></Border>
                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,2,0,0" Text="• 텍스트 감지 — comictextdetector: 말풍선과 글자 위치를 찾아요 (BT와 같은 모델)."/>
                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 글자 인식 — manga-ocr: 일본어 세로쓰기·후리가나 특화 OCR."/>
-                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 검열 감지 — NekoManga 전용 학습 모델(YOLO-seg): 흰선·검은선·모자이크를 한 번에 찾아요. 검토 창에서 고친 마스크로 자가 학습할 수 있어요."/>
-                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 글자 지움·기본 검열 제거 — LaMa(만화·애니 학습판): 지운 자리를 주변과 어울리게 메워요. '엔진 LaMa'는 ComfyUI 원본 레시피(GPU), '재생성'은 SDXL로 다시 그리기, '커스텀'은 내 ComfyUI 워크플로예요."/>
+                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 검열 감지 — Aletheia Lens(Mask R-CNN): 막대·모자이크를 찾아요. NekoManga 전용 학습 모델(YOLO-seg)이 가는 흰 막대선을 보완하고, 검토에서 고친 마스크로 자가 학습할 수 있어요."/>
+                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 기본 검열 제거 — Aletheia Lens(DeepCreamPy 막대·모자이크 모델): 찾은 자리를 주변 그림에 맞춰 채워요. '엔진 LaMa'는 ComfyUI 원본 레시피(GPU), '재생성'은 SDXL로 다시 그리기, '커스텀'은 내 ComfyUI 워크플로예요."/>
+                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 글자 지움 — LaMa(만화·애니 학습판): 지운 글자 자리를 주변과 어울리게 메워요. 전용 AI·규칙 감지기가 찾은 검열 자리도 기본값으로는 이 모델이 지워요."/>
                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 번역 — Google(무료) / DeepL / DeepSeek / Grok 중 선택."/>
                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 자동 채색 — SDXL(WAI-illustrious) + ControlNet 2단: 원고의 선을 따라 컬러로 그려요. WD14 태거가 장면 태그를 뽑아 프롬프트를 만들어요."/>
                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 식자 — 내장 렌더러(GDI+): 번역문을 말풍선에 어절 단위 줄바꿈·외곽선과 함께 그려요."/>

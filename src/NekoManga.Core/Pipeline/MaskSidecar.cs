@@ -50,6 +50,8 @@ public record MaskSidecar(
     public static string MaskPathFor(string outPath) => Base(outPath) + ".mask.png";
     public static string AutoPathFor(string outPath) => Base(outPath) + ".auto.png";
     public static string PrePathFor(string outPath) => Base(outPath) + ".pre.png";
+    /// <summary>종류 지도(Decensor.CensorKind 값 그대로의 8비트 PNG) — 자동 감지가 어느 엔진으로 그 자리를 찾았는지. 다시 돌릴 때도 같은 엔진으로 지우게 남긴다.</summary>
+    public static string KindPathFor(string outPath) => Base(outPath) + ".kind.png";
 
     /// <summary>json만 다시 쓴다 (마스크·원고 PNG는 그대로).</summary>
     public void Save(string outPath)
@@ -60,13 +62,17 @@ public record MaskSidecar(
     }
 
     /// <summary>마스크(+자동 감지 사본, 검열 제거 전 원고)를 PNG로 쓰고 json을 저장한다. 넘기지 않은 PNG는 있던 그대로 둔다.</summary>
+    /// <param name="kinds">자동 감지의 종류 지도. <paramref name="freshDetection"/>이면(1차가 새로 감지한 결과) null일 때 옛 지도를 지운다 —
+    /// 남겨 두면 지난번 감지의 표시가 이번 마스크에 엉뚱하게 적용된다. 결과 창의 마스크 저장은 둘 다 넘기지 않아 지도가 그대로 남는다.</param>
     public static MaskSidecar Write(string outPath, string source, Mat mask, Mat? autoMask, Mat? pre,
-        string summary, bool skip, bool edited, bool confirmed)
+        string summary, bool skip, bool edited, bool confirmed, Mat? kinds = null, bool freshDetection = false)
     {
         Directory.CreateDirectory(Path.Combine(Path.GetDirectoryName(outPath)!, ".neko"));
         ImgIo.Write(MaskPathFor(outPath), mask);
         if (autoMask != null) ImgIo.Write(AutoPathFor(outPath), autoMask);
         if (pre != null) ImgIo.Write(PrePathFor(outPath), pre);
+        if (kinds != null) ImgIo.Write(KindPathFor(outPath), kinds);
+        else if (freshDetection) File.Delete(KindPathFor(outPath));
         var sc = new MaskSidecar(source, mask.Width, mask.Height, summary, skip, edited, confirmed, DateTime.Now, LengthOf(source));
         sc.Save(outPath);
         return sc;
@@ -100,6 +106,20 @@ public record MaskSidecar(
     /// <summary>마스크 PNG → CV_8UC1 (255=지울 곳). 없거나 못 읽으면 null.</summary>
     public static Mat? LoadMask(string outPath) => LoadGray(MaskPathFor(outPath));
     public static Mat? LoadAuto(string outPath) => LoadGray(AutoPathFor(outPath));
+
+    /// <summary>종류 지도 → CV_8UC1 (값은 CensorKind). 없거나 못 읽으면 null — 그때는 제거 단계가 전부 막대 모델로 본다.</summary>
+    public static Mat? LoadKinds(string outPath)
+    {
+        var path = KindPathFor(outPath);
+        if (!File.Exists(path)) return null;
+        try
+        {
+            var m = ImgIo.Read(path, ImreadModes.Grayscale);
+            if (m.Empty()) { m.Dispose(); return null; }
+            return m;
+        }
+        catch { return null; }
+    }
 
     private static Mat? LoadGray(string path)
     {

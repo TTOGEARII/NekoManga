@@ -13,16 +13,20 @@ public record PageProgress(string File, string Stage, double Percent, bool Done 
 /// <summary>페이지 처리 파이프라인.
 ///
 ///   원고 → [번역: 내장 엔진이 글자 감지→OCR→번역→글자 지움]
-///        → [검열제거: 검열 감지 → 기본(내장 LaMa 만화판) / 엔진 LaMa(ComfyUI)]
+///        → [검열제거: 검열 감지(Aletheia Lens + 기존 흰선 보완) → 기본(Aletheia DeepCreamPy, 기존 흰선은 LaMa) / 엔진 LaMa·재생성·커스텀(ComfyUI)]
 ///        → [자동채색: ComfyUI SDXL]
 ///        → [식자: 번역문을 C#으로 렌더]
 ///        → 완성본
 ///
 /// 번역·기본 검열제거는 전부 프로세스 안(ONNX)에서 돌고, 채색·엔진 LaMa만 ComfyUI가 필요하다.
-/// (SDXL+LoRA 재생성('강력') 경로와 그 후임 DeepCreamPy 모드는 2026-10-19에 폐기 — CLAUDE.md 참조.)</summary>
+/// 검열 감지·기본 복원은 2026-11-09에 Aletheia Lens 이식(AletheiaDecensor)으로 교체 — 옛 경로(CensorNet/규칙 + LaMa)는
+/// settings.json의 DecensorEngine="Legacy"로 남아 있다.</summary>
 public class PipelineRunner(AppSettings settings) : IDisposable
 {
     private readonly OnnxEnv _onnx = new(settings);
+    private AletheiaDecensor? _aletheia;
+    private AletheiaDecensor Aletheia => _aletheia ??= new AletheiaDecensor(settings, _onnx);
+    private bool UseAletheia => settings.DecensorEngine != "Legacy";
     private string? _refImageName;   // IPAdapter용으로 업로드한 표지 (서버에 없으면 null)
     private readonly ComfyServer _server = new(settings);
 
@@ -33,6 +37,9 @@ public class PipelineRunner(AppSettings settings) : IDisposable
         public EmbeddedTranslator? Translator;
         public required LamaInpainter Lama;
         public bool ComfyLama, ComfyRegen, ComfyCustom;
+        /// <summary>이번 실행의 감지·기본 복원 엔진(Aletheia / 이전 방식) — 시작할 때 박제한다. 실행 중에 설정 창에서 엔진을 바꿔도
+        /// 준비 단계에서 확인하지 않은 모델을 찾다 남은 장이 전부 실패하거나, 한 엔진의 마스크를 다른 엔진이 지우는 일이 없게.</summary>
+        public bool Aletheia;
         public JsonObject? CustomDecensor, CustomColor;
         public ComfyClient? Client;
         public string ComfyOutputDir = "";
@@ -110,6 +117,11 @@ public class PipelineRunner(AppSettings settings) : IDisposable
             throw new FileNotFoundException("번역 엔진 모델이 아직 설치되지 않았어요 — 설정 → 구성요소에서 받아주세요.");
         if (settings.EnableDecensor && !comfyLama && !comfyRegen && !comfyCustom && !lama.IsReady)
             throw new FileNotFoundException("검열제거(기본) 모델(LaMa)이 아직 설치되지 않았어요 — 설정 → 구성요소에서 받아주세요.");
+        if (settings.EnableDecensor && UseAletheia)
+        {
+            if (!Aletheia.DetectorReady) throw new FileNotFoundException(AletheiaDecensor.DetectorMissing);
+            if (!comfyLama && !comfyRegen && !comfyCustom && !Aletheia.InpainterReady) throw new FileNotFoundException(AletheiaDecensor.InpainterMissing);
+        }
         if (needComfy && !settings.ComfyAvailable)
             throw new FileNotFoundException(
                 (settings.EnableAutoColor ? "자동 채색" : comfyRegen ? "재생성 검열제거" : comfyCustom ? "커스텀 워크플로 검열제거" : "엔진 LaMa 검열제거") +
@@ -122,6 +134,7 @@ public class PipelineRunner(AppSettings settings) : IDisposable
             Translator = translator,
             Lama = lama,
             ComfyLama = comfyLama, ComfyRegen = comfyRegen, ComfyCustom = comfyCustom,
+            Aletheia = UseAletheia,
             // 커스텀 워크플로 파일은 시작 전에 한 번 읽어 규약(LoadImage/SaveImage)을 검사한다 — 페이지마다 같은 오류로 실패하지 않게
             CustomDecensor = comfyCustom ? CustomWorkflow.Load(settings.CustomDecensorWorkflow) : null,
             CustomColor = colorCustom ? CustomWorkflow.Load(settings.ColorCustomWorkflow) : null,
@@ -318,6 +331,7 @@ public class PipelineRunner(AppSettings settings) : IDisposable
             WorkKey = $"{RedoPageIndex}_{Path.GetFileNameWithoutExtension(outPath)}",
             WorkPath = MaskSidecar.PrePathFor(outPath),
             Mask = MaskSidecar.LoadMask(outPath),
+            Kinds = MaskSidecar.LoadKinds(outPath),
             Skip = sc.Skip,
             Summary = sc.Summary,
             Blocks = LetterSidecar.Load(outPath) is { } lsc && lsc.BelongsTo(file, (sc.SrcW, sc.SrcH)) ? lsc.Blocks : [],
@@ -359,6 +373,7 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                 try { (stored with { Source = pg.File, SrcLen = MaskSidecar.LengthOf(pg.File) }).Save(pg.OutPath); }
                 catch (Exception ex) { Warn(cx, pg, "마스크 경로 갱신 실패: " + ex.Message); }
             pg.Mask = storedMask;
+            pg.Kinds = MaskSidecar.LoadKinds(pg.OutPath);   // 지난번 감지가 남긴 종류 지도 — 같은 엔진으로 지운다 (옛 사이드카엔 없다 → 전부 막대 모델)
             pg.AutoMask = MaskSidecar.LoadAuto(pg.OutPath);
             pg.Skip = stored.Skip;
             pg.StoredConfirmed = stored.Confirmed;
@@ -379,7 +394,8 @@ public class PipelineRunner(AppSettings settings) : IDisposable
             new Rect(b.X1, b.Y1, Math.Max(1, b.X2 - b.X1), Math.Max(1, b.Y2 - b.Y1))).ToList();
         // 검열 추적: AI 모델(합성 학습 전용 모델)이 있으면 그게 1순위 — 흰/검/모자이크를 한 번에 찾는다. 없거나 못 찾으면 규칙 기반으로 폴백.
         // autoBubbles는 말풍선 필터를 켠 경우에만 — 필터가 꺼져 있으면 글자 감지는 검/모자이크의 글자 상자 빼기에만 쓰여 비용 대비 효과가 작다
-        var mask = DetectCensorMask(img, exclude, out var kindUsed, autoBubbles: settings.DecensorBubbleFilter);
+        var mask = DetectCensor(img, exclude, out var kindUsed, out var kinds, autoBubbles: settings.DecensorBubbleFilter, aletheia: cx.Aletheia);
+        pg.Kinds = kinds;
         pg.Summary = kindUsed;
         if (settings.DecensorTarget == "Auto")
             progress.Report(new(name, $"검열 분석: {kindUsed}", 46));
@@ -389,7 +405,7 @@ public class PipelineRunner(AppSettings settings) : IDisposable
         {
             pg.AutoMask = pg.Mask?.Clone();   // 수정 전 사본 — '자동 감지로' 되돌리기 + 학습 재료의 '자동 감지' 쪽
             // 감지가 없어도 사이드카를 남긴다 — 나중에 결과 창의 마스크 탭에서 놓친 검열을 칠해 다시 돌릴 수 있게
-            pg.SidecarSaved = SaveMaskSidecar(cx, pg, confirmed: false, edited: false, pre: img);
+            pg.SidecarSaved = SaveMaskSidecar(cx, pg, confirmed: false, edited: false, pre: img, freshDetection: true);
             if (!cx.PerPage) progress.Report(new(name, mask == null ? "검토 대기 (감지 없음)" : "검토 대기", 48));   // 페이지별은 호출부가 대기/진행을 알린다
         }
     }
@@ -421,6 +437,12 @@ public class PipelineRunner(AppSettings settings) : IDisposable
             {
                 progress.Report(new(name, "검열 지우는 중 (엔진 LaMa·GPU)", 50));
                 await ComfyLamaDecensorAsync(cx.Client!, cx.ComfyOutputDir, img, mask, i, cx.Ct);
+            }
+            else if (cx.Aletheia)
+            {
+                progress.Report(new(name, "검열 지우는 중 (기본·Aletheia)", 50));
+                var kindsMap = pg.Kinds;
+                await Task.Run(() => Aletheia.Repair(img, mask, kindsMap, cx.Lama), cx.Ct);
             }
             else
             {
@@ -578,14 +600,14 @@ public class PipelineRunner(AppSettings settings) : IDisposable
     // ── 마스크 사이드카 (.neko) ──
     /// <summary>사이드카는 편의 기능이라 못 써도 파이프라인은 계속 가지만, 실패를 삼키면 "다시 돌려도 마스크가 유지된다"는
     /// 약속이 조용히 깨진다(디스크 가득·권한·OneDrive 잠금) — 행에 바로 알리고 완료 줄에도 남긴다.</summary>
-    private bool SaveMaskSidecar(RunContext cx, ReviewPage pg, bool confirmed, bool edited, Mat? pre = null)
+    private bool SaveMaskSidecar(RunContext cx, ReviewPage pg, bool confirmed, bool edited, Mat? pre = null, bool freshDetection = false)
     {
         if (pg.Mask == null) return false;
         for (int attempt = 0; ; attempt++)
         {
             try
             {
-                if (pre != null) MaskSidecar.Write(pg.OutPath, pg.File, pg.Mask, pg.AutoMask, pre, pg.Summary, pg.Skip, edited, confirmed);
+                if (pre != null) MaskSidecar.Write(pg.OutPath, pg.File, pg.Mask, pg.AutoMask, pre, pg.Summary, pg.Skip, edited, confirmed, pg.Kinds, freshDetection);
                 else
                 {
                     using var img = ImgIo.Read(pg.WorkPath, ImreadModes.Color);
@@ -702,6 +724,8 @@ public class PipelineRunner(AppSettings settings) : IDisposable
         public Mat? Mask { get; set; }
         /// <summary>자동 감지 결과 사본(검토 전) — '자동 감지로' 되돌리기 + 학습 재료 저장용. 검토 흐름에서만 채워진다.</summary>
         public Mat? AutoMask { get; set; }
+        /// <summary>종류 지도(CensorKind, CV_8UC1) — 자동 감지가 어느 엔진으로 그 자리를 찾았는지. 기본 제거가 성분마다 맞는 모델을 고르는 데 쓴다. 러너가 해제한다.</summary>
+        public Mat? Kinds { get; set; }
         public string Summary { get; set; } = "";
         /// <summary>사용자가 '이 페이지는 검열 없음'으로 표시 — 제거를 건너뛴다.</summary>
         public bool Skip { get; set; }
@@ -713,14 +737,25 @@ public class PipelineRunner(AppSettings settings) : IDisposable
         /// <summary>2차가 행에 보고한 끝 줄("완료"/"검열 없음 — 원본 그대로", 경고 제외) — 2차 뒤에 경고가 생기면 같은 줄을 다시 보내는 데 쓴다.</summary>
         public string FinalStage { get; set; } = "완료";
 
-        public void DisposeMats() { Mask?.Dispose(); Mask = null; AutoMask?.Dispose(); AutoMask = null; }
+        public void DisposeMats() { Mask?.Dispose(); Mask = null; AutoMask?.Dispose(); AutoMask = null; Kinds?.Dispose(); Kinds = null; }
     }
 
-    /// <summary>검열 마스크 — AI 전용 모델(CensorNet) 1순위, 규칙 기반 폴백.
-    /// AI 모델은 무검열 원고에 검열을 합성해 학습한 세그멘테이션이라 흰/검/모자이크를
-    /// 한 번에, 장식 줄무늬·효과음과 구분해 찾는다. 모델 파일이 없으면 기존 규칙으로.</summary>
+    /// <summary>검열 마스크만 필요할 때 (진단·검토 창 미리보기) — 종류 지도는 버린다.</summary>
     public Mat? DetectCensorMask(Mat img, IReadOnlyList<Rect>? exclude, out string kindUsed, bool autoBubbles = false)
     {
+        var mask = DetectCensorMask(img, exclude, out kindUsed, out var kinds, autoBubbles);
+        kinds?.Dispose();
+        return mask;
+    }
+
+    /// <summary>검열 마스크 + 종류 지도. 기본 엔진은 Aletheia Lens(막대·모자이크)에 기존 방식의 흰선 감지를 더한 것(AletheiaDecensor.Detect),
+    /// DecensorEngine="Legacy"면 교체 전 경로 — AI 전용 모델(CensorNet) 1순위, 규칙 기반 폴백(종류 지도 없음).</summary>
+    public Mat? DetectCensorMask(Mat img, IReadOnlyList<Rect>? exclude, out string kindUsed, out Mat? kinds, bool autoBubbles = false) =>
+        DetectCensor(img, exclude, out kindUsed, out kinds, autoBubbles, UseAletheia);
+
+    private Mat? DetectCensor(Mat img, IReadOnlyList<Rect>? exclude, out string kindUsed, out Mat? kinds, bool autoBubbles, bool aletheia)
+    {
+        kinds = null;
         // 말풍선 오탐(실측 Confusion 12·21쪽: 흰 말풍선을 흰 검열로 봄)은 BuildMask의 텍스트 블록 필터가 걸러 주는데, 번역을 끄면
         // 블록이 비어 필터가 아예 안 돌았다 → autoBubbles면 글자 감지기(CTD, ~0.5초)만 따로 돌려 블록을 만든다 (2026-10-20).
         if (autoBubbles && (exclude == null || exclude.Count == 0))
@@ -737,6 +772,8 @@ public class PipelineRunner(AppSettings settings) : IDisposable
                 catch { /* 글자 감지 실패는 치명적이지 않다 — 필터 없이 진행 */ }
             }
         }
+        if (aletheia) return Aletheia.Detect(img, exclude, out kindUsed, out kinds);
+
         var net = new CensorNet(_onnx);
         if (settings.DecensorTarget == "Auto" && net.IsReady)
         {
@@ -753,8 +790,9 @@ public class PipelineRunner(AppSettings settings) : IDisposable
     /// 파이프라인과 같은 복원 경로를 쓰므로 결과물의 성격이 일관된다.
     /// mode: "Basic" | "ComfyLama" | "ComfyRegen" (옛 "Strong"·"DeepCream"은 2026-10-19 폐기 — 모르는 값은 ArgumentException).</summary>
     /// <param name="regenSettings">재생성(ComfyRegen)에서만 쓰는 설정 — 결과 창이 '이 페이지만' 프롬프트·수치를 바꾼 사본(null이면 전역 설정).</param>
+    /// <param name="kinds">기본(Basic)에서만 쓰는 종류 지도 — 없으면 손으로 칠한 자리로 보고 전부 막대 모델로 지운다(Aletheia 수동 복원과 같다).</param>
     public async Task ManualDecensorAsync(Mat img, Mat mask, string mode,
-        IProgress<string>? status, CancellationToken ct, AppSettings? regenSettings = null)
+        IProgress<string>? status, CancellationToken ct, AppSettings? regenSettings = null, Mat? kinds = null)
     {
         switch (mode)
         {
@@ -781,6 +819,13 @@ public class PipelineRunner(AppSettings settings) : IDisposable
             case "Basic":
             {
                 var lama = new LamaInpainter(_onnx);
+                if (UseAletheia)
+                {
+                    if (!Aletheia.InpainterReady) throw new InvalidOperationException(AletheiaDecensor.InpainterMissing);
+                    status?.Report("복원 중...");
+                    Aletheia.Repair(img, mask, kinds, lama);
+                    return;
+                }
                 if (!lama.IsReady)
                     throw new InvalidOperationException("복원 모델(LaMa)이 없어요 — 설정 → 구성요소에서 설치해 주세요.");
                 status?.Report("복원 중...");

@@ -27,7 +27,9 @@ public record Component(
     /// <summary>채색·엔진 LaMa(ComfyUI) 전용 구성요소 — 내장 기능(번역·기본 검열제거)에는 불필요.</summary>
     bool ForComfy = false,
     /// <summary>이 구성요소가 대체한 옛 파일(RuntimeRoot 기준 상대) — 설치가 끝나면 지운다 (예: 만화판 LaMa가 대체한 Carve lama_fp32.onnx).</summary>
-    string[]? Obsolete = null
+    string[]? Obsolete = null,
+    /// <summary>단일 파일의 SHA-256(16진) — 있으면 받은 뒤 확인하고, 다르면 설치하지 않는다.</summary>
+    string? Sha256 = null
 );
 
 /// <summary>필요 구성요소 목록. 검증된 소스 (2026-10 기준, 실제 설치에 사용한 URL).</summary>
@@ -81,6 +83,31 @@ public static class ComponentCatalog
         "model-censor", "검열 감지 AI 모델 (NekoManga 전용)", ComponentKind.File,
         "https://github.com/TTOGEARII/NekoManga/releases/latest/download/censor_seg.onnx",
         "models/censor_seg.onnx", "models/censor_seg.onnx", 14_060_000);
+
+    // ── Aletheia Lens (https://github.com/Cec1c/Aletheia-Lens, GPL-3.0) — 2026-11-09부터 검열 감지·기본 복원의 주력 엔진 ──
+    // 모델은 그 프로젝트가 배포하는 파일을 그대로 받는다(이름만 aletheia_*로 바꿔 models\에 둔다).
+    //   감지: hent-AI Mask R-CNN을 ONNX로 내보낸 weights.onnx — 모델 전용 릴리스 `models-v1` 자산
+    //         (SHA-256 94E49F37…EFC87B, 그 저장소 .github/model-assets.sha256 기록값과 일치 확인).
+    //   복원: DeepCreamPy bar/mosaic ONNX — 저장소에 직접 들어 있는 파일이라 **커밋을 고정**해 받는다(main이 바뀌어도 같은 파일).
+    private const string AletheiaCommit = "94871aad41290fa9210852906a0dce3e909c7c59";
+
+    public static readonly Component ModelAletheiaDetector = new(
+        "model-aletheia-mrcnn", "검열 감지 모델 (Aletheia Lens · Mask R-CNN)", ComponentKind.File,
+        "https://github.com/Cec1c/Aletheia-Lens/releases/download/models-v1/weights.onnx",
+        "models/aletheia_mrcnn.onnx", "models/aletheia_mrcnn.onnx", 254_400_000,
+        Sha256: "94E49F37B2454C1964385673E80C2F6664AD5D5153F4D2C9DB85661AC5EFC87B");
+
+    public static readonly Component ModelAletheiaBar = new(
+        "model-aletheia-bar", "검열 복원 모델 1/2 — 막대 (Aletheia Lens · DeepCreamPy)", ComponentKind.File,
+        $"https://raw.githubusercontent.com/Cec1c/Aletheia-Lens/{AletheiaCommit}/models/deepcreampy/bar.onnx",
+        "models/aletheia_bar.onnx", "models/aletheia_bar.onnx", 14_647_000,
+        Sha256: "BA32B5ABE0303CD452C466516C2F88F3CBF0337B34867470DBDF4FFA6EC55B2A");
+
+    public static readonly Component ModelAletheiaMosaic = new(
+        "model-aletheia-mosaic", "검열 복원 모델 2/2 — 모자이크 (Aletheia Lens · DeepCreamPy)", ComponentKind.File,
+        $"https://raw.githubusercontent.com/Cec1c/Aletheia-Lens/{AletheiaCommit}/models/deepcreampy/mosaic.onnx",
+        "models/aletheia_mosaic.onnx", "models/aletheia_mosaic.onnx", 14_647_000,
+        Sha256: "339503F625AD0AEA902B5ACD4ADC491741E53235E47B6C4DDD77AA3CC1D351F2");
 
     /// <summary>검열 감지 모델의 PyTorch 가중치 — 자가 학습(SelfTrainer)의 시작점. ComfyUI의 python_embeded로만 학습하므로 ComfyUI 묶음에 넣는다 (7MB).</summary>
     public static readonly Component ModelCensorPt = new(
@@ -178,6 +205,7 @@ public static class ComponentCatalog
     public static IReadOnlyList<Component> All { get; } = new[]
     {
         ModelCtd, ModelLama, ModelOcrEncoder, ModelOcrDecoder, ModelOcrVocab, ModelCensor,
+        ModelAletheiaDetector, ModelAletheiaBar, ModelAletheiaMosaic,
         SevenZip, ComfyPortable,
         NodeWd14, NodeCustomScripts, NodeLayerStyle, NodeControlnetAux, NodeIpAdapter,
         ModelCheckpoint, ModelControlnet, ModelIpAdapter, ModelClipVision, ModelCensorPt,
@@ -187,5 +215,5 @@ public static class ComponentCatalog
     public static IEnumerable<Component> ComfyComponents => All.Where(c => c.ForComfy);
 
     public const string FirstRunNote =
-        "번역·검열 감지·검열 복원(LaMa)은 작은 모델(0.8GB)만 있으면 돼요. 채색까지 쓰려면 채색 엔진(약 20GB)을 함께 설치해 주세요.";
+        "번역·검열 감지·검열 복원은 작은 모델(1.1GB)만 있으면 돼요. 채색까지 쓰려면 채색 엔진(약 20GB)을 함께 설치해 주세요.";
 }

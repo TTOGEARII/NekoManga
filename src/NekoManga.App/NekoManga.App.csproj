@@ -10,7 +10,7 @@
     <AssemblyName>NekoManga</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>1.6.0</Version>
+    <Version>1.7.0</Version>
     <StartupObject>NekoManga.App.Program</StartupObject>
   </PropertyGroup>
 
@@ -30,6 +30,11 @@
          Setup.exe媛 李쎈룄 濡쒓렇???놁씠 ?됱뾽?쒕떎 (v0.1.1?먯꽌 ?ㅼ젣 諛쒖깮). -->
     <PackageReference Include="Velopack" Version="1.2.161" />
     <ProjectReference Include="..\NekoManga.Core\NekoManga.Core.csproj" />
+    <!-- DirectML.dll을 실행 파일 옆에 둔다 (2026-11-09). Microsoft.AI.DirectML 패키지는 PlatformTarget이 x64 등으로 지정된 프로젝트에만 DLL을 복사해서
+         AnyCPU인 이 솔루션에는 한 번도 들어오지 않았다 → onnxruntime이 Windows에 딸린 옛 DirectML 1.0(System32)을 대신 불러 DML 세션 생성이
+         887A0004(DXGI_ERROR_UNSUPPORTED)로 실패하고 **모든 모델이 조용히 CPU로 돌았다**(설치본도 같았다). 버전은 OnnxRuntime.DirectML이 끌어오는 것과 맞출 것. -->
+    <PackageReference Include="Microsoft.AI.DirectML" Version="1.15.4" GeneratePathProperty="true" ExcludeAssets="build" />
+    <Content Include="$(PkgMicrosoft_AI_DirectML)\bin\x64-win\DirectML.dll" Link="DirectML.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
   </ItemGroup>
 
 </Project>

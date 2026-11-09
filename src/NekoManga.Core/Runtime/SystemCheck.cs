@@ -123,6 +123,15 @@ public static class SystemCheck
         return 0;
     }
 
+    /// <summary>가상 어댑터를 뺀 그래픽카드 중 전용 VRAM이 가장 큰 것(MB) — 레지스트리만 읽어 빠르다. 모르면 0.
+    /// 내장 그래픽은 전용 메모리가 작게(수백 MB~1GB) 잡히므로 '내장 AI를 GPU에 올려도 되는가'의 기준으로 쓴다(Engine.OnnxEnv.GpuAllowed).</summary>
+    public static int BestAdapterVramMb()
+    {
+        int best = 0;
+        foreach (var a in DisplayAdapters().Where(a => !IsVirtualName(a)).Distinct()) best = Math.Max(best, AdapterVramMb(a));
+        return best;
+    }
+
     private static bool IsNvidiaName(string a) => a.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase) || a.Contains("GeForce", StringComparison.OrdinalIgnoreCase);
     private static bool IsAmdName(string a) => a.Contains("AMD", StringComparison.OrdinalIgnoreCase) || a.Contains("Radeon", StringComparison.OrdinalIgnoreCase);
     private static bool IsVirtualName(string a) => a.Contains("Virtual", StringComparison.OrdinalIgnoreCase) || a.Contains("Parsec", StringComparison.OrdinalIgnoreCase);

@@ -54,11 +54,11 @@ public class TextDetector(OnnxEnv env)
             }
         }
 
-        var session = env.Get(ModelFile);
-        using var results = session.Run(new[]
+        // Guard: GPU에서 실행 오류가 나면 CPU로 내려 한 번 더 (OnnxEnv.Guard)
+        using var results = env.Guard(() => env.Get(ModelFile).Run(new[]
         {
             Microsoft.ML.OnnxRuntime.NamedOnnxValue.CreateFromTensor("images", input),
-        });
+        }), ModelFile);
 
         var blk = results.First(v => v.Name == "blk").AsTensor<float>();   // [1, N, 7] cx cy w h obj c0 c1
         var seg = results.First(v => v.Name == "seg").AsTensor<float>();   // [1, 1, 1024, 1024]

@@ -41,11 +41,30 @@ public class AppSettings
     public string ColorTaggerModel { get; set; } = "wd-eva02-large-tagger-v3";
     public double ColorTaggerThreshold { get; set; } = 0.35;
 
-    // ── 검열제거 (검열 감지 + LaMa) ────────────────────
-    /// <summary>"Basic"=내장 LaMa 만화판 (빠름, 추가 설치 불필요) / "ComfyLama"=ComfyUI LayerUtility LaMa (GPU, 원본 레시피).
+    // ── 검열제거 (검열 감지 + 복원) ────────────────────
+    /// <summary>"Basic"=내장 엔진 (빠름, 추가 설치 불필요 — 2026-11-09부터 Aletheia Lens의 DeepCreamPy 막대/모자이크 모델,
+    /// 기존 방식으로 찾은 흰선만 LaMa 만화판) / "ComfyLama"=ComfyUI LayerUtility LaMa (GPU, 원본 레시피) / "ComfyRegen" / "ComfyCustom".
     /// 옛 "Strong"(SDXL+LoRA 재생성)과 "DeepCream"(DeepCreamPy PConv)은 2026-10-19 폐기 — MigrateLegacy가 Basic으로 바꾼다.
-    /// 검열 **감지**는 모드와 무관하게 CensorNet/규칙 감지기가 맡는다.</summary>
+    /// 검열 **감지**는 모드와 무관하게 <see cref="DecensorEngine"/>이 정한 감지기가 맡는다.</summary>
     public string DecensorMode { get; set; } = "Basic";
+    /// <summary>내장 검열 감지·기본 복원 엔진 (설정 창에는 없다 — settings.json 전용 비상구).
+    /// "Aletheia"(기본, 2026-11-09 사용자 지시로 교체) = Aletheia Lens의 Mask R-CNN 감지 + DeepCreamPy 복원, 놓치는 흰 막대선만 기존 CensorNet·LaMa로 보완.
+    /// "Legacy" = 교체 전 그대로(CensorNet/규칙 감지 + LaMa) — A/B 비교·되돌리기용.</summary>
+    public string DecensorEngine { get; set; } = "Aletheia";
+    /// <summary>Aletheia 엔진의 자동 감지(Auto)에서 기존 CensorNet이 보완할 종류 (settings.json 전용).
+    /// "White"(기본 — 사용자 지시 "Aletheia가 못 잡는 흰 막대선은 기존 방식으로") / "WhiteMosaic" / "All" / "None".
+    /// 2026-11-09 실측(사용자 덧칠 라벨, 적중 = 라벨의 30% 이상 덮음; Aletheia / CensorNet c11 / 합집합):
+    /// 흰선 51·72·75 /78, 검은선 195·199·200 /200, **모자이크 27·70·70 /89** — 모자이크는 Aletheia가 크게 못 미쳐 "WhiteMosaic"이 그 차이를 메운다.
+    /// 보완으로 찾은 자리는 기본 복원에서 기존 방식(LaMa)으로 지운다.</summary>
+    public string DecensorLegacyAssist { get; set; } = "White";
+    /// <summary>보완(기존 방식)으로 찾은 자리를 기본 복원에서 무엇으로 지울지 — "Aletheia"(기본, Aletheia 막대 모델) / "Lama"(LaMa 만화판).
+    /// 기본값은 2026-11-09에 Lama → Aletheia로 바꿨다: 사용자가 결과를 직접 비교해 "LaMa 쪽은 너무 뭉개진다"고 판단
+    /// (정답 벤치의 PSNR은 LaMa가 높지만 질감 대비(std비 0.83 vs 0.92)·선명도는 Aletheia가 높다).</summary>
+    public string DecensorAssistRepair { get; set; } = "Aletheia";
+    /// <summary>내장 AI(글자 감지·OCR·LaMa·검열 감지)를 그래픽카드(DirectML)로 돌릴지 — "Auto"(기본) / "On" / "Off".
+    /// Auto는 ComfyUI를 쓰는 작업(자동 채색·GPU 검열 제거)에서는 CPU, 그 밖에는 GPU (Engine.OnnxEnv.GpuAllowed — 전부 올리면 VRAM ~5GB).
+    /// 2026-11-09 전에는 DirectML.dll이 빠져 있어 설정과 무관하게 늘 CPU였다.</summary>
+    public string OnnxGpu { get; set; } = "Auto";
     /// <summary>무엇을 검열로 볼지 — "Auto"(AI) / "BlackBar"(검은 막대·먹줄) / "WhiteBar"(흰 막대) /
     /// "Mosaic"(격자) / "Color"(색 막대·틴트 모자이크 — 채도 기반).
     /// 한 번에 하나만 추적한다: 여러 종류를 동시에 켜면 서로의 오탐이 섞여 정확도가 떨어진다
@@ -259,6 +278,10 @@ public class AppSettings
         if (TranslateEngine is not ("Google" or "DeepL" or "DeepSeek" or "Grok")) TranslateEngine = "Google";
         // 옛 '강력'(SDXL+LoRA)·DeepCream 모드는 2026-10-19 폐기 — 둘 다 기본(내장 LaMa)으로 돌린다
         if (DecensorMode is not ("Basic" or "ComfyLama" or "ComfyRegen" or "ComfyCustom")) DecensorMode = "Basic";
+        if (DecensorEngine is not ("Aletheia" or "Legacy")) DecensorEngine = "Aletheia";
+        if (DecensorLegacyAssist is not ("White" or "WhiteMosaic" or "All" or "None")) DecensorLegacyAssist = "White";
+        if (DecensorAssistRepair is not ("Lama" or "Aletheia")) DecensorAssistRepair = "Aletheia";
+        if (OnnxGpu is not ("Auto" or "On" or "Off")) OnnxGpu = "Auto";
         // 손으로 고친 settings.json에 "…": null 이 들어오면 문자열 속성이 null이 돼 .Contains/.Trim에서 앱이 죽는다 — 전부 ""로
         foreach (var p in GetType().GetProperties().Where(p => p.PropertyType == typeof(string) && p.CanWrite && p.GetIndexParameters().Length == 0))
             if (p.GetValue(this) == null) p.SetValue(this, "");

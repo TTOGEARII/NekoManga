@@ -56,7 +56,8 @@ public static class Program
             {
                 using var im = NekoManga.Core.ImgIo.Read(p);
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                using var mk = runner0.DetectCensorMask(im, null, out var kind);
+                using var mk = runner0.DetectCensorMask(im, null, out var kind, out var kindsMap);
+                using var kindsDispose = kindsMap;
                 if (mk == null) { Console.WriteLine($"{Path.GetFileName(p)}: 검열 없음 ({kind})"); continue; }
                 int px = OpenCvSharp.Cv2.CountNonZero(mk);
                 // 최종 마스크(검출+보강+grow)를 빨강으로 덮어 저장 — 어떤 막대가 빠졌는지 눈으로 본다
@@ -68,7 +69,7 @@ public static class Program
                 var prog = new Progress<string>(m => Console.WriteLine("   " + m));
                 try
                 {
-                    runner0.ManualDecensorAsync(im, mk, mode, prog, CancellationToken.None).GetAwaiter().GetResult();
+                    runner0.ManualDecensorAsync(im, mk, mode, prog, CancellationToken.None, kinds: kindsMap).GetAwaiter().GetResult();
                     NekoManga.Core.ImgIo.Write(Path.ChangeExtension(p, null) + $".dc_{mode}.png", im);
                     Console.WriteLine($"{Path.GetFileName(p)}: {kind} {px}px, {mode} 복원 {sw.ElapsedMilliseconds}ms");
                 }
@@ -141,6 +142,65 @@ public static class Program
                         new[] { $"{Path.GetFileName(p)} [conf≥{confC:F2}]: 흰 {dets.Count(d => d.Cls == 0)} 검 {dets.Count(d => d.Cls == 1)} 모자이크 {dets.Count(d => d.Cls == 2)} ({swC.ElapsedMilliseconds}ms)" }.Concat(detLines));
                 }
                 NekoManga.Core.ImgIo.Write(Path.ChangeExtension(p, null) + ".censor.png", imC);
+            }
+            return;
+        }
+
+        // Aletheia 감지기 단독 (원본 detector.py 대조용 — 팽창·색조 필터·기존 흰선 보완 없이 인스턴스 그대로):
+        //   --aletheiatest <이미지...> → <이미지>.ale.bar.png / .ale.mosaic.png(255=검출) + aletheiatest.log(인스턴스별 cls·score·상자 y1 x1 y2 x2)
+        var atIdx = Array.IndexOf(args, "--aletheiatest");
+        if (atIdx >= 0)
+        {
+            var stA = NekoManga.Core.AppSettings.Load();
+            using var envA = new NekoManga.Core.Engine.OnnxEnv(stA);
+            var detA = new NekoManga.Core.Engine.AletheiaDetector(envA);
+            foreach (var p in args.Skip(atIdx + 1).Where(File.Exists))
+            {
+                using var imA = NekoManga.Core.ImgIo.Read(p);
+                var swA = System.Diagnostics.Stopwatch.StartNew();
+                var insts = detA.Detect(imA);
+                long ms = swA.ElapsedMilliseconds;
+                using var barA = new OpenCvSharp.Mat(imA.Rows, imA.Cols, OpenCvSharp.MatType.CV_8UC1, OpenCvSharp.Scalar.Black);
+                using var mosA = new OpenCvSharp.Mat(imA.Rows, imA.Cols, OpenCvSharp.MatType.CV_8UC1, OpenCvSharp.Scalar.Black);
+                var lines = new List<string> { $"{Path.GetFileName(p)}: {imA.Cols}x{imA.Rows} bar {insts.Count(i => i.Cls == 1)} mosaic {insts.Count(i => i.Cls == 2)} ({ms}ms)" };
+                foreach (var inst in insts)
+                {
+                    using (var roi = new OpenCvSharp.Mat(inst.Cls == 1 ? barA : mosA, inst.Box))
+                        OpenCvSharp.Cv2.BitwiseOr(roi, inst.Mask, roi);
+                    lines.Add(FormattableString.Invariant($"  cls{inst.Cls} score{inst.Score:F6} box {inst.Box.Y} {inst.Box.X} {inst.Box.Bottom} {inst.Box.Right}"));
+                    inst.Dispose();
+                }
+                NekoManga.Core.ImgIo.Write(p + ".ale.bar.png", barA);
+                NekoManga.Core.ImgIo.Write(p + ".ale.mosaic.png", mosA);
+                File.AppendAllLines(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(p))!, "aletheiatest.log"), lines);
+            }
+            return;
+        }
+
+        // Aletheia 복원기 단독 (원본 decensor(ori, ori, is_mosaic, repair_mask=…) 대조용): --aletheiarepair <bar|mosaic> <이미지> <마스크.png> [...]
+        //   → <이미지>.ale_<모드>.png, stdout "RESULT <파일> <성분 수> <ms>ms" 또는 "FAIL <파일>: <이유>"
+        var arIdx = Array.IndexOf(args, "--aletheiarepair");
+        if (arIdx >= 0 && arIdx + 3 < args.Length)
+        {
+            bool mosaicMode = args[arIdx + 1] == "mosaic";
+            var stR = NekoManga.Core.AppSettings.Load();
+            using var envR = new NekoManga.Core.Engine.OnnxEnv(stR);
+            var inpR = new NekoManga.Core.Engine.AletheiaInpainter(envR);
+            var restR = args.Skip(arIdx + 2).TakeWhile(a => !a.StartsWith("--")).ToList();
+            for (int k = 0; k + 1 < restR.Count; k += 2)
+            {
+                var (p, mp) = (restR[k], restR[k + 1]);
+                try
+                {
+                    using var im = NekoManga.Core.ImgIo.Read(p);
+                    using var mk = NekoManga.Core.ImgIo.Read(mp, OpenCvSharp.ImreadModes.Grayscale);
+                    OpenCvSharp.Cv2.Threshold(mk, mk, 127, 255, OpenCvSharp.ThresholdTypes.Binary);
+                    var swR = System.Diagnostics.Stopwatch.StartNew();
+                    int regions = inpR.Repair(im, mk, mosaicMode);
+                    NekoManga.Core.ImgIo.Write(p + $".ale_{(mosaicMode ? "mosaic" : "bar")}.png", im);
+                    Console.WriteLine($"RESULT {Path.GetFileName(p)} {regions} {swR.ElapsedMilliseconds}ms");
+                }
+                catch (Exception ex) { Console.WriteLine($"FAIL {Path.GetFileName(p)}: {ex.Message}"); }
             }
             return;
         }

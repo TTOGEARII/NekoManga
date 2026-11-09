@@ -42,22 +42,21 @@ public class MangaOcr(OnnxEnv env)
             }
         }
 
-        var encoder = env.Get(EncoderFile);
-        using var encOut = encoder.Run(new[] { NamedOnnxValue.CreateFromTensor("pixel_values", pixel) });
+        // Guard: GPU에서 실행 오류가 나면 CPU로 내려 한 번 더 (OnnxEnv.Guard)
+        using var encOut = env.Guard(() => env.Get(EncoderFile).Run(new[] { NamedOnnxValue.CreateFromTensor("pixel_values", pixel) }), EncoderFile);
         var hiddenSrc = encOut.First().AsTensor<float>();
         // 디코더 호출마다 재사용할 수 있게 복사해 둔다 (encOut dispose 대비)
         var hidden = new DenseTensor<float>(hiddenSrc.ToArray(), hiddenSrc.Dimensions.ToArray());
 
-        var decoder = env.Get(DecoderFile);
         var ids = new List<long> { 2 }; // [CLS]
         for (int step = 0; step < MaxTokens; step++)
         {
             var inputIds = new DenseTensor<long>(ids.ToArray(), new[] { 1, ids.Count });
-            using var decOut = decoder.Run(new[]
+            using var decOut = env.Guard(() => env.Get(DecoderFile).Run(new[]
             {
                 NamedOnnxValue.CreateFromTensor("input_ids", inputIds),
                 NamedOnnxValue.CreateFromTensor("encoder_hidden_states", hidden),
-            });
+            }), DecoderFile);
             var logits = decOut.First().AsTensor<float>(); // [1, len, vocab]
             int last = ids.Count - 1;
             int vocabSize = logits.Dimensions[2];

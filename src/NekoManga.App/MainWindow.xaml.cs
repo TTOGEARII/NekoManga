@@ -83,17 +83,13 @@ public partial class MainWindow
         BadgeColor.Visibility = comfyOk ? Visibility.Collapsed : Visibility.Visible;
         var comfyLama = App.Settings.DecensorMode is "ComfyLama" or "ComfyRegen" or "ComfyCustom";
         BadgeDecensor.Visibility = !comfyOk && comfyLama ? Visibility.Visible : Visibility.Collapsed;
-        // 검열 감지 AI(전용 학습 모델) 유무·복원 방식에 맞춰 설명을 바꾼다
-        bool censorAi = App.Settings.DecensorTarget == "Auto" &&
-            File.Exists(Path.Combine(App.Settings.RuntimeRoot, "models", NekoManga.Core.Engine.CensorNet.ModelFile));
-        string find = censorAi ? "AI가 검열을 찾아" : "검열을 찾아";
-        HintDecensor.Text = App.Settings.DecensorMode switch
-        {
-            "ComfyLama" => $"{find} 엔진 LaMa로 복원 (GPU)",
-            "ComfyRegen" => $"{find} SDXL로 재생성 (GPU·내장 레시피)",
-            "ComfyCustom" => $"{find} 커스텀 ComfyUI 워크플로로 복원 (GPU)",
-            _ => $"{find} 자연스럽게 복원 (기본·내장 AI)",
-        };
+        // 감지 엔진(Aletheia Lens / 이전 방식)·전용 AI 유무·복원 방식에 맞춰 설명을 바꾼다 — 문구는 설정 창 요약과 같은 곳(DecensorLabels)에서
+        bool censorNet = File.Exists(Path.Combine(App.Settings.RuntimeRoot, "models", NekoManga.Core.Engine.CensorNet.ModelFile));
+        HintDecensor.Text = DecensorLabels.Card(App.Settings, censorNet);
+        HintDecensor.ToolTip = "① 찾기: " + DecensorLabels.Find(App.Settings.DecensorEngine, App.Settings.DecensorTarget, App.Settings.DecensorLegacyAssist, censorNet)
+            + "\n② 지우기: " + DecensorLabels.Fix(App.Settings.DecensorEngine, App.Settings.DecensorMode, App.Settings.DecensorTarget,
+                                                App.Settings.DecensorLegacyAssist, App.Settings.DecensorAssistRepair)
+            + "\n(⚙ 설정 → 검열 제거에서 바꿀 수 있어요)";
     }
 
     // ── 파일 추가 ──────────────────────────────────────────────

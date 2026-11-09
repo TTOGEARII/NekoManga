@@ -118,13 +118,34 @@ public class ComponentInstaller(AppSettings settings)
         var part = dest + ".part";
         long existing = File.Exists(part) ? new FileInfo(part).Length : 0;
 
-        using var req = new HttpRequestMessage(HttpMethod.Get, c.Url);
-        if (c.UseCivitaiKey && !string.IsNullOrWhiteSpace(settings.CivitaiApiKey))
-            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.CivitaiApiKey);
-        if (existing > 0)
-            req.Headers.Range = new RangeHeaderValue(existing, null);
+        // 게이트웨이 오류(502·503·504)는 잠깐 뒤 다시 보낸다 — 2026-11-09 실측: GitHub이 Aletheia Lens 저장소의 릴리스 자산 주소에
+        // 간헐적으로 504를 돌려줬다(같은 시각 다른 저장소 자산은 정상, 몇 분 전에는 200). 한 번 실패로 엔진 설치 전체가 멈추지 않게.
+        HttpResponseMessage resp;
+        for (int attempt = 0; ; attempt++)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, c.Url);
+            if (c.UseCivitaiKey && !string.IsNullOrWhiteSpace(settings.CivitaiApiKey))
+                req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.CivitaiApiKey);
+            if (existing > 0)
+                req.Headers.Range = new RangeHeaderValue(existing, null);
 
-        using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+            resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+            int code = (int)resp.StatusCode;
+            if (code == 416 && existing > 0)
+            {
+                // 받다 만 파일이 사실은 다 받은 것(옮기기 직전에 앱이 꺼짐)이거나 서버 파일보다 크다 — 이어받기 범위가 비어 416이 난다.
+                // 지우고 처음부터 다시 받는다 (그대로 두면 이 구성요소가 영원히 설치되지 않는다).
+                resp.Dispose();
+                try { File.Delete(part); } catch (IOException) { }
+                existing = 0; attempt--;
+                continue;
+            }
+            if (code is not (502 or 503 or 504) || attempt >= 3) break;
+            resp.Dispose();
+            progress.Report(new(c.Id, $"서버가 잠깐 응답하지 않아요 (HTTP {code}) — 다시 시도 {attempt + 1}/3", 0, 0, 0));
+            await Task.Delay(TimeSpan.FromSeconds(4 * (attempt + 1)), ct);
+        }
+        using var respDispose = resp;
         if (existing > 0 && resp.StatusCode != System.Net.HttpStatusCode.PartialContent)
         {
             existing = 0; // 서버가 이어받기를 지원하지 않음 — 처음부터
@@ -158,6 +179,19 @@ public class ComponentInstaller(AppSettings settings)
                     progress.Report(new(c.Id, $"{done / 1048576.0:n0} / {total / 1048576.0:n0} MB",
                                         total > 0 ? Math.Min(98, done * 100.0 / total) : 0, done, total));
                 }
+            }
+        }
+        // 해시가 적힌 구성요소는 받은 파일을 확인한다 — 남의 저장소에서 받는 모델은 주소가 그대로여도 내용이 바뀌거나 중간에 깨질 수 있다
+        if (c.Sha256 is { Length: > 0 } expected)
+        {
+            progress.Report(new(c.Id, "받은 파일 확인 중...", 99, 0, 0));
+            string actual;
+            await using (var fs = new FileStream(part, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20))
+                actual = Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(fs, ct));
+            if (!string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
+            {
+                File.Delete(part);
+                throw new InvalidDataException($"{c.DisplayName} 파일이 깨졌거나 배포본이 바뀌었어요 (해시 불일치) — 다시 시도해 주세요.");
             }
         }
         File.Move(part, dest, overwrite: true);

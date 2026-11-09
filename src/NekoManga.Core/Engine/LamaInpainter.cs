@@ -88,12 +88,12 @@ public class LamaInpainter(OnnxEnv env)
             }
         }
 
-        var session = env.Get(ActiveModelFile);
-        using var results = session.Run(new[]
+        // Guard: GPU에서 실행 오류가 나면 CPU로 내려 한 번 더 (OnnxEnv.Guard)
+        using var results = env.Guard(() => env.Get(ActiveModelFile).Run(new[]
         {
             NamedOnnxValue.CreateFromTensor("image", image),
             NamedOnnxValue.CreateFromTensor("mask", maskT),
-        });
+        }), ActiveModelFile);
         // 평탄 버퍼로 읽는다 — ONNX가 돌려주는 Tensor는 DenseTensor가 아닐 수 있어
         // [0,c,y,x] 인덱서가 strided 접근을 보장하지 않는다 (실제로 틀린 값이 나왔다).
         var output = results.First().AsEnumerable<float>().ToArray(); // [1,3,512,512] RGB 0–255, row-major
