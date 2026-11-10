@@ -16,7 +16,7 @@
 
   <ItemGroup>
     <Resource Include="app.ico" />
-    <!-- ?낅뜲?댄듃 ?곸슜 以??먯껜 ?ㅽ뵆?섏떆 李쎌씠 ?곕뒗 ?대?吏 (UpdateService.StartApplySplash) -->
+    <!-- 업데이트 적용 중 자체 스플래시 창이 쓰는 이미지 (UpdateService.StartApplySplash) -->
     <Content Include="..\..\assets\splash.gif" Link="assets\splash.gif" CopyToOutputDirectory="PreserveNewest" />
     <!-- 내장 검열제거 재생성 워크플로(사용자가 ComfyUI에서 짠 화면 포맷 JSON) — 엔진 탭의 "ComfyUI에 넣기"가 ComfyUI 워크플로 폴더로 복사한다 -->
     <Content Include="..\..\assets\workflows\NekoManga_decensor_regen.json" Link="assets\workflows\NekoManga_decensor_regen.json" CopyToOutputDirectory="PreserveNewest" />
@@ -26,8 +26,8 @@
 
   <ItemGroup>
     <PackageReference Include="WPF-UI" Version="3.0.5" />
-    <!-- vpk CLI(?뚰겕?뚮줈)? 硫붿씠? 踰꾩쟾??諛섎뱶??留욎텧 寃???0.0.x ?쇱씠釉뚮윭由?+ 1.x ?⑥빱 議고빀?
-         Setup.exe媛 李쎈룄 濡쒓렇???놁씠 ?됱뾽?쒕떎 (v0.1.1?먯꽌 ?ㅼ젣 諛쒖깮). -->
+    <!-- vpk CLI(워크플로)와 메이저 버전을 반드시 맞출 것 — 0.0.x 라이브러리 + 1.x 패커 조합은
+         Setup.exe가 창도 로그도 없이 행업한다 (v0.1.1에서 실제 발생). -->
     <PackageReference Include="Velopack" Version="1.2.161" />
     <ProjectReference Include="..\NekoManga.Core\NekoManga.Core.csproj" />
     <!-- DirectML.dll을 실행 파일 옆에 둔다 (2026-11-09). Microsoft.AI.DirectML 패키지는 PlatformTarget이 x64 등으로 지정된 프로젝트에만 DLL을 복사해서
