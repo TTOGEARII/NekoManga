@@ -20,4 +20,9 @@
     <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.13.0.20260627" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- 테스트 프로젝트(tests\NekoManga.Core.Tests)가 internal 구현(PilResample·PolishTranslation 등)을 직접 검증할 수 있게 한다 -->
+    <InternalsVisibleTo Include="NekoManga.Core.Tests" />
+  </ItemGroup>
+
 </Project>
