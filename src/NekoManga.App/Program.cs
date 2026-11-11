@@ -353,7 +353,8 @@ public static class Program
         {
             var sc = NekoManga.Core.Pipeline.LetterSidecar.Load(args[reIdx + 1]);
             if (sc == null) { File.WriteAllText(args[reIdx + 2] + ".txt", "사이드카가 없어요"); return; }
-            NekoManga.Core.Pipeline.TextRenderer.RenderBlocks(sc.BasePath, sc.Source, sc.Blocks, args[reIdx + 2], NekoManga.Core.AppSettings.Load());
+            // 원고를 옮겼거나 지웠으면 사이드카에 박제한 원본 크기로 환산한다 (원본이 없다고 비율 1로 그리면 채색한 쪽에서 글이 엉뚱한 자리에 가거나 빠진다)
+            NekoManga.Core.Pipeline.TextRenderer.RenderBlocks(sc.BasePath, sc.Source, sc.SrcW, sc.SrcH, sc.Blocks, args[reIdx + 2], NekoManga.Core.AppSettings.Load());
             return;
         }
 

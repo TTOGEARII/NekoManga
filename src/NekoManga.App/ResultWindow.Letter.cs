@@ -160,7 +160,8 @@ public partial class ResultWindow
         var tmp = Path.Combine(Path.GetTempPath(), $"neko-relett-{Guid.NewGuid():N}.png");
         try
         {
-            TextRenderer.RenderBlocks(_sidecar.BasePath, _sidecar.Source, _letterBlocks, tmp, LetterStyle());
+            // 사이드카에 박제한 원본 크기로 환산한다 — 원고를 옮겼거나 지웠어도 편집 미리보기(RebuildLetterBoxes)처럼 제자리에 그린다
+            TextRenderer.RenderBlocks(_sidecar.BasePath, _sidecar.Source, _sidecar.SrcW, _sidecar.SrcH, _letterBlocks, tmp, LetterStyle());
             var rendered = ImgIo.Read(tmp);
             if (rendered.Empty()) { rendered.Dispose(); TxtStatus.Text = "다시 식자에 실패했어요"; return; }
             _undo.Push(_img);

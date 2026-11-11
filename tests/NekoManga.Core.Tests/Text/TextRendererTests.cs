@@ -90,6 +90,39 @@ public class TextRendererTests
         Assert.True(r.Width <= 0.86f * 2 * capPerSide * block.Width + 1, $"{r}");
     }
 
+    [Theory]
+    [InlineData("widen", 903, 157, 259, 119)]   // 900px 원본을 903px로 채색 — 흰 구간 119px의 86%가 블록 폭(102.34px)보다 부동소수점 한 칸만 크다
+    [InlineData("widen", 946, 150, 249, 121)]
+    [InlineData("widen", 978, 361, 490, 163)]
+    [InlineData("heighten", 903, 157, 259, 119)]
+    [InlineData("heighten", 946, 150, 249, 121)]
+    [InlineData("heighten", 978, 361, 490, 163)]
+    public void WidenOrHeightenToBubble_RunBarelyWiderThanBlockAtFractionalScale_KeepsBlockWithoutThrowing(string direction, int size, int x1, int x2, int run)
+    {
+        // 채색으로 결과 크기가 바뀌면 블록 좌표가 소수가 된다. 잰 흰 구간의 86%가 블록 폭보다 아주 조금만 크면 반올림으로 r.Right - newW가 r.X보다
+        // 커져 Math.Clamp가 최솟값 > 최댓값으로 던졌다('157.52335' cannot be greater than 157.52333) — 이미지 안 블록 하나로 쪽 전체 식자가 멈췄다.
+        // 넓힐 것이 거의 없으니 원래 자리에서 시작하고, 원래 블록은 안에 남는다.
+        double s = size / 900.0;
+        using var page = SolidPage(size, size, 40);
+        var block = new RectangleF((float)(x1 * s), (float)(300 * s), (float)((x2 - x1) * s), (float)(40 * s));   // PlanLayout이 환산하는 식 그대로
+        DrawWhiteBand(page, block.X + block.Width / 2, run, rows: false);
+
+        var r = Grow(direction, page, block);
+
+        Assert.Equal(block.Y, r.Y);
+        Assert.Equal(block.Height, r.Height);
+        Assert.True(r.Left <= block.Left && r.Right >= block.Right, $"{r} vs {block}");
+        Assert.True(r.Width < block.Width + 0.01f, $"{r} vs {block}");
+    }
+
+    /// <summary>어두운 쪽에 흰 띠를 끝에서 끝까지 긋는다 — center(픽셀로 내림)에서 재면 흰 구간이 꼭 run px(띠 폭 run+1px)이 되게.
+    /// rows면 가로 띠(행), 아니면 세로 띠(열).</summary>
+    private static void DrawWhiteBand(Mat page, float center, int run, bool rows)
+    {
+        int start = (int)center - run / 2;
+        Cv2.Rectangle(page, rows ? new Rect(0, start, page.Cols, run + 1) : new Rect(start, 0, run + 1, page.Rows), Scalar.White, -1);
+    }
+
     /// <summary>가로로 짠 장면을 WidenToBubble에, 또는 전치(가로↔세로)해서 HeightenToBubble에 넣고 결과를 가로 기준으로 되돌린다 —
     /// 두 함수는 재는 방향만 다른 같은 규칙이라 한 장면으로 둘 다 본다.</summary>
     private static RectangleF Grow(string direction, Mat page, RectangleF block, params RectangleF[] avoid)
@@ -311,7 +344,7 @@ public class TextRendererTests
         Assert.InRange(b.Size / a.Size, 1.95f, 2.05f);
     }
 
-    [Fact(Skip = "알려진 결함: 이미지 가장자리를 넘는 자동(ManualRect=false) 가로쓰기 블록에서 LimitGrowth의 Math.Clamp가 ArgumentException(최솟값 > 최댓값)을 던진다 — 넓힌 자리가 이미지 경계에서 잘려 원래 블록보다 작아진다")]
+    [Fact]
     public void PlanLayout_AutoBlockCrossingImageEdge_DoesNotThrow()
     {
         // 원본 크기 참조 파일이 없어 비율 1로 환산했는데 결과 이미지가 원본보다 작으면 블록이 이미지 밖으로 나간다.
@@ -319,6 +352,206 @@ public class TextRendererTests
         using var page = SolidPage(300, 450);
         foreach (var block in new[] { Auto(100, 440, 200, 560, "HELLO WORLD"), Auto(280, 100, 420, 200, "HELLO WORLD") })
             Assert.Null(Record.Exception(() => TextRenderer.PlanLayout(page, new[] { block }, 1, 1, Arial())));
+    }
+
+    [Theory]
+    [InlineData(100, 440, 200, 560, false)]   // 아래로 걸침 — 안에 남는 것은 높이 10px
+    [InlineData(280, 100, 420, 200, false)]   // 오른쪽으로 걸침 — 폭 20px
+    [InlineData(-60, 200, 40, 260, false)]    // 왼쪽
+    [InlineData(120, -50, 220, 30, false)]    // 위
+    // 세로쓰기도 보이는 부분에서 잰다. 예전에는 블록 전체로 재서(LimitGrowth를 거치지 않아 던지지는 않았다) 자리가 이미지 밖으로 나갔다:
+    [InlineData(280, 250, 600, 420, true)]    // 대부분 오른쪽 밖 — 넓히지 못한 블록 폭 그대로 오른쪽으로 280px 넘게 나갔다
+    [InlineData(100, 400, 160, 900, true)]    // 대부분 아래 밖 — 자리가 이미지 아래로 400px 넘게 나갔다
+    [InlineData(-200, 100, 20, 300, true)]    // 대부분 왼쪽 밖 — 폭이 음수인 자리
+    public void PlanLayout_AutoBlockCrossingImageEdge_IsPlacedOnVisiblePart(int x1, int y1, int x2, int y2, bool vertical)
+    {
+        // 이미지 밖으로 걸친 감지 블록은 이미지 안쪽 부분을 원래 블록으로 삼는다 — 자리는 이미지 안에, 보이는 부분 위에 잡힌다
+        using var page = SolidPage(300, 450);
+        var visible = RectangleF.Intersect(RectangleF.FromLTRB(x1, y1, x2, y2), new RectangleF(0, 0, 300, 450));
+
+        var l = Assert.Single(TextRenderer.PlanLayout(page, new[] { Auto(x1, y1, x2, y2, "HELLO WORLD", vertical) }, 1, 1, Arial()));
+
+        Assert.True(l.Size > 0);
+        Assert.True(l.Rect.Width > 0 && l.Rect.Height > 0, $"{l.Rect}");
+        Assert.True(l.Rect.Left >= 0 && l.Rect.Top >= 0 && l.Rect.Right <= 300 && l.Rect.Bottom <= 450, $"{l.Rect}");
+        Assert.True(l.Rect.Contains(visible.X + visible.Width / 2, visible.Y + visible.Height / 2), $"{l.Rect} vs {visible}");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PlanLayout_AutoBlockCompletelyOutsideImage_IsNotDrawnAndLeavesOtherBlocksAlone(bool vertical)
+    {
+        // 완전히 밖에 있는 블록은 그리지 않는다 — 빈 자리나 음수 크기 자리를 내지 않고, 쪽 공통 크기(중앙값)도 끌어내리지 않는다.
+        // (예전에는 가로쓰기면 쪽 전체가 예외로 멈췄고, 세로쓰기면 이미지 가장자리의 좁은 띠에 작은 크기로 그려 중앙값에 끼었다 —
+        // 이 쪽에서는 안쪽 블록의 글자가 28.5px에서 9.5px로 줄었다)
+        using var page = SolidPage(1000, 1500);
+        var inside = Auto(300, 200, 700, 320, "HELLO THERE");
+        var right = Auto(1100, 900, 1200, 1100, "HELLO THERE", vertical);
+        var below = Auto(200, 1600, 260, 1800, "HELLO THERE", vertical);
+
+        var alone = TextRenderer.PlanLayout(page, new[] { inside }, 1, 1, Arial());
+        var with = TextRenderer.PlanLayout(page, new[] { inside, right, below }, 1, 1, Arial());
+
+        Assert.Equal(3, with.Count);
+        Assert.All(with.Skip(1), l =>
+        {
+            Assert.Equal(0, l.Size);
+            Assert.True(l.Rect.Width > 0 && l.Rect.Height > 0, $"{l.Rect}");
+        });
+        Assert.Equal(alone[0], with[0]);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void PlanLayout_AutoBlocksBarelyOnPage_DoNotShrinkBlocksInsideImage(bool vertical)
+    {
+        // 아래 가장자리에 5~6px만 보이는 감지 블록은 그 좁은 띠에 맞춘 작은 크기가 된다. 그 크기가 쪽 공통 크기(중앙값)에 끼어
+        // 이미지 안 블록의 글자까지 28.5px에서 10.3px(세로쓰기)·9px(가로쓰기)로 줄었다 — 공통 크기는 대부분 밖인 블록을 빼고 구한다.
+        using var page = SolidPage(1000, 1500);
+        var inside = Auto(300, 200, 700, 320, "HELLO THERE");
+        var a = Auto(100, 1495, 300, 1700, "HELLO THERE", vertical);
+        var b = Auto(500, 1494, 700, 1650, "HELLO THERE", vertical);
+
+        var alone = TextRenderer.PlanLayout(page, new[] { inside }, 1, 1, Arial());
+        var with = TextRenderer.PlanLayout(page, new[] { inside, a, b }, 1, 1, Arial());
+
+        Assert.Equal(alone[0], with[0]);
+        // 걸친 블록도 그리되, 좁은 띠에 맞춘 제 크기를 넘지 않는다
+        Assert.All(with.Skip(1), l => Assert.True(l.Size > 0 && l.Size < with[0].Size, $"{l.Size} vs {with[0].Size}"));
+    }
+
+    [Fact]
+    public void PlanLayout_MostlyOutsideRoomyBlock_GetsNoLargerThanCommonSizeOfBlocksInsideImage()
+    {
+        // 걸친 블록의 크기도 다른 블록처럼 자기 맞춤 크기와 쪽 공통 크기 가운데 작은 쪽이다. 대부분 밖인 블록은 공통 크기를 구할 때 빠지므로,
+        // 보이는 부분이 넉넉한 그런 블록 하나가 공통 크기를 제 크기로 끌어올려 혼자 크게 그려지지 않는다.
+        using var page = SolidPage(1000, 1500);
+        var crowded = Auto(400, 300, 600, 340, "THIS IS A MUCH LONGER SENTENCE THAT MUST SHRINK");
+        var roomy = Auto(300, 1300, 700, 1900, "HI");   // 600px 가운데 200px만 보인다
+
+        var alone = TextRenderer.PlanLayout(page, new[] { crowded }, 1, 1, Arial());
+        var with = TextRenderer.PlanLayout(page, new[] { crowded, roomy }, 1, 1, Arial());
+
+        Assert.Equal(alone[0], with[0]);
+        Assert.Equal(with[0].Size, with[1].Size);
+    }
+
+    [Fact]
+    public void PlanLayout_OnlyMostlyOutsideBlocks_CommonSizeComesFromThem()
+    {
+        // 대부분 밖인 블록뿐인 쪽은 그 블록들로 공통 크기를 구한다 — 보이는 부분만 한 이미지 안 블록과 자리·크기가 같다
+        // (공통 크기를 구할 블록이 없다고 기본값으로 떨어지면 넉넉한 풍선의 글자가 작아진다).
+        using var page = SolidPage(1000, 1500);
+
+        var clipped = Assert.Single(TextRenderer.PlanLayout(page, new[] { Auto(300, 1300, 700, 1900, "HELLO THERE") }, 1, 1, Arial()));
+        var inImage = Assert.Single(TextRenderer.PlanLayout(page, new[] { Auto(300, 1300, 700, 1500, "HELLO THERE") }, 1, 1, Arial()));
+
+        Assert.Equal(inImage, clipped);
+    }
+
+    [Fact]
+    public void PlanLayout_AutoBlockSlightlyOverEdge_CountsTowardCommonSizeLikeBlockInsideImage()
+    {
+        // 조금만 걸친 블록은 공통 크기에 그대로 넣는다 — 결과 창 편집 미리보기는 두 축에 한 비율을 써서, 채색으로 가로세로 비가 조금 바뀐 쪽의
+        // 가장자리 블록이 몇 px씩 걸친다. 그런 블록까지 빼면 미리보기의 글자 크기가 최종 식자와 달라진다.
+        using var page = SolidPage(1000, 1500);
+        var crowded = Auto(400, 300, 600, 340, "THIS IS A MUCH LONGER SENTENCE THAT MUST SHRINK");
+
+        var over = TextRenderer.PlanLayout(page, new[] { crowded, Auto(300, 1300, 700, 1503, "HI") }, 1, 1, Arial());     // 아래로 3px 걸침
+        var inside = TextRenderer.PlanLayout(page, new[] { crowded, Auto(300, 1300, 700, 1500, "HI") }, 1, 1, Arial());
+
+        Assert.Equal(inside, over);
+        Assert.True(over[1].Size > over[0].Size, $"{over[1].Size} vs {over[0].Size}");
+    }
+
+    [Theory]
+    [InlineData(201, 281, 1.2)]       // 1000px 원본을 1200px로 채색
+    [InlineData(200, 360, 1.024)]     // 1000px → 1024px
+    public void PlanLayout_AutoBlockNotWidenedAtFractionalScale_DoesNotThrow(int x1, int x2, double scale)
+    {
+        // 채색으로 결과 크기가 바뀌면 블록 좌표가 소수가 된다. 어두운 그림 위라 넓히지 못한 가로쓰기 블록은 LimitGrowth에서
+        // (X + W) - W가 반올림으로 X보다 아주 조금 커져 Math.Clamp가 최솟값 > 최댓값으로 던졌다 — 이미지 안의 블록인데도 쪽 전체가 멈췄다.
+        // 넓히지 못했으니 자리는 블록 그대로(테두리 여유만큼 안쪽)다.
+        using var page = SolidPage((int)Math.Round(1000 * scale), (int)Math.Round(1000 * scale), 40);
+        var block = Auto(x1, 300, x2, 340, "HELLO THERE");
+
+        var l = Assert.Single(TextRenderer.PlanLayout(page, new[] { block }, scale, scale, Arial()));
+
+        var scaled = new RectangleF((float)(x1 * scale), (float)(300 * scale), (float)((x2 - x1) * scale), (float)(40 * scale));
+        Assert.True(l.Size > 0);
+        Assert.False(l.Round);
+        Assert.True(RectangleF.Inflate(scaled, 0.01f, 0.01f).Contains(l.Rect), $"{l.Rect} vs {scaled}");
+        Assert.InRange(l.Rect.Width, scaled.Width * 0.89f, scaled.Width * 0.91f);
+        Assert.InRange(l.Rect.X + l.Rect.Width / 2, scaled.X + scaled.Width / 2 - 0.01f, scaled.X + scaled.Width / 2 + 0.01f);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]   // 같은 장면을 전치 — 가로 흰 띠에 선 세로 블록에서는 HeightenToBubble이 던졌다
+    public void PlanLayout_AutoBlockBarelyWidenedAtFractionalScale_DoesNotThrow(bool transposed)
+    {
+        // 900px 원본을 903px로 채색한 쪽. 어두운 그림을 가로지르는 흰 띠(폭 120px) 안에 블록이 있어, 흰 구간 119px의 86%가 블록 폭보다
+        // 부동소수점 한 칸만 크다 — WidenToBubble(전치하면 HeightenToBubble)의 Math.Clamp가 반올림으로 최솟값 > 최댓값이 되어 던졌고,
+        // 이미지 안 블록 하나로 쪽 전체 식자가 멈췄다.
+        const double s = 903 / 900.0;
+        using var page = SolidPage(903, 903, 40);
+        var block = transposed ? Auto(300, 157, 340, 259, "HELLO THERE", true) : Auto(157, 300, 259, 340, "HELLO THERE");
+        var scaled = new RectangleF((float)(block.X1 * s), (float)(block.Y1 * s), (float)((block.X2 - block.X1) * s), (float)((block.Y2 - block.Y1) * s));
+        float center = transposed ? scaled.Y + scaled.Height / 2 : scaled.X + scaled.Width / 2;
+        DrawWhiteBand(page, center, 119, rows: transposed);
+        int bandStart = (int)center - 119 / 2;
+
+        var l = Assert.Single(TextRenderer.PlanLayout(page, new[] { block }, s, s, Arial()));
+
+        Assert.True(l.Size > 0);
+        Assert.False(l.Round);
+        Assert.True(l.Rect.Contains(scaled.X + scaled.Width / 2, scaled.Y + scaled.Height / 2), $"{l.Rect} vs {scaled}");
+        // 글은 흰 띠 위에 놓인다 — 띠를 가로지르는 방향으로 띠 밖에 나가지 않는다
+        var (near, far) = transposed ? (l.Rect.Top, l.Rect.Bottom) : (l.Rect.Left, l.Rect.Right);
+        Assert.True(near >= bandStart && far <= bandStart + 120, $"{l.Rect} vs band {bandStart}..{bandStart + 120}");
+    }
+
+    [Fact]
+    public void PlanLayout_RandomAutoBlocks_NeverThrowAndDrawOnlyOnPage()
+    {
+        // 무작위 쪽: 채색으로 크기가 바뀐 결과(소수 비율)이거나, 원본 크기를 몰라 비율 1로 환산했는데 원고가 더 작은 경우.
+        // 감지 블록은 안쪽·가장자리에 걸친 것·완전히 밖인 것이 섞인다. 어느 쪽도 예외로 멈추면 안 되고(예전에는 LimitGrowth가 던졌다),
+        // 그리는 블록의 자리는 이미지 안이며, 완전히 밖인 블록은 그리지 않는다. 자리 계산은 글꼴과 상관없어 어느 PC에서나 같은 결과다.
+        var rng = new Random(20261110);
+        for (int p = 0; p < 60; p++)
+        {
+            int srcW = rng.Next(300, 1200), srcH = rng.Next(400, 1600);
+            bool unknownSource = rng.Next(3) == 0;
+            int imgW = unknownSource ? srcW * rng.Next(50, 100) / 100 : (int)Math.Round(srcW * (0.6 + rng.NextDouble()));
+            int imgH = unknownSource ? srcH * rng.Next(50, 100) / 100 : (int)Math.Round(srcH * (0.6 + rng.NextDouble()));
+            double sx = unknownSource ? 1 : (double)imgW / srcW, sy = unknownSource ? 1 : (double)imgH / srcH;
+            using var page = SolidPage(imgW, imgH, new[] { 255, 232, 150, 40 }[rng.Next(4)]);
+            for (int k = rng.Next(0, 4); k > 0; k--)
+                DrawBubble(page, rng.Next(imgW), rng.Next(imgH), rng.Next(30, 200), rng.Next(30, 200));
+            var blocks = new List<TextBlockInfo>();
+            for (int k = rng.Next(1, 7); k > 0; k--)
+            {
+                int bw = rng.Next(8, 300), bh = rng.Next(8, 300);
+                int x1 = rng.Next(-bw, srcW + 100), y1 = rng.Next(-bh, srcH + 100);
+                blocks.Add(Auto(x1, y1, x1 + bw, y1 + bh, "HELLO THERE FRIEND", rng.Next(2) == 0));
+            }
+
+            var layouts = TextRenderer.PlanLayout(page, blocks, sx, sy, Arial());
+
+            Assert.Equal(blocks.Count, layouts.Count);
+            for (int i = 0; i < blocks.Count; i++)
+            {
+                var b = blocks[i];
+                var scaled = RectangleF.FromLTRB((float)(b.X1 * sx), (float)(b.Y1 * sy), (float)(b.X2 * sx), (float)(b.Y2 * sy));
+                var r = layouts[i].Rect;
+                if (!scaled.IntersectsWith(new RectangleF(0, 0, imgW, imgH)))
+                    Assert.Equal(0, layouts[i].Size);
+                else if (layouts[i].Size > 0)
+                    Assert.True(r.Left >= -0.5f && r.Top >= -0.5f && r.Right <= imgW + 0.5f && r.Bottom <= imgH + 0.5f, $"쪽 {p} 블록 {i}: {r} / {imgW}x{imgH}");
+            }
+        }
     }
 
     // ───────── 그리기 (RenderBlocks) ─────────
@@ -369,6 +602,43 @@ public class TextRendererTests
 
         AssertInkCenteredIn(colored, t.At("scaled.png"), new Rect(100, 100, 400, 200));
         AssertInkCenteredIn(colored, t.At("unscaled.png"), new Rect(50, 50, 200, 100));
+    }
+
+    [Theory]
+    [InlineData("missing")]      // 원고 폴더를 옮겼거나 원본을 지웠다
+    [InlineData("unreadable")]   // 그 자리에 그림이 아닌 파일
+    [InlineData("empty")]        // 0바이트 (복사하다 끊김)
+    [InlineData("resized")]      // 같은 자리의 원본이 다른 해상도로 바뀌었다 — 블록 좌표는 번역할 때의 원본 기준이라 박제한 크기를 믿는다
+    public void RenderBlocks_SourceUnavailable_ConvertsWithStoredSourceSize(string reference)
+    {
+        // 다시 식자(결과 창 [다시 식자], --reletter)는 블록 좌표를 원본 크기로 환산한다. 원본을 읽지 못하면 식자 사이드카에 박제한 원본 크기로
+        // 환산해 원본이 있을 때와 똑같이 그려야 한다 — 예전에는 비율 1로 환산해서, 채색으로 원고가 원본의 절반이 된 이 쪽에서 첫 블록은
+        // 엉뚱한 자리에 그리고 둘째 블록은 이미지 밖으로 나가 아무 알림 없이 빠뜨렸다.
+        using var t = new TempDir();
+        using var colored = SolidPage(500, 750);
+        using var source = SolidPage(1000, 1500);
+        SavePng(colored, t.At("채색.png"));
+        SavePng(source, t.At("원본.png"));
+        var gone = t.At("옮긴 원본.png");
+        if (reference == "unreadable") File.WriteAllText(gone, "이건 그림이 아니다");
+        if (reference == "empty") File.WriteAllBytes(gone, []);
+        if (reference == "resized") { using var bigger = SolidPage(2000, 3000); SavePng(bigger, gone); }
+        var blocks = new[] { Auto(100, 100, 400, 200, "HELLO WORLD"), Auto(600, 1000, 900, 1100, "HELLO THERE") };
+
+        TextRenderer.RenderBlocks(t.At("채색.png"), t.At("원본.png"), blocks, t.At("with-source.png"), Arial());
+        TextRenderer.RenderBlocks(t.At("채색.png"), gone, 1000, 1500, blocks, t.At("stored-size.png"), Arial());
+
+        using var expected = LoadColor(t.At("with-source.png"));
+        using var actual = LoadColor(t.At("stored-size.png"));
+        using var differs = ChangedMask(expected, actual, 0);
+        Assert.Equal(0, Cv2.CountNonZero(differs));
+        // 두 블록 다 원본 좌표의 절반 자리에 그려졌다
+        using var ink = ChangedMask(colored, actual);
+        foreach (var place in new[] { new Rect(25, 25, 200, 100), new Rect(275, 475, 200, 100) })
+        {
+            using var part = new Mat(ink, place);
+            Assert.True(Cv2.CountNonZero(part) > 50, $"{place}");
+        }
     }
 
     private static void AssertInkCenteredIn(Mat before, string resultPath, Rect place)
@@ -547,5 +817,34 @@ public class TextRendererTests
         using var m = new Mat();
         Cv2.InRange(img, lower, upper, m);
         return Cv2.CountNonZero(m);
+    }
+}
+
+/// <summary>현재 폴더를 바꾸는 식자 테스트 — 프로세스 전체가 같이 쓰는 상태라 다른 테스트와 동시에 돌리지 않는다.</summary>
+[Collection(EnvCollection.Name)]
+public class TextRendererCurrentFolderTests
+{
+    [Fact]
+    public void RenderBlocks_BareOutputFileName_WritesIntoCurrentFolder()
+    {
+        // --reletter <결과.png> <출력.png>에 폴더 없이 파일 이름만 주면 현재 폴더에 써야 한다.
+        // 예전에는 Path.GetDirectoryName이 ""라 Directory.CreateDirectory("")가 그림을 다 그린 뒤 저장 직전에 던졌다.
+        using var t = new TempDir();
+        using var page = SolidPage(600, 800);
+        SavePng(page, t.At("in.png"));
+        var block = new TextBlockInfo(150, 300, 450, 500, "", "HELLO", 20, false, "#000000", ManualRect: true);
+        var cwd = Environment.CurrentDirectory;
+        Environment.CurrentDirectory = t.Root;
+        try
+        {
+            TextRenderer.RenderBlocks(t.At("in.png"), t.At("in.png"), new[] { block }, "out.png", new AppSettings { LetterFontFamily = "Arial" });
+        }
+        finally { Environment.CurrentDirectory = cwd; }
+
+        Assert.True(File.Exists(t.At("out.png")));
+        using var after = LoadColor(t.At("out.png"));
+        Assert.Equal(new OpenCvSharp.Size(600, 800), after.Size());
+        using var changed = ChangedMask(page, after);
+        Assert.NotNull(Bounds(changed));   // 글자를 그린 결과가 저장됐다
     }
 }

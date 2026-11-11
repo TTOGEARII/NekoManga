@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using OpenCvSharp;
 
 namespace NekoManga.Core.Engine;
@@ -194,14 +195,22 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
     }
 
     /// <summary>번역문 뒷손질 — 일본어가 아닌 목표 언어에 장음 기호 ー·〜가 남으면 ~로 (LLM이 "또ー!?"처럼 그대로 두는 실측),
-    /// 일본어 전각 느낌표·물음표는 반각으로. 세로쓰기 기호가 가로 식자에서 긴 막대로 그려지는 것을 막는다.</summary>
+    /// 일본어 전각 느낌표·물음표는 반각으로(중국어는 전각 ！？가 표준 문장부호라 그대로 둔다). 세로쓰기 기호가 가로 식자에서 긴 막대로 그려지는 것을 막는다.</summary>
     internal static string PolishTranslation(string tr, string targetLang)
     {
         var lang = (targetLang ?? "").ToLowerInvariant();
         if (lang == "ja") return tr;
-        return tr.Replace('ー', '~').Replace('〜', '~').Replace('～', '~').Replace('！', '!').Replace('？', '?')
-                 .Replace("・・・", "...").Replace("‥", "..");   // 가운뎃점 말줄임은 가로 식자에서 점이 띄엄띄엄 그려진다 (실측 06p)
+        tr = tr.Replace('ー', '~').Replace('〜', '~').Replace('～', '~');
+        // 목표 언어 코드는 settings.json 값 그대로 온다(설정 창에는 ko·en뿐) — zh·zh-CN·zh-TW·zh-Hant 같은 꼴을 모두 중국어로 본다
+        if (!(lang == "zh" || lang.StartsWith("zh-", StringComparison.Ordinal)))
+            tr = tr.Replace('！', '!').Replace('？', '?');
+        // 가운뎃점 말줄임은 가로 식자에서 점이 띄엄띄엄 그려진다 (실측 06p). 셋 이상 이어진 것은 남김없이 개수만큼 마침표로 바꾼다 —
+        // 세 개씩만 바꾸던 때는 "・・・・"에서 하나가 남았다. "..."로 모으지 않는 것은 여섯 점이 예전부터 "......"(맞춤법의 아래 여섯 점 줄임표)로
+        // 바뀌어 왔기 때문이다. 둘 이하는 예전처럼 그대로 둔다(하나는 '빨강・파랑' 같은 열거일 수 있다).
+        return MiddleDotRun.Replace(tr, m => new string('.', m.Length)).Replace("‥", "..");
     }
+
+    private static readonly Regex MiddleDotRun = new("・{3,}", RegexOptions.Compiled);
 
     /// <summary>블록 안 텍스트 획 픽셀의 평균색 → 식자 글자색.</summary>
     private static string SampleTextColor(Mat img, Mat textMask, Rect rect)

@@ -20,6 +20,13 @@ namespace NekoManga.Core.Pipeline;
 public static class TextRenderer
 {
     public static void RenderBlocks(string imagePath, string sourceSizeRefPath,
+        IReadOnlyList<TextBlockInfo> blocks, string outPath, AppSettings? settings = null) =>
+        RenderBlocks(imagePath, sourceSizeRefPath, 0, 0, blocks, outPath, settings);
+
+    /// <summary>원본 크기(srcW×srcH, 식자 사이드카에 박제한 값)를 함께 받는 판 — 크기를 알면 그 값으로 환산하고 참조 파일(원본)은 읽지 않는다.
+    /// 블록 좌표는 번역할 때의 원본 기준이라, 그 뒤 원본이 옮겨지거나 지워지거나 같은 자리에서 다른 해상도로 바뀌어도 박제한 크기가 맞는 기준이다.
+    /// 0이면 모르는 것으로 보고 참조 파일의 크기로, 그것도 못 읽으면 예전처럼 비율 1로 둔다.</summary>
+    public static void RenderBlocks(string imagePath, string sourceSizeRefPath, int srcW, int srcH,
         IReadOnlyList<TextBlockInfo> blocks, string outPath, AppSettings? settings = null)
     {
         settings ??= new AppSettings();
@@ -29,7 +36,15 @@ public static class TextRenderer
         using var bmp = ToBitmap(mat);
 
         double scaleX = 1, scaleY = 1;
-        if (File.Exists(sourceSizeRefPath))
+        // 다시 식자(결과 창 [다시 식자], --reletter)는 박제한 원본 크기로 환산한다. 원본 파일에 기대면 원고 폴더를 옮기거나 원본을 지운 뒤에는
+        // 비율 1이 되어, 채색으로 식자 전 원고의 크기가 원본과 달라진 쪽에서 글이 엉뚱한 자리에 그려지거나 이미지 밖으로 나가 아무 알림 없이 빠졌다
+        // (편집 미리보기는 사이드카 크기로 환산해 제자리에 보여 줘서, 저장하면 미리보기와 다른 결과가 남았다). 원본이 잠겨 있어도 실패하지 않는다.
+        if (srcW > 0 && srcH > 0)
+        {
+            scaleX = (double)mat.Cols / srcW;   // bmp와 같은 크기
+            scaleY = (double)mat.Rows / srcH;
+        }
+        else if (File.Exists(sourceSizeRefPath))
         {
             using var src = ImgIo.Read(sourceSizeRefPath, ImreadModes.Color);
             if (!src.Empty())
@@ -57,7 +72,8 @@ public static class TextRenderer
             DrawBlock(g, b, layouts[bi], color, settings);
         }
 
-        Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
+        // 저장 폴더는 ImgIo.Write가 만든다. 여기서 Directory.CreateDirectory(Path.GetDirectoryName(outPath)!)를 하면 폴더 없이 파일 이름만 준
+        // 출력(--reletter <결과.png> out.png)에서 GetDirectoryName이 ""라 그림을 다 그린 뒤 저장 직전에 던졌다 (AppSettings.Save와 같은 함정).
         using var outMat = ToMat(bmp);
         if (!ImgIo.Write(outPath, outMat))
             throw new IOException($"결과 저장에 실패했어요: {outPath}");
@@ -105,8 +121,12 @@ public static class TextRenderer
         float newW = minRun * 0.86f;
         if (newW <= r.Width) return r;
         // 기둥 중심(cx)이 아니라 흰 구간 중심에 둔다 — 풍선 오른쪽 끝 기둥(일본어 첫 줄)을 기준으로 넓히면
-        // 글이 오른쪽으로 쏠려 테두리를 넘어갔다. 단, 원래 블록은 반드시 안에 들어가게 한다.
-        float nx = Math.Clamp(runMid - newW / 2, Math.Max(0, r.Right - newW), Math.Max(0, r.X));
+        // 글이 오른쪽으로 쏠려 테두리를 넘어갔다. 단, 원래 블록은 반드시 안에 들어가게 한다(블록이 이미지 안에 있을 때 — 넓힌 자리는
+        // 이미지 경계에서 자르므로 밖으로 걸친 블록에서는 원래 블록보다 작아진다. 그래서 PlanLayout은 이미지 안쪽 부분만 넘긴다).
+        // 소수 좌표(채색으로 결과 크기가 바뀐 쪽)에서는 넓힐 폭(newW)이 블록 폭보다 아주 조금만 크면 반올림으로 r.Right - newW가 r.X보다 커질 수 있다 —
+        // 그대로 Math.Clamp에 주면 최솟값 > 최댓값으로 던져 이미지 안 블록 하나로 쪽 전체 식자가 멈췄다(LimitGrowth와 같은 함정). 그때는 원래 자리(r.X)에서 시작한다.
+        float lo = Math.Max(0, r.Right - newW), hi = Math.Max(0, r.X);
+        float nx = Math.Clamp(runMid - newW / 2, Math.Min(lo, hi), hi);
         return new RectangleF(nx, r.Y, Math.Min(newW, img.Cols - nx), r.Height);
     }
 
@@ -147,7 +167,9 @@ public static class TextRenderer
 
         float newH = minRun * 0.86f;
         if (newH <= r.Height) return r;
-        float ny = Math.Clamp(runMid - newH / 2, Math.Max(0, r.Bottom - newH), Math.Max(0, r.Y));
+        // 반올림으로 최솟값이 최댓값을 넘으면 원래 자리(r.Y)에서 시작한다 — WidenToBubble과 같은 함정.
+        float lo = Math.Max(0, r.Bottom - newH), hi = Math.Max(0, r.Y);
+        float ny = Math.Clamp(runMid - newH / 2, Math.Min(lo, hi), hi);
         return new RectangleF(r.X, ny, r.Width, Math.Min(newH, img.Rows - ny));
     }
 
@@ -202,12 +224,26 @@ public static class TextRenderer
             var wraps = new float[n];
             var round = new bool[n];
             var fits = new float[n];
+            var partial = new bool[n];   // 이미지 밖으로 걸쳐 보이는 부분이 블록의 절반도 안 되는 블록 — 쪽 공통 크기를 구할 때 뺀다
             float cap = Math.Max(MinSize, img.Rows * MaxSizeOfPage);
 
             for (int i = 0; i < n; i++)
             {
                 var b = blocks[i];
                 var rect = rects[i] = allRects[i];
+                // 결과 이미지 밖으로 걸친 감지 블록은 이미지 안쪽 부분을 원래 블록으로 삼는다 — 원본 크기를 몰라 비율 1로 환산했는데(RenderBlocks가 원본도, 박제한
+                // 원본 크기도 얻지 못했을 때) 식자 전 원고가 원본보다 작거나, 결과 창 미리보기가 두 축에 한 비율을 쓰면 블록이 밖으로 나간다.
+                // 그대로 재면 WidenToBubble·HeightenToBubble이 넓힌 자리를 이미지 경계에서 잘라 원래 블록보다 작게 돌려주고
+                // LimitGrowth가 던져 쪽 전체 식자가 멈췄다(세로쓰기는 던지지 않는 대신 완전히 밖인 블록을 이미지 가장자리나 높이가 음수인 자리에 그렸다).
+                // 보이는 부분의 폭이나 높이가 4px도 안 되면(완전히 밖이면 0) 아래 조건으로 그리지 않는다.
+                // 반 픽셀까지의 넘침은 걸친 것으로 치지 않는다 — 가장자리에 닿은 블록이 소수 비율 환산으로 살짝 넘는 정도라 예전 계산 그대로 둔다.
+                // 손으로 잡은 블록은 좌표 그대로 쓴다(넓히지 않으니 던지지 않는다).
+                if (!b.ManualRect && Overhangs(rect, img))
+                {
+                    var visible = RectangleF.Intersect(rect, new RectangleF(0, 0, img.Cols, img.Rows));
+                    partial[i] = visible.Width * visible.Height < rect.Width * rect.Height * 0.5f;
+                    rect = visible;
+                }
                 if (rect.Width < 4 || rect.Height < 4 || string.IsNullOrWhiteSpace(b.Translation)) continue;
 
                 // 감지 블록은 '글자가 있던 자리'라 풍선보다 작다. 세로쓰기는 글자 기둥만 잡혀 아주 좁기도 하다(실측 26px).
@@ -263,7 +299,13 @@ public static class TextRenderer
 
             // 쪽 공통 크기: 풍선별 최대 크기의 중앙값 — 널찍한 풍선들은 같은 크기를 쓰고, 좁거나 글이 긴 풍선만 자기 크기로 줄어든다.
             // (더 아래쪽 백분위를 쓰면 글이 긴 풍선 한두 개가 쪽 전체를 작게 만든다 — 풍선이 대여섯 개뿐인 쪽에서 실제로 그랬다.)
-            var sorted = fits.Where(f => f > 0).OrderBy(f => f).ToList();
+            // 이미지 밖으로 걸쳐 보이는 부분이 블록의 절반도 안 되는 블록은 빼고 구한다(그런 블록뿐인 쪽이면 전체로) — 가장자리에 몇 px만 보이는 블록은
+            // 그 좁은 띠에 맞춘 작은 크기라, 중앙값에 끼면 이미지 안 블록의 글자까지 줄었다(아래 가장자리에 5~6px 걸친 세로쓰기 둘이 있는 쪽에서 28.5px → 10.3px).
+            // 조금만 걸친 블록은 넣는다 — 결과 창 편집 미리보기는 두 축에 한 비율을 써서 채색한 쪽의 가장자리 블록이 몇 px씩 걸치는데, 그것까지 빼면
+            // 미리보기의 글자 크기가 최종 식자와 달라졌다(채색 비율로 합성한 4,000쪽 중 122쪽).
+            // 걸친 블록의 크기도 아래에서 다른 블록처럼 자기 맞춤 크기와 공통 크기 가운데 작은 쪽이다.
+            var sorted = fits.Where((f, i) => f > 0 && !partial[i]).OrderBy(f => f).ToList();
+            if (sorted.Count == 0) sorted = fits.Where(f => f > 0).OrderBy(f => f).ToList();
             float common = sorted.Count == 0 ? 16 : sorted[sorted.Count / 2];
             common = Math.Min(common, img.Rows * CommonSizeOfPage) * (float)Math.Clamp(settings.LetterSizeScale, 0.3, 3.0);
 
@@ -356,10 +398,17 @@ public static class TextRenderer
     {
         float w = Math.Min(grown.Width, original.Width * limit), h = Math.Min(grown.Height, original.Height * limit);
         float cx = grown.X + grown.Width / 2, cy = grown.Y + grown.Height / 2;
-        // 원래 블록은 반드시 안에 들어가게 한다
-        float x = Math.Clamp(cx - w / 2, original.Right - w, original.X), y = Math.Clamp(cy - h / 2, original.Bottom - h, original.Y);
+        // 원래 블록은 반드시 안에 들어가게 한다. 다만 넓히지 못해 w가 원래 폭 그대로면 소수 좌표(채색으로 결과 크기가 바뀐 쪽)에서는 반올림으로
+        // original.Right - w가 original.X보다 아주 조금 커질 수 있다 — 그대로 Math.Clamp에 주면 최솟값 > 최댓값으로 던져 쪽 전체 식자가 멈췄다.
+        // 그때는 원래 자리(original.X)에서 시작한다. 높이도 같다.
+        float x = Math.Clamp(cx - w / 2, Math.Min(original.Right - w, original.X), original.X),
+              y = Math.Clamp(cy - h / 2, Math.Min(original.Bottom - h, original.Y), original.Y);
         return new RectangleF(x, y, w, h);
     }
+
+    /// <summary>블록이 이미지 밖으로 반 픽셀 넘게 나갔는지.</summary>
+    private static bool Overhangs(RectangleF r, Mat img) =>
+        r.Left < -0.5f || r.Top < -0.5f || r.Right > img.Cols + 0.5f || r.Bottom > img.Rows + 0.5f;
 
     /// <summary>어절을 꺾지 않고 풍선 안에 들어가는 가장 큰 글자 크기. 어떤 크기로도 안 들어가면 최소 크기.</summary>
     private static float LargestFit(Graphics g, TextBlockInfo b, BlockLayout box, AppSettings s)

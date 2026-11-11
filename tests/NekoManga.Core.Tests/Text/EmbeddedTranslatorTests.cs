@@ -38,13 +38,45 @@ public class EmbeddedTranslatorTests
         Assert.Equal(text, EmbeddedTranslator.PolishTranslation(text, target));
     }
 
-    [Theory(Skip = "알려진 결함: 가운뎃점이 네 개 이상 이어지면 앞의 세 개만 마침표로 바뀌고 나머지 가운뎃점이 남는다 (\"・・・・\" → \"...・\")")]
+    [Theory]
     [InlineData("그건・・・・")]
     [InlineData("그건・・・・・")]
     public void PolishTranslation_MiddleDotEllipsisLongerThanThree_LeavesNoMiddleDot(string text)
     {
         // 가운뎃점 말줄임은 가로 식자에서 점이 띄엄띄엄 그려진다 — 세 개보다 길게 이어져도 가운뎃점이 하나라도 남으면 같은 문제가 생긴다
         Assert.DoesNotContain("・", EmbeddedTranslator.PolishTranslation(text, "ko"));
+    }
+
+    [Theory]
+    // 셋 이상 이어진 가운뎃점은 개수만큼 마침표로 — 세 개·여섯 개는 예전 결과 그대로다
+    [InlineData("그건・・・", "그건...")]
+    [InlineData("그건・・・・", "그건....")]
+    [InlineData("그건・・・・・", "그건.....")]
+    [InlineData("그건・・・・・・", "그건......")]
+    [InlineData("음・・・・・・・ 그래・・・・", "음....... 그래....")]
+    // 하나는 말줄임이 아니다 (열거의 가운뎃점)
+    [InlineData("빨강・파랑", "빨강・파랑")]
+    public void PolishTranslation_MiddleDotRun_BecomesSameNumberOfPeriods(string text, string expected)
+    {
+        Assert.Equal(expected, EmbeddedTranslator.PolishTranslation(text, "ko"));
+    }
+
+    [Theory]
+    // 중국어 조판은 전각 느낌표·물음표가 표준이다 — 목표 언어 코드가 어떤 꼴이든 그대로 둔다
+    [InlineData("什么！？", "zh", "什么！？")]
+    [InlineData("什么！？", "ZH", "什么！？")]
+    [InlineData("什么！？", "zh-CN", "什么！？")]
+    [InlineData("什么！？", "zh-TW", "什么！？")]
+    [InlineData("什么！？", "zh-Hant", "什么！？")]
+    // 일본어 장음 기호·가운뎃점 말줄임은 중국어로 옮길 때도 바꾼다
+    [InlineData("又ー！？", "zh", "又~！？")]
+    [InlineData("那个・・・・", "zh", "那个....")]
+    // 한국어·영어는 예전처럼 반각으로
+    [InlineData("什么！？", "ko", "什么!?")]
+    [InlineData("What！？", "en", "What!?")]
+    public void PolishTranslation_ChineseTarget_KeepsFullWidthExclamationAndQuestionMarks(string text, string target, string expected)
+    {
+        Assert.Equal(expected, EmbeddedTranslator.PolishTranslation(text, target));
     }
 
     [Theory]
