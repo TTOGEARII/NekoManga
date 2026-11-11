@@ -35,24 +35,12 @@ public static class TextRenderer
             throw new InvalidDataException($"이미지를 읽지 못했어요: {Path.GetFileName(imagePath)}");
         using var bmp = ToBitmap(mat);
 
-        double scaleX = 1, scaleY = 1;
         // 다시 식자(결과 창 [다시 식자], --reletter)는 박제한 원본 크기로 환산한다. 원본 파일에 기대면 원고 폴더를 옮기거나 원본을 지운 뒤에는
         // 비율 1이 되어, 채색으로 식자 전 원고의 크기가 원본과 달라진 쪽에서 글이 엉뚱한 자리에 그려지거나 이미지 밖으로 나가 아무 알림 없이 빠졌다
         // (편집 미리보기는 사이드카 크기로 환산해 제자리에 보여 줘서, 저장하면 미리보기와 다른 결과가 남았다). 원본이 잠겨 있어도 실패하지 않는다.
-        if (srcW > 0 && srcH > 0)
-        {
-            scaleX = (double)mat.Cols / srcW;   // bmp와 같은 크기
-            scaleY = (double)mat.Rows / srcH;
-        }
-        else if (File.Exists(sourceSizeRefPath))
-        {
-            using var src = ImgIo.Read(sourceSizeRefPath, ImreadModes.Color);
-            if (!src.Empty())
-            {
-                scaleX = (double)bmp.Width / src.Width;
-                scaleY = (double)bmp.Height / src.Height;
-            }
-        }
+        // 비율은 축별이고 결과 창의 편집 미리보기와 같은 계산(LetterScale.Resolve)이다 — 미리보기와 최종 식자가 같은 자리에 놓이게.
+        var scale = LetterScale.Resolve(mat.Cols, mat.Rows, srcW, srcH, sourceSizeRefPath);   // bmp와 같은 크기
+        double scaleX = scale.X, scaleY = scale.Y;
 
         using var g = Graphics.FromImage(bmp);
         g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -203,6 +191,19 @@ public static class TextRenderer
     private const float OpenWidth = 0.86f * 5.0f * 0.9f, OpenHeight = 0.86f * 3.6f * 0.9f;
     /// <summary>줄 간격 1.0일 때 줄에서 줄까지의 거리(em) — 글자 높이의 1.4배(서고 중앙값 1.38).</summary>
     private const float LineAdvanceEm = 1.33f;
+    /// <summary>손으로 잡은 블록(ManualRect)의 글 자리를 블록 사각형에서 안으로 들이는 양 — 한쪽에 폭의 5%·높이의 3%(글 자리는 블록의 90% × 94%).</summary>
+    internal const float ManualInsetX = 0.05f, ManualInsetY = 0.03f;
+
+    /// <summary>글 자리가 주어진 사각형(식자할 그림 좌표)이 되는 '손으로 잡은 블록'의 사각형 — <see cref="PlanLayout"/>이 ManualRect 블록에 하는 들임의 역이다.
+    /// 결과 창은 PlanLayout이 돌려준 글 자리를 편집 상자로 보여 준다. 상자를 놓은 자리를 그대로 블록에 저장하면 다음에 상자를 다시 띄울 때 또 들여서,
+    /// 놓을 때마다 블록이 90% × 94%로 줄었다(v1.8.2까지 실측: 300×140 → 270×132 → 243×124 … 여섯 번 뒤 159×97).
+    /// 저장할 때 이만큼 넓혀 두면 다시 띄운 상자도 최종 식자도 놓은 자리에 온다. 들임을 그리는 쪽(PlanLayout)에서 없애지 않는 것은
+    /// 이미 저장된 손으로 잡은 블록의 식자 결과가 달라지기 때문이다.</summary>
+    public static (double Left, double Top, double Width, double Height) ManualBlockFor(double left, double top, double width, double height)
+    {
+        double w = width / (1 - 2 * ManualInsetX), h = height / (1 - 2 * ManualInsetY);
+        return (left - w * ManualInsetX, top - h * ManualInsetY, w, h);
+    }
 
     public static List<BlockLayout> PlanLayout(Mat img, IReadOnlyList<TextBlockInfo> blocks, double scaleX, double scaleY,
         AppSettings settings, Graphics? g = null)
@@ -232,7 +233,7 @@ public static class TextRenderer
                 var b = blocks[i];
                 var rect = rects[i] = allRects[i];
                 // 결과 이미지 밖으로 걸친 감지 블록은 이미지 안쪽 부분을 원래 블록으로 삼는다 — 원본 크기를 몰라 비율 1로 환산했는데(RenderBlocks가 원본도, 박제한
-                // 원본 크기도 얻지 못했을 때) 식자 전 원고가 원본보다 작거나, 결과 창 미리보기가 두 축에 한 비율을 쓰면 블록이 밖으로 나간다.
+                // 원본 크기도 얻지 못했을 때) 식자 전 원고가 원본보다 작으면 블록이 밖으로 나간다(v1.8.2까지는 결과 창 미리보기가 두 축에 한 비율을 써서도 그랬다).
                 // 그대로 재면 WidenToBubble·HeightenToBubble이 넓힌 자리를 이미지 경계에서 잘라 원래 블록보다 작게 돌려주고
                 // LimitGrowth가 던져 쪽 전체 식자가 멈췄다(세로쓰기는 던지지 않는 대신 완전히 밖인 블록을 이미지 가장자리나 높이가 음수인 자리에 그렸다).
                 // 보이는 부분의 폭이나 높이가 4px도 안 되면(완전히 밖이면 0) 아래 조건으로 그리지 않는다.
@@ -274,7 +275,8 @@ public static class TextRenderer
                 }
                 else
                     // 손으로 잡은 블록: 사각형 가장자리까지 글자를 채우면 테두리에 닿는다 — 약간 안쪽으로.
-                    rect.Inflate(-rect.Width * 0.05f, -rect.Height * 0.03f);
+                    // 결과 창은 이 들인 자리를 편집 상자로 보여 주고, 상자를 놓을 때 이 들임을 되돌려 저장한다(ManualBlockFor).
+                    rect.Inflate(-rect.Width * ManualInsetX, -rect.Height * ManualInsetY);
 
                 // 줄 폭 넘침 허용치를 이웃 블록까지의 여유로 깎는다 — 결합 풍선에서 분할된 형제 블록들이 바로 옆에
                 // 붙어 있으면 넘침이 서로의 글 위에 겹쳐 그려졌다 (실측 22p).
@@ -301,8 +303,8 @@ public static class TextRenderer
             // (더 아래쪽 백분위를 쓰면 글이 긴 풍선 한두 개가 쪽 전체를 작게 만든다 — 풍선이 대여섯 개뿐인 쪽에서 실제로 그랬다.)
             // 이미지 밖으로 걸쳐 보이는 부분이 블록의 절반도 안 되는 블록은 빼고 구한다(그런 블록뿐인 쪽이면 전체로) — 가장자리에 몇 px만 보이는 블록은
             // 그 좁은 띠에 맞춘 작은 크기라, 중앙값에 끼면 이미지 안 블록의 글자까지 줄었다(아래 가장자리에 5~6px 걸친 세로쓰기 둘이 있는 쪽에서 28.5px → 10.3px).
-            // 조금만 걸친 블록은 넣는다 — 결과 창 편집 미리보기는 두 축에 한 비율을 써서 채색한 쪽의 가장자리 블록이 몇 px씩 걸치는데, 그것까지 빼면
-            // 미리보기의 글자 크기가 최종 식자와 달라졌다(채색 비율로 합성한 4,000쪽 중 122쪽).
+            // 조금만 걸친 블록은 넣는다 — v1.8.2까지 결과 창 편집 미리보기는 두 축에 한 비율을 써서 채색한 쪽의 가장자리 블록이 몇 px씩 걸쳤는데, 그것까지 빼면
+            // 미리보기의 글자 크기가 최종 식자와 달라졌다(채색 비율로 합성한 4,000쪽 중 122쪽). 지금은 미리보기도 축별 비율(LetterScale)이라 최종과 같은 블록이 걸친다.
             // 걸친 블록의 크기도 아래에서 다른 블록처럼 자기 맞춤 크기와 공통 크기 가운데 작은 쪽이다.
             var sorted = fits.Where((f, i) => f > 0 && !partial[i]).OrderBy(f => f).ToList();
             if (sorted.Count == 0) sorted = fits.Where(f => f > 0).OrderBy(f => f).ToList();

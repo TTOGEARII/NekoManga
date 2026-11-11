@@ -184,17 +184,17 @@ public partial class ResultWindow
         EditLayer.Children.Clear();
         if (_sidecar == null || _baseImg == null) return;
 
-        double bs = (double)_baseImg.Width / Math.Max(1, _sidecar.SrcW);   // 원본 → 결과 좌표
+        var bs = LetterScaleNow(_sidecar, _baseImg);   // 원본 → 결과 좌표 (축별 — 최종 식자와 같은 비율)
         var style = LetterStyle();
         var family = new FontFamily(style.LetterFontFamily);
         // 파이프라인과 동일: 말풍선마다의 자리와 글자 크기를 같은 계산으로 구한다
-        var layouts = TextRenderer.PlanLayout(_baseImg, _letterBlocks, bs, bs, style);
+        var layouts = TextRenderer.PlanLayout(_baseImg, _letterBlocks, bs.X, bs.Y, style);
 
         for (int i = 0; i < _letterBlocks.Count; i++)
         {
             var b = _letterBlocks[i];
 
-            // 자리(풍선 쪽으로 넓힌 사각형)와 크기는 렌더와 같은 값 — 손으로 잡은 블록은 그 좌표 그대로
+            // 자리(풍선 쪽으로 넓힌 사각형)와 크기는 렌더와 같은 값 — 손으로 잡은 블록은 블록 사각형을 조금 안으로 들인 글 자리(90% × 94%)
             var rect = layouts[i].Rect;
             float px = layouts[i].Size > 0 ? layouts[i].Size : 16;
             double w = rect.Width * _scale, h = rect.Height * _scale;
@@ -227,6 +227,11 @@ public partial class ResultWindow
 
             // 포토샵처럼 옮기고(위 손잡이) 늘리는(오른쪽 아래 모서리) 컨테이너
             var host = new Grid { Width = w, Height = h, Tag = i };
+            // 이 상자가 놓인 자리(식자할 그림 좌표) — 띄운 자리로 시작해, 옮기거나 늘려서 놓을 때마다 그 자리로 바뀐다.
+            // 손잡이를 누르기만 하고 놓았는지를 이것으로 가린다. 확대 배율과 비율은 상자를 띄운 지금 값을 쥐고 있다가 놓을 때 그대로 되돌린다.
+            double zoom = _scale;
+            LetterBox placed = default;
+            void Commit() => placed = CommitBoxRect(host, placed, zoom, bs);
             if (Math.Abs(b.RotationDeg) > 0.05)
             {
                 host.RenderTransformOrigin = new System.Windows.Point(0.5, 0.5);
@@ -246,7 +251,7 @@ public partial class ResultWindow
                 Canvas.SetLeft(host, Canvas.GetLeft(host) + a.HorizontalChange);
                 Canvas.SetTop(host, Canvas.GetTop(host) + a.VerticalChange);
             };
-            move.DragCompleted += (s, a) => CommitBoxRect(host);
+            move.DragCompleted += (s, a) => Commit();
             host.Children.Add(move);
 
             var size = new System.Windows.Controls.Primitives.Thumb
@@ -261,7 +266,7 @@ public partial class ResultWindow
                 host.Width = Math.Max(24, host.Width + a.HorizontalChange);
                 host.Height = Math.Max(20, host.Height + a.VerticalChange);
             };
-            size.DragCompleted += (s, a) => CommitBoxRect(host);
+            size.DragCompleted += (s, a) => Commit();
             host.Children.Add(size);
 
             tb.Tag = i;
@@ -273,23 +278,51 @@ public partial class ResultWindow
 
             Canvas.SetLeft(host, rect.X * _scale);
             Canvas.SetTop(host, rect.Y * _scale);
+            placed = BoxOf(host, zoom);
             EditLayer.Children.Add(host);
         }
     }
 
-    /// <summary>옮기거나 늘린 박스의 화면 좌표를 원본 좌표로 되돌려 블록에 저장한다.
-    /// ManualRect가 켜져 이후 렌더에서 자동 폭 넓히기를 건너뛰고 이 좌표 그대로 식자된다.</summary>
-    private void CommitBoxRect(Grid host)
+    /// <summary>상자의 화면 좌표를 식자할 그림 좌표로(÷ 확대 배율).</summary>
+    private static LetterBox BoxOf(Grid host, double zoom) =>
+        new(Canvas.GetLeft(host) / zoom, Canvas.GetTop(host) / zoom, host.Width / zoom, host.Height / zoom);
+
+    /// <summary>상자를 놓았을 때(손잡이의 DragCompleted) — 옮기거나 늘렸으면 그 자리를 원본 좌표로 되돌려 블록에 저장한다.
+    /// ManualRect가 켜져 이후 렌더에서 자동 폭 넓히기를 건너뛴다. 돌려주는 값은 상자가 지금 놓인 자리(다음에 놓을 때의 기준).
+    /// <para>placed(상자를 띄운 자리, 또는 지난번에 놓은 자리) 그대로면 아무것도 바꾸지 않는다 — 손잡이를 누르기만 하고 놓아도 DragCompleted가 온다.
+    /// v1.8.2까지는 그때도 상자 자리를 블록에 저장해서, 자동으로 놓인 블록이 손으로 잡은 블록이 되고 손으로 잡은 블록은 누를 때마다 줄었다.</para>
+    /// <para>저장하는 사각형은 상자 그대로가 아니라 상자가 '글 자리'가 되는 블록이다(<see cref="LetterScale.CommitBox"/>) — 렌더가 손으로 잡은 블록을
+    /// 안으로 들여 그리는 만큼 넓혀 둬야 다시 띄운 상자와 최종 식자가 놓은 자리에 온다.</para>
+    /// <para>shownWith는 이 상자를 띄울 때 쓴 비율이다. 화면 → 결과 좌표(÷ 확대 배율) → 원본 좌표(÷ 축별 비율)를 띄울 때와 같은 값으로 되돌려야
+    /// 저장한 블록이 놓은 자리에 그려진다 — 가로 비율 하나로 되돌리면 채색한 쪽에서 세로가 어긋났고, 놓는 순간의 비율을 다시 구하면
+    /// 띄울 때 원본이 잠겨 비율 1로 띄운 상자(원본 크기가 0인 사이드카)가 잠금이 풀린 뒤 실제 비율로 되돌려져 쪽 밖 좌표로 저장됐다(글이 알림 없이 빠진다).</para></summary>
+    private LetterBox CommitBoxRect(Grid host, LetterBox placed, double zoom, LetterScale shownWith)
     {
-        if (_sidecar == null || _baseImg == null || host.Tag is not int i || i >= _letterBlocks.Count) return;
-        double bs = (double)_baseImg.Width / Math.Max(1, _sidecar.SrcW);
-        double toSrc = 1.0 / (bs * _scale);
-        int x1 = (int)Math.Round(Canvas.GetLeft(host) * toSrc);
-        int y1 = (int)Math.Round(Canvas.GetTop(host) * toSrc);
-        int x2 = x1 + (int)Math.Round(host.Width * toSrc);
-        int y2 = y1 + (int)Math.Round(host.Height * toSrc);
-        _letterBlocks[i] = _letterBlocks[i] with { X1 = x1, Y1 = y1, X2 = x2, Y2 = y2, ManualRect = true };
+        var now = BoxOf(host, zoom);
+        if (host.Tag is not int i || i >= _letterBlocks.Count) return now;
+        if (shownWith.CommitBox(placed, now) is not { } r) return placed;
+        _letterBlocks[i] = _letterBlocks[i] with { X1 = r.X1, Y1 = r.Y1, X2 = r.X2, Y2 = r.Y2, ManualRect = true };
         TxtStatus.Text = "블록 위치·크기를 조정했어요 — [다시 식자]로 반영하세요";
+        return now;
+    }
+
+    // 같은 쪽(같은 사이드카·같은 식자 전 원고)이면 지난 비율을 다시 쓴다 — 원본 크기(SrcW·SrcH)가 0인 사이드카는 원본 파일을 읽어야
+    // 크기를 아는데, RebuildLetterBoxes는 휠 확대·스타일 입력마다 불린다. 쪽이 바뀌면 참조가 달라 저절로 다시 구한다(ToBitmapCached와 같은 방식).
+    // 앱이 쓴 식자 사이드카는 처음(v0.6.0)부터 원본 크기를 저장한다 — 0은 손으로 만들거나 고친 사이드카에서만 온다.
+    private (LetterSidecar Sidecar, Mat Base, LetterScale Scale)? _letterScale;
+
+    /// <summary>블록 좌표(원본 기준) → 식자 전 원고 좌표의 축별 비율. 최종 식자(TextRenderer.RenderBlocks — [다시 식자], --reletter)와
+    /// 같은 계산(<see cref="LetterScale.Resolve"/>)이라 원본 크기가 0인 사이드카(손으로 만든 것)도 최종과 같은 자리에 상자를 띄운다.</summary>
+    private LetterScale LetterScaleNow(LetterSidecar sc, Mat baseImg)
+    {
+        if (_letterScale is { } c && ReferenceEquals(c.Sidecar, sc) && ReferenceEquals(c.Base, baseImg)) return c.Scale;
+        LetterScale scale;
+        // 원본이 잠겨 있으면 Resolve가 던진다(최종 식자도 그때는 실패한다) — 창을 죽이지 않게 비율 1로 띄우고, 다음에 다시 읽게 기억하지 않는다.
+        // 그렇게 띄운 상자를 놓으면 띄울 때의 비율(1)로 되돌린다 — 상자마다 띄울 때의 비율을 쥐고 있다(RebuildLetterBoxes → CommitBoxRect).
+        try { scale = LetterScale.Resolve(baseImg.Width, baseImg.Height, sc.SrcW, sc.SrcH, sc.Source); }
+        catch { return LetterScale.One; }
+        _letterScale = (sc, baseImg, scale);
+        return scale;
     }
 
     private void LetterBox_TextChanged(object sender, TextChangedEventArgs e)
