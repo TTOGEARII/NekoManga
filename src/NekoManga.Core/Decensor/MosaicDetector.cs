@@ -12,7 +12,9 @@ public static class MosaicDetector
     /// 모자이크의 특징은 "블록 내부는 평탄한데 인접 블록과는 색이 뚜렷이 다르다"(격자 패턴)이다.
     /// 평탄함만 보면 피부·하늘 같은 매끈한 배경을 통째로 오탐하므로, 블록 평균색 그리드를 만들어
     /// 이웃과의 색차(격자 경계)가 충분한 평탄 블록만 모자이크 후보로 삼는다.
-    /// 평탄하지 않은 이웃과의 색차는 그 너머가 나와 같은 톤으로 이어지면 세지 않는다 — 평탄한 톤 위에 그은 외곽선은 격자가 아니다.</summary>
+    /// 평탄하지 않은 이웃과의 색차는 그 너머가 나와 같은 톤으로 이어지면 세지 않는다 — 평탄한 톤 위에 그은 외곽선은 격자가 아니다.
+    /// 그렇게 모은 후보 덩어리 가운데 밝기 경계가 가로·세로 두 방향 다 축에 맞는 것(격자 근거)이 하나도 없으면 그 쪽에는 모자이크가 없다고 본다
+    /// (<see cref="KeepGridLike"/>) — 굵은 선·나란한 선·두 톤의 경계는 블록 색차만으로는 모자이크와 가를 수 없다.</summary>
     public static Mat? BuildMask(Mat img, int blockSize, int threshold, int grow)
     {
         if (blockSize < 2) blockSize = 2;
@@ -61,7 +63,7 @@ public static class MosaicDetector
         // 모자이크 칸 경계가 블록을 가르는 경우는 너머가 다른 칸(다른 톤)이라 그대로 센다. 고르게 검거나 흰 이웃(밝기가 흩어지지 않은 블록)은
         // 선이 아니라 칸이므로 건너뛰지 않는다 — 건너뛰면 칸 톤이 검정·회색 둘뿐인 모자이크가 통째로 빠진다.
         // 실원고 144쪽 측정: 모자이크 라벨 적중 26/89 그대로, 모자이크가 아닌 쪽에 잡힌 오탐 21.1M → 18.4M px.
-        // 남는 것: 5px를 넘는 굵은 선, 가까이 나란한 선 둘, 서로 다른 두 톤의 경계는 지금도 후보가 된다.
+        // 5px를 넘는 굵은 선, 가까이 나란한 선 둘, 서로 다른 두 톤의 경계는 여기서는 그대로 후보가 된다 — 닫기·열기 뒤에 KeepGridLike가 거른다.
         double EdgeTo(int gy, int gx, int dy, int dx)
         {
             int ny = gy + dy, nx = gx + dx;
@@ -101,9 +103,154 @@ public static class MosaicDetector
         Cv2.MorphologyEx(mask, mask, MorphTypes.Open,
             Cv2.GetStructuringElement(MorphShapes.Rect, new Size(blockSize * 2 + 1, blockSize * 2 + 1)));
         if (Cv2.CountNonZero(mask) == 0) { mask.Dispose(); return null; }
+        // 남은 덩어리 가운데 '격자'라는 근거가 있는 것이 하나도 없으면 이 쪽에는 모자이크가 없다 (KeepGridLike)
+        if (!KeepGridLike(gray, mask)) { mask.Dispose(); return null; }
         if (grow > 0)
             Cv2.Dilate(mask, mask, Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(grow * 2 + 1, grow * 2 + 1)));
         return mask;
+    }
+
+    /// <summary>후보 덩어리(닫기·열기를 지난 마스크의 연결 성분)를 '격자 근거'로 거른다. 근거가 있는 덩어리가 하나도 없으면 false(이 쪽에 모자이크 없음),
+    /// 있으면 뚜렷이 격자가 아닌 큰 덩어리만 마스크에서 지우고 true.
+    ///
+    /// 블록 평균의 색차만으로는 굵은 선·가까이 나란한 선·두 톤의 경계·완만한 음영도 후보가 된다 — 이들과 모자이크를 가르는 것은
+    /// 밝기 경계의 방향이다. 모자이크 칸의 경계는 가로·세로뿐이고 두 방향이 비슷하게 나온다. 그림의 선과 음영은 방향이 제각각이고,
+    /// 칸 테두리·네모 톤처럼 축에 맞는 그림은 대개 한 방향뿐이다.
+    /// 그래서 덩어리마다 밝기 경계 픽셀(3×3 소벨 기울기가 단차 <c>EdgeStep</c> 이상)을 세어
+    ///  ① 기울기가 축에서 10° 안인 픽셀의 비율(축 비율)과 가로·세로 경계의 균형이 기준을 넘는 덩어리가 하나라도 있어야 그 쪽을 모자이크가 있는 쪽으로 본다
+    ///     (없으면 전부 버린다). 기준은 큰 덩어리(<c>AnchorArea</c> 이상)면 <c>AxisShare</c>·<c>Balance</c>, 그보다 작으면 <c>SmallAxisShare</c>·<c>SmallBalance</c>이고,
+    ///     근거로 삼는 최소 넓이는 쪽 넓이의 1/<c>AnchorPageShare</c>(많아야 AnchorArea, 적어도 <c>AnchorAreaMin</c>)다.
+    ///  ② 모자이크가 있는 쪽에서도 큰 덩어리 가운데 축 비율이 <c>AxisDrop</c>에 못 미치는 것은 버린다.
+    /// 최소 넓이에 못 미치는 덩어리는 판정하지 않고 ①을 따른다 — 경계 픽셀이 적어 조각 하나로는 방향 통계가 흔들린다. ②를 큰 덩어리에만 하고
+    /// 균형을 넣지 않는 것은 조각마다 거르면 진짜 모자이크의 귀퉁이 조각이 빠져서다(길쭉한 모자이크 조각은 한 방향 경계가 많다).
+    ///
+    /// 실측(2026-11-11, 블록 8·임계 15, 마스크 확장 8 — v1.8.2 → 지금):
+    ///  · 라벨 원고 144쪽: 모자이크 라벨 적중 26/89 그대로, 라벨 밖 17,448 → 14,965px, 모자이크가 아닌 91쪽의 발화 62쪽 18.4M px → 0쪽.
+    ///  · 검열 없는 흑백 원고 1,038쪽: 발화 615쪽 3.01억 px → 23쪽 715만 px.
+    ///  · 적중한 11쪽은 쪽마다 가장 좋은 덩어리의 축 비율이 0.84 이상이고 균형은 가장 낮은 쪽(덩어리 하나뿐)이 0.55, 모자이크가 아닌 쪽의 큰 덩어리는
+    ///    균형 0.45 이상에서 축 비율 0.63이 최고였다(0.75에 가까운 것은 균형 0.36). 라벨 위 큰 조각은 축 비율 0.74 이상, 아닌 쪽 큰 덩어리의 94%는 0.6 미만.
+    ///  · 최소 넓이를 쪽 크기에 맞춘 까닭: 3,000px로 못 박으면 같은 원고를 줄인 쪽에서 근거 덩어리가 그 아래로 내려가 모자이크가 통째로 빠진다.
+    ///    라벨 원고(sumi, 2040×2880)를 줄여 잰 적중(v1.8.2 → 3,000px 고정 → 지금): 0.5배 25 → 17 → 22, 0.6배 25 → 22 → 23, 0.75배 26 → 23 → 24, 0.9배 25 → 24 → 24.
+    ///  · 작은 덩어리 기준을 따로 둔 까닭: 큰 덩어리 기준 그대로면 흰 막대 원고 2쪽(1050×1525, 덩어리 1,344·1,408px, 축 비율 0.81·0.80)이 26.6만 px 발화한다.
+    ///    값(0.82·0.35)은 줄인 라벨 원고에서 쪽을 살린 덩어리(축 비율 0.84~0.87, 균형 0.40~0.95)와 그 두 쪽 사이에 놓았다 — 여유가 0.01~0.02뿐이고
+    ///    한 작품의 11쪽으로 정한 값이라 다른 원고에서도 맞는다는 보장은 없다.
+    ///  · 그 값으로 치른 것(3,000px 고정 → 지금): 검열 없는 흑백 원고 발화 21 → 23쪽(690만 → 715만 px), 그리고 모자이크가 아닌 91쪽을 변형했을 때의 발화가
+    ///    한두 쪽씩 는다(0.75배 0 → 1쪽, JPEG 품질 70 0 → 1쪽, 1° 회전 0 → 2쪽, 5° 회전 4 → 7쪽). 변형하지 않은 144쪽의 마스크는 그대로다.
+    ///  · 해 보고 넣지 않은 것: 경계 단차 6(검열 없는 원고 발화가 18쪽으로 줄지만 JPEG로 다시 압축한 쪽에서 적중이 준다 — 품질 70 25 → 24, 0.75배 + 품질 75 23 → 20),
+    ///    작은 덩어리 여럿을 합쳐 근거로 삼기(0.5배에서 한 쪽만 돌아온다), 창 단위 근거(검열 없는 원고의 오탐이 되살아난다).
+    ///
+    /// 알려진 한계 — 이 판정이 놓치는 것(대부분 v1.8.2는 잡았다. 그 대신 v1.8.2는 모자이크가 없는 쪽도 그만큼 잡았다):
+    ///  (가) 칸 경계가 축에 맞지 않는 모자이크 양식: 라벨 원고 chuuc의 모자이크는 덩어리의 축 비율이 0.27~0.36이라 하나도 못 잡는다.
+    ///       원래 크기에서는 v1.8.2도 0/59였지만 줄인 쪽(0.5~0.9배)에서는 v1.8.2가 36~44개를 잡았고 지금은 0이다.
+    ///  (나) 흐려지거나 압축 무늬가 낀 모자이크: 합성 모자이크는 선명하면 축 비율 0.84(칸 8px)~0.95(22px)인데 칸 8px은 3×3 가우시안만으로 0.74,
+    ///       5×5면 0.70이다(칸 12px 이상은 5×5에서도 0.81 이상). JPEG는 모자이크가 8×8 격자에 맞으면 품질 40에서도 0.85 이상이지만
+    ///       어긋나면(자리를 (3,5)만큼 옮김) 칸 12px 품질 60이 0.71, 품질 40이 0.63, 칸 16px 품질 40이 0.70 — 감지가 100% → 0%다.
+    ///       기운 쪽은 8°(0.79)까지고 10°(0.64)부터 놓친다. 라벨 원고를 통째로 흐리면 적중이 3×3 가우시안 28 → 18, 5×5 28 → 4.
+    ///  (다) 모자이크가 작은 것뿐인 쪽: 근거 최소 넓이(540만 px 이상인 쪽 3,000px = 55×55쯤, 180만 px 이하인 쪽 1,000px)에 못 미치는 덩어리만 있으면 놓친다.
+    ///  (라) 큰 오탐 덩어리에 묻힌 모자이크(컬러·회색 음영 원고): gt_eval 26쪽에서 v1.8.2는 쪽마다 넓이의 48%를 칠해 25쪽의 정답을 '덮었고',
+    ///       지금은 쪽 넓이의 0.3%만 칠하며 정답을 덮는 쪽이 0이다.
+    ///  (마) ②가 모자이크가 있는 쪽의 진짜 모자이크 덩어리도 지운다 — 모자이크가 옆의 그림과 한 덩어리로 붙어 축 비율이 0.6 아래로 내려간 경우
+    ///       (sumi_014: 3덩어리, 라벨 16,238px. 적중 수는 그대로다. 0.5~0.75배로 줄인 쪽에서는 sumi_014·019가 상자를 하나씩 잃는다).
+    ///  (바) 상수는 블록 8·임계 15에서 맞춘 것이고 사용자가 바꾸는 블록 크기·임계(설정 창 2~64·1~80)를 따라가지 않는다:
+    ///       블록 4면 적중 19 → 10, 임계 25면 33 → 21 (v1.8.2 → 지금).
+    ///  (사) 칸이 길쭉한 모자이크: 칸의 가로·세로가 1:2를 넘으면(합성 16×40 균형 0.42, 8×24 0.21) 한 방향 경계가 대부분이라 근거가 되지 못한다.
+    /// 남는 오탐: 축에 맞는 네모 톤·타일·좁은 줄무늬처럼 경계가 두 방향 다 축에 맞는 그림, 그리고 그런 근거가 있는 쪽의 작은 조각들(②는 큰 덩어리만 본다).
+    ///
+    /// 상수를 바꾸려면: 단위 테스트(MosaicDetectorTests)는 상수마다 그 구실을 경계 가까이에서 붙잡을 뿐이고 값은 실원고로 정한 것이다 —
+    /// 라벨 원고 평가(D:\NekoManga-train\rule_eval\README.md의 RuleEval run·score — 144쪽, 네 대상)와 검열 없는 흑백 원고
+    /// (D:\NekoManga-train\canvases\bw* 1,038쪽)의 발화 쪽 수를 다시 잰 뒤에 넣는다.</summary>
+    private static bool KeepGridLike(Mat gray, Mat mask)
+    {
+        // 아래 값은 실원고 수치로 정했다 — 바꾸면 라벨 원고 평가(D:\NekoManga-train\rule_eval\README.md의 RuleEval, 144쪽 네 대상)와
+        // 검열 없는 흑백 원고(D:\NekoManga-train\canvases\bw* 1,038쪽)의 발화를 다시 잰다. 단위 테스트는 값마다 그 구실만 붙잡는다.
+        const int AnchorArea = 3000;          // 큰 덩어리의 넓이(px, 확장 전) — 55×55쯤. 이 이상이면 ①은 AxisShare·Balance로 보고 ②도 본다
+        const int AnchorPageShare = 1800;     // 작은 쪽에서는 ①의 근거로 삼을 최소 넓이를 쪽 넓이의 1/1800까지 내린다 (540만 px 이상인 쪽은 AnchorArea 그대로)
+        const int AnchorAreaMin = 1000;       // 그렇게 내려도 이보다 작은 덩어리는 근거로 삼지 않는다 (180만 px 이하인 쪽의 바닥)
+        const int EdgeStep = 8;               // 밝기 경계로 칠 단차 — 블록 평균 색차 기준(EdgeDelta)과 같다. 3×3 소벨 값은 단차의 4배
+        const int AxisTan1000 = 176;          // 축에서 10° 안 (tan 10° × 1000)
+        const double AxisShare = 0.75;        // ① 경계 픽셀 가운데 축에 맞는 것의 비율 (큰 덩어리)
+        const double Balance = 0.45;          // ① 가로 경계와 세로 경계 가운데 적은 쪽 / 많은 쪽 (큰 덩어리)
+        const double SmallAxisShare = 0.82;   // ① AnchorArea에 못 미치는 덩어리는 넓이라는 근거가 약하므로 축 비율을 더 엄하게,
+        const double SmallBalance = 0.35;     //    칸이 몇 개뿐이라 모양에 따라 흔들리는 균형은 조금 느슨하게 본다
+        const double AxisDrop = 0.6;          // ② 큰 덩어리의 축 비율이 이보다 낮으면 격자가 아니다
+        const int MinEdgeShare = 50;          // 경계 픽셀이 넓이의 1/50은 되어야 판정한다
+
+        int anchorFloor = (int)Math.Clamp((long)gray.Rows * gray.Cols / AnchorPageShare, AnchorAreaMin, AnchorArea);
+
+        using var labels = new Mat();
+        using var stats = new Mat();
+        using var centroids = new Mat();
+        int n = Cv2.ConnectedComponentsWithStats(mask, labels, stats, centroids);
+        var boxes = new Rect[n];
+        var drop = new bool[n];
+        bool found = false, anyDrop = false;
+        Mat? gx = null, gy = null;
+        try
+        {
+            for (int li = 1; li < n; li++)
+            {
+                int area = stats.At<int>(li, (int)ConnectedComponentsTypes.Area);
+                if (area < anchorFloor) continue;
+                if (gx == null || gy == null)
+                {
+                    gx = new Mat(); gy = new Mat();
+                    Cv2.Sobel(gray, gx, MatType.CV_16S, 1, 0, 3);
+                    Cv2.Sobel(gray, gy, MatType.CV_16S, 0, 1, 3);
+                }
+                var br = boxes[li] = new Rect(stats.At<int>(li, (int)ConnectedComponentsTypes.Left), stats.At<int>(li, (int)ConnectedComponentsTypes.Top),
+                    stats.At<int>(li, (int)ConnectedComponentsTypes.Width), stats.At<int>(li, (int)ConnectedComponentsTypes.Height));
+                long edges = 0, horizontal = 0, vertical = 0;
+                unsafe
+                {
+                    for (int y = br.Y; y < br.Bottom; y++)
+                    {
+                        int* pl = (int*)labels.Ptr(y);
+                        short* px = (short*)gx.Ptr(y);
+                        short* py = (short*)gy.Ptr(y);
+                        for (int x = br.X; x < br.Right; x++)
+                        {
+                            if (pl[x] != li) continue;
+                            // int로 넓힌 뒤 절댓값 — 16비트 그림에서는 소벨 값이 short.MinValue로 포화하고 Math.Abs(short)는 그 값에서 예외를 던진다
+                            int ax = Math.Abs((int)px[x]), ay = Math.Abs((int)py[x]);
+                            int hi = Math.Max(ax, ay);
+                            if (hi < EdgeStep * 4) continue;
+                            edges++;
+                            if (Math.Min(ax, ay) * 1000 >= AxisTan1000 * hi) continue;
+                            if (ax > ay) horizontal++; else vertical++;
+                        }
+                    }
+                }
+                if (edges * MinEdgeShare < area) continue;   // 경계가 거의 없다 — 판정 불가, ①을 따른다
+                long axis = horizontal + vertical;
+                bool big = area >= AnchorArea;
+                if (axis >= (big ? AxisShare : SmallAxisShare) * edges
+                    && Math.Min(horizontal, vertical) >= (big ? Balance : SmallBalance) * Math.Max(horizontal, vertical)) found = true;
+                else if (big && axis < AxisDrop * edges) drop[li] = anyDrop = true;
+            }
+            if (!found) return false;
+            if (anyDrop)
+                unsafe
+                {
+                    for (int li = 1; li < n; li++)
+                    {
+                        if (!drop[li]) continue;
+                        var br = boxes[li];
+                        for (int y = br.Y; y < br.Bottom; y++)
+                        {
+                            int* pl = (int*)labels.Ptr(y);
+                            byte* pm = (byte*)mask.Ptr(y);
+                            for (int x = br.X; x < br.Right; x++)
+                                if (pl[x] == li) pm[x] = 0;
+                        }
+                    }
+                }
+            return true;
+        }
+        finally
+        {
+            gx?.Dispose();
+            gy?.Dispose();
+        }
     }
 
     /// <summary>설정의 DecensorTarget("Auto"/"BlackBar"/"WhiteBar"/"Mosaic")에 맞는 검열 마스크.
@@ -152,6 +299,9 @@ public static class MosaicDetector
         if (blackM != null && BarLike(blackM)) { kindUsed = "BlackBar"; return blackM; }
         blackM?.Dispose();
 
+        // 모자이크는 격자 근거가 있는 쪽에서만 마스크가 나온다(BuildMask → KeepGridLike). 그 전에는 톤 위의 선화·톤 경계가 1500px을 쉽게 넘어
+        // 흰 막대 원고 34쪽이 전부 'Mosaic'으로 끝났고 흰 막대는 보지도 못했다 (실측 144쪽: Auto의 흰 막대선 적중 0 → 7/78,
+        // 고른 종류 Mosaic 34쪽 → WhiteBar 16·없음 18. 모자이크 오탐에 가려 있던 흰 막대 오탐이 드러난 쪽도 있다 — 검은 막대·모자이크 원고 8쪽).
         var mosaicM = BuildMask(img, s.DecensorBlockSize, s.DecensorThreshold, s.DecensorMaskGrow);
         if (mosaicM != null && Cv2.CountNonZero(mosaicM) >= 1500) { kindUsed = "Mosaic"; return mosaicM; }
         mosaicM?.Dispose();

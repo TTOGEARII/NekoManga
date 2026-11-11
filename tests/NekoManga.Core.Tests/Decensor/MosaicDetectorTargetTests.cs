@@ -70,9 +70,28 @@ public class MosaicDetectorTargetTests
         Assert.True(Coverage(mask, expectedRegion) >= 0.95, $"{page}: 덮음 {Coverage(mask, expectedRegion):P1}");
     }
 
+    [Fact]
+    public void BuildMaskForTarget_Auto_WhiteBarOnPageWithToneBoundary_PicksWhiteBarNotMosaic()
+    {
+        // 톤 위에 그림자(다른 톤)가 있는 쪽의 흰 막대 — 예전에는 두 톤의 경계가 모자이크로 잡혀(1500px 이상) 흰 막대까지 가지 못했다
+        // (실원고: 흰 막대 원고 34쪽이 전부 'Mosaic'이었다). 격자 근거가 없으면 모자이크를 건너뛰고 흰 막대를 본다.
+        using var img = SolidPage(480, 360, gray: 140);
+        Cv2.Circle(img, new Point(360, 100), 70, GrayColor(90), -1, LineTypes.AntiAlias);
+        var bigWhite = new Rect(40, 200, 240, 32);
+        Cv2.Rectangle(img, bigWhite, White, -1);
+
+        using var mask = MosaicDetector.BuildMaskForTarget(Settings("Auto"), img, null, out var kindUsed);
+
+        Assert.Equal("WhiteBar", kindUsed);
+        Assert.True(Coverage(mask, bigWhite) >= 0.95, $"흰 막대 덮음 {Coverage(mask, bigWhite):P1}");
+        Assert.Equal(0, CountIn(mask, new Rect(280, 20, 160, 160)));   // 그림자 쪽
+    }
+
     [Theory]
     [InlineData("clean")]           // 흰 종이에 가는 선화뿐인 깨끗한 페이지
     [InlineData("lineArtOnTone")]   // 평탄한 톤(피부 등) 위의 같은 선화 — 모자이크 격자가 아니다
+    [InlineData("thickLineOnTone")] // 톤 위의 굵은 선(12px) — 선 양옆이 후보가 되지만 격자 근거가 없다
+    [InlineData("toneBoundary")]    // 톤 위의 둥근 그림자 — 두 톤의 경계도 격자가 아니다
     [InlineData("smallBarOnly")]    // 큰 막대 기준(최대 성분 6000px)에 못 미치는 막대 하나
     [InlineData("manyFragments")]   // 큰 막대가 있어도 조각이 많으면 효과음 붓획 쪽으로 본다
     public void BuildMaskForTarget_Auto_WithoutConvincingCensor_ReportsNone(string page)
@@ -84,6 +103,12 @@ public class MosaicDetectorTargetTests
             case "lineArtOnTone":
                 Cv2.Line(img, new Point(40, 300), new Point(440, 260), Black, 2);
                 Cv2.Line(img, new Point(60, 40), new Point(200, 330), Black, 2);
+                break;
+            case "thickLineOnTone":
+                Cv2.Line(img, new Point(60, 60), new Point(320, 210), Black, 12, LineTypes.AntiAlias);
+                break;
+            case "toneBoundary":
+                Cv2.Circle(img, new Point(240, 180), 90, GrayColor(90), -1, LineTypes.AntiAlias);
                 break;
             case "smallBarOnly":
                 Cv2.Rectangle(img, new Rect(96, 96, 104, 32), Black, -1);
