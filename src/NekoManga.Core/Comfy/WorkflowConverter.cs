@@ -97,7 +97,7 @@ public static class WorkflowConverter
                     {
                         value = list[cursor++]?.DeepClone();
                         // seed류 뒤에는 "생성 후 제어" 위젯 값이 하나 더 있다
-                        bool seedLike = name is "seed" or "noise_seed" || options?["control_after_generate"]?.GetValue<bool>() == true;
+                        bool seedLike = name is "seed" or "noise_seed" || HasSeedControl(options);
                         if (seedLike && cursor < list.Count && list[cursor] is JsonValue cv && cv.TryGetValue<string>(out var control) && SeedControls.Contains(control))
                         {
                             cursor++;
@@ -128,6 +128,13 @@ public static class WorkflowConverter
             ["_meta"] = new JsonObject { ["title"] = Title(node, info) },
         };
     }
+
+    /// <summary>입력 옵션에 "생성 후 제어" 표시(control_after_generate)가 켜져 있는가. 옛 꼴 노드는 true/false로 내놓고,
+    /// V3 스키마 노드(코어 'Int' = PrimitiveInt 등)는 제어 위젯의 처음 값인 글자("fixed" 등)로 내놓는다 — 글자를 bool로만 읽다가
+    /// InvalidOperationException으로 터져, 그런 노드가 든 화면 저장 워크플로를 통째로 못 썼다 (2026-11-11).</summary>
+    private static bool HasSeedControl(JsonObject? options) =>
+        options?["control_after_generate"] is JsonValue flag
+        && (flag.TryGetValue<bool>(out var on) ? on : flag.TryGetValue<string>(out var initial) && SeedControls.Contains(initial));
 
     // ───────── 연결 풀기 ─────────
 

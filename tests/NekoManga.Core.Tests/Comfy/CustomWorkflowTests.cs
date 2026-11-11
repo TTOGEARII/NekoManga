@@ -82,7 +82,7 @@ public class CustomWorkflowTests
         Assert.StartsWith(missing + " 노드가 없어요", ex.Message);
     }
 
-    [Fact(Skip = "알려진 결함: 최상위 값이 객체가 아닌 JSON(예: ComfyUI의 comfy.settings.json)을 고르면 CheckApi가 JsonValue에 문자열 인덱서를 써서 InvalidOperationException을 던진다 — 문서가 약속한 사람이 읽을 InvalidDataException 대신 .NET 영어 메시지가 사용자에게 보인다")]
+    [Fact]
     public void Load_ObjectWhoseValuesAreNotNodes_ThrowsInvalidData()
     {
         using var t = new TempDir();
@@ -91,6 +91,74 @@ public class CustomWorkflowTests
         File.WriteAllText(path, """{"Comfy.Locale": "ko", "Comfy.UseNewMenu": "Top"}""");
 
         Assert.Throws<InvalidDataException>(() => CustomWorkflow.Load(path));
+    }
+
+    [Theory]
+    [InlineData("""{"Comfy.Locale": "ko", "Comfy.UseNewMenu": "Top"}""", "Comfy.Locale")]
+    [InlineData("""{"Comfy.Workflow.SortNodeIdOnSave": false}""", "Comfy.Workflow.SortNodeIdOnSave")]
+    [InlineData("""{"Comfy.Keybinding.NewBindings": []}""", "Comfy.Keybinding.NewBindings")]
+    [InlineData("""{"1": {"class_type": "LoadImage", "inputs": {}}, "2": {"class_type": "SaveImage", "inputs": {}}, "version": 0.4}""", "version")]
+    [InlineData("""{"1": null}""", "1")]
+    public void Load_ValueThatIsNotANode_SaysWhichEntryIsWrong(string content, string key)
+    {
+        using var t = new TempDir();
+        var path = t.At("workflow.json");
+        File.WriteAllText(path, content);
+
+        // 노드 자리의 값이 객체가 아니면(글자·참거짓·배열·숫자·null) 워크플로가 아니다 — 앞의 노드가 멀쩡해도 마찬가지.
+        // 설정 창은 메시지를 그대로 띄우므로 .NET의 영어 메시지 대신 어느 항목이 노드가 아닌지 알려야 한다
+        var ex = Assert.Throws<InvalidDataException>(() => CustomWorkflow.Load(path));
+        Assert.StartsWith("워크플로 파일이 아니에요", ex.Message);
+        Assert.Contains($"'{key}'", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("""{"1": {"class_type": 7, "inputs": {}}}""")]
+    [InlineData("""{"1": {"class_type": true, "inputs": {}}}""")]
+    [InlineData("""{"1": {"class_type": ["LoadImage"], "inputs": {}}}""")]
+    [InlineData("""{"1": {"class_type": {"name": "LoadImage"}, "inputs": {}}}""")]
+    public void Load_ClassTypeThatIsNotText_ThrowsInvalidData(string content)
+    {
+        using var t = new TempDir();
+        var path = t.At("workflow.json");
+        File.WriteAllText(path, content);
+
+        // class_type이 노드 이름(글자)이 아니면 없는 것과 같다 — 같은 안내 메시지
+        var ex = Assert.Throws<InvalidDataException>(() => CustomWorkflow.Load(path));
+        Assert.StartsWith("API 포맷이 아니에요", ex.Message);
+    }
+
+    [Fact]
+    public void Load_ApiWorkflow_ReturnsTheFileGraphUnchanged()
+    {
+        // 규약 점검은 읽기만 한다 — 검열 제거·채색의 실행 그래프는 Load가 돌려준 그래프에서 만들어지므로 파일 내용과 한 글자도 달라지면 안 된다
+        using var t = new TempDir();
+        var path = t.At("재생성 레시피 (API).json");
+        var recipe = WorkflowBuilder.BuildRegenDecensor(new AppSettings { RegenSeed = 1 }, "nm_regen_input.png", "NekoManga_out");
+        File.WriteAllText(path, recipe.ToJsonString());
+
+        var loaded = CustomWorkflow.Load(path);
+
+        Assert.Equal(JsonNode.Parse(File.ReadAllText(path))!.ToJsonString(), loaded.ToJsonString());
+    }
+
+    [Theory]
+    [InlineData("""{"1": {"class_type": "LoadImage", "inputs": {}}, "1": {"class_type": "SaveImage", "inputs": {}}}""")]                               // 같은 노드 번호가 두 번
+    [InlineData("""{"1": {"class_type": "LoadImage", "class_type": "LoadImage", "inputs": {}}, "2": {"class_type": "SaveImage", "inputs": {}}}""")]  // 노드 안에 같은 키
+    [InlineData("""{"nodes": [{"id": 1, "type": "LoadImage", "mode": "0"}, {"id": 2, "type": "SaveImage"}], "links": []}""")]                        // 화면 포맷: mode가 글자
+    [InlineData("""{"nodes": [{"id": 1, "type": "LoadImage", "mode": 0.5}, {"id": 2, "type": "SaveImage"}], "links": []}""")]                        // 화면 포맷: mode가 정수가 아니다
+    [InlineData("""{"nodes": [{"id": 1, "type": 7}, {"id": 2, "type": "SaveImage"}], "links": []}""")]                                               // 화면 포맷: type이 숫자
+    public void Load_HandEditedJsonOfWrongShape_ThrowsReadableInvalidData(string content)
+    {
+        using var t = new TempDir();
+        var path = t.At("workflow.json");
+        File.WriteAllText(path, content);
+
+        // 손으로 고친 파일에서만 생기는 꼴이다 — 설정 창은 메시지를 그대로 띄우므로 .NET의 영어 예외 대신 사람이 읽을 InvalidDataException이어야 한다
+        var ex = Assert.Throws<InvalidDataException>(() => CustomWorkflow.Load(path));
+        Assert.StartsWith("워크플로 파일을 읽지 못했어요", ex.Message);
+        // 어디가 틀렸는지는 원래 예외만 안다 — 화면은 메시지만 보여 주므로 그 말을 끝에 붙여 둔다
+        Assert.EndsWith($"(자세히: {ex.InnerException!.Message})", ex.Message);
     }
 
     // ───────── Resolve ─────────
@@ -132,6 +200,97 @@ public class CustomWorkflowTests
         Assert.Equal("diffusion_pytorch_model_promax.safetensors", Str(api["2"]!["inputs"]!["control_net_name"]));
     }
 
+    [Fact]
+    public void Resolve_ValidApiWorkflow_ReturnsTheSameGraph()
+    {
+        // 고칠 것이 없는 올바른 그래프는 값 하나 바뀌지 않고 돌아온다 — 검열 제거·채색의 실행 그래프가 여기서 나온다
+        var api = Json(MinimalApi);
+
+        var resolved = CustomWorkflow.Resolve(api, BundledRegenObjectInfo());
+
+        Assert.Equal(api.ToJsonString(), resolved.ToJsonString());
+    }
+
+    [Theory]
+    [InlineData("""{"1": {"class_type": "LoadImage", "inputs": {"image": "a.png"}, "_meta": {"title": 5}}, "2": {"class_type": "SaveImage", "inputs": {"images": ["1", 0], "filename_prefix": "x"}}}""")]          // 제목이 숫자
+    [InlineData("""{"1": {"class_type": "LoadImage", "inputs": {"image": "a.png"}, "_meta": "Load Image"}, "2": {"class_type": "SaveImage", "inputs": {"images": ["1", 0], "filename_prefix": "x"}}}""")]        // _meta가 객체가 아니다
+    [InlineData("""{"1": {"class_type": "LoadImage", "inputs": {"image": "a.png", "image": "b.png"}}, "2": {"class_type": "SaveImage", "inputs": {"images": ["1", 0], "filename_prefix": "x"}}}""")]       // 입력에 같은 키
+    [InlineData("""{"nodes": [{"id": 1, "type": "LoadImage"}, {"id": 1, "type": "SaveImage"}], "links": []}""")]                                                                                         // 화면 포맷: 같은 노드 번호
+    [InlineData("""{"nodes": [{"id": "1", "type": "LoadImage"}, {"id": 2, "type": "SaveImage"}], "links": []}""")]                                                                                       // 화면 포맷: id가 글자
+    [InlineData("""{"nodes": [{"id": 1, "type": "LoadImage"}, {"id": 2, "type": "SaveImage", "inputs": [{"name": "images", "link": "5"}]}], "links": [[5, 1, 0, 2, 0, "IMAGE"]]}""")]                   // 화면 포맷: 링크 번호가 글자
+    public void Resolve_HandEditedJsonOfWrongShape_ThrowsReadableInvalidData(string content)
+    {
+        using var t = new TempDir();
+        var path = t.At("workflow.json");
+        File.WriteAllText(path, content);
+        var loaded = CustomWorkflow.Load(path);   // 규약(LoadImage·SaveImage) 점검이 보지 않는 자리라 읽기는 통과한다
+
+        // 실행 직전의 변환·서버 점검에서 나던 영어 예외도 사람이 읽을 InvalidDataException으로 — 작업 시작 오류에 그대로 보인다
+        var ex = Assert.Throws<InvalidDataException>(() => CustomWorkflow.Resolve(loaded, BundledRegenObjectInfo()));
+        Assert.StartsWith("워크플로를 이 ComfyUI에 맞게 바꾸지 못했어요", ex.Message);
+        Assert.EndsWith($"(자세히: {ex.InnerException!.Message})", ex.Message);
+    }
+
+    [Fact]
+    public void Resolve_ScreenWorkflowNodeWithoutId_ThrowsReadableInvalidData()
+    {
+        using var t = new TempDir();
+        var path = t.At("workflow.json");
+        File.WriteAllText(path, """{"nodes": [{"type": "LoadImage"}, {"id": 2, "type": "SaveImage"}], "links": []}""");
+        var loaded = CustomWorkflow.Load(path);
+
+        // 손으로 고치다 노드의 id를 지운 파일 — 변환기 안의 NullReferenceException이 그대로 나가지 않고 무엇이 빠졌는지 알린다
+        var ex = Assert.Throws<InvalidDataException>(() => CustomWorkflow.Resolve(loaded, BundledRegenObjectInfo()));
+        Assert.StartsWith("워크플로 파일을 읽지 못했어요", ex.Message);
+        Assert.Contains("id가 없는 노드", ex.Message);
+    }
+
+    [Fact]
+    public void Resolve_ScreenWorkflowWithCoreIntNode_BecomesApiGraphReadyToPrepare()
+    {
+        // ComfyUI가 저장한 그대로의 파일이다(코어 'Int' 노드, 저장 꼴 [1024, "fixed"]) — '손으로 고친 파일'로 거절되면 안 된다
+        using var t = new TempDir();
+        var path = t.At("크기 맞추기.json");
+        File.WriteAllText(path, CoreIntNodeWorkflow);
+
+        var api = CustomWorkflow.Resolve(CustomWorkflow.Load(path), CoreIntNodeObjectInfo());
+        var prepared = CustomWorkflow.Prepare(api, "nm_custom_1.png", "nm_customout_1");
+
+        Assert.Equal(("1", "2", 1, 1), (prepared.InputNodeId, prepared.OutputNodeId, prepared.LoadImageCount, prepared.SaveImageCount));
+        Assert.Equal(1024, Num(prepared.Prompt["3"]!["inputs"]!["value"]));
+        Assert.Equal(("3", 0), LinkOf(prepared.Prompt["4"]!["inputs"]!["width"]));
+    }
+
+    [Fact]
+    public void Resolve_NodeInfoFromServerOfUnexpectedShape_DoesNotBlameTheFileAndShowsTheCause()
+    {
+        // 파일은 ComfyUI가 저장한 그대로이고, 서버가 알려 준 노드 정보(/object_info)에 앱이 모르는 꼴이 있다 — 여기서는 글자여야 할 표시 이름이 객체다
+        var info = CoreIntNodeObjectInfo();
+        info["PrimitiveInt"]!["display_name"] = new JsonObject { ["ko"] = "정수" };
+        var loaded = Json(CoreIntNodeWorkflow);
+        var raw = Assert.Throws<InvalidOperationException>(() => WorkflowConverter.ToApi(loaded, info));
+
+        var ex = Assert.Throws<InvalidDataException>(() => CustomWorkflow.Resolve(loaded, info));
+
+        // 사람이 읽을 InvalidDataException이되 '손으로 고친 파일' 탓으로 단정하지 않고, 원래 예외의 말을 붙여 원인이 보이게 한다
+        Assert.StartsWith("워크플로를 이 ComfyUI에 맞게 바꾸지 못했어요", ex.Message);
+        Assert.DoesNotContain("워크플로 파일을 읽지 못했어요", ex.Message);
+        Assert.IsType<InvalidOperationException>(ex.InnerException);
+        Assert.EndsWith($"(자세히: {raw.Message})", ex.Message);
+    }
+
+    [Theory]
+    [InlineData(typeof(ArgumentException), true)]            // 한 객체에 같은 키가 두 번
+    [InlineData(typeof(InvalidOperationException), true)]    // 값의 형식이 다르다
+    [InlineData(typeof(FormatException), true)]              // 정수 자리의 소수
+    [InlineData(typeof(NullReferenceException), false)]
+    [InlineData(typeof(InvalidDataException), false)]        // 이미 사람이 읽을 안내다
+    public void IsMalformed_OnlyJsonShapeErrorsAreRewritten(Type exception, bool expected)
+    {
+        // NullReferenceException은 파일 꼴이 아니라 코드 결함의 신호다 — '파일을 읽지 못했어요'로 바꿔 보이면 원인을 못 찾는다
+        Assert.Equal(expected, CustomWorkflow.IsMalformed((Exception)Activator.CreateInstance(exception)!));
+    }
+
     // ───────── Prepare ─────────
 
     [Fact]
@@ -167,6 +326,7 @@ public class CustomWorkflowTests
     [InlineData("참고 그림", "원고 입력", "2")]
     [InlineData("neko 입력", "neko 입력 2", "1")]
     [InlineData("Load Image", "Load Image", "1")]
+    [InlineData("출력 비교", "원고 입력", "2")]
     public void Prepare_SeveralLoadImages_TitledInputWinsElseTheFirst(string firstTitle, string secondTitle, string expected)
     {
         var original = new Dictionary<string, string> { ["1"] = "a.png", ["2"] = "b.png" };
@@ -179,7 +339,7 @@ public class CustomWorkflowTests
 
         var prepared = CustomWorkflow.Prepare(api, "nm_custom_0.png", "out");
 
-        // 제목에 neko(대소문자 무관)나 '입력'이 든 것이 먼저, 그런 것이 없으면 첫 번째. 고르지 않은 LoadImage는 그대로 둔다
+        // 제목에 neko(대소문자 무관)나 '입력'이 든 것이 먼저, 그런 것이 없으면 첫 번째('출력'은 보지 않는다). 고르지 않은 LoadImage는 그대로 둔다
         Assert.Equal(expected, prepared.InputNodeId);
         Assert.Equal(2, prepared.LoadImageCount);
         Assert.Equal("nm_custom_0.png", Str(prepared.Prompt[expected]!["inputs"]!["image"]));
@@ -187,7 +347,7 @@ public class CustomWorkflowTests
             Assert.Equal(original[other], Str(prepared.Prompt[other]!["inputs"]!["image"]));
     }
 
-    [Fact(Skip = "알려진 결함: PickNode가 LoadImage·SaveImage 둘 다 neko·입력·출력 세 낱말로 고른다 — 제목에 '입력'이 든 SaveImage(입력 확인용 저장 등)를 출력으로 골라 진짜 결과 SaveImage를 PreviewImage로 바꾼다. 문서 규약은 SaveImage를 neko·출력으로만 고른다")]
+    [Fact]
     public void Prepare_SaveImageTitledWithInputWord_IsNotPickedAsOutput()
     {
         var api = Json("""
@@ -202,6 +362,76 @@ public class CustomWorkflowTests
 
         // 규약: SaveImage가 여럿이면 제목에 neko나 '출력'이 든 것, 없으면 첫 번째 — '입력'은 LoadImage를 고르는 낱말이다
         Assert.Equal("5", prepared.OutputNodeId);
+        // 진짜 결과 SaveImage가 접두사를 받고, 입력 확인용 저장만 PreviewImage로 바뀐다
+        Assert.Equal("SaveImage", Str(prepared.Prompt["5"]!["class_type"]));
+        Assert.Equal("nm_customout_0", Str(prepared.Prompt["5"]!["inputs"]!["filename_prefix"]));
+        Assert.Equal("PreviewImage", Str(prepared.Prompt["9"]!["class_type"]));
+    }
+
+    [Fact]
+    public void Prepare_LoadImageTitledWithOutputWord_IsNotPickedAsInput()
+    {
+        var api = Json("""
+            {
+              "1": { "class_type": "LoadImage", "inputs": { "image": "page.png" }, "_meta": { "title": "Load Image" } },
+              "4": { "class_type": "LoadImage", "inputs": { "image": "before.png" }, "_meta": { "title": "출력 비교용 이전 결과" } },
+              "9": { "class_type": "SaveImage", "inputs": { "images": ["1", 0], "filename_prefix": "ComfyUI" }, "_meta": { "title": "Save Image" } }
+            }
+            """);
+
+        var prepared = CustomWorkflow.Prepare(api, "nm_custom_0.png", "nm_customout_0");
+
+        // 규약: LoadImage가 여럿이면 제목에 neko나 '입력'이 든 것, 없으면 첫 번째 — '출력'은 SaveImage를 고르는 낱말이다
+        Assert.Equal("1", prepared.InputNodeId);
+        Assert.Equal("nm_custom_0.png", Str(prepared.Prompt["1"]!["inputs"]!["image"]));
+        // 제목에 '출력'이 든 LoadImage(비교용으로 불러온 그림 등)는 원래 그림을 그대로 쓴다
+        Assert.Equal("before.png", Str(prepared.Prompt["4"]!["inputs"]!["image"]));
+    }
+
+    [Theory]
+    [InlineData("Save Image", "NEKO 결과", "3")]
+    [InlineData("미리 보기", "결과 출력", "3")]
+    [InlineData("neko 출력", "neko 출력 2", "2")]
+    [InlineData("Save Image", "Save Image", "2")]
+    [InlineData("Save Image", "입력 마스크 확인", "2")]
+    [InlineData("입력 확인", "최종 출력", "3")]
+    public void Prepare_SeveralSaveImages_TitledOutputWinsElseTheFirst(string firstTitle, string secondTitle, string expected)
+    {
+        var api = new JsonObject
+        {
+            ["1"] = new JsonObject { ["class_type"] = "LoadImage", ["inputs"] = new JsonObject { ["image"] = "page.png" } },
+            ["2"] = new JsonObject { ["class_type"] = "SaveImage", ["inputs"] = new JsonObject { ["filename_prefix"] = "a" }, ["_meta"] = new JsonObject { ["title"] = firstTitle } },
+            ["3"] = new JsonObject { ["class_type"] = "SaveImage", ["inputs"] = new JsonObject { ["filename_prefix"] = "b" }, ["_meta"] = new JsonObject { ["title"] = secondTitle } },
+        };
+
+        var prepared = CustomWorkflow.Prepare(api, "nm_custom_0.png", "out");
+
+        // 제목에 neko(대소문자 무관)나 '출력'이 든 것이 먼저, 그런 것이 없으면 첫 번째 — '입력'은 보지 않는다.
+        // 고른 것만 접두사를 받고 나머지는 PreviewImage가 된다
+        Assert.Equal(expected, prepared.OutputNodeId);
+        Assert.Equal(2, prepared.SaveImageCount);
+        Assert.Equal("out", Str(prepared.Prompt[expected]!["inputs"]!["filename_prefix"]));
+        Assert.Equal("PreviewImage", Str(prepared.Prompt[expected == "2" ? "3" : "2"]!["class_type"]));
+    }
+
+    [Fact]
+    public void Prepare_SeveralNodesWithoutTitles_FirstOfEachKindIsPicked()
+    {
+        // 손으로 쓴 API 파일처럼 _meta가 없으면 제목으로 고를 수 없다 — 종류마다 첫 번째
+        var api = Json("""
+            {
+              "1": { "class_type": "LoadImage", "inputs": { "image": "a.png" } },
+              "2": { "class_type": "SaveImage", "inputs": { "images": ["1", 0], "filename_prefix": "a" } },
+              "3": { "class_type": "LoadImage", "inputs": { "image": "b.png" } },
+              "4": { "class_type": "SaveImage", "inputs": { "images": ["3", 0], "filename_prefix": "b" } }
+            }
+            """);
+
+        var prepared = CustomWorkflow.Prepare(api, "nm_custom_0.png", "nm_customout_0");
+
+        Assert.Equal(("1", "2", 2, 2), (prepared.InputNodeId, prepared.OutputNodeId, prepared.LoadImageCount, prepared.SaveImageCount));
+        Assert.Equal("b.png", Str(prepared.Prompt["3"]!["inputs"]!["image"]));
+        Assert.Equal("PreviewImage", Str(prepared.Prompt["4"]!["class_type"]));
     }
 
     // ───────── 내장 워크플로·내보낸 레시피 ─────────

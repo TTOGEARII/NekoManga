@@ -148,6 +148,8 @@ public class WorkflowConverterTests
     [InlineData("SeedProbe", "seed", """[42, "increment", 30, 6.5]""")]
     [InlineData("SeedProbe", "seed", """[42, 30, 6.5]""")]
     [InlineData("FlagSeedProbe", "rng", """[42, "decrement", 30, 6.5]""")]
+    [InlineData("TextFlagSeedProbe", "rng", """[42, "fixed", 30, 6.5]""")]   // V3 노드: 표시가 true가 아니라 글자("increment")다
+    [InlineData("TextFlagSeedProbe", "rng", """[42, 30, 6.5]""")]
     public void ToApi_SeedControlWord_IsSkippedOnlyWhenPresent(string nodeType, string seedInput, string widgets)
     {
         var ui = new JsonObject
@@ -161,6 +163,47 @@ public class WorkflowConverterTests
         // 시드(이름이 seed이거나 control_after_generate 표시가 있는 INT) 뒤의 생성 후 제어 값은 입력이 아니라 건너뛴다.
         // 옛 파일처럼 제어 값이 없으면 아무것도 건너뛰지 않고, fixed·increment·decrement면 적힌 시드를 그대로 쓴다
         Assert.Equal(42, Num(probe[seedInput]));
+        Assert.Equal(30, Num(probe["steps"]));
+        Assert.Equal(6.5, Num(probe["cfg"]));
+    }
+
+    [Fact]
+    public void ToApi_CoreIntNodeWithTextControlFlag_ConvertsAndDropsTheControlWord()
+    {
+        // 코어 'Int' 노드(PrimitiveInt)는 V3 스키마라 /object_info가 control_after_generate를 true 대신 글자 "fixed"로 내놓는다.
+        // 그 글자를 bool로 읽다 터져, 이 노드가 든 화면 저장 워크플로(ComfyUI 공식 템플릿에도 많다)를 통째로 못 썼다
+        var info = CoreIntNodeObjectInfo();
+
+        var api = WorkflowConverter.ToApi(Json(CoreIntNodeWorkflow), info);
+
+        // 저장 꼴 [1024, "fixed"]에서 값만 입력이 되고 뒤의 생성 후 제어 값은 버린다
+        var number = Assert.IsType<JsonObject>(api["3"]);
+        Assert.Equal("PrimitiveInt", ClassType(number));
+        var only = Assert.Single(Inputs(number));
+        Assert.Equal("value", only.Key);
+        Assert.Equal(1024, Num(only.Value));
+        // 그 값을 받는 쪽은 위젯의 옛 값(512)이 아니라 노드로 이어진다
+        var scale = Inputs(Only(api, "ImageScale").Node);
+        Assert.Equal(("3", 0), LinkOf(scale["width"]));
+        Assert.Equal(("3", 0), LinkOf(scale["height"]));
+        Assert.Equal("lanczos", Str(scale["upscale_method"]));
+        Assert.Equal("disabled", Str(scale["crop"]));
+        WorkflowConverter.Validate(api, info);
+    }
+
+    [Fact]
+    public void ToApi_TextControlFlagWithRandomize_DrawsNewSeedAndKeepsLaterWidgetsInPlace()
+    {
+        var ui = new JsonObject
+        {
+            ["nodes"] = new JsonArray(new JsonObject { ["id"] = 1, ["type"] = "TextFlagSeedProbe", ["widgets_values"] = JsonNode.Parse("""[-5, "randomize", 30, 6.5]""") }),
+            ["links"] = new JsonArray(),
+        };
+
+        var probe = Inputs(Assert.IsType<JsonObject>(WorkflowConverter.ToApi(ui, ProbeInfo())["1"]));
+
+        // 표시가 글자여도 시드처럼 다룬다: randomize면 적힌 값(-5) 대신 0 이상의 새 값을 뽑고, 뒤의 위젯은 제자리를 지킨다
+        Assert.True(probe["rng"]!.GetValue<long>() >= 0);
         Assert.Equal(30, Num(probe["steps"]));
         Assert.Equal(6.5, Num(probe["cfg"]));
     }
@@ -408,7 +451,8 @@ public class WorkflowConverterTests
             }
           },
           "SeedProbe": { "input": { "required": { "seed": ["INT", { "default": 0 }], "steps": ["INT", { "default": 20 }], "cfg": ["FLOAT", { "default": 8.0 }] } } },
-          "FlagSeedProbe": { "input": { "required": { "rng": ["INT", { "default": 0, "control_after_generate": true }], "steps": ["INT", { "default": 20 }], "cfg": ["FLOAT", { "default": 8.0 }] } } }
+          "FlagSeedProbe": { "input": { "required": { "rng": ["INT", { "default": 0, "control_after_generate": true }], "steps": ["INT", { "default": 20 }], "cfg": ["FLOAT", { "default": 8.0 }] } } },
+          "TextFlagSeedProbe": { "input": { "required": { "rng": ["INT", { "default": 0, "control_after_generate": "increment" }], "steps": ["INT", { "default": 20 }], "cfg": ["FLOAT", { "default": 8.0 }] } } }
         }
         """);
 

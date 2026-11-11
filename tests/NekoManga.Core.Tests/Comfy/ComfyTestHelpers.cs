@@ -105,6 +105,58 @@ internal static class ComfyTestHelpers
         }
         """);
 
+    /// <summary>코어 'Int' 노드(PrimitiveInt) 하나가 크기 조절의 가로·세로에 이어진 화면 저장 워크플로.
+    /// 노드의 저장 꼴("widgets_values": [1024, "fixed"])은 ComfyUI가 저장하는 그대로다 — 값 뒤에 생성 후 제어 값이 붙는다.</summary>
+    public const string CoreIntNodeWorkflow = """
+        {
+          "last_node_id": 4, "last_link_id": 4,
+          "nodes": [
+            { "id": 1, "type": "LoadImage", "mode": 0, "inputs": [],
+              "outputs": [{ "name": "IMAGE", "type": "IMAGE", "links": [1] }, { "name": "MASK", "type": "MASK", "links": null }],
+              "properties": { "Node name for S&R": "LoadImage" }, "widgets_values": ["page.png", "image"] },
+            { "id": 3, "type": "PrimitiveInt", "mode": 0, "inputs": [],
+              "outputs": [{ "name": "INT", "type": "INT", "links": [2, 3] }],
+              "properties": { "Node name for S&R": "PrimitiveInt", "cnr_id": "comfy-core" }, "widgets_values": [1024, "fixed"] },
+            { "id": 4, "type": "ImageScale", "mode": 0,
+              "inputs": [
+                { "name": "image", "type": "IMAGE", "link": 1 },
+                { "name": "width", "type": "INT", "widget": { "name": "width" }, "link": 2 },
+                { "name": "height", "type": "INT", "widget": { "name": "height" }, "link": 3 }
+              ],
+              "outputs": [{ "name": "IMAGE", "type": "IMAGE", "links": [4] }],
+              "properties": { "Node name for S&R": "ImageScale" }, "widgets_values": ["lanczos", 512, 512, "disabled"] },
+            { "id": 2, "type": "SaveImage", "mode": 0,
+              "inputs": [{ "name": "images", "type": "IMAGE", "link": 4 }],
+              "outputs": [], "properties": {}, "widgets_values": ["ComfyUI"] }
+          ],
+          "links": [[1, 1, 0, 4, 0, "IMAGE"], [2, 3, 0, 4, 1, "INT"], [3, 3, 0, 4, 2, "INT"], [4, 4, 0, 2, 0, "IMAGE"]],
+          "groups": [], "config": {}, "extra": {}, "version": 0.4
+        }
+        """;
+
+    /// <summary><see cref="CoreIntNodeWorkflow"/>에 맞는 /object_info. PrimitiveInt는 V3 스키마 노드라 control_after_generate를 true가 아니라
+    /// 제어 위젯의 처음 값인 글자로 내놓는다(comfy_extras/nodes_primitive.py의 io.ControlAfterGenerate.fixed → "fixed").</summary>
+    public static JsonObject CoreIntNodeObjectInfo() => Json("""
+        {
+          "LoadImage": { "input": { "required": { "image": [["page.png"], { "image_upload": true }] } }, "display_name": "Load Image" },
+          "SaveImage": { "input": { "required": { "images": ["IMAGE"], "filename_prefix": ["STRING", { "default": "ComfyUI" }] } }, "display_name": "Save Image" },
+          "ImageScale": {
+            "input": { "required": {
+              "image": ["IMAGE"],
+              "upscale_method": [["nearest-exact", "bilinear", "area", "bicubic", "lanczos"]],
+              "width": ["INT", { "default": 512, "min": 0, "max": 16384, "step": 1 }],
+              "height": ["INT", { "default": 512, "min": 0, "max": 16384, "step": 1 }],
+              "crop": [["disabled", "center"]]
+            } },
+            "display_name": "Upscale Image"
+          },
+          "PrimitiveInt": {
+            "input": { "required": { "value": ["INT", { "min": -9223372036854775807, "max": 9223372036854775807, "control_after_generate": "fixed" }] } },
+            "display_name": "Int"
+          }
+        }
+        """);
+
     // ───────── API 그래프 탐색 ─────────
 
     public static JsonObject Inputs(JsonObject node) => Assert.IsType<JsonObject>(node["inputs"]);
