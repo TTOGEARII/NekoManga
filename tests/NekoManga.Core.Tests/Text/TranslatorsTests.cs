@@ -2,7 +2,7 @@ using NekoManga.Core.Engine;
 
 namespace NekoManga.Core.Tests;
 
-/// <summary>LLM 응답 파싱(LlmTranslator.ParseNumbered)과 번역기 고르기(TranslatorFactory).
+/// <summary>LLM 응답 파싱(LlmTranslator.ParseNumbered)과 번역기 고르기(TranslatorFactory), 언어 코드 판정(LangCode).
 /// 네트워크는 쓰지 않는다 — 번역기는 형식만 보고, 실제 번역 호출은 요청이 필요 없는 입력으로만 부른다.</summary>
 public class TranslatorsTests
 {
@@ -132,6 +132,144 @@ public class TranslatorsTests
 
         Assert.Equal(count, result.Count);
         Assert.All(result, r => Assert.Equal("", r));
+    }
+
+    [Theory]
+    // Google 무료 엔드포인트는 세 글자 코드(ISO 639-2/3)를 못 알아듣고 조용히 영어로 답한다(실측: tl=zho·chi·kor·eng·jpn 전부 "good morning") —
+    // 보낼 때 받는 코드로 바꾼다. 대소문자·앞뒤 공백은 가리지 않는다
+    [InlineData("zho", "zh-CN")]
+    [InlineData("chi", "zh-CN")]
+    [InlineData("cmn", "zh-CN")]
+    [InlineData("jpn", "ja")]
+    [InlineData("kor", "ko")]
+    [InlineData("eng", "en")]
+    [InlineData("ZHO", "zh-CN")]
+    [InlineData("Kor", "ko")]
+    [InlineData(" jpn ", "ja")]
+    public void RequestCode_ThreeLetterCode_BecomesTheCodeGoogleAccepts(string configured, string sent)
+    {
+        Assert.Equal(sent, GoogleTranslator.RequestCode(configured));
+    }
+
+    [Theory]
+    // 그 밖의 코드는 한 글자도 바꾸지 않는다 — 대소문자·구분자·꼬리표·공백까지 설정값 그대로 (v1.8.2와 같은 요청)
+    [InlineData("ja")]
+    [InlineData("ko")]
+    [InlineData("en")]
+    [InlineData("zh")]
+    [InlineData("zh-CN")]
+    [InlineData("zh-TW")]
+    [InlineData("ZH-tw")]
+    [InlineData("zh_CN")]
+    [InlineData("zh-Hans")]
+    [InlineData("zh-Hant")]
+    [InlineData("ko-KR")]
+    [InlineData("en_US")]
+    [InlineData("JA")]
+    [InlineData(" ko ")]
+    [InlineData("auto")]
+    [InlineData("fr")]
+    // 세 글자 코드에 꼬리표가 붙은 것, 앞 글자만 닮은 것은 표에 없다 — 넘겨짚어 바꾸지 않는다
+    [InlineData("zho-TW")]
+    [InlineData("kor_KR")]
+    [InlineData("zha")]
+    [InlineData("yue")]
+    [InlineData("chinese")]
+    [InlineData("")]
+    public void RequestCode_AnyOtherCode_IsSentAsConfigured(string configured)
+    {
+        Assert.Equal(configured, GoogleTranslator.RequestCode(configured));
+    }
+
+    [Theory]
+    // 요청 주소에는 바꾼 코드가 들어간다 — 원문 쪽(sl)도 같다(실측: sl=jpn 이면 원문을 못 알아봐 깨진 답이 온다)
+    [InlineData("ja", "ko", "&sl=ja&tl=ko&")]
+    [InlineData("jpn", "zho", "&sl=ja&tl=zh-CN&")]
+    [InlineData("jpn", "kor", "&sl=ja&tl=ko&")]
+    [InlineData("ja", "eng", "&sl=ja&tl=en&")]
+    [InlineData("ja", "zh-TW", "&sl=ja&tl=zh-TW&")]
+    [InlineData("JA", "zh_CN", "&sl=JA&tl=zh_CN&")]
+    public void RequestUrl_LanguageCodes_GoThroughRequestCode(string source, string target, string expectedPart)
+    {
+        var url = GoogleTranslator.RequestUrl("こんにちは 世界", source, target);
+
+        Assert.Equal("https://translate.googleapis.com/translate_a/single?client=gtx&dt=t" + expectedPart + "q=" + Uri.EscapeDataString("こんにちは 世界"), url);
+    }
+
+    [Theory]
+    // 뒷손질이 중국어·일본어로 알아보는 코드를 Google에 보내면 Google도 그 언어로 받는 코드여야 한다 —
+    // 어긋나면(예전의 zho) 영어 번역문을 중국어 규칙으로 손질한다
+    [InlineData("zho")]
+    [InlineData("chi")]
+    [InlineData("cmn")]
+    [InlineData("jpn")]
+    [InlineData("kor")]
+    [InlineData("eng")]
+    public void RequestCode_ThreeLetterCode_KeepsTheLanguageThatPolishingAssumes(string configured)
+    {
+        var sent = GoogleTranslator.RequestCode(configured);
+
+        Assert.Equal(LangCode.Primary(configured), LangCode.Primary(sent));
+        Assert.True(sent.Length == 2 || sent == "zh-CN", sent);   // Google이 받는 꼴: 두 글자 코드나 zh-CN
+    }
+
+    [Theory]
+    // 지역·문자 꼬리표(-, _ 둘 다)와 대소문자, 앞뒤 공백을 떼고 언어만 본다
+    [InlineData("zh", "zh")]
+    [InlineData("ZH", "zh")]
+    [InlineData("zh-CN", "zh")]
+    [InlineData("zh_CN", "zh")]
+    [InlineData("zh-TW", "zh")]
+    [InlineData("zh_tw", "zh")]
+    [InlineData("zh-Hans", "zh")]
+    [InlineData("zh-Hant-HK", "zh")]
+    [InlineData(" zh-CN ", "zh")]
+    // ISO 639-2/3의 세 글자 코드
+    [InlineData("zho", "zh")]
+    [InlineData("chi", "zh")]
+    [InlineData("cmn", "zh")]
+    [InlineData("CMN-Hans", "zh")]
+    [InlineData("jpn", "ja")]
+    [InlineData("kor", "ko")]
+    [InlineData("eng", "en")]
+    [InlineData("ja", "ja")]
+    [InlineData("JA-jp", "ja")]
+    [InlineData("ko-KR", "ko")]
+    [InlineData("en_US", "en")]
+    // 모르는 코드는 꼬리표만 뗀 소문자 그대로 — 다른 언어로 넘겨짚지 않는다
+    [InlineData("fr-CA", "fr")]
+    [InlineData("zha", "zha")]
+    [InlineData("chinese", "chinese")]
+    [InlineData("简体中文", "简体中文")]
+    [InlineData("", "")]
+    [InlineData(null, "")]
+    public void Primary_CodeVariants_ReduceToLanguagePart(string? code, string expected)
+    {
+        Assert.Equal(expected, LangCode.Primary(code));
+    }
+
+    [Theory]
+    [InlineData("zh", true, false)]
+    [InlineData("zh_CN", true, false)]
+    [InlineData("ZH-hant", true, false)]
+    [InlineData("zho", true, false)]
+    [InlineData("chi", true, false)]
+    [InlineData("cmn", true, false)]
+    [InlineData("ja", false, true)]
+    [InlineData("ja-JP", false, true)]
+    [InlineData("jpn", false, true)]
+    [InlineData("ko", false, false)]
+    [InlineData("en", false, false)]
+    // 앞 글자만 닮은 코드는 중국어·일본어가 아니다 (zha 좡어, zu 줄루어, jv 자바어)
+    [InlineData("zha", false, false)]
+    [InlineData("zu", false, false)]
+    [InlineData("jv", false, false)]
+    [InlineData("", false, false)]
+    [InlineData(null, false, false)]
+    public void IsChineseIsJapanese_CodeVariants_FollowPrimary(string? code, bool chinese, bool japanese)
+    {
+        Assert.Equal(chinese, LangCode.IsChinese(code));
+        Assert.Equal(japanese, LangCode.IsJapanese(code));
     }
 
     /// <summary>엔진과, 키를 넣을 엔진(keyOwner)을 정한 설정. 설정 파일은 읽지 않는다.</summary>

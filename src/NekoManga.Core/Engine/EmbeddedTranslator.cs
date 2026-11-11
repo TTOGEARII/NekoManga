@@ -195,15 +195,17 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
     }
 
     /// <summary>번역문 뒷손질 — 일본어가 아닌 목표 언어에 장음 기호 ー·〜가 남으면 ~로 (LLM이 "또ー!?"처럼 그대로 두는 실측),
-    /// 일본어 전각 느낌표·물음표는 반각으로(중국어는 전각 ！？가 표준 문장부호라 그대로 둔다). 세로쓰기 기호가 가로 식자에서 긴 막대로 그려지는 것을 막는다.</summary>
+    /// 일본어 전각 느낌표·물음표는 반각으로. 세로쓰기 기호가 가로 식자에서 긴 막대로 그려지는 것을 막는다.
+    /// 중국어가 목표면 반각이 아니라 중국어 조판의 전각 부호로 맞춘다(<see cref="PolishChinese"/>). 일본어가 목표면 손대지 않는다.
+    /// 목표 언어 코드는 settings.json 값 그대로 온다(설정 창에는 ko·en뿐) — 어느 언어인지는 <see cref="LangCode"/>가 정한다.</summary>
     internal static string PolishTranslation(string tr, string targetLang)
     {
-        var lang = (targetLang ?? "").ToLowerInvariant();
-        if (lang == "ja") return tr;
+        // 일본어로 옮길 때는 ー·〜·！？·・・・·‥ 가 전부 맞는 표기다 — 하나도 바꾸지 않는다 (ja-JP·jpn 같은 꼴도 같다)
+        if (LangCode.IsJapanese(targetLang)) return tr;
+        if (LangCode.IsChinese(targetLang)) return PolishChinese(tr);
+        // 여기부터는 한국어·영어(와 그 밖의 언어) — 예전 그대로다
         tr = tr.Replace('ー', '~').Replace('〜', '~').Replace('～', '~');
-        // 목표 언어 코드는 settings.json 값 그대로 온다(설정 창에는 ko·en뿐) — zh·zh-CN·zh-TW·zh-Hant 같은 꼴을 모두 중국어로 본다
-        if (!(lang == "zh" || lang.StartsWith("zh-", StringComparison.Ordinal)))
-            tr = tr.Replace('！', '!').Replace('？', '?');
+        tr = tr.Replace('！', '!').Replace('？', '?');
         // 가운뎃점 말줄임은 가로 식자에서 점이 띄엄띄엄 그려진다 (실측 06p). 셋 이상 이어진 것은 남김없이 개수만큼 마침표로 바꾼다 —
         // 세 개씩만 바꾸던 때는 "・・・・"에서 하나가 남았다. "..."로 모으지 않는 것은 여섯 점이 예전부터 "......"(맞춤법의 아래 여섯 점 줄임표)로
         // 바뀌어 왔기 때문이다. 둘 이하는 예전처럼 그대로 둔다(하나는 '빨강・파랑' 같은 열거일 수 있다).
@@ -211,6 +213,43 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
     }
 
     private static readonly Regex MiddleDotRun = new("・{3,}", RegexOptions.Compiled);
+
+    /// <summary>중국어 번역문의 뒷손질. 중국어 조판(GB/T 15834)은 전각 문장부호가 표준이라, 한국어·영어용 바꾸기를 그대로 쓰면
+    /// 맞는 표기를 틀린 표기로 바꾼다. <see cref="PolishTranslation"/>의 바꾸기를 하나씩 따져 정한 것:
+    /// <list type="bullet">
+    /// <item>ー(일본어 장음 기호) → ～ : 중국어 글자가 아니라서 남기면 안 되고, 늘인 소리는 전각 물결표로 쓴다(반각 ~가 아니다).</item>
+    /// <item>〜(U+301C, 일본어 물결표) → ～(U+FF5E) : 모양은 같지만 중국어 글꼴·GBK가 쓰는 것은 U+FF5E다 — 그쪽으로 모은다.</item>
+    /// <item>～(U+FF5E) : 이미 맞는 표기 — 그대로.</item>
+    /// <item>~(반각 물결표) → ～ : LLM 프롬프트가 늘인 소리를 반각 ~로 쓰라고 해서(LlmTranslator) 번역문에는 ~가 오는데, 위에서 ー·〜는 ～로 바꾸므로
+    /// 그대로 두면 한 쪽에 "啊~"와 "啊～"가 섞였다. 늘인 소리 표시는 ～ 하나로 모은다. 다만 늘인 소리가 아닌 것이 분명한 ~는 그대로 둔다(<see cref="KeepsHalfWidthTilde"/>):
+    /// 하나짜리 ~ 바로 뒤가 숫자이거나(범위 1~2, 어림 ~10), 앞뒤가 모두 로마자·숫자인 것(A~Z). ~~처럼 이어진 것과 그 밖의 자리(글 끝, 한자·문장부호·공백 앞)는 전부 ～.</item>
+    /// <item>！？ : 표준 문장부호 — 그대로 (v1.8.1).</item>
+    /// <item>・・・(가운뎃점 셋 이상) → …… : 중국어 줄임표는 여섯 점(U+2026 둘)이다. 마침표 "..."는 중국어 표기가 아니다.
+    /// 여섯 개까지는 줄임표 하나(……), 그보다 길면 여섯 개마다 하나씩 더(열두 점 …………까지가 표준의 긴 줄임표). 둘 이하는 한국어처럼 그대로.</item>
+    /// <item>‥(두 점 줄임표) → … : 중국어에 없는 부호다 — 같은 계열의 줄임표로(‥‥ → ……).</item>
+    /// </list>
+    /// 이 함수가 원래 손대지 않는 전각 부호(，。：；（）「」『』、 전각 공백)는 중국어에서 전부 맞는 표기이고, 여기서도 손대지 않는다.
+    /// 식자(TextRenderer)는 목표 언어를 보지 않고 늘 가로로 그리므로 ～·……가 세로쓰기 꼴로 눕는 일은 없다.</summary>
+    private static string PolishChinese(string tr)
+    {
+        tr = tr.Replace('ー', '～').Replace('〜', '～');
+        var text = tr;
+        tr = HalfWidthTildeRun.Replace(tr, m => KeepsHalfWidthTilde(text, m.Index, m.Length) ? m.Value : new string('～', m.Length));
+        return MiddleDotRun.Replace(tr, m => new string('…', 2 * ((m.Length + 5) / 6))).Replace('‥', '…');
+    }
+
+    private static readonly Regex HalfWidthTildeRun = new("~+", RegexOptions.Compiled);
+
+    /// <summary>중국어 번역문의 반각 ~(index에서 length개 이어진 것)가 늘인 소리 표시가 아니라 범위·어림 표시인가 — 그러면 ～로 바꾸지 않는다.
+    /// 하나짜리이고, 바로 뒤가 숫자이거나(1~2·~10·约~10 — 전각 숫자 포함) 바로 앞뒤가 모두 로마자·숫자일 때(A~Z)만 그렇다.
+    /// 띄어 쓴 "1 ~ 2"는 ～가 된다 — 중국어 조판에서는 범위도 ～(浪纹线)로 쓰므로 틀린 표기는 아니다.</summary>
+    private static bool KeepsHalfWidthTilde(string text, int index, int length)
+    {
+        if (length != 1 || index + 1 >= text.Length) return false;
+        char next = text[index + 1];
+        if (char.IsDigit(next)) return true;
+        return char.IsAsciiLetter(next) && index > 0 && (char.IsAsciiLetter(text[index - 1]) || char.IsDigit(text[index - 1]));
+    }
 
     /// <summary>블록 안 텍스트 획 픽셀의 평균색 → 식자 글자색.</summary>
     private static string SampleTextColor(Mat img, Mat textMask, Rect rect)
@@ -248,7 +287,9 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
     /// 'Ekゅ' 같은 환각을 내므로 한 글자 포함으로는 못 거른다.</summary>
     internal static bool LooksLikeSource(string text, string sourceLang)
     {
-        var lang = (sourceLang ?? "").ToLowerInvariant();
+        // 어느 언어인지는 뒷손질(PolishTranslation)과 같은 판정을 쓴다 — 예전에는 여기만 "zh"·"zh-cn"·"zh-tw" 셋만 받아
+        // zh-Hant·zh_CN 은 뒷손질에서는 중국어, 여기서는 '그 밖의 언어'였다
+        var lang = LangCode.Primary(sourceLang);
         int letters = 0, hits = 0;
         foreach (var ch in text)
         {
@@ -261,7 +302,7 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
             bool hit = lang switch
             {
                 "ja" => kana || han,
-                "zh" or "zh-cn" or "zh-tw" => han,
+                "zh" => han,
                 "ko" => hangul || han,
                 _ => char.IsLetter(ch),
             };

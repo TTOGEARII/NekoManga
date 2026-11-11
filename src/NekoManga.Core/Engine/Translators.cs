@@ -28,9 +28,7 @@ public class GoogleTranslator : ITranslator
         foreach (var text in texts)
         {
             if (string.IsNullOrWhiteSpace(text)) { results.Add(""); continue; }
-            var url = "https://translate.googleapis.com/translate_a/single?client=gtx&dt=t" +
-                      $"&sl={sourceLang}&tl={targetLang}&q={Uri.EscapeDataString(text)}";
-            var json = await Http.GetStringAsync(url, ct);
+            var json = await Http.GetStringAsync(RequestUrl(text, sourceLang, targetLang), ct);
             // 응답: [[[번역문, 원문, ...], [조각2...]], ...]
             var root = JsonNode.Parse(json);
             var sb = new System.Text.StringBuilder();
@@ -42,6 +40,26 @@ public class GoogleTranslator : ITranslator
         }
         return results;
     }
+
+    /// <summary>말풍선 하나를 번역해 달라는 요청 주소. 언어 코드는 <see cref="RequestCode"/>를 거친다.</summary>
+    internal static string RequestUrl(string text, string sourceLang, string targetLang) =>
+        "https://translate.googleapis.com/translate_a/single?client=gtx&dt=t" +
+        $"&sl={RequestCode(sourceLang)}&tl={RequestCode(targetLang)}&q={Uri.EscapeDataString(text)}";
+
+    /// <summary>Google에 보낼 언어 코드. 설정값을 그대로 보내되, 무료 엔드포인트가 못 알아듣는 세 글자 코드(ISO 639-2/3)만 받는 두 글자 코드로 바꾼다:
+    /// zho·chi·cmn → zh-CN, jpn → ja, kor → ko, eng → en (앞뒤 공백·대소문자는 가리지 않는다). 그 밖의 코드는 한 글자도 바꾸지 않는다 — zh-TW는 zh-TW 그대로 간다.
+    /// <para>실측(2026-11-11, 원문 "おはようございます"): tl=zho·chi·kor·eng·jpn 은 오류 없이 전부 영어("good morning")로 답했고, sl=jpn 은 원문을 못 알아봐
+    /// "はよござい마스" 같은 깨진 답을 냈다. 뒷손질(<see cref="LangCode"/>)은 zho·kor 을 중국어·한국어로 알아보므로, 그대로 보내면 영어 번역문을 중국어 규칙으로 손질하게 된다.
+    /// cmn 은 지금도 중국어(간체)로 답하지만(zh-CN 과 같은 답) 같은 표에 넣어 zh-CN 으로 보낸다.</para>
+    /// LLM 번역기가 못 준 줄을 메우는 Google 호출도 이 번역기를 거치므로 같이 적용된다. DeepL·LLM 요청은 바꾸지 않는다.</summary>
+    internal static string RequestCode(string code) => (code ?? "").Trim().ToLowerInvariant() switch
+    {
+        "zho" or "chi" or "cmn" => "zh-CN",
+        "jpn" => "ja",
+        "kor" => "ko",
+        "eng" => "en",
+        _ => code!,
+    };
 }
 
 /// <summary>DeepL API (키 필요, 키가 :fx로 끝나면 무료 호스트).</summary>
@@ -58,6 +76,8 @@ public class DeepLTranslator(string apiKey) : ITranslator
         {
             text = texts,
             source_lang = sourceLang.ToUpperInvariant(),
+            // 설정값을 대문자로만 바꿔 그대로 보낸다. DeepL 문서의 중국어 목표 코드는 ZH·ZH-HANS·ZH-HANT 뿐이다 — zh-CN·zh-TW·zho 같은 꼴은
+            // 문서에 없다(거절되는지 다른 언어로 답하는지는 API 키가 없어 확인하지 못했다). 여기서는 코드를 고치지 않는다.
             target_lang = targetLang.ToUpperInvariant(),
         });
         using var resp = await Http.SendAsync(req, ct);
@@ -198,6 +218,7 @@ public class LlmTranslator(string endpoint, string apiKey, string model, string 
         return outp;
     }
 
+    // 프롬프트에 넣을 이름일 뿐 언어 판정(LangCode)이 아니다 — zh-TW·zh-Hans 같은 꼴은 코드 그대로 넘어가 간체·번체 구분이 프롬프트에 남는다
     private static string LangName(string code) => code switch
     {
         "ja" => "Japanese", "ko" => "Korean", "en" => "English", "zh" => "Chinese", _ => code,
@@ -239,4 +260,37 @@ public static class TranslatorFactory
         "Grok" when !string.IsNullOrWhiteSpace(s.GrokApiKey) => "Grok " + Model(s.GrokModel, GrokDefaultModel),
         _ => "Google",
     };
+}
+
+/// <summary>설정의 언어 코드가 어느 언어인지 — 판정은 여기 한 군데서만 한다. 번역문 뒷손질(PolishTranslation)과 원문 판정(LooksLikeSource)이
+/// 중국어를 서로 다른 규칙으로 알아보던 것을 모았다. 코드는 settings.json 값 그대로 온다(설정 창에는 ja / ko·en뿐이지만 손으로 고치면 무엇이든 온다).
+/// **여기서 고른 값은 판정에만 쓴다 — 번역기에 보내는 코드는 번역기마다 따로 정한다.** 번역기마다 받는 꼴이 달라서다(2026-11-11 확인):
+/// Google은 zh·zh-CN·zh_CN·zh-TW·zh-Hans·zh-Hant·cmn 을 대소문자 가리지 않고 받지만 zho·chi 같은 세 글자 코드는 조용히 영어로 답한다(kor·eng·jpn도 같다) —
+/// 그래서 Google로 보낼 때만 그 세 글자 코드를 두 글자 코드로 바꾼다(<see cref="GoogleTranslator.RequestCode"/>). 나머지는 설정값 그대로 보낸다.
+/// DeepL 문서의 중국어 목표는 ZH·ZH-HANS·ZH-HANT 뿐이다. Primary의 결과를 번역기에 그대로 넘기면 zh-TW(번체)가 zh(간체)로 바뀐다.</summary>
+internal static class LangCode
+{
+    /// <summary>지역·문자 꼬리표를 뗀 언어 부분을 소문자 두 글자 코드로. 구분자는 -와 _ 둘 다, ISO 639-2/3의 세 글자 코드도 받는다:
+    /// zh-CN·ZH_tw·zh-Hans·zho·chi·cmn → "zh", ja-JP·jpn → "ja", ko-KR·kor → "ko", en-US·eng → "en". 모르는 코드는 꼬리표만 뗀 소문자 그대로.</summary>
+    internal static string Primary(string? code)
+    {
+        var c = (code ?? "").Trim().ToLowerInvariant();
+        int cut = c.IndexOfAny(Separators);
+        if (cut >= 0) c = c[..cut];
+        return c switch
+        {
+            "zho" or "chi" or "cmn" => "zh",   // 중국어(639-2 T·B), 표준 중국어(639-3)
+            "jpn" => "ja",
+            "kor" => "ko",
+            "eng" => "en",
+            _ => c,
+        };
+    }
+
+    private static readonly char[] Separators = ['-', '_'];
+
+    /// <summary>중국어인가 — 간체·번체, 지역을 가리지 않는다(문장부호와 글자 집합은 같다).</summary>
+    internal static bool IsChinese(string? code) => Primary(code) == "zh";
+
+    internal static bool IsJapanese(string? code) => Primary(code) == "ja";
 }
