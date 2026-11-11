@@ -30,6 +30,9 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
     private string? _refImageName;   // IPAdapter용으로 업로드한 표지 (서버에 없으면 null)
     private readonly ComfyServer _server = new(settings);
 
+    /// <summary>시험용 — 프로세스·HTTP 없는 가짜 장부의 ComfyServer를 넣는다.</summary>
+    internal PipelineRunner(AppSettings s, ComfyServer server) : this(s) => _server = server;
+
     /// <summary>한 실행의 공유 상태 — PrepareAsync가 채우고 Stage1/Stage2가 같이 쓴다.</summary>
     private sealed class RunContext
     {
@@ -54,6 +57,14 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
     }
 
     public async Task RunAsync(IReadOnlyList<string> files, IProgress<PageProgress> progress, CancellationToken ct)
+    {
+        // 이 작업의 ComfyUI 사용(PrepareAsync의 EnsureRunningAsync가 잡는다)은 끝나면 놓는다 — 취소·예외로 끝나도.
+        // KeepComfyWarm=false여도 다른 사용자(작업 중에 열린 결과 창의 [채색부터 다시] 등)가 쥐고 있으면 서버는 끄지 않는다(ComfyServer)
+        try { await RunCoreAsync(files, progress, ct); }
+        finally { _server.Release(); }
+    }
+
+    private async Task RunCoreAsync(IReadOnlyList<string> files, IProgress<PageProgress> progress, CancellationToken ct)
     {
         if (files.Count == 0) return;
         var pathSettings = settings.ShallowClone();   // 결과 경로는 **지금**의 출력 폴더로 — PrepareAsync(ComfyUI 기동 등 수십 초) 동안 설정 창에서 바꿔도 이 작업은 시작 때 폴더에 쓴다
@@ -97,8 +108,6 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
             foreach (var pg in pages) pg.DisposeMats();
             lock (_waiting) _waiting.Clear();
         }
-
-        await _server.DisposeAsync();
     }
 
     /// <summary>모델·구성요소 확인, ComfyUI 기동, 표지 색 참조 준비. RunAsync와 RedoPageAsync가 공유한다.</summary>
@@ -146,7 +155,7 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         if (needComfy)
         {
             var status = new Progress<string>(m => Report(progress, files, m, 10));
-            await _server.EnsureRunningAsync(status, ct);
+            await _server.EnsureRunningAsync(status, ct);   // 이 러너의 사용을 잡는다 — 놓기는 RunAsync 끝(본 작업)·Dispose(결과 창이 닫힐 때)
             cx.Client = new ComfyClient(_server.BaseUrl);
             cx.ComfyOutputDir = Path.Combine(settings.ComfyRoot, "ComfyUI", "output");
 
@@ -382,5 +391,11 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         foreach (var f in files) p.Report(new(f, stage, pct));
     }
 
-    public void Dispose() => _onnx.Dispose();
+    /// <summary>ONNX 세션을 닫고 이 러너의 ComfyUI 사용을 놓는다. 결과 창 러너는 수동 작업([채색부터 다시]·Comfy 복원)마다 놓지 않고
+    /// 창이 닫힐 때 여기서 놓는다 — 작업마다 놓으면 KeepComfyWarm=false에서 매번 서버를 다시 띄우느라 1~2분씩 기다린다.</summary>
+    public void Dispose()
+    {
+        _server.Release();
+        _onnx.Dispose();
+    }
 }

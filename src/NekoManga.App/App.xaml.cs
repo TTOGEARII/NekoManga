@@ -31,6 +31,15 @@ public partial class App : Application
 
         Settings = AppSettings.Load();
 
+        // 앱이 끝날 때 KeepComfyWarm=false면 이 앱이 띄운 채색 엔진을 끈다('엔진 켜기'로 고정한 서버·사용자가 띄운 서버는 그대로) —
+        // 작업 중에 닫으면 작업의 정리(사용 놓기)가 돌기 전에 프로세스가 끝나 서버가 남았다. Exit 이벤트가 아니라 ProcessExit에 건다:
+        // 업데이트 적용(Velopack ApplyUpdatesAndRestart)은 Environment.Exit로 끝나 Exit 이벤트가 오지 않는다. 끄기를 기다리지 않아 종료가 늦어지지 않는다
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+        {
+            try { NekoManga.Core.Comfy.ComfyServer.AppExiting(Settings); }
+            catch { }
+        };
+
         // 일본 흑백 만화풍 테마 (화이트 기본 / 다크 반전) — 창이 뜨기 전에 적용해야 한다
         AppTheme.Apply(Settings.Theme);
         MangaTextures.Refresh();   // 원고 격자·톤망점 타일 (테마 색 반영)

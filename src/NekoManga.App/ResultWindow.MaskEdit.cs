@@ -260,7 +260,7 @@ public partial class ResultWindow
             before.Dispose();
             TxtStatus.Text = "실패: " + ex.Message;
         }
-        finally { _busy = false; BtnApply.IsEnabled = true; UpdateModeButtons(); }
+        finally { _busy = false; BtnApply.IsEnabled = true; UpdateModeButtons(); DisposeRunnerIfClosed(); }
     }
 
     /// <summary>[채색부터 다시]: 보존된 검열 제거 전 원고에 이 마스크를 적용해 채색·식자까지 다시 돌리고 결과물을 다시 읽는다.</summary>
@@ -303,6 +303,7 @@ public partial class ResultWindow
             _busy = false;
             BtnApply.IsEnabled = BtnMRedo.IsEnabled = true;   // 적용 자체는 _loading 중 거부되므로 켜 둬도 안전
             if (!_loading) { BtnPrev.IsEnabled = _index > 0; BtnNext.IsEnabled = _index < _refs.Count - 1; }   // 다시 읽는 중이면 LoadPage가 끝날 때 켠다
+            DisposeRunnerIfClosed();
         }
     }
 }

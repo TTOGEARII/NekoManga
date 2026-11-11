@@ -13,14 +13,24 @@ public static class EngineManager
         return await server.IsAliveAsync();
     }
 
-    /// <summary>엔진을 켠다 (이미 켜져 있으면 그대로). KeepComfyWarm 설정과 무관하게 살아남는다 —
-    /// ComfyServer가 cmd 리다이렉트로 띄워 부모와 분리돼 있기 때문.</summary>
-    public static async Task StartAsync(AppSettings settings, IProgress<string>? status = null,
-        CancellationToken ct = default)
+    /// <summary>엔진을 켠다 (이미 켜져 있으면 그대로). KeepComfyWarm 설정과 무관하게 Stop 전까지 살아남는다 —
+    /// 작업들이 사용을 다 놓아도 끄지 않게 지금 서버를 고정하고(ComfyServer.Pin), cmd 리다이렉트로 띄워 부모와 분리돼 있어 앱을 닫아도 남는다.
+    /// 응답을 기다리다 실패해도(4분 시간 초과·취소) 깨어나는 중인 서버는 고정해 남긴다.</summary>
+    public static Task StartAsync(AppSettings settings, IProgress<string>? status = null,
+        CancellationToken ct = default) => StartAsync(new ComfyServer(settings), status, ct);
+
+    /// <summary>StartAsync 본체 — 시험이 가짜 장부의 서버를 넘긴다.</summary>
+    internal static async Task StartAsync(ComfyServer server, IProgress<string>? status, CancellationToken ct)
     {
-        var server = new ComfyServer(settings);
-        await server.EnsureRunningAsync(status, ct);
-        // 여기서 Dispose하지 않는다 — KeepComfyWarm=false여도 '엔진 켜기'는 명시적 행동이므로 유지.
+        await using (server)
+        {
+            // KeepComfyWarm=false여도 '엔진 켜기'는 명시적 행동이므로 유지 — 쥐기 전에 고정을 걸어 두면 이 사용을 놓을 때 그 서버에 고정이 남는다
+            // (고정된 서버는 마지막 사용자가 놓아도 끄지 않는다). 작업이 띄워 이미 떠 있던 서버에 켜기를 눌러도(미리 켜기와 작업 시작이 겹칠 때 등) 같다 — 켜 두라는 뜻이다.
+            // 응답을 기다리다 실패해도(느린 PC의 4분 시간 초과·취소) 깨어나는 중인 서버는 끄지 않는다 — 예전에도 남겨 두어 결국 뜬 서버를 다음 작업이 썼다.
+            // 기다리는 사이 앱이 닫혀도 끄지 않는다(ComfyServer.AppExiting)
+            server.Pin();
+            await server.EnsureRunningAsync(status, ct);
+        }
     }
 
     /// <summary>엔진을 끈다 — 이 앱의 ComfyRoot에서 뜬 python(main.py)을 찾아 종료한다.

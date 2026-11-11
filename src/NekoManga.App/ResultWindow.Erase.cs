@@ -179,6 +179,7 @@ public partial class ResultWindow
         {
             _busy = false;
             BtnApply.IsEnabled = true;
+            DisposeRunnerIfClosed();
         }
     }
 

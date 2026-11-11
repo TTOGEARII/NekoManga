@@ -59,6 +59,7 @@ public partial class ResultWindow
     private double _scale = 1.0;
     private bool _dirty;
     private bool _busy;
+    private bool _closed;   // 창이 닫혔다 — 그때 돌던 수동 작업이 끝나면 러너를 정리한다(DisposeRunnerIfClosed)
 
     public ResultWindow(string imagePath) : this([imagePath], 0) { }
 
@@ -71,7 +72,7 @@ public partial class ResultWindow
     private List<TextBlockInfo> _letterBlocks = [];
     private bool _syncingBlockUi;                 // 콤보/텍스트박스 동기화 중 재진입 방지
     private Mat? _baseImg;                        // 식자 전 원고 — 편집 모드에서 이 위에 텍스트박스를 띄운다
-    private PipelineRunner? _runner;              // 수동 복원용 러너 — 창 수명 동안 ONNX 세션 재사용
+    private PipelineRunner? _runner;              // 수동 복원·다시 돌리기용 러너 — 창 수명 동안 ONNX 세션과 ComfyUI 사용을 쥔다(창이 닫힐 때 놓는다)
     private bool _letterPreview;                  // true면 [다시 식자] 결과(_img)를 보여준다
 
     public ResultWindow(IReadOnlyList<PageRef> pages, int startIndex,
@@ -227,12 +228,23 @@ public partial class ResultWindow
         if (!ConfirmDiscard()) { e.Cancel = true; return; }
         base.OnClosing(e);
         ++_loadGen;   // 아직 기다리는 LoadPage가 있으면 깨어나도 아무것도 안 하게
-        // 복원이 돌고 있으면 그 Mat·러너는 해제하지 않는다(작업이 끝나면 GC가 거둔다) — 쓰는 중인 네이티브 메모리를 해제하면 죽는다
+        // 복원이 돌고 있으면 그 Mat·러너는 지금 해제하지 않는다 — 쓰는 중인 네이티브 메모리를 해제하면 죽는다.
+        // 러너는 그 작업이 끝날 때 정리하고(DisposeRunnerIfClosed — ComfyUI 사용도 그때 놓는다), Mat은 GC가 거둔다
+        _closed = true;
         if (!_busy) { _runner?.Dispose(); _img.Dispose(); }
         _baseImg?.Dispose();
         ResetMaskState(null);
         while (_undo.Count > 0) _undo.Pop().Dispose();
         foreach (var t in _prefetch.Values) t.ContinueWith(x => { if (x.Status == TaskStatus.RanToCompletion) x.Result.Dispose(); });
         _prefetch.Clear();
+    }
+
+    /// <summary>창을 닫을 때 돌고 있던 수동 작업이 끝났다 — 그때 못 한 러너 정리(ONNX 세션 닫기, ComfyUI 사용 놓기)를 이제 한다.
+    /// 놓지 않으면 KeepComfyWarm=false여도 이 창의 작업이 띄웠거나 같이 쓰던 서버가 꺼지지 않는다. 수동 작업의 finally에서 부른다.</summary>
+    private void DisposeRunnerIfClosed()
+    {
+        if (!_closed || _busy) return;
+        _runner?.Dispose();
+        _runner = null;
     }
 }
