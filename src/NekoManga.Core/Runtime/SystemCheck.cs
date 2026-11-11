@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Text.RegularExpressions;
 using Microsoft.Win32;
 
 namespace NekoManga.Core.Runtime;
@@ -24,26 +25,41 @@ public static class SystemCheck
         public string Summary => string.Join("\n", Items.Where(i => !i.Ok).Select(i => (i.Blocking ? "✖ " : "⚠ ") + i.Title + " — " + i.Detail));
     }
 
-    /// <summary>nvidia-smi로 드라이버·GPU 이름·VRAM을 읽는다. 드라이버가 없으면 null.</summary>
-    public static Gpu? QueryNvidia()
+    /// <summary>nvidia-smi로 드라이버·GPU 이름·VRAM을 읽는다. 여러 장이면 판정에 쓰는 카드(<see cref="PickNvidia"/> — 지원 세대가 있으면 그 카드). 드라이버가 없으면 null.</summary>
+    public static Gpu? QueryNvidia() => PickNvidiaGpu(QueryNvidiaAll());
+
+    /// <summary>nvidia-smi가 보는 NVIDIA 카드 전부(지금 꽂혀 있는 카드). 드라이버가 없거나 nvidia-smi가 답하지 않으면 빈 목록.</summary>
+    public static IReadOnlyList<Gpu> QueryNvidiaAll()
     {
         try
         {
             var psi = new ProcessStartInfo("nvidia-smi", "--query-gpu=driver_version,name,memory.total --format=csv,noheader,nounits")
             { UseShellExecute = false, RedirectStandardOutput = true, CreateNoWindow = true };
             using var p = Process.Start(psi);
-            if (p == null) return null;
-            // 출력은 한 줄뿐이라 파이프가 차지 않는다 — 먼저 기다려야 nvidia-smi가 멈춘 경우(드라이버 크래시 뒤 흔함) 8초 타임아웃이 먹는다
-            if (!p.WaitForExit(8000)) { try { p.Kill(); } catch { } return null; }
-            var line = p.StandardOutput.ReadLine();
-            if (string.IsNullOrWhiteSpace(line)) return null;
-            var parts = line.Split(',').Select(s => s.Trim()).ToArray();
-            if (parts.Length < 3) return null;
-            int major = int.TryParse(parts[0].Split('.')[0], out var m) ? m : 0;
-            int mem = int.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var mm) ? mm : 0;
-            return new Gpu(parts[1], parts[0], major, mem);
+            if (p == null) return [];
+            // 출력은 카드 한 장에 한 줄뿐이라 파이프가 차지 않는다 — 먼저 기다려야 nvidia-smi가 멈춘 경우(드라이버 크래시 뒤 흔함) 8초 타임아웃이 먹는다
+            if (!p.WaitForExit(8000)) { try { p.Kill(); } catch { } return []; }
+            return ParseNvidiaSmi(p.StandardOutput.ReadToEnd());
         }
-        catch { return null; }
+        catch { return []; }
+    }
+
+    /// <summary>nvidia-smi `--query-gpu=driver_version,name,memory.total --format=csv,noheader,nounits` 출력을 카드마다 읽는다. 꼴이 맞지 않는 줄(오류 문구 등)은 건너뛴다.
+    /// 2026-11-11: 첫 줄만 읽어서, 화면용 옛 카드가 앞 순서(PCI 순)에 있으면 같이 꽂은 새 카드를 보지 못했다.</summary>
+    internal static IReadOnlyList<Gpu> ParseNvidiaSmi(string output)
+    {
+        var list = new List<Gpu>();
+        foreach (var line in output.Split('\n'))
+        {
+            var parts = line.Split(',').Select(s => s.Trim()).ToArray();
+            if (parts.Length < 3) continue;
+            int major = int.TryParse(parts[0].Split('.')[0], out var m) ? m : 0;
+            // 쉼표가 든 오류 문구나 값을 못 읽은 카드('[Unknown Error]')는 카드로 세지 않는다 — 금지 목록에 안 걸리는 이름이라 '지원 카드'로 뽑힌다
+            if (major == 0 || parts[1].Length == 0 || parts[1].StartsWith('[')) continue;
+            int mem = int.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var mm) ? mm : 0;
+            list.Add(new Gpu(parts[1], parts[0], major, mem));
+        }
+        return list;
     }
 
     /// <summary>VC++ 2015–2022 x64 런타임 버전 (설치돼 있지 않으면 null). 레지스트리 HKLM\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64.</summary>
@@ -66,13 +82,26 @@ public static class SystemCheck
         try { return GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / 1073741824.0; } catch { return 0; }
     }
 
-    /// <summary>CUDA 13이 버린 세대(맥스웰·파스칼·볼타 — GTX 9xx/10xx, MX, TITAN V 등)인지 이름으로 거칠게 판정.</summary>
-    public static bool LooksUnsupportedByCuda13(string name)
-    {
-        var n = name.ToUpperInvariant();
-        string[] old = ["GTX 9", "GTX 10", "GT 7", "GT 10", "MX1", "MX2", "MX3", "TITAN X", "TITAN V", "QUADRO P", "QUADRO M", "TESLA P", "TESLA V", "TESLA M"];
-        return old.Any(n.Contains);
-    }
+    /// <summary>CUDA 13이 버린 세대(compute capability 7.5 미만 — 케플러·맥스웰·파스칼·볼타와 그 이전)인지 이름으로 거칠게 판정.
+    /// 옛 세대는 더 늘지 않는 닫힌 목록이라 그 이름 꼴을 빠짐없이 적고, 어느 꼴에도 걸리지 않는 이름(모르는 이름·앞으로 나올 카드)은 지원으로 본다 —
+    /// 지원 카드를 막는 쪽이 더 해롭다(멀쩡한 카드에 구형 묶음을 받거나 설치가 막힌다).</summary>
+    public static bool LooksUnsupportedByCuda13(string name) => Cuda13Dropped.IsMatch(name);
+
+    // 튜링 이후(GTX 16xx, RTX 전부, MX450·MX550·MX570, NVIDIA T400·T600·T1000, Quadro T·RTX, TITAN RTX, Tesla T4, A100·H100 …)는 어느 꼴에도 걸리지 않아야 한다.
+    // 2026-11-10: 옛 목록('GTX 9'·'GTX 10'·'GT 7'·'MX1~3'·'QUADRO P/M' …)이 1세대 맥스웰(GTX 750 Ti·Quadro K2200·GeForce 940MX)과
+    // 케플러(GTX 780)를 빠뜨려, 자동 감지가 이 카드들에 CUDA 13 포터블을 고르고 'RTX 20 이상' 선택도 막지 못했다.
+    private static readonly Regex Cuda13Dropped = new(string.Join("|",
+        @"\bGTX ?(?:\d{3}|10\d\d)(?!\d)",           // 세 자리 GTX 전부(GTX 6xx·7xx·9xx, 노트북 860M·980M 포함)와 GTX 10xx — GTX 16xx(튜링)는 걸리지 않는다
+        @"\bGTX TITAN|\bTITAN [XV]",                // GTX TITAN·Black·Z·X(케플러·맥스웰), TITAN X·Xp(파스칼), TITAN V(볼타) — TITAN RTX는 지원
+        @"\bGTS? ?\d",                              // GT 710~740·GT 1030 등 — GT·GTS는 튜링부터 없다
+        @"\bGEFORCE \d",                            // 노트북 940MX·930MX·920MX·9xxM·8xxM처럼 시리즈 글자 없이 숫자가 붙는 이름
+        @"\bMX ?[1-3]\d\d(?!\d)",                   // MX110~MX350 — MX450·MX550·MX570은 지원
+        @"\bQUADRO (?:[KMP]\d|G[PV]100|\d|FX|NVS)", // Quadro K·M·P 시리즈, GP100·GV100, 페르미 Quadro 4000류, FX·NVS — Quadro T·RTX는 지원
+        @"\bNVS \d",                                // NVS 310·510·810
+        @"\bTESLA [KMPVCS]",                        // Tesla K80·M60·P40·V100·PG503(볼타)과 페르미 C2050·M2090 — Tesla T4(튜링)·A100 등은 지원
+        @"\bGRID [KMPV]\d",                         // 가상 GPU GRID K520·M60·P40·V100 — GRID T4는 지원
+        @"\bP10[246]-\d"),                          // 채굴 카드 P102-100·P104-100·P106-100(파스칼)
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     public const string AmdDriverUrl = "https://www.amd.com/en/support/download/drivers.html";
     public const int MinDriverMajorCu126 = 528;      // CUDA 12.6 런타임(마이너 버전 호환)의 사실상 최소 드라이버
@@ -143,17 +172,43 @@ public static class SystemCheck
         return (vendor == "amd" ? list.FirstOrDefault(IsAmdName) : list.FirstOrDefault(IsNvidiaName)) ?? "";
     }
 
-    /// <summary>그래픽카드 종류 감지: "nvidia"(RTX 20+) / "nvidia-old"(GTX 10 이하) / "amd" / "none". 가상 어댑터(Parsec 등)는 무시.
-    /// 레지스트리 000N 키는 뽑아낸 카드도 남기므로, NVIDIA 이름이 있어도 nvidia-smi가 없고 Radeon이 있으면 AMD로 본다(카드 교체 PC).</summary>
-    public static (string Vendor, string Name) DetectVendor()
+    /// <summary>그래픽카드 종류 감지: "nvidia"(RTX 20+) / "nvidia-old"(GTX 10 이하) / "amd" / "none". 판정은 <see cref="JudgeVendor"/>.</summary>
+    public static (string Vendor, string Name) DetectVendor() => JudgeVendor(QueryNvidiaAll().Select(g => g.Name).ToList(), DisplayAdapters());
+
+    /// <summary>그래픽카드 종류 판정 — 하드웨어를 묻지 않는다. smiNames = nvidia-smi가 본 카드 이름(지금 꽂혀 있는 NVIDIA 카드, nvidia-smi가 없거나 답하지 않으면 빈 목록),
+    /// adapters = 레지스트리 DriverDesc 목록(<see cref="DisplayAdapters"/>). 가상 어댑터(Parsec 등)는 무시.
+    /// nvidia-smi가 답하면 그 이름들로만 보고 레지스트리는 nvidia-smi가 없을 때만 쓴다 — 레지스트리 000N 키는 뽑아낸 카드도 남긴다.
+    /// 2026-11-11: 레지스트리의 첫 NVIDIA 키 하나로 판정해서, 뽑아낸 옛 카드의 흔적이 자동 감지를 뒤집었다(예: GTX 750 Ti 흔적 + RTX 5070이면 구형 CUDA 12.6 묶음).
+    /// 여러 장이면 지원 세대가 한 장이라도 있을 때 "nvidia"(<see cref="PickNvidia"/>). nvidia-smi가 없을 때 NVIDIA 이름이 있어도 Radeon이 있으면 AMD로 본다(카드 교체 PC).</summary>
+    internal static (string Vendor, string Name) JudgeVendor(IReadOnlyList<string> smiNames, IReadOnlyList<string> adapters)
     {
-        var adapters = DisplayAdapters().Where(a => !IsVirtualName(a)).ToList();
-        var nv = adapters.FirstOrDefault(IsNvidiaName);
-        var amd = adapters.FirstOrDefault(IsAmdName);
-        if (nv != null && (amd == null || QueryNvidia() != null)) return (LooksUnsupportedByCuda13(nv) ? "nvidia-old" : "nvidia", nv);
+        if (smiNames.Count > 0) return NvidiaVendor(smiNames);
+        var list = adapters.Where(a => !IsVirtualName(a)).ToList();
+        var nv = list.Where(IsNvidiaName).ToList();
+        var amd = list.FirstOrDefault(IsAmdName);
+        if (nv.Count > 0 && amd == null) return NvidiaVendor(nv);
         if (amd != null) return ("amd", amd);
-        return ("none", adapters.FirstOrDefault() ?? "");
+        return ("none", list.FirstOrDefault() ?? "");
     }
+
+    private static (string Vendor, string Name) NvidiaVendor(IReadOnlyList<string> names)
+    {
+        var name = PickNvidia(names) ?? "";
+        return (LooksUnsupportedByCuda13(name) ? "nvidia-old" : "nvidia", name);
+    }
+
+    /// <summary>NVIDIA 카드 여러 장 가운데 판정에 쓸 카드 — CUDA 13 지원 세대(튜링 이후)가 한 장이라도 있으면 그 첫 카드, 모두 옛 세대면 첫 카드. 빈 목록이면 null.
+    /// 옛 카드를 화면용·보조로 같이 꽂은 PC가 있다 — 그 카드 하나 때문에 구형 묶음을 고르거나 설치를 막지 않는다.</summary>
+    internal static string? PickNvidia(IReadOnlyList<string> names) => names.FirstOrDefault(n => !LooksUnsupportedByCuda13(n)) ?? names.FirstOrDefault();
+
+    private static Gpu? PickNvidiaGpu(IReadOnlyList<Gpu> gpus)
+    {
+        var name = PickNvidia(gpus.Select(g => g.Name).ToList());
+        return gpus.FirstOrDefault(g => g.Name == name);
+    }
+
+    /// <summary>'RTX 20 이상'(CUDA 13 묶음)을 막을지 — nvidia-smi가 본 카드가 모두 CUDA 13이 버린 세대일 때만. 지원 카드가 한 장이라도 있으면 막지 않는다.</summary>
+    internal static bool BlocksCuda13(IReadOnlyList<string> smiNames) => smiNames.Count > 0 && smiNames.All(LooksUnsupportedByCuda13);
 
     /// <summary>ROCm(Windows)이 지원하는 Radeon 세대인지 이름으로 거칠게 판정: RX 6000(RDNA2)·7000(RDNA3)·9000(RDNA4)·Ryzen AI Max 내장. RX 5000·Vega·내장 Vega는 미지원.</summary>
     public static bool LooksRocmSupported(string name)
@@ -169,7 +224,10 @@ public static class SystemCheck
     public static Report CheckForComfy(string vendor)
     {
         var items = new List<Item>();
-        var (detected, detName) = DetectVendor();
+        // nvidia-smi는 한 번만 부른다 — 감지와 아래 드라이버·세대 점검이 같은 카드 목록을 본다
+        var smi = QueryNvidiaAll();
+        var smiNames = smi.Select(g => g.Name).ToList();
+        var (detected, detName) = JudgeVendor(smiNames, DisplayAdapters());
         if (vendor == "auto") vendor = detected;
         else detName = AdapterNameFor(vendor);   // 사용자가 종류를 직접 골랐으면 그 벤더의 어댑터 이름만 쓴다
         if (vendor == "amd")
@@ -194,7 +252,7 @@ public static class SystemCheck
         }
         else
         {
-            var gpu = QueryNvidia();
+            var gpu = PickNvidiaGpu(smi);   // 여러 장이면 판정에 쓴 카드의 이름·VRAM을 보인다(드라이버는 모든 카드가 같다)
             bool old = vendor == "nvidia-old";
             int minDrv = old ? MinDriverMajorCu126 : MinDriverMajor;
             if (gpu == null)
@@ -205,8 +263,9 @@ public static class SystemCheck
                 items.Add(new("NVIDIA 드라이버", drvOk, true,
                     drvOk ? $"{gpu.Driver} (충분)" : $"{gpu.Driver} — 엔진의 {(old ? "CUDA 12.6" : "CUDA 13")} 런타임은 {minDrv} 이상이 필요해요. 최신 GeForce 드라이버로 올린 뒤 재부팅하세요.",
                     drvOk ? null : DriverUrl, "드라이버 받기"));
-                // 사용자가 'RTX 20 이상'을 골랐는데 실제로는 CUDA 13이 버린 세대면 막는다 — 설치하면 c10.dll 1114로 죽는 바로 그 경우
-                bool genBad = !old && LooksUnsupportedByCuda13(gpu.Name);
+                // 사용자가 'RTX 20 이상'을 골랐는데 지금 꽂힌 카드가 모두 CUDA 13이 버린 세대면 막는다 — CUDA 13 빌드가 이 세대를 지원하지 않아 설치해도 채색 엔진이 돌지 않는다
+                // (c10.dll 1114 사고는 지원 세대인 GTX 1660에 옛 드라이버를 쓴 경우로, 위 드라이버 항목이 맡는다). 지원 카드가 한 장이라도 있으면 막지 않는다
+                bool genBad = !old && BlocksCuda13(smiNames);
                 items.Add(new("그래픽카드", !genBad, true, genBad
                     ? $"{gpu.Name} — CUDA 13이 지원하지 않는 세대예요. 그래픽카드 종류를 'NVIDIA GTX 10 이하 (구형)'으로 바꿔 주세요."
                     : gpu.Name + (old ? " — GTX 10 이하용 CUDA 12.6 포터블을 받아요 (느릴 수 있어요)" : " — CUDA 13 포터블"), null, null));

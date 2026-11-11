@@ -30,7 +30,7 @@ public static class AutoTune
         if (s.GpuVendor != "auto") { vendor = s.GpuVendor; name = SystemCheck.AdapterNameFor(vendor); }   // 고른 벤더의 카드 이름으로만 판정
         int vram = 0;
         var nv = vendor is "nvidia" or "nvidia-old" ? SystemCheck.QueryNvidia() : null;
-        if (nv != null) { vram = nv.MemoryMb; if (name.Length == 0) name = nv.Name; }
+        if (nv != null) { vram = nv.MemoryMb; name = nv.Name; }   // 이름도 같은 카드의 것으로 — 레지스트리 첫 키는 뽑아낸 옛 카드의 흔적일 수 있다
         if (vram == 0 && name.Length > 0) vram = SystemCheck.AdapterVramMb(name);
         double ram = SystemCheck.RamGb();
 

@@ -197,9 +197,15 @@ public class ComponentInstaller(AppSettings settings)
         File.Move(part, dest, overwrite: true);
     }
 
-    private static void ExtractZip(string zipPath, string destDir, bool stripRoot)
+    /// <summary>zip을 destDir에 푼다. stripRoot면 최상위 폴더 한 겹(GitHub 소스 zip의 `저장소-main/`)을 벗긴다.
+    /// destDir 밖으로 풀리는 항목(`../`, 절대 경로)과 destDir 자신으로 풀리는 파일 항목(`.`)은 건너뛴다(zip-slip 방지).</summary>
+    internal static void ExtractZip(string zipPath, string destDir, bool stripRoot)
     {
         Directory.CreateDirectory(destDir);
+        // 끝에 구분자를 붙여 비교한다 — 그냥 StartsWith(destDir)면 `../ComfyUI-WD14-Tagger-evil/x.py`·`../ComfyUI-WD14-Tagger.py`처럼
+        // destDir 이름으로 시작하는 형제 경로도 안쪽으로 통과했다
+        var root = Path.GetFullPath(destDir);
+        if (!Path.EndsInDirectorySeparator(root)) root += Path.DirectorySeparatorChar;
         using var zip = ZipFile.OpenRead(zipPath);
         foreach (var entry in zip.Entries)
         {
@@ -212,9 +218,12 @@ public class ComponentInstaller(AppSettings settings)
             }
             if (name.Length == 0) continue;
             var target = Path.GetFullPath(Path.Combine(destDir, name.Replace('/', Path.DirectorySeparatorChar)));
-            if (!target.StartsWith(Path.GetFullPath(destDir), StringComparison.OrdinalIgnoreCase))
-                continue; // zip-slip 방지
+            // zip-slip 방지. destDir 자신의 폴더 항목('./')은 GetFullPath가 끝 구분자를 남겨 root와 같아지므로 그대로 받는다.
+            // destDir 자신으로 풀리는 파일 항목('.'·'sub/..')은 탈출 항목처럼 건너뛴다 — 2026-11-11: 이것까지 받아 ExtractToFile(destDir)이
+            // UnauthorizedAccessException을 던지면서 그 구성요소 설치가 통째로 멈추고 뒤의 항목도 풀리지 않았다
+            if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase)) continue;
             if (name.EndsWith('/')) { Directory.CreateDirectory(target); continue; }
+            if (Directory.Exists(target)) continue;   // 이미 있는 폴더로 풀리는 파일 항목('js/.' 등)도 같은 이유로 건너뛴다
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             entry.ExtractToFile(target, overwrite: true);
         }

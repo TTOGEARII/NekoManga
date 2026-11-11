@@ -2,8 +2,8 @@ using NekoManga.Core.Runtime;
 
 namespace NekoManga.Core.Tests;
 
-/// <summary>SystemCheck 가운데 하드웨어를 묻지 않는 판정 — 그래픽카드 이름으로 보는 세대, 점검 보고서 요약, ComfyUI 로그 진단.
-/// nvidia-smi·레지스트리를 읽는 QueryNvidia·DetectVendor·CheckForComfy는 부르지 않는다.</summary>
+/// <summary>SystemCheck 가운데 하드웨어를 묻지 않는 판정 — 그래픽카드 이름으로 보는 세대·종류, nvidia-smi 출력 읽기, 점검 보고서 요약, ComfyUI 로그 진단.
+/// nvidia-smi·레지스트리를 읽는 QueryNvidia·DetectVendor·CheckForComfy는 부르지 않는다 — 그 판정은 떼어 낸 함수(JudgeVendor·PickNvidia·BlocksCuda13·ParseNvidiaSmi)로 본다.</summary>
 public class SystemCheckTests
 {
     [Theory]
@@ -35,18 +35,170 @@ public class SystemCheckTests
     [InlineData("", false)]                              // 이름을 모르면 막지 않는다
     public void LooksUnsupportedByCuda13_JudgesByGeneration(string name, bool dropped)
     {
-        // CUDA 13이 버린 세대(맥스웰·파스칼·볼타)에 CUDA 13 포터블을 깔면 c10.dll 1114로 죽는다 — 그 카드만 골라내야 한다
+        // CUDA 13이 버린 세대(맥스웰·파스칼·볼타)는 CUDA 13 포터블로 채색 엔진을 돌릴 수 없다 — 그 카드만 골라내야 한다
         Assert.Equal(dropped, SystemCheck.LooksUnsupportedByCuda13(name));
     }
 
-    [Theory(Skip = "알려진 결함: 판정 목록이 1세대 맥스웰(GTX 750 Ti·Quadro K2200·GeForce 940MX)과 그보다 오래된 케플러(GTX 780)를 빠뜨려, 문서 주석이 CUDA 13에서 빠졌다고 적은 세대를 지원 세대로 본다 — 자동 감지가 이 카드에 CUDA 13 포터블을 고른다")]
+    [Theory]
     [InlineData("NVIDIA GeForce GTX 750 Ti")]   // 1세대 맥스웰(GM107)
     [InlineData("NVIDIA Quadro K2200")]         // 1세대 맥스웰(GM107)
     [InlineData("NVIDIA GeForce 940MX")]        // 노트북 맥스웰(GM108) — 이름에 'GTX'도 'MX1~3'도 없다
     [InlineData("NVIDIA GeForce GTX 780")]      // 케플러
     public void LooksUnsupportedByCuda13_FirstGenMaxwellAndKepler_True(string name)
     {
+        // 옛 판정 목록이 이 세대를 빠뜨려 자동 감지가 이 카드들에 CUDA 13 포터블을 골랐다 — CUDA 13 빌드가 지원하지 않는 세대라 채색 엔진이 돌지 않는다
+        // (어떤 오류로 멈추는지는 기록이 없다. 기록된 c10.dll 1114 사고는 지원 세대인 GTX 1660에 옛 드라이버를 쓴 경우다)
         Assert.True(SystemCheck.LooksUnsupportedByCuda13(name));
+    }
+
+    [Theory]
+    // CUDA 13이 버린 세대(compute capability 7.5 미만) — 레지스트리 DriverDesc·nvidia-smi가 실제로 내는 이름 꼴
+    [InlineData("NVIDIA GeForce GTX 780 Ti", true)]         // 케플러
+    [InlineData("GeForce GTX 680", true)]                   // 옛 드라이버의 nvidia-smi 이름은 앞에 NVIDIA가 없다
+    [InlineData("NVIDIA GeForce GTX 660 Ti", true)]
+    [InlineData("NVIDIA GeForce GTX 650", true)]
+    [InlineData("NVIDIA GeForce GT 640", true)]
+    [InlineData("NVIDIA GeForce GT 710", true)]
+    [InlineData("NVIDIA GeForce GTX TITAN Black", true)]
+    [InlineData("NVIDIA GeForce GTX 880M", true)]           // 케플러 노트북
+    [InlineData("NVIDIA GeForce GT 750M", true)]
+    [InlineData("NVIDIA GeForce 710M", true)]
+    [InlineData("Quadro K4000", true)]
+    [InlineData("Tesla K80", true)]
+    [InlineData("NVIDIA GRID K520", true)]                  // 클라우드 가상 GPU
+    [InlineData("NVIDIA GeForce GTX 745", true)]            // 1세대 맥스웰
+    [InlineData("NVIDIA GeForce GTX 750", true)]
+    [InlineData("Quadro K2200", true)]
+    [InlineData("Quadro K620", true)]
+    [InlineData("NVIDIA GeForce 930MX", true)]              // 노트북 맥스웰 — 시리즈 글자 없이 숫자만
+    [InlineData("NVIDIA GeForce 920MX", true)]
+    [InlineData("NVIDIA GeForce 940M", true)]
+    [InlineData("NVIDIA GeForce 840M", true)]
+    [InlineData("NVIDIA GeForce GTX 960M", true)]
+    [InlineData("NVIDIA GeForce GTX 860M", true)]
+    [InlineData("NVIDIA GeForce MX110", true)]
+    [InlineData("NVIDIA GeForce MX130", true)]
+    [InlineData("NVIDIA GeForce GTX 980 Ti", true)]         // 2세대 맥스웰
+    [InlineData("NVIDIA GeForce GTX TITAN X", true)]
+    [InlineData("Quadro M1000M", true)]
+    [InlineData("Tesla M60", true)]
+    [InlineData("NVIDIA NVS 810", true)]
+    [InlineData("NVIDIA GeForce GTX 1050 Ti with Max-Q Design", true)]   // 파스칼
+    [InlineData("NVIDIA GeForce GTX 1070 Ti", true)]
+    [InlineData("NVIDIA GeForce GT 1010", true)]
+    [InlineData("NVIDIA GeForce MX230", true)]
+    [InlineData("NVIDIA GeForce MX330", true)]
+    [InlineData("Quadro P1000", true)]
+    [InlineData("NVIDIA Quadro P620", true)]
+    [InlineData("NVIDIA Quadro GP100", true)]
+    [InlineData("NVIDIA TITAN X (Pascal)", true)]
+    [InlineData("Tesla P40", true)]
+    [InlineData("Tesla P100-PCIE-16GB", true)]
+    [InlineData("NVIDIA P106-100", true)]                   // 채굴 카드(파스칼)
+    [InlineData("NVIDIA Quadro GV100", true)]               // 볼타
+    [InlineData("Tesla V100-SXM2-16GB", true)]
+    [InlineData("NVIDIA GeForce GTX 580", true)]            // 페르미 — 그보다 옛것도 물론 미지원
+    [InlineData("NVIDIA Quadro 4000", true)]
+    // 튜링 이후 — CUDA 13 지원. 막으면 멀쩡한 카드에 구형 묶음을 받거나 설치가 막힌다
+    [InlineData("GeForce GTX 1650", false)]
+    [InlineData("NVIDIA GeForce GTX 1630", false)]
+    [InlineData("NVIDIA GeForce GTX 1650 Ti", false)]
+    [InlineData("NVIDIA GeForce GTX 1660 Ti with Max-Q Design", false)]
+    [InlineData("NVIDIA GeForce MX550", false)]
+    [InlineData("NVIDIA GeForce MX570 A", false)]           // 암페어
+    [InlineData("NVIDIA T400", false)]                      // 이름에 Quadro가 없는 튜링 워크스테이션
+    [InlineData("NVIDIA T400 4GB", false)]
+    [InlineData("NVIDIA T600", false)]
+    [InlineData("NVIDIA T1000 8GB", false)]
+    [InlineData("NVIDIA T550 Laptop GPU", false)]
+    [InlineData("Quadro T1000", false)]
+    [InlineData("Quadro T2000 with Max-Q Design", false)]
+    [InlineData("Quadro RTX 6000", false)]
+    [InlineData("NVIDIA Quadro RTX 3000 with Max-Q Design", false)]
+    [InlineData("Tesla T4", false)]
+    [InlineData("GRID T4-16Q", false)]
+    [InlineData("NVIDIA CMP 30HX", false)]
+    [InlineData("NVIDIA GeForce RTX 2060", false)]
+    [InlineData("NVIDIA GeForce RTX 2050", false)]
+    [InlineData("NVIDIA GeForce RTX 3050 Ti Laptop GPU", false)]
+    [InlineData("NVIDIA RTX A2000 12GB", false)]
+    [InlineData("NVIDIA RTX A500 Laptop GPU", false)]
+    [InlineData("NVIDIA A100-SXM4-40GB", false)]
+    [InlineData("NVIDIA A10", false)]
+    [InlineData("NVIDIA RTX 2000 Ada Generation", false)]
+    [InlineData("NVIDIA RTX 6000 Ada Generation", false)]
+    [InlineData("NVIDIA L4", false)]
+    [InlineData("NVIDIA H100 PCIe", false)]
+    [InlineData("NVIDIA GeForce RTX 4060 Laptop GPU", false)]
+    [InlineData("NVIDIA GeForce RTX 5090", false)]
+    [InlineData("NVIDIA RTX PRO 6000 Blackwell Workstation Edition", false)]
+    [InlineData("NVIDIA", false)]                           // 모델명을 모르면 막지 않는다
+    public void LooksUnsupportedByCuda13_RealAdapterNames_OnlyBelowTuringDropped(string name, bool dropped)
+    {
+        // 옛 세대는 닫힌 목록이라 빠짐없이 골라내고, 튜링 이후는 이름 꼴이 비슷해도(GTX 16xx·MX450 이상·T 시리즈·TITAN RTX) 막지 않는다
+        Assert.Equal(dropped, SystemCheck.LooksUnsupportedByCuda13(name));
+    }
+
+    [Fact]
+    public void ParseNvidiaSmi_ReadsEveryCardLine()
+    {
+        // 카드 한 장에 한 줄 — 첫 줄만 읽으면 앞 순서(PCI 순)의 화면용 옛 카드 하나로 PC 전체를 판정했다
+        Assert.Equal([
+            new SystemCheck.Gpu("NVIDIA Quadro K620", "580.88", 580, 2048),
+            new SystemCheck.Gpu("NVIDIA GeForce RTX 3060", "580.88", 580, 12288),
+        ], SystemCheck.ParseNvidiaSmi("580.88, NVIDIA Quadro K620, 2048\r\n580.88, NVIDIA GeForce RTX 3060, 12288\r\n"));
+        // 이 PC가 실제로 내는 꼴
+        Assert.Equal([new SystemCheck.Gpu("NVIDIA GeForce RTX 2070 SUPER", "591.86", 591, 8192)],
+            SystemCheck.ParseNvidiaSmi("591.86, NVIDIA GeForce RTX 2070 SUPER, 8192\r\n"));
+        // 드라이버와 통신하지 못할 때의 문구·빈 출력은 카드가 아니다
+        Assert.Empty(SystemCheck.ParseNvidiaSmi("NVIDIA-SMI has failed because it couldn't communicate with the NVIDIA driver. Make sure that the latest NVIDIA driver is installed and running.\r\n"));
+        Assert.Empty(SystemCheck.ParseNvidiaSmi(""));
+        // 쉼표가 든 오류 문구와 값을 못 읽은 카드 줄도 카드가 아니다 — 금지 목록에 안 걸리는 이름이라 세면 '지원 카드'로 뽑힌다
+        Assert.Equal([new SystemCheck.Gpu("NVIDIA GeForce GTX 1060 6GB", "580.88", 580, 6144)],
+            SystemCheck.ParseNvidiaSmi("580.88, [Unknown Error], [Unknown Error]\r\n580.88, NVIDIA GeForce GTX 1060 6GB, 6144\r\n"));
+        Assert.Empty(SystemCheck.ParseNvidiaSmi("ERROR: Option --query-gpu=driver_version,name,memory.total is not recognized. Please run 'nvidia-smi -h'.\r\n"));
+    }
+
+    [Theory]
+    // 이 PC — nvidia-smi는 RTX 2070 SUPER 한 장, 레지스트리는 0000 같은 이름·0001 Parsec 가상 어댑터
+    [InlineData(new[] { "NVIDIA GeForce RTX 2070 SUPER" }, new[] { "NVIDIA GeForce RTX 2070 SUPER", "Parsec Virtual Display Adapter" }, "nvidia", "NVIDIA GeForce RTX 2070 SUPER")]
+    // nvidia-smi가 답하면 지금 꽂힌 카드로만 본다 — 레지스트리에는 뽑아낸 카드의 흔적 키가 남는다(첫 NVIDIA 키로 보면 판정이 뒤집힌다)
+    [InlineData(new[] { "NVIDIA GeForce RTX 5070" }, new[] { "NVIDIA GeForce GTX 750 Ti", "NVIDIA GeForce RTX 5070" }, "nvidia", "NVIDIA GeForce RTX 5070")]
+    [InlineData(new[] { "NVIDIA GeForce RTX 3060" }, new[] { "NVIDIA GeForce GTX 1060 6GB", "NVIDIA GeForce RTX 3060" }, "nvidia", "NVIDIA GeForce RTX 3060")]   // 가장 흔한 업그레이드
+    [InlineData(new[] { "NVIDIA GeForce GTX 1080" }, new[] { "NVIDIA GeForce RTX 4070", "NVIDIA GeForce GTX 1080" }, "nvidia-old", "NVIDIA GeForce GTX 1080")]
+    [InlineData(new[] { "NVIDIA GeForce RTX 3060" }, new string[0], "nvidia", "NVIDIA GeForce RTX 3060")]   // 레지스트리를 못 읽어도
+    [InlineData(new[] { "NVIDIA GeForce RTX 3060" }, new[] { "NVIDIA GeForce RTX 3060", "AMD Radeon RX 6800 XT" }, "nvidia", "NVIDIA GeForce RTX 3060")]
+    // 여러 장이면 지원 카드가 한 장이라도 있을 때 CUDA 13 묶음 — 옛 카드를 화면용으로 같이 꽂은 PC
+    [InlineData(new[] { "NVIDIA Quadro K620", "NVIDIA GeForce RTX 3060" }, new[] { "NVIDIA Quadro K620", "NVIDIA GeForce RTX 3060" }, "nvidia", "NVIDIA GeForce RTX 3060")]
+    [InlineData(new[] { "NVIDIA GeForce GTX 1060 6GB", "NVIDIA GeForce GTX 970" }, new[] { "NVIDIA GeForce GTX 1060 6GB", "NVIDIA GeForce GTX 970" }, "nvidia-old", "NVIDIA GeForce GTX 1060 6GB")]
+    // nvidia-smi가 없을 때만 레지스트리로 본다 — 여러 장이면 같은 규칙
+    [InlineData(new string[0], new[] { "NVIDIA GeForce RTX 2070 SUPER", "Parsec Virtual Display Adapter" }, "nvidia", "NVIDIA GeForce RTX 2070 SUPER")]
+    [InlineData(new string[0], new[] { "Parsec Virtual Display Adapter", "NVIDIA GeForce GTX 1080 Ti" }, "nvidia-old", "NVIDIA GeForce GTX 1080 Ti")]
+    [InlineData(new string[0], new[] { "NVIDIA GeForce GTX 750 Ti", "NVIDIA GeForce RTX 5070" }, "nvidia", "NVIDIA GeForce RTX 5070")]
+    [InlineData(new string[0], new[] { "NVIDIA GeForce GTX 1060 6GB", "AMD Radeon RX 7800 XT" }, "amd", "AMD Radeon RX 7800 XT")]   // 카드 교체 PC의 유령 NVIDIA 키
+    [InlineData(new string[0], new[] { "Parsec Virtual Display Adapter", "Intel(R) UHD Graphics 630" }, "none", "Intel(R) UHD Graphics 630")]
+    [InlineData(new string[0], new string[0], "none", "")]
+    public void JudgeVendor_InstalledCardsFromNvidiaSmi_RegistryOnlyWithoutIt(string[] smiNames, string[] adapters, string vendor, string name)
+    {
+        // 자동 감지가 고른 종류로 ComfyUI 묶음(CUDA 13 / CUDA 12.6 / ROCm)을 받는다 — 옛 카드 흔적·보조 카드 하나로 묶음이 바뀌면 안 된다
+        Assert.Equal((vendor, name), SystemCheck.JudgeVendor(smiNames, adapters));
+    }
+
+    [Theory]
+    [InlineData(new[] { "NVIDIA GeForce RTX 2070 SUPER" }, "NVIDIA GeForce RTX 2070 SUPER", false)]   // 이 PC
+    [InlineData(new[] { "NVIDIA GeForce GTX 1080 Ti" }, "NVIDIA GeForce GTX 1080 Ti", true)]
+    // nvidia-smi 첫 줄(PCI 순)이 화면용 옛 카드여도 같이 꽂은 지원 카드로 본다 — 'RTX 20 이상' 선택을 막지 않는다
+    [InlineData(new[] { "NVIDIA Quadro K620", "NVIDIA GeForce RTX 3060" }, "NVIDIA GeForce RTX 3060", false)]
+    [InlineData(new[] { "NVIDIA GeForce GTX 1050 Ti", "NVIDIA GeForce RTX 2060" }, "NVIDIA GeForce RTX 2060", false)]
+    [InlineData(new[] { "NVIDIA GeForce RTX 3060", "NVIDIA GeForce GTX 750 Ti" }, "NVIDIA GeForce RTX 3060", false)]
+    [InlineData(new[] { "NVIDIA GeForce GTX 1060 6GB", "NVIDIA GeForce GTX 970" }, "NVIDIA GeForce GTX 1060 6GB", true)]   // 모두 옛 세대면 막는다
+    [InlineData(new[] { "NVIDIA GeForce RTX 4090", "NVIDIA GeForce RTX 3060" }, "NVIDIA GeForce RTX 4090", false)]         // 모두 지원 카드면 첫 카드
+    [InlineData(new string[0], null, false)]   // nvidia-smi가 없으면 세대가 아니라 드라이버 항목이 막는다
+    public void PickNvidia_BlocksCuda13_LookAtEveryInstalledCard(string[] smiNames, string? picked, bool blocked)
+    {
+        // 점검 창의 '그래픽카드'·'VRAM' 항목은 고른 카드를 보이고, 꽂힌 카드가 모두 CUDA 13이 버린 세대일 때만 설치를 막는다
+        Assert.Equal(picked, SystemCheck.PickNvidia(smiNames));
+        Assert.Equal(blocked, SystemCheck.BlocksCuda13(smiNames));
     }
 
     [Theory]
