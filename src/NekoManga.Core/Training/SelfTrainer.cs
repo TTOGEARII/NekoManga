@@ -13,6 +13,16 @@ namespace NekoManga.Core.Training;
 /// 학습이 끝나면 candidate.pt가 다음 학습의 시작점이 된다(적용했을 때만 — state.json의 basePt).</summary>
 public sealed class SelfTrainer(AppSettings settings)
 {
+    private readonly ComfyServer.Ledger _ledger = ComfyServer.Ledger.App;
+    private readonly Func<AppSettings, int>? _killPythons;   // 시험이 넣는 가짜 '죽이기' — null이면 진짜 엔진 끄기(EngineManager.Stop)
+
+    /// <summary>시험용 — 가짜 장부와 가짜 '죽이기'로 '살아 있는 엔진을 쓰는 작업이 있으면 끄지 않고 학습을 시작하지 않는다'만 본다(실제 python을 건드리지 않게 둘 다 받는다).</summary>
+    internal SelfTrainer(AppSettings s, ComfyServer.Ledger ledger, Func<AppSettings, int> killPythons) : this(s)
+    {
+        _ledger = ledger;
+        _killPythons = killPythons;
+    }
+
     public static string Dir => Path.Combine(AppSettings.DataDir, "training", "selftrain");
     public string RuntimeOnnx => Path.Combine(settings.RuntimeRoot, "models", Engine.CensorNet.ModelFile);
     public string RuntimePt => Path.Combine(settings.RuntimeRoot, "models", "censor_seg.pt");
@@ -80,15 +90,44 @@ public sealed class SelfTrainer(AppSettings settings)
         catch { return null; }
     }
 
-    /// <summary>학습을 돌린다 (수 분~수십 분). GPU를 비우려고 ComfyUI 엔진을 먼저 끈다. 진행 줄("PROGRESS …")은 status로, 전체 출력은 train.log로.</summary>
+    // 쓰는 것은 진행 중인 본 작업, 닫은 결과 창에서 아직 돌고 있는 채색·검열 제거, 표지 색 뽑기다 — 결과 창과 설정 창은 둘 다 모달이라 같이 떠 있지 못하므로
+    // '결과 창을 닫은 뒤'가 아니라 '작업이 끝난 뒤'라고 알린다
+    private const string BusyText =
+        "채색 엔진을 쓰는 작업이 있어서 학습을 시작하지 않았어요 — 학습은 GPU를 비우려고 엔진을 끄는데, 지금 끄면 그 작업이 도중에 실패해요. " +
+        "작업이 끝난 뒤 다시 눌러 주세요.";
+
+    /// <summary>학습을 시작하면 이 앱의 작업이 쓰는 중인 채색 엔진을 끄게 되는가 — 그러면 사용자에게 보일 까닭, 아니면 null.
+    /// 학습은 GPU를 비우려고 엔진을 끄는데(TrainAsync) 쓰는 중인 엔진을 끄면 그 작업이 도중에 연결 오류로 실패한다 — 그래서 쓰는 중이면 조용히 끄지 않고 학습을 시작하지 않는다.
+    /// 엔진이 **살아 있을 때만** 그만둔다: 학습이 끄는 것은 살아 있는 엔진뿐이라, 꺼진 엔진을 작업이 아직 쥐고 있어도(끄기·충돌 뒤 그 작업이 끝나기 전) 끌 것이 없으니
+    /// 예전(v1.8.2)처럼 시작한다. 엔진이 켜져만 있고 쓰는 작업이 없으면 예전처럼 끄고 시작한다.</summary>
+    public async Task<string?> EngineBusyAsync() => _ledger.JobsUsing > 0 && await EngineAliveAsync() ? BusyText : null;
+
+    // 엔진이 응답하는가(설정의 포트) — EngineManager.IsAliveAsync와 같은 것을 이 학습기의 장부로 묻는다
+    private Task<bool> EngineAliveAsync() => new ComfyServer(settings, _ledger).IsAliveAsync();
+
+    /// <summary>GPU를 비운다 — 엔진이 살아 있으면 끈다(꺼져 있으면 아무것도 하지 않는다). 살아 있는데 쓰는 작업이 있으면 끄지 않고 그만둔다:
+    /// 부르는 쪽이 EngineBusyAsync를 이미 보았어도, 살아 있는지 묻는 사이에 작업이 엔진을 쥘 수 있어 끄기 바로 앞에서 다시 본다.</summary>
+    internal async Task StopEngineAsync(IProgress<string>? status)
+    {
+        if (!await EngineAliveAsync()) return;
+        if (_ledger.JobsUsing > 0) throw new InvalidOperationException(BusyText);
+        status?.Report("GPU를 비우려고 채색 엔진을 끄는 중...");
+        if (_killPythons == null) EngineManager.Stop(settings);
+        else EngineManager.Stop(settings, _ledger, _killPythons);
+    }
+
+    /// <summary>학습을 돌린다 (수 분~수십 분). GPU를 비우려고 ComfyUI 엔진을 먼저 끈다 — 그 엔진을 쓰는 작업이 있으면 끄지 않고 그만둔다(EngineBusyAsync).
+    /// 진행 줄("PROGRESS …")은 status로, 전체 출력은 train.log로.</summary>
     public async Task<Result> TrainAsync(IProgress<string>? status, CancellationToken ct)
     {
+        if (await EngineBusyAsync() is { } busy) throw new InvalidOperationException(busy);   // 맨 먼저 — 아무것도 건드리기 전에
         if (!CanTrain(out var why)) throw new InvalidOperationException(why);
+        // VRAM: 엔진이 모델을 들고 있으면 학습이 메모리 부족으로 죽는다 → 끄고 시작.
+        // 지난 결과·후보를 지우기 전에 한다 — 살아 있는지 묻는 사이에 작업이 엔진을 쥐었으면 여기서 그만두는데, 그때 지난 결과가 이미 지워져 있지 않게
+        await StopEngineAsync(status);
         Directory.CreateDirectory(Dir);
         var work = Path.Combine(Dir, "work"); Directory.CreateDirectory(work);
         foreach (var f in new[] { ResultPath, CandidateOnnx, CandidatePt }) if (File.Exists(f)) File.Delete(f);
-        // VRAM: 엔진이 모델을 들고 있으면 학습이 메모리 부족으로 죽는다 → 끄고 시작
-        if (await EngineManager.IsAliveAsync(settings)) { status?.Report("GPU를 비우려고 채색 엔진을 끄는 중..."); EngineManager.Stop(settings); }
         var init = File.Exists(RuntimePt) ? RuntimePt : CandidatePt;
         var psi = new ProcessStartInfo(PythonExe)
         {

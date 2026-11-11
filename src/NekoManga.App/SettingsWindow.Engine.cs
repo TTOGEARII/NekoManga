@@ -143,6 +143,13 @@ public partial class SettingsWindow
     {
         ChkPrewarm.IsChecked = s.PrewarmComfyOnLaunch;
         ChkKeepWarm.IsChecked = s.KeepComfyWarm;
+        // 연결해 둔 ComfyUI가 엔진이면 [끄기]가 닫는 것이 그 ComfyUI 자체임을 알린다 — 위 안내는 엔진을 '앱이 알아서 켜고 끄는 뒤쪽 부품'이라고만 해서,
+        // 직접 켜 두고 브라우저로 쓰던 ComfyUI가 꺼지는 것을 예상하기 어렵다(EngineManager.Stop은 그 폴더의 python을 누가 띄웠든 죽인다)
+        bool linked = !string.IsNullOrWhiteSpace(s.LinkedComfyRoot);
+        TxtEngineLinked.Visibility = linked ? Visibility.Visible : Visibility.Collapsed;
+        TxtEngineLinked.Text = linked
+            ? $"연결해 둔 ComfyUI({s.LinkedComfyRoot.Trim()})를 엔진으로 쓰고 있어요 — [끄기]는 그 ComfyUI 자체를 닫아요. 직접 켜 두었거나 브라우저에서 쓰던 중이어도 꺼져요."
+            : "";
         RefreshModelCombos(s);
         _ = RefreshEngineStateAsync();
     }
@@ -187,6 +194,16 @@ public partial class SettingsWindow
 
     private async void BtnEngineStop_Click(object sender, RoutedEventArgs e)
     {
+        // 이 앱의 작업이 쓰는 중인 엔진을 끄면 그 작업은 도중에 연결 오류로 실패한다 — 끄기 전에 묻는다. 기본 버튼은 '아니요'(끄지 않기)
+        if (NekoManga.Core.Comfy.EngineManager.InUse)
+        {
+            var linked = string.IsNullOrWhiteSpace(App.Settings.LinkedComfyRoot) ? "" : "\n(연결해 둔 ComfyUI 자체가 꺼져요.)";
+            var r = MessageBox.Show(this,
+                "지금 이 엔진을 쓰는 작업이 있어요 — 진행 중인 작업이거나, 닫은 결과 창에서 아직 돌고 있는 채색·검열 제거, 표지 색 뽑기예요.\n\n" +
+                "엔진을 끄면 그 작업은 도중에 실패해요. 작업이 끝난 뒤에 끄면 안전해요. 그래도 지금 끌까요?" + linked,
+                "엔진 끄기", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+            if (r != MessageBoxResult.Yes) return;
+        }
         BtnEngineStop.IsEnabled = false;
         NekoManga.Core.Comfy.EngineManager.Stop(App.Settings);
         await Task.Delay(800);

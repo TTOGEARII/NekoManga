@@ -61,14 +61,24 @@ public partial class SettingsWindow
         _trainCts = new CancellationTokenSource();
         RefreshTrainStatus();
         var status = new Progress<string>(m => TxtTrainStatus.Text = "학습 중 — " + m);
+        // 끝나고 상태줄에 남길 말 — finally의 RefreshTrainStatus가 버튼을 되살리며 상태줄도 지난 결과(없으면 "학습할 수 있어요.")로 다시 쓰므로 그 뒤에 적는다.
+        // 예전에는 try 안에서 바로 적어서, 시작하지 않은 까닭·실패 원인·중단 안내가 곧바로 덮여 보이지 않았다
+        string shown;
         try
         {
-            var r = await tr.TrainAsync(status, _trainCts.Token);
-            TxtTrainStatus.Text = r.Ok ? ResultText(r) : "학습 실패: " + r.Error + $"\n(로그: {tr.LogPath})";
+            // 학습은 채색 엔진을 끄고 시작한다 — 살아 있는 엔진을 쓰는 작업이 있으면 끄지 않고 까닭만 알린다(TrainAsync도 끄기 바로 앞에서 다시 본다).
+            // _trainCts를 건 뒤에 묻는다 — 엔진이 살아 있는지 묻는 동안(await) 버튼을 한 번 더 눌러도 학습이 둘 돌지 않게
+            if (await tr.EngineBusyAsync() is { } busy) shown = busy;
+            else
+            {
+                var r = await tr.TrainAsync(status, _trainCts.Token);
+                shown = r.Ok ? ResultText(r) : "학습 실패: " + r.Error + $"\n(로그: {tr.LogPath})";
+            }
         }
-        catch (OperationCanceledException) { TxtTrainStatus.Text = "학습을 중단했어요."; }
-        catch (Exception ex) { TxtTrainStatus.Text = "학습 실패: " + ex.Message; }
+        catch (OperationCanceledException) { shown = "학습을 중단했어요."; }
+        catch (Exception ex) { shown = "학습 실패: " + ex.Message; }
         finally { _trainCts?.Dispose(); _trainCts = null; RefreshTrainStatus(); }
+        TxtTrainStatus.Text = shown;
     }
 
     private void BtnSelfTrainStop_Click(object sender, RoutedEventArgs e) => _trainCts?.Cancel();

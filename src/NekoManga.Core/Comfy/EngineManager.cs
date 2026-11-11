@@ -33,9 +33,26 @@ public static class EngineManager
         }
     }
 
+    /// <summary>이 앱(프로세스)의 작업이 지금 엔진을 쓰고 있는가 — 본 작업, 채색·검열 제거를 다시 돌린 결과 창(닫을 때까지 쥔다), 표지 색 뽑기.
+    /// 쓰는 중에 Stop으로 끄면 그 작업은 도중에 연결 오류로 실패한다 — 끄기 전에 이것을 보고 묻거나(설정 창의 끄기) 그만둔다(자가 학습).
+    /// 다른 NekoManga 프로세스의 작업과 브라우저에서 ComfyUI를 직접 쓰는 것은 알지 못한다(장부는 프로세스 안에만 있다).</summary>
+    public static bool InUse => ComfyServer.Ledger.App.JobsUsing > 0;
+
     /// <summary>엔진을 끈다 — 이 앱의 ComfyRoot에서 뜬 python(main.py)을 찾아 종료한다.
-    /// 사용자가 직접 띄운 다른 ComfyUI는 경로가 다르면 건드리지 않는다.</summary>
-    public static int Stop(AppSettings settings)
+    /// 사용자가 직접 띄운 다른 ComfyUI는 경로가 다르면 건드리지 않는다. ComfyRoot가 연결해 둔 사용자의 ComfyUI면 그 ComfyUI가 꺼진다(누가 띄웠든).
+    /// 쓰는 작업이 있어도 끈다(명시적 행동) — 물을지 그만둘지는 부르는 쪽이 InUse를 보고 정한다.</summary>
+    public static int Stop(AppSettings settings) => Stop(settings, ComfyServer.Ledger.App, KillPythons);
+
+    /// <summary>Stop 본체 — 시험이 가짜 장부와 가짜 '죽이기'를 넘긴다(실제 python을 건드리지 않게).</summary>
+    internal static int Stop(AppSettings settings, ComfyServer.Ledger ledger, Func<AppSettings, int> killPythons)
+    {
+        int killed = killPythons(settings);
+        // 장부도 맞춘다 — 죽어 가는 cmd를 '깨어나는 중인 우리 서버'로 남기지 않는다(Ledger.EngineStopped). 다음에 띄우는 서버는 '엔진 켜기' 고정 없이 시작한다
+        ledger.EngineStopped();
+        return killed;
+    }
+
+    private static int KillPythons(AppSettings settings)
     {
         int killed = 0;
         var rootPython = Path.GetFullPath(Path.Combine(settings.ComfyRoot, "python_embeded"));
