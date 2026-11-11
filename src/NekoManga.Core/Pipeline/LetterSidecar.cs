@@ -57,14 +57,25 @@ public record LetterSidecar(
         try { File.Delete(JsonPathFor(fromOut)); } catch { }
     }
 
+    /// <summary>json과 식자 전 원고(base)가 모두 있을 때만 돌려준다 — 다시 식자하려면 둘 다 필요하다.</summary>
     public static LetterSidecar? Load(string outPath)
     {
         try
         {
-            var path = JsonPathFor(outPath);
-            if (!File.Exists(path)) return null;
-            var sc = JsonSerializer.Deserialize<LetterSidecar>(File.ReadAllText(path));
+            var sc = LoadRecord(outPath);
             return sc != null && File.Exists(sc.BasePath) ? sc : null;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>json만 읽는다 — 식자 전 원고(base)가 있는지는 보지 않는다. 그 결과 자리가 누구의 것인지(Source·SrcLen)만 볼 때 쓴다:
+    /// BasePath는 절대 경로라 출력 폴더를 옮기면 옛 폴더를 가리켜 <see cref="Load"/>는 null이 된다. 없거나 못 읽으면 null.</summary>
+    internal static LetterSidecar? LoadRecord(string outPath)
+    {
+        try
+        {
+            var path = JsonPathFor(outPath);
+            return File.Exists(path) ? JsonSerializer.Deserialize<LetterSidecar>(File.ReadAllText(path)) : null;
         }
         catch { return null; }
     }

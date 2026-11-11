@@ -192,7 +192,7 @@ public class MaskSidecarTests
         Assert.Null(MaskSidecar.LoadKinds(outPath));
     }
 
-    [Fact(Skip = "알려진 결함: 0바이트 마스크 PNG에서 LoadMask·LoadAuto가 null 대신 ArgumentException을 던진다(ImgIo.Read가 빈 바이트를 Cv2.ImDecode에 넘김) — 문서 주석은 '없거나 못 읽으면 null'")]
+    [Fact]
     public void LoadMask_ZeroByteMaskPng_ReturnsNull()
     {
         // 쓰다 끊겨 0바이트로 남은 마스크 — 재실행(1차)이 이 예외로 그 장을 매번 실패시키지 말고 새로 감지해야 한다
@@ -204,6 +204,23 @@ public class MaskSidecarTests
 
         Assert.Null(MaskSidecar.LoadMask(outPath));
         Assert.Null(MaskSidecar.LoadAuto(outPath));
+    }
+
+    [Fact]
+    public void LoadMask_MaskPngLockedAgainstReading_ThrowsInsteadOfNull()
+    {
+        // 잠긴 마스크는 '없음'이 아니다 — null로 넘기면 재실행이 사용자가 고친 마스크를 두고 새로 감지해(검토 흐름에서는 사이드카까지 덮어) 고친 것이 사라진다.
+        // 예외로 알리면(재실행 1차에서는 그 장의 실패) 잠금이 풀린 뒤 다시 돌릴 때 고친 마스크를 그대로 쓴다
+        using var t = new TempDir();
+        var (src, outPath) = Page(t);
+        using var mask = RectMask(W, H, new Rect(5, 6, 20, 10));
+        MaskSidecar.Write(outPath, src, mask, null, null, "", skip: false, edited: true, confirmed: true);
+
+        using (new FileStream(MaskSidecar.MaskPathFor(outPath), FileMode.Open, FileAccess.Read, FileShare.None))   // 다른 프로그램이 읽기까지 막고 쥐고 있다
+            Assert.ThrowsAny<IOException>(() => MaskSidecar.LoadMask(outPath));
+
+        using var back = MaskSidecar.LoadMask(outPath);
+        AssertSamePixels(mask, back);
     }
 
     // ── 어느 원고의 사이드카인가 ──

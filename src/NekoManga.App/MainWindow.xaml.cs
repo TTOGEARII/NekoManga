@@ -116,19 +116,26 @@ public partial class MainWindow
 
     private void AddPaths(IEnumerable<string> paths)
     {
+        var skipped = new List<string>();   // 받지 않은 파일 — 읽지 못하는 그림(.avif 등)이 섞였으면 아래에서 알린다
         foreach (var p in paths)
         {
             if (Directory.Exists(p))
             {
-                foreach (var f in Directory.EnumerateFiles(p, "*", SearchOption.AllDirectories)
-                         .Where(NekoManga.Core.ImgIo.IsImageFile))
-                    AddFile(f);
+                foreach (var f in Directory.EnumerateFiles(p, "*", SearchOption.AllDirectories))
+                    if (NekoManga.Core.ImgIo.IsImageFile(f)) AddFile(f);
+                    else skipped.Add(f);
             }
-            else if (File.Exists(p) && NekoManga.Core.ImgIo.IsImageFile(p))
-                AddFile(p);
+            else if (File.Exists(p))
+            {
+                if (NekoManga.Core.ImgIo.IsImageFile(p)) AddFile(p);
+                else skipped.Add(p);
+            }
         }
         SortRowsByName();   // 불러온 순서(드롭·탐색기 선택 순서)와 무관하게 늘 이름 오름차순 (사용자 요청 2026-10-21)
         UpdateDropHint();
+        // 조용히 버리면 왜 목록에 안 들어왔는지 모른다(.avif는 전에 받았다가 작업 도중 실패했다) — 그림이 아닌 파일은 세지 않는다
+        if (NekoManga.Core.ImgIo.UnreadableNotice(skipped) is { } notice)
+            TxtStatus.Text = _rows.Count > 0 ? $"{TxtStatus.Text} — {notice}" : notice;
     }
 
     /// <summary>탐색기와 같은 자연 정렬(2 < 10)로 목록을 이름 오름차순 정렬. 같은 Row 객체를 재사용해 썸네일·상태를 유지한다.</summary>

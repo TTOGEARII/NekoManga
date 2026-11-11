@@ -103,7 +103,9 @@ public record MaskSidecar(
             if (File.Exists(a)) File.Move(a, b, overwrite: true);
     }
 
-    /// <summary>마스크 PNG → CV_8UC1 (255=지울 곳). 없거나 못 읽으면 null.</summary>
+    /// <summary>마스크 PNG → CV_8UC1 (255=지울 곳). 없거나 그림으로 읽히지 않으면(0바이트·깨진 PNG) null — 재실행은 이때 새로 감지한다.
+    /// 잠김·권한 같은 입출력 오류는 종류 지도(<see cref="LoadKinds"/>)와 달리 삼키지 않고 던진다 — null로 넘기면 사용자가 고친 마스크가 멀쩡히 있는데도
+    /// 재실행이 새로 감지하고, 검토 흐름에서는 그 감지로 사이드카를 덮는다.</summary>
     public static Mat? LoadMask(string outPath) => LoadGray(MaskPathFor(outPath));
     public static Mat? LoadAuto(string outPath) => LoadGray(AutoPathFor(outPath));
 

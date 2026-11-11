@@ -64,6 +64,51 @@ public class LetterSidecarTests
         Assert.Null(LetterSidecar.Load(outPath));
     }
 
+    [Theory]
+    [InlineData("complete")]
+    [InlineData("baseMissing")]    // 식자 전 원고가 지워졌다
+    [InlineData("folderMoved")]    // 결과 폴더를 옮겼다 — json의 식자 전 원고 경로(절대 경로)가 옛 폴더를 가리킨다
+    public void LoadRecord_BaseNotReachable_StillTellsWhoseSidecarItIs(string state)
+    {
+        // 다시 식자할 수는 없어도 그 자리가 어느 원고의 것인지는 json만으로 안다 — 결과 자리 충돌 검사가 이것으로 남의 결과를 덮지 않는다
+        using var t = new TempDir();
+        var src = t.At("vol1", "01.jpg");
+        var outPath = t.At("결과", "vol1_01_jpg.png");
+        var basePath = WriteImageFile(LetterSidecar.BasePathFor(outPath));
+        Stored(src, 100, basePath).Save(outPath);
+        if (state == "baseMissing") File.Delete(basePath);
+        if (state == "folderMoved")
+        {
+            Directory.Move(t.At("결과"), t.At("옮긴 결과"));
+            outPath = t.At("옮긴 결과", "vol1_01_jpg.png");
+        }
+
+        var record = LetterSidecar.LoadRecord(outPath);
+
+        Assert.Equal(state == "complete", LetterSidecar.Load(outPath) != null);   // 다시 식자할 사이드카의 계약은 그대로다
+        Assert.NotNull(record);
+        Assert.Equal((src, 100L), (record.Source, record.SrcLen));
+        Assert.Equal(Blocks, record.Blocks);
+    }
+
+    [Theory]
+    [InlineData("nothing")]
+    [InlineData("jsonEmpty")]   // 0바이트 json
+    [InlineData("jsonCut")]     // 반쯤 쓰인 json
+    public void LoadRecord_MissingOrBrokenJson_ReturnsNull(string state)
+    {
+        using var t = new TempDir();
+        var outPath = t.At("vol1_neko", "01_jpg.png");
+        if (state != "nothing")
+        {
+            Stored(t.At("vol1", "01.jpg"), 100, WriteImageFile(LetterSidecar.BasePathFor(outPath))).Save(outPath);
+            var json = File.ReadAllText(LetterSidecar.JsonPathFor(outPath));
+            File.WriteAllText(LetterSidecar.JsonPathFor(outPath), state == "jsonEmpty" ? "" : json[..(json.Length / 2)]);
+        }
+
+        Assert.Null(LetterSidecar.LoadRecord(outPath));
+    }
+
     [Fact]
     public void Load_SidecarWrittenBeforeNewerFields_FillsDefaults()
     {

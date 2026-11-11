@@ -49,6 +49,10 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         public required string WorkDir;
         /// <summary>이번 실행의 원고 전체 경로 키(FileKey) — 결과물·옛 이름 옮기기가 **목록의 원고 파일**을 건드리지 않게.</summary>
         public HashSet<string> FileKeys = new(StringComparer.Ordinal);
+        /// <summary>결과 경로를 정한 설정 사본(RunAsync 시작 때 박제) — 결과 자리 충돌 안내가 출력 폴더를 고정했는지, 다른 원고의 결과 자리가 어디인지 볼 때.</summary>
+        public AppSettings? PathSettings;
+        /// <summary>이번 실행에서 장이 차지한 결과 자리(FileKey) → 그 원고. 결과 자리 검사를 통과한 장만 넣는다 — 같은 자리로 떨어지는 뒤 장은 실패로(ResultSlotConflict ②).</summary>
+        public Dictionary<string, string> TakenSlots = new(StringComparer.Ordinal);
         public CancellationToken Ct;
         /// <summary>검토 흐름 — 감지가 비어도 사용자가 칠할 수 있게 빈 마스크를 만들고, 마스크 사이드카를 남긴다.</summary>
         public bool Review;
@@ -69,14 +73,14 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         if (files.Count == 0) return;
         var pathSettings = settings.ShallowClone();   // 결과 경로는 **지금**의 출력 폴더로 — PrepareAsync(ComfyUI 기동 등 수십 초) 동안 설정 창에서 바꿔도 이 작업은 시작 때 폴더에 쓴다
         var cx = await PrepareAsync(files, progress, needTranslator: settings.EnableTranslate, ct);
+        cx.PathSettings = pathSettings;
         var pages = new List<ReviewPage>(files.Count);
-        var firstOf = new Dictionary<string, ReviewPage>(StringComparer.Ordinal);
         foreach (var f in files)
         {
             var stem = OutputStemFor(pathSettings, f);
             var pg = new ReviewPage(f) { OutPath = OutputPathFor(pathSettings, f), Stem = stem, WorkKey = $"{pages.Count:D4}_{stem}" };
-            // 드물게 둘이 같은 결과 자리로 떨어진다(출력 폴더 고정 + 상위 폴더 이름까지 같은 두 화 — A\ch1\001.jpg·B\ch1\001.jpg) — 뒤 장은 1차에서 실패로
-            if (!firstOf.TryAdd(FileKey(pg.OutPath), pg)) pg.DuplicateOf = firstOf[FileKey(pg.OutPath)].File;
+            // 드물게 둘이 같은 결과 자리로 떨어진다(출력 폴더 고정 + 상위 폴더 이름까지 같은 두 화 — A\ch1\001.jpg·B\ch1\001.jpg) — 1차의 결과 자리 검사가
+            // 그 자리를 실제로 차지한 장만 쓰게 하고 나머지는 실패로 둔다(목록 순서로 미리 정하면 자리의 사이드카 주인이 뒤에 올 때 둘 다 막힌다)
             pages.Add(pg);
         }
 
@@ -217,12 +221,16 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         }
         if (!settings.EnableDecensor) return;
         using var img = ImgIo.Read(pg.WorkPath, ImreadModes.Color);
+        // 읽지 못한 원고(0바이트·깨진 파일)는 여기서 그 장의 실패로 — 빈 그림이 감지기로 가면 OpenCV 내부 문구로 실패하거나(Aletheia·막대·모자이크)
+        // 색 검열 감지처럼 '검열 없음'으로 통과해 못 읽은 원고가 '원본 그대로' 복사된다. 번역을 켰으면 번역기가 같은 문구로 먼저 막는다
+        if (img.Empty()) throw new InvalidDataException($"이미지를 읽지 못했어요: {Path.GetFileName(pg.WorkPath)}");
 
         // 같은 원고를 다시 돌릴 때: .neko에 남은 마스크(사용자가 고친 것 포함)가 있으면 감지 대신 쓴다 — 고친 마스크가 재실행에도 유지된다
         // 사이드카는 결과 파일 이름으로만 찾아지므로 **같은 원고인지**(경로 또는 이름+바이트 길이)를 꼭 확인한다 — 출력 폴더를 고정해 두고
         // 1화·2화처럼 파일 이름·해상도가 같은 다른 원고를 돌리면 남의 마스크로 감지·검토를 건너뛰는 사고가 난다
-        if (settings.ReuseStoredMasks && MaskSidecar.Load(pg.OutPath) is { } stored && stored.MatchesSource(pg.File)
-            && stored.SrcW == img.Width && stored.SrcH == img.Height && MaskSidecar.LoadMask(pg.OutPath) is { } storedMask)
+        // json·마스크 PNG가 잠겨 있으면 기다렸다 다시 읽고, 끝내 못 읽으면 그 장을 실패로 둔다 — 없는 것으로 치고 새로 감지하면 검토 흐름이 고친 마스크를 덮는다
+        if (settings.ReuseStoredMasks && LoadSidecarWaitingOutLock(pg.OutPath, brokenThrows: false) is { } stored && stored.MatchesSource(pg.File)
+            && stored.SrcW == img.Width && stored.SrcH == img.Height && LoadMaskWaitingOutLock(pg.OutPath) is { } storedMask)
         {
             // 폴더를 옮긴 경우 경로 갱신 (결과 창의 대기 판정이 이 경로를 쓴다). 옛 경로가 아직 있으면(폴더를 복사함) 소유권은 그대로 — 마스크만 빌려 쓴다
             if ((!string.Equals(stored.Source, pg.File, StringComparison.OrdinalIgnoreCase) || stored.SrcLen == 0)
@@ -275,6 +283,8 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         if (settings.EnableDecensor && pg.Mask != null && !pg.Skip && Cv2.CountNonZero(pg.Mask) > 0)
         {
             using var img = ImgIo.Read(work, ImreadModes.Color);
+            // 1차 뒤에 망가진 작업 파일, 결과 창 [채색부터 다시]의 깨진 검열 제거 전 원고(.pre.png) — 마스크 크기 맞추기의 OpenCV 오류 대신 알아볼 문구로
+            if (img.Empty()) throw new InvalidDataException($"이미지를 읽지 못했어요: {Path.GetFileName(work)}");
             var mask = pg.Mask;
             if (mask.Size() != img.Size())
             {
@@ -352,6 +362,10 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
             // 아무것도 감지·수정되지 않았다 (work가 원본 그대로) — 다시 인코딩하지 않고
             // 원본을 확장자까지 그대로 내보낸다. 손댈 게 없는데 jpg를 png로 재인코딩하면
             // 파일만 커지고 화질에도 득이 없다. 출력 폴더가 원고 폴더면 '원본 그대로'는 원본 자신이라 복사하지 않는다.
+            // 이 가지는 원고를 디코드하지 않는다(엔진을 모두 끄면 1차도 읽지 않는다) — 쓰다·내려받다 끊긴 0바이트 원고가 0바이트 '원본 그대로'로
+            // 성공하지 않게 길이만 본다(지난 결과도 그대로 둔다)
+            var src = new FileInfo(file);
+            if (src.Exists && src.Length == 0) throw new InvalidDataException($"이미지를 읽지 못했어요: {Path.GetFileName(file)}");
             var asIs = AsIsPathFor(outPath, file);
             Directory.CreateDirectory(Path.GetDirectoryName(asIs)!);
             if (!string.Equals(asIs, file, StringComparison.OrdinalIgnoreCase))
@@ -363,7 +377,7 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         }
         else
         {
-            // 결과는 항상 png로 저장한다 — 원본이 webp/avif여도 확장자만 png가 되지 않도록
+            // 결과는 항상 png로 저장한다 — 원본이 webp여도 확장자만 png가 되지 않도록
             // 그대로 복사하지 않고 OpenCV로 다시 인코딩한다.
             Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
             using var done = ImgIo.Read(work, ImreadModes.Color);

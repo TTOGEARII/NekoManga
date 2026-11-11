@@ -9,21 +9,40 @@ namespace NekoManga.Core;
 /// 코드페이지로 못 옮기는 문자가 있으면 "cannot marshal: Encountered unmappable character"로 터진다.
 ///
 /// 그래서 파일 자체는 .NET(유니코드 경로 OK)으로 읽고/쓰고, OpenCV는 메모리 버퍼만
-/// 디코드/인코드한다 — webp·avif 등 OpenCV 코덱은 그대로 유지된다
+/// 디코드/인코드한다 — webp 등 OpenCV 코덱은 그대로 유지된다
 /// (System.Drawing은 이 포맷들을 못 읽으므로 OpenCV 디코드는 반드시 거쳐야 한다).</summary>
 public static class ImgIo
 {
-    /// <summary>OpenCV(ImDecode)가 읽을 수 있는 만화 이미지 확장자 (소문자, 점 포함). 메인 창 파일 선택·끌어놓기 필터가 쓴다.</summary>
+    /// <summary>OpenCV(ImDecode)가 읽을 수 있는 만화 이미지 확장자 (소문자, 점 포함). 메인 창 파일 선택·끌어놓기 필터가 쓴다.
+    /// .avif는 뺐다 — 번들된 OpenCV 런타임(OpenCvSharp4.runtime.win)이 AVIF 코덱 없이 빌드돼 있어(Cv2.GetBuildInformation()의 'AVIF: NO')
+    /// 받아 놓고 작업 도중에 읽지 못해 실패했다. 런타임을 바꿔 다시 넣을 때는 그 줄부터 확인한다.</summary>
     public static readonly string[] ImageExts =
-        [".png", ".jpg", ".jpeg", ".jpe", ".webp", ".bmp", ".tif", ".tiff", ".jp2", ".ppm", ".pgm", ".pbm", ".pnm", ".avif"];
+        [".png", ".jpg", ".jpeg", ".jpe", ".webp", ".bmp", ".tif", ".tiff", ".jp2", ".ppm", ".pgm", ".pbm", ".pnm"];
 
     public static bool IsImageFile(string path) =>
         ImageExts.Contains(Path.GetExtension(path).ToLowerInvariant());
 
-    /// <summary>경로의 이미지를 읽는다. 실패 시 빈 Mat을 돌려준다(Cv2.ImRead와 동일 계약).</summary>
+    /// <summary>그림이지만 번들된 OpenCV에 코덱이 없어 받지 않는 확장자 — 메인 창이 목록에서 뺀 수를 알린다(그림이 아닌 파일은 알리지 않는다).
+    /// 만화 원고로 올 만한 것만 짧게 둔다. .gif는 읽히지만(빌드 정보 'GIF: YES') 받는 목록에 없을 뿐이라 여기 넣지 않는다.</summary>
+    public static readonly string[] UnreadableImageExts = [".avif", ".heic", ".heif", ".jxl"];
+
+    /// <summary>목록에 넣지 않은 파일 가운데 <see cref="UnreadableImageExts"/>를 형식별로 세어 알리는 한 줄 (예: "AVIF 2장은 읽을 수 없어 뺐어요"). 없으면 null.</summary>
+    public static string? UnreadableNotice(IEnumerable<string> skipped)
+    {
+        var exts = skipped.Select(f => Path.GetExtension(f).ToLowerInvariant()).ToList();
+        var parts = UnreadableImageExts.Select(e => (Name: e[1..].ToUpperInvariant(), Count: exts.Count(x => x == e)))
+                                       .Where(p => p.Count > 0).Select(p => $"{p.Name} {p.Count}장").ToList();
+        return parts.Count == 0 ? null : string.Join("·", parts) + "은 읽을 수 없어 뺐어요";
+    }
+
+    /// <summary>경로의 이미지를 읽는다. 디코드하지 못하면(0바이트·깨진 파일·코덱 없는 형식) 빈 Mat을 돌려준다(Cv2.ImRead와 동일 계약).
+    /// 파일이 없거나 열리지 않으면(잠김·권한) 예외를 그대로 던진다 — 이 점은 빈 Mat을 주는 Cv2.ImRead와 다르다.</summary>
     public static Mat Read(string path, ImreadModes mode = ImreadModes.Color)
     {
         var bytes = File.ReadAllBytes(path);
+        // 쓰다 끊기거나 내려받다 끊긴 0바이트 파일 — Cv2.ImDecode는 빈 버퍼를 ArgumentException(Empty span)으로 거부한다(Cv2.ImRead는 빈 Mat).
+        // 던지면 '못 읽음'을 Empty()로 가르는 호출부를 지나쳐 나간다(0바이트 마스크 사이드카가 재실행마다 그 장을 실패시켰다)
+        if (bytes.Length == 0) return new Mat();
         return Cv2.ImDecode(bytes, mode);
     }
 

@@ -41,6 +41,39 @@ public class ImgIoTests
     [InlineData("vol.png/readme")]        // 폴더 이름에 붙은 확장자는 세지 않는다
     public void IsImageFile_OtherOrMissingExtension_IsFalse(string path) => Assert.False(ImgIo.IsImageFile(path));
 
+    // ── 받지 않은 그림 알리기 ──
+
+    [Fact]
+    public void UnreadableNotice_SkippedUnreadableImages_CountsThemPerFormatAndIgnoresOtherFiles()
+    {
+        // 메인 창이 받지 않은 파일을 조용히 버려, 전에 받던 .avif가 왜 목록에 안 들어오는지 알 수 없었다 — 그림이 아닌 파일까지 알리면 잡음이다
+        var notice = ImgIo.UnreadableNotice(["vol1/02.avif", "vol1/sub/03.AVIF", "photo.heic", "notes.txt", "01_jpg.mask.json", "archive.zip", "page"]);
+
+        Assert.Equal("AVIF 2장·HEIC 1장은 읽을 수 없어 뺐어요", notice);
+    }
+
+    [Fact]
+    public void UnreadableNotice_NoUnreadableImageAmongSkipped_IsNull()
+    {
+        Assert.Null(ImgIo.UnreadableNotice(["notes.txt", "Thumbs.db", "01_jpg.png.3f9a1c2e.part", "vol.avif/readme"]));
+        Assert.Null(ImgIo.UnreadableNotice([]));
+    }
+
+    [Fact]
+    public void UnreadableImageExts_AreNotAcceptedAndAvifSampleReallyDoesNotDecode()
+    {
+        // 알리는 목록과 받는 목록이 겹치면 받은 그림을 '뺐다'고 알린다. 코덱이 들어온 런타임으로 바꾸면 이 시험이 실패한다 — 그때는 받는 목록으로 옮긴다
+        Assert.Empty(ImgIo.UnreadableImageExts.Intersect(ImgIo.ImageExts));
+        Assert.All(ImgIo.UnreadableImageExts, e => { Assert.StartsWith(".", e); Assert.Equal(e.ToLowerInvariant(), e); });
+        using var t = new TempDir();
+        var path = t.At("page.avif");
+        File.WriteAllBytes(path, Convert.FromBase64String(AvifSample));
+
+        using var img = ImgIo.Read(path);
+
+        Assert.True(img.Empty());
+    }
+
     // ── 읽기·쓰기 ──
 
     [Fact]
@@ -58,9 +91,9 @@ public class ImgIoTests
         AssertSamePixels(img, back);   // png는 무손실
     }
 
-    /// <summary>파일 선택 필터가 받는 확장자 가운데 번들된 OpenCV가 실제로 다루는 것 (.avif는 아래 Skip 테스트).</summary>
+    /// <summary>파일 선택 필터가 받는 확장자 전부 — 번들된 OpenCV가 실제로 쓰고 읽는 것만 목록에 둔다 (코덱이 없는 .avif는 그래서 뺐다).</summary>
     public static IEnumerable<object[]> DecodableExts() =>
-        ImgIo.ImageExts.Where(e => e != ".avif").Select(e => new object[] { e });
+        ImgIo.ImageExts.Select(e => new object[] { e });
 
     [Theory]
     [MemberData(nameof(DecodableExts))]
@@ -87,7 +120,7 @@ public class ImgIoTests
         "AAAQcGl4aQAAAAADCAgIAAAADGF2MUOBAAwAAAAAE2NvbHJuY2x4AAEADQAGgAAAABdpcG1hAAAAAAAAAAEAAQQBAoMEAAAANW1kYXQSAAoJGAz+2iAhoNCAMh5F4eHhiGEk" +
         "kkmUAAACjhHM7Ag61FVgw/nyijZylqA=";
 
-    [Fact(Skip = "알려진 결함: ImageExts에 .avif가 있지만 번들된 OpenCV 런타임은 AVIF 코덱 없이 빌드돼 있어(빌드 정보 'AVIF: NO') 빈 Mat이 돌아온다")]
+    [Fact]
     public void Read_AvifListedInImageExts_DecodesSample()
     {
         // 목록에 있는 한 읽혀야 한다 — 코덱을 넣든 목록에서 빼든 이 테스트는 통과한다
@@ -116,7 +149,7 @@ public class ImgIoTests
         Assert.True(img.Empty());
     }
 
-    [Fact(Skip = "알려진 결함: 0바이트 파일은 빈 Mat이 아니라 ArgumentException(Empty span)으로 터진다 — 문서 주석의 계약은 '실패 시 빈 Mat'")]
+    [Fact]
     public void Read_ZeroByteFile_ReturnsEmptyMat()
     {
         // 쓰다 만 파일·내려받다 끊긴 파일은 0바이트로 남는다 — 이것도 '못 읽는 파일'이다
