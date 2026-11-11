@@ -112,10 +112,29 @@ public partial class PipelineRunner
         }
     }
 
-    /// <summary>사이드카에 '확인됨'을 표시한다. 실패하면 경고로 알리고 false.</summary>
+    /// <summary>사이드카에 '확인됨'을 표시한다. 실패하면 경고로 알리고 false.
+    /// json이 잠겨 있으면(백신 검사·동기화) 읽기가 '사이드카 없음'과 똑같이 null이라 표시를 경고 없이 건너뛰고 true를 돌려줬다 — 다음 실행이 까닭 없이 검토를 한 번 더 기다렸다.
+    /// 다른 읽기처럼 두 번까지 기다렸다 다시 읽고(<see cref="LoadSidecarWaitingOutLock"/>), 그래도 잠겨 있으면 경고하고 false.
+    /// 그 경고는 '잠시 뒤 다시 돌려 주세요'(<see cref="StoredMaskLocked"/>)가 아니라 무슨 일이 생기는지로 — 이 장은 실패한 것이 아니다.
+    /// 사이드카가 정말 없으면(검토 흐름이 아닌 장) 할 일이 없다 — 조용히 true. 깨진 json도 전처럼 조용히 넘긴다(다음 실행의 1차가 새로 감지해 다시 쓴다).
+    /// 이 장이 읽어 온 사이드카가 이미 '확인됨'이었으면(<see cref="ReviewPage.StoredConfirmed"/> — 끝난 장의 [채색부터 다시]) 바꿀 것이 없으니 읽지도 않는다:
+    /// 그때 json이 잠겨 있으면 1.4초를 기다린 끝에 '다음에 검토를 한 번 더 기다려요'라는 틀린 경고를 냈다(이미 확인된 것이라 기다리지 않는다).</summary>
     private static bool MarkSidecarConfirmed(RunContext cx, ReviewPage pg)
     {
-        try { if (MaskSidecar.Load(pg.OutPath) is { } sc && !sc.Confirmed) (sc with { Confirmed = true, Skip = pg.Skip }).Save(pg.OutPath); return true; }
+        if (pg.StoredConfirmed) return true;
+        try
+        {
+            MaskSidecar? sc;
+            try { sc = LoadSidecarWaitingOutLock(pg.OutPath, brokenThrows: false); }
+            catch (IOException)
+            {
+                Warn(cx, pg, $"마스크 확인 표시 실패: 저장된 마스크 정보(.neko 폴더의 {Path.GetFileName(MaskSidecar.JsonPathFor(pg.OutPath))})를 다른 프로그램이 쥐고 있어요(백신 검사·동기화 등) — " +
+                             "이번 결과에는 영향이 없지만, 다음에 다시 돌리면 이 장의 검토를 한 번 더 기다려요.");
+                return false;
+            }
+            if (sc is { Confirmed: false }) (sc with { Confirmed = true, Skip = pg.Skip }).Save(pg.OutPath);
+            return true;
+        }
         catch (Exception ex) { Warn(cx, pg, "마스크 확인 표시 실패: " + ex.Message); return false; }
     }
 

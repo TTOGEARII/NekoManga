@@ -172,6 +172,7 @@ public partial class PipelineRunner
             Mask = mask,
             Kinds = MaskSidecar.LoadKinds(outPath),
             Skip = sc.Skip,
+            StoredConfirmed = sc.Confirmed,   // 끝난 장을 다시 돌리는 것이면 이미 '확인됨'이다 — 끝에서 표시를 다시 찍지 않는다(MarkSidecarConfirmed)
             Summary = sc.Summary,
             Blocks = LetterSidecar.Load(outPath) is { } lsc && lsc.BelongsTo(file, (sc.SrcW, sc.SrcH)) ? lsc.Blocks : [],
         };

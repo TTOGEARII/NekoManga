@@ -17,6 +17,9 @@ public class PipelineRunnerRunTests
         return log;
     }
 
+    /// <summary>결과 폴더 기준으로 본 주인 기록 파일 — 러너가 결과물을 쓸 때마다 <c>.neko\&lt;결과 이름&gt;.owner</c>를 남긴다.</summary>
+    private static string OwnerFile(string stem) => Path.Combine(".neko", stem + ".owner");
+
     // ── 결과가 서로·원고를 덮지 않는다 ──
 
     [Fact]
@@ -32,7 +35,8 @@ public class PipelineRunnerRunTests
 
         var log = await RunAsync(s, jpg, png, webp);
 
-        Assert.Equal(["01.png", "01_jpg.jpg", "01_webp.webp"], FilesUnder(Path.Combine(vol, "1화 テスト_neko")));
+        // 결과마다 주인 기록(.neko\<이름>.owner)이 하나씩 따라 남는다
+        Assert.Equal([OwnerFile("01"), OwnerFile("01_jpg"), OwnerFile("01_webp"), "01.png", "01_jpg.jpg", "01_webp.webp"], FilesUnder(Path.Combine(vol, "1화 テスト_neko")));
         foreach (var f in new[] { jpg, png, webp })
         {
             Assert.Null(log.FinalOf(f).Error);
@@ -55,7 +59,8 @@ public class PipelineRunnerRunTests
 
         Assert.Null(log.FinalOf(a).Error);
         Assert.NotNull(log.FinalOf(b).Error);
-        Assert.Equal(["ch1_001_jpg.jpg"], FilesUnder(outDir));
+        Assert.Equal([OwnerFile("ch1_001_jpg"), "ch1_001_jpg.jpg"], FilesUnder(outDir));
+        Assert.True(ResultOwner.Load(Path.Combine(outDir, "ch1_001_jpg.png"))!.MatchesSource(a));   // 자리를 차지한 앞 장의 기록이다
         Assert.Equal(File.ReadAllBytes(a), File.ReadAllBytes(Path.Combine(outDir, "ch1_001_jpg.jpg")));
     }
 
@@ -109,7 +114,7 @@ public class PipelineRunnerRunTests
         var log = await RunAsync(s, src);
 
         Assert.Null(log.FinalOf(src).Error);
-        Assert.Equal(["01_jpg.jpg"], FilesUnder(t.At("vol1", "vol1_neko")));
+        Assert.Equal([OwnerFile("01_jpg"), "01_jpg.jpg"], FilesUnder(t.At("vol1", "vol1_neko")));
         Assert.Equal(File.ReadAllBytes(src), File.ReadAllBytes(t.At("vol1", "vol1_neko", "01_jpg.jpg")));
     }
 
@@ -183,7 +188,7 @@ public class PipelineRunnerRunTests
     [InlineData("copiedFolder")]         // A의 원고 폴더를 복사해 와서 돌린다 — 원래 폴더가 남아 있어도 이름+바이트 길이가 같으면 같은 원고
     [InlineData("movedFolder")]          // A의 원고 폴더를 옮겨 와서 돌린다 — 옛 경로에 원고는 없어도 이름+바이트 길이가 같으면 같은 원고
     [InlineData("legacyOwnerDeleted")]   // 길이 기록이 없는 옛 사이드카에 주인 원고가 없다 — 경로로만 가리므로 폴더를 옮긴 같은 원고일 수도 있어 지금처럼 덮는다(한계)
-    [InlineData("noSidecar")]            // 사이드카를 남기지 않은 결과(검토 흐름 없이 돌린 장 가운데 글자 없는 장 — 기본 설정 번역+채색이면 이것 전부) — 주인을 가릴 수 없어 지금처럼 덮는다(한계)
+    [InlineData("noSidecar")]            // 사이드카도 주인 기록도 없는 결과(v1.8.2까지 검토 흐름 없이 돌린 글자 없는 장) — 주인을 가릴 수 없어 예전처럼 덮는다(한계). 지금 만드는 결과는 주인 기록이 지킨다(PipelineRunnerResultOwnerTests)
     public async Task RunAsync_SlotSidecarHasNoOtherExistingOwner_ProceedsAndWritesOwnResult(string state)
     {
         using var t = new TempDir();
@@ -494,10 +499,10 @@ public class PipelineRunnerRunTests
         Assert.Null(log.FinalOf(jpg).Error);
         if (pngSourceInSameFolder)
         {
-            Assert.Equal(["01.png", "01_jpg.jpg"], FilesUnder(t.At("vol1", "vol1_neko")));
+            Assert.Equal([OwnerFile("01_jpg"), "01.png", "01_jpg.jpg"], FilesUnder(t.At("vol1", "vol1_neko")));
             Assert.Equal(legacyBytes, File.ReadAllBytes(legacy));
         }
-        else Assert.Equal(["01_jpg.jpg"], FilesUnder(t.At("vol1", "vol1_neko")));
+        else Assert.Equal([OwnerFile("01_jpg"), "01_jpg.jpg"], FilesUnder(t.At("vol1", "vol1_neko")));
     }
 
     [Theory]

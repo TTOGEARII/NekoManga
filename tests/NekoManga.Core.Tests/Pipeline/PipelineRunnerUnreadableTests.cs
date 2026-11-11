@@ -513,6 +513,130 @@ public class PipelineRunnerUnreadableTests
         Assert.True(MaskSidecar.Load(outPath)!.Confirmed);
     }
 
+    // ── '확인됨' 표시: 2차가 끝난 뒤 사이드카 json을 못 읽을 때 ──
+
+    /// <summary>보고를 그대로 모으다가 첫 끝 줄(Done)이 오는 자리에서 정해 둔 일을 한 번 한다 — [채색부터 다시]는 2차가 끝 줄을 보낸 바로 뒤에 '확인됨'을 찍으므로,
+    /// 그 사이에 다른 프로그램이 json을 쥐는(또는 지우는) 상황을 만든다. 보고는 러너 스레드에서 바로 불려 표시보다 반드시 먼저 끝난다.</summary>
+    private sealed class OnFirstDone(ProgressLog log, Action onDone) : IProgress<PageProgress>
+    {
+        private int _fired;
+
+        public void Report(PageProgress value)
+        {
+            log.Report(value);
+            if (value.Done && Interlocked.Exchange(ref _fired, 1) == 0) onDone();
+        }
+    }
+
+    [Fact]
+    public async Task RedoPageAsync_MaskJsonStaysLockedWhenMarkingConfirmed_WarnsInsteadOfSkippingSilently()
+    {
+        // 잠긴 json은 읽기가 '사이드카 없음'과 똑같이 null이라, 확인 표시를 경고 없이 건너뛰고 성공으로 끝났다 — 다음 실행이 까닭 없이 검토를 한 번 더 기다렸다
+        using var t = new TempDir();
+        var s = DecensorSettings(t);
+        var src = WriteBarPage(t.At("vol1", "01.png"));
+        var outPath = WriteRedoSlot(s, src, skip: true);   // '검열 없음'으로 표시한 장 — 복원기 없이 끝난다
+        var log = new ProgressLog();
+        FileStream? held = null;
+        var progress = new OnFirstDone(log, () => held = new FileStream(MaskSidecar.JsonPathFor(outPath), FileMode.Open, FileAccess.Read, FileShare.None));
+
+        try
+        {
+            using var runner = new PipelineRunner(s);
+            await runner.RedoPageAsync(src, progress, CancellationToken.None);   // 끝까지 잠겨 있다 — 기다렸다 다시 읽어도 못 읽는다
+        }
+        finally { held?.Dispose(); }
+
+        var done = log.Items.Where(p => p.Done && p.File == src).ToList();
+        Assert.Equal(2, done.Count);   // 2차의 끝 줄, 그리고 경고를 붙여 다시 보낸 끝 줄
+        Assert.All(done, p => Assert.Null(p.Error));   // 결과는 나왔다 — 그 장의 실패가 아니다
+        Assert.DoesNotContain("⚠", done[0].Stage);
+        Assert.Contains("마스크 확인 표시 실패", done[1].Stage);
+        Assert.Contains(".mask.json", done[1].Stage);
+        Assert.Contains("검토를 한 번 더", done[1].Stage);   // '다시 돌려 주세요'가 아니라 무슨 일이 생기는지
+        Assert.True(File.Exists(outPath));
+        Assert.False(MaskSidecar.Load(outPath)!.Confirmed);
+    }
+
+    [Fact]
+    public async Task RedoPageAsync_MaskJsonBrieflyLockedWhenMarkingConfirmed_WaitsAndMarks()
+    {
+        // 잠깐의 잠금(백신 검사·동기화)은 다른 읽기처럼 기다렸다 다시 읽어 표시한다
+        using var t = new TempDir();
+        var s = DecensorSettings(t);
+        var src = WriteBarPage(t.At("vol1", "01.png"));
+        var outPath = WriteRedoSlot(s, src, skip: true);
+        var log = new ProgressLog();
+        Task? release = null;
+        var progress = new OnFirstDone(log, () =>
+        {
+            var held = new FileStream(MaskSidecar.JsonPathFor(outPath), FileMode.Open, FileAccess.Read, FileShare.None);
+            release = Task.Delay(300).ContinueWith(_ => held.Dispose());   // 다시 읽기(0.7초 뒤)보다 먼저 풀린다
+        });
+
+        using (var runner = new PipelineRunner(s))
+            await runner.RedoPageAsync(src, progress, CancellationToken.None);
+        await release!;
+
+        Assert.Null(log.FinalOf(src).Error);   // 끝 줄은 하나뿐이다 — 경고로 다시 보내지 않았다
+        Assert.DoesNotContain("⚠", log.FinalOf(src).Stage);
+        Assert.True(MaskSidecar.Load(outPath)!.Confirmed);
+    }
+
+    [Fact]
+    public async Task RedoPageAsync_MaskJsonGoneWhenMarkingConfirmed_StaysSilent()
+    {
+        // 사이드카가 정말 없으면 표시할 것이 없다 — 경고하지 않는다(잠김만 '없음'과 가른다)
+        using var t = new TempDir();
+        var s = DecensorSettings(t);
+        var src = WriteBarPage(t.At("vol1", "01.png"));
+        var outPath = WriteRedoSlot(s, src, skip: true);
+        var log = new ProgressLog();
+        var progress = new OnFirstDone(log, () => File.Delete(MaskSidecar.JsonPathFor(outPath)));
+
+        using (var runner = new PipelineRunner(s))
+            await runner.RedoPageAsync(src, progress, CancellationToken.None);
+
+        Assert.Null(log.FinalOf(src).Error);
+        Assert.DoesNotContain("⚠", log.FinalOf(src).Stage);
+        Assert.DoesNotContain(log.Items, p => p.Stage.Contains("확인 표시 실패"));
+        Assert.False(File.Exists(MaskSidecar.JsonPathFor(outPath)));
+    }
+
+    [Fact]
+    public async Task RedoPageAsync_SidecarAlreadyConfirmedAndJsonLockedAtTheEnd_NeitherWaitsNorWarns()
+    {
+        // 끝난 장의 [채색부터 다시]는 사이드카가 이미 '확인됨'이라 표시할 것이 없다 — 그런데도 json을 다시 읽으려다 잠겨 있으면 1.4초를 기다리고
+        // '다음에 검토를 한 번 더 기다려요'라고 경고했다(이미 확인된 것이라 기다리지 않는다 — 틀린 말이다)
+        using var t = new TempDir();
+        var s = DecensorSettings(t);
+        var src = WriteBarPage(t.At("vol1", "01.png"));
+        var outPath = WriteRedoSlot(s, src, skip: true);
+        (MaskSidecar.Load(outPath)! with { Confirmed = true }).Save(outPath);
+        var log = new ProgressLog();
+        FileStream? held = null;
+        var afterDone = new System.Diagnostics.Stopwatch();
+        var progress = new OnFirstDone(log, () =>
+        {
+            held = new FileStream(MaskSidecar.JsonPathFor(outPath), FileMode.Open, FileAccess.Read, FileShare.None);
+            afterDone.Start();
+        });
+
+        try
+        {
+            using var runner = new PipelineRunner(s);
+            await runner.RedoPageAsync(src, progress, CancellationToken.None);
+            afterDone.Stop();
+        }
+        finally { held?.Dispose(); }
+
+        Assert.NotNull(held);   // 전제: 표시할 차례에 json은 잠겨 있었다
+        Assert.Null(log.FinalOf(src).Error);   // 끝 줄은 하나뿐이다 — 경고로 다시 보내지 않았다
+        Assert.DoesNotContain(log.Items, p => p.Stage.Contains("확인 표시 실패") || p.Stage.Contains("⚠"));
+        Assert.True(afterDone.ElapsedMilliseconds < 1000, $"잠금을 기다리지 않아야 한다({afterDone.ElapsedMilliseconds}ms)");   // 기다리면 0.7초씩 두 번(1.4초)이다
+        Assert.True(MaskSidecar.Load(outPath)!.Confirmed);
+    }
+
     [Fact]
     public async Task RunAsync_RerunWhileStoredMaskPngStaysLocked_FailsWithReadableMessageAndKeepsSidecar()
     {

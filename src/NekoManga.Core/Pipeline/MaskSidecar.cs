@@ -22,11 +22,15 @@ public record MaskSidecar(
 {
     /// <summary>이 사이드카가 그 원고의 것인가 — 경로가 같거나, 파일 이름과 바이트 길이가 같으면(폴더를 옮긴 경우) 같은 원고.
     /// 이름만 같은 다른 원고(1화·2화의 001.jpg)는 길이가 달라 걸러진다. 길이를 모르는 옛 사이드카는 경로로만 본다.</summary>
-    public bool MatchesSource(string file)
+    public bool MatchesSource(string file) => SameSource(Source, SrcLen, file);
+
+    /// <summary>원고 경로 <paramref name="source"/>와 원고 길이 <paramref name="srcLen"/>을 적은 기록이 그 원고(<paramref name="file"/>)의 것인가 — <see cref="MatchesSource"/>의 규칙 그 자체.
+    /// 결과 주인 기록(<see cref="ResultOwner"/>)도 같은 규칙으로 가려야 해서 한 곳에 둔다(둘이 어긋나면 한쪽은 같은 원고, 한쪽은 다른 원고라고 한다).</summary>
+    internal static bool SameSource(string source, long srcLen, string file)
     {
-        if (SourceIs(file)) return true;
-        if (SrcLen <= 0 || !string.Equals(Path.GetFileName(Source), Path.GetFileName(file), StringComparison.OrdinalIgnoreCase)) return false;
-        return LengthOf(file) == SrcLen;
+        if (string.Equals(Norm(source), Norm(file), StringComparison.OrdinalIgnoreCase)) return true;
+        if (srcLen <= 0 || !string.Equals(Path.GetFileName(source), Path.GetFileName(file), StringComparison.OrdinalIgnoreCase)) return false;
+        return LengthOf(file) == srcLen;
     }
 
     /// <summary>경로가 정확히 같은 원고의 것인가 — 이름+길이 폴백 없이. 다른 이름의 사이드카를 **옮겨 올** 때는 이걸로 본다

@@ -105,9 +105,77 @@ public class PipelineRunnerNamingTests
         AssertDistinctFiles(outs.SelectMany(o => new[]
         {
             MaskSidecar.JsonPathFor(o), MaskSidecar.MaskPathFor(o), MaskSidecar.AutoPathFor(o), MaskSidecar.PrePathFor(o), MaskSidecar.KindPathFor(o),
-            LetterSidecar.JsonPathFor(o), LetterSidecar.BasePathFor(o),
+            LetterSidecar.JsonPathFor(o), LetterSidecar.BasePathFor(o), ResultOwner.PathFor(o),
         }));
         AssertDistinctFiles([.. sources, .. outs]);   // 어느 결과도 원고 자리가 아니다
+    }
+
+    // ── 절대 경로의 원고: 결과 폴더·이름은 v1.8.2와 글자 하나까지 같다 ──
+
+    /// <summary>v1.8.2(main)의 OutputDirFor·OutputStemFor·OutputPathFor를 그대로 옮긴 것 — 지금 코드가 절대 경로에서 이것과 같은 값을 내는지 대조한다.</summary>
+    private static string V182OutputPath(string outputRoot, string inputFile)
+    {
+        static string NormDirKey(string d)
+        {
+            try { d = Path.GetFullPath(string.IsNullOrEmpty(d) ? "." : d); } catch { }
+            return d.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).ToLowerInvariant();
+        }
+        var dir = !string.IsNullOrWhiteSpace(outputRoot)
+            ? outputRoot
+            : Path.Combine(Path.GetDirectoryName(inputFile)!, Path.GetFileName(Path.GetDirectoryName(inputFile)!) + "_neko");
+        var stem = Path.GetFileNameWithoutExtension(inputFile);
+        var ext = Path.GetExtension(inputFile).TrimStart('.').ToLowerInvariant();
+        bool sameDir = string.Equals(NormDirKey(dir), NormDirKey(Path.GetDirectoryName(inputFile) ?? ""), StringComparison.Ordinal);
+        if (ext != "png" || sameDir) stem += "_" + (ext.Length > 0 ? ext : "src");
+        if (!string.IsNullOrWhiteSpace(outputRoot))
+        {
+            string parent; try { parent = Path.GetFileName(Path.GetFullPath(Path.GetDirectoryName(inputFile) ?? "")); } catch { parent = ""; }
+            if (parent.Length > 0) stem = parent + "_" + stem;
+        }
+        return Path.Combine(dir, stem + ".png");
+    }
+
+    [Theory]
+    //          원고                               결과 폴더(출력 폴더 비움)                결과 이름         출력 폴더 고정(Q:\out)일 때의 이름
+    [InlineData(@"Q:\vol1\01.jpg",                 @"Q:\vol1\vol1_neko",                    "01_jpg.png",     "vol1_01_jpg.png")]
+    [InlineData(@"Q:\vol1\01.png",                 @"Q:\vol1\vol1_neko",                    "01.png",         "vol1_01.png")]
+    [InlineData(@"Q:\a\b c\1화 テスト\001.webp",   @"Q:\a\b c\1화 テスト\1화 テスト_neko",  "001_webp.png",   "1화 テスト_001_webp.png")]   // 여러 겹 폴더 — 바로 위 폴더 이름만 쓴다
+    [InlineData(@"Q:\01.jpg",                      @"Q:\_neko",                             "01_jpg.png",     "01_jpg.png")]        // 드라이브 루트 — 폴더 이름이 없어 이름 없는 _neko, 앞머리도 없다
+    [InlineData(@"q:\표지.png",                    @"q:\_neko",                             "표지.png",       "표지.png")]
+    [InlineData(@"\\srv\share\01.png",             @"\\srv\share\_neko",                    "01.png",         "01.png")]            // 공유 루트도 드라이브 루트와 같다
+    [InlineData(@"\\srv\share\vol1\01.jpg",        @"\\srv\share\vol1\vol1_neko",           "01_jpg.png",     "vol1_01_jpg.png")]
+    [InlineData(@"\\?\Q:\01.png",                  @"\\?\Q:\_neko",                         "01.png",         "01.png")]
+    [InlineData(@"Q:/vol1/01.png",                 @"Q:\vol1\vol1_neko",                    "01.png",         "vol1_01.png")]       // 슬래시로 쓴 경로
+    [InlineData(@"Q:\vol1.\01.png",                @"Q:\vol1.\vol1._neko",                  "01.png",         "vol1_01.png")]       // 끝에 점이 붙은 폴더 표기 — 받은 글자 그대로(전체 경로로 풀면 점이 떨어진다)
+    [InlineData(@"Q:\vol1 \01.png",                @"Q:\vol1 \vol1 _neko",                  "01.png",         "vol1_01.png")]       // 끝에 공백이 붙은 폴더 표기
+    [InlineData(@"Q:\sub\..\01.png",               @"Q:\sub\..\.._neko",                    "01.png",         "01.png")]            // 풀지 않은 '..' — 어색한 이름이지만 v1.8.2가 만든 그대로다
+    [InlineData(@"Q:\_neko\01.png",                @"Q:\_neko\_neko_neko",                  "01.png",         "_neko_01.png")]      // 결과 폴더 안의 그림을 원고로 올린 경우
+    public void OutputPathFor_AbsoluteSourcePath_IsExactlyWhatV182Produced(string source, string expectedDir, string expectedName, string expectedFixedName)
+    {
+        // 결과와 .neko 사이드카(고친 마스크·식자 자료)는 이 이름으로 다시 찾는다 — 이름이 한 글자라도 달라지면 이미 만든 것이 버려진다.
+        // 드라이브 루트를 드라이브 글자로 이름 짓던 것(Q:\Q_neko)은 걷어냈다: 외장 드라이브가 다른 글자로 붙으면 지난 결과를 못 찾았다
+        var blank = WithOutputRoot("");
+        var fixedRoot = WithOutputRoot(@"Q:\out");
+
+        Assert.Equal(expectedDir, PipelineRunner.OutputDirFor(blank, source));
+        Assert.Equal(expectedDir, PipelineRunner.DefaultOutputDirFor(source));
+        Assert.Equal(Path.Combine(expectedDir, expectedName), PipelineRunner.OutputPathFor(blank, source));
+        Assert.Equal(Path.Combine(@"Q:\out", expectedFixedName), PipelineRunner.OutputPathFor(fixedRoot, source));
+        Assert.Equal(V182OutputPath("", source), PipelineRunner.OutputPathFor(blank, source));
+        Assert.Equal(V182OutputPath(@"Q:\out", source), PipelineRunner.OutputPathFor(fixedRoot, source));
+    }
+
+    [Fact]
+    public void OutputDirFor_SourceAtDriveRoot_FolderNameDoesNotDependOnDriveLetter()
+    {
+        // 외장 드라이브가 E:로 붙었다가 F:로 붙어도 그 안의 결과 폴더 이름은 같다 — 지난 결과·사이드카를 그대로 찾는다
+        var s = WithOutputRoot("");
+
+        var onE = PipelineRunner.OutputPathFor(s, @"E:\01.jpg");
+        var onF = PipelineRunner.OutputPathFor(s, @"F:\01.jpg");
+
+        Assert.Equal(@"E:\_neko\01_jpg.png", onE);
+        Assert.Equal(onE[2..], onF[2..]);
     }
 
     // ── '원본 그대로' 복사본 ──
@@ -222,5 +290,75 @@ public class PipelineRunnerNamingTests
         Assert.Null(pg.AutoMask);
         Assert.Null(pg.Kinds);
         pg.DisposeMats();
+    }
+}
+
+/// <summary>상대 경로로 받은 원고(<c>NekoManga.exe --run 01.png</c>)의 결과 폴더·이름 — 현재 폴더를 바꾸므로 다른 테스트와 동시에 돌지 않는다.</summary>
+[Collection(EnvCollection.Name)]
+public class PipelineRunnerRelativePathTests
+{
+    /// <summary>현재 폴더를 잠깐 바꾼다.</summary>
+    private sealed class Cwd : IDisposable
+    {
+        private readonly string _before = Environment.CurrentDirectory;
+        public Cwd(string dir) { Directory.CreateDirectory(dir); Environment.CurrentDirectory = dir; }
+        public void Dispose() => Environment.CurrentDirectory = _before;
+    }
+
+    [Theory]
+    [InlineData("")]         // 출력 폴더를 비움 — 원고 폴더 안의 <폴더 이름>_neko
+    [InlineData("fixed")]    // 출력 폴더 고정 — 이름 앞에 원고의 상위 폴더 이름
+    public void OutputPathFor_RelativeSourcePath_IsTheSameAsForItsFullPath(string outputRoot)
+    {
+        // 폴더 이름을 받은 경로 그대로에서 얻으면 이름만 준 원고(01.jpg)는 폴더 부분이 비어 결과 폴더가 '_neko'가 되고(..\01.jpg는 '.._neko'),
+        // 고정 출력 폴더에서는 이름 앞머리가 빠졌다 — 같은 원고가 경로를 쓴 꼴에 따라 다른 자리로 갔다
+        using var t = new TempDir();
+        var vol = t.At("원고", "1화 テスト");
+        Directory.CreateDirectory(Path.Combine(vol, "sub"));
+        var s = new AppSettings { OutputRoot = outputRoot.Length == 0 ? "" : t.At("결과") };
+        using var cwd = new Cwd(vol);
+
+        foreach (var rel in new[] { "01.jpg", Path.Combine(".", "01.jpg"), Path.Combine("sub", "..", "01.jpg"), Path.Combine("..", "2화", "01.jpg"), Path.Combine("sub", "01.jpg") })
+        {
+            var full = Path.GetFullPath(rel);
+            Assert.Equal(PipelineRunner.OutputPathFor(s, full), PipelineRunner.OutputPathFor(s, rel));
+            Assert.Equal(PipelineRunner.OutputDirFor(s, full), PipelineRunner.OutputDirFor(s, rel));
+        }
+        var outPath = PipelineRunner.OutputPathFor(s, "01.jpg");
+        if (outputRoot.Length == 0)
+        {
+            Assert.Equal("1화 テスト_neko", Path.GetFileName(Path.GetDirectoryName(outPath)));
+            Assert.Equal("01_jpg.png", Path.GetFileName(outPath));
+            Assert.Equal("2화_neko", Path.GetFileName(PipelineRunner.OutputDirFor(s, Path.Combine("..", "2화", "01.jpg"))));
+        }
+        else Assert.Equal("1화 テスト_01_jpg.png", Path.GetFileName(outPath));
+    }
+
+    [Fact]
+    public async Task RunAsync_RelativeSourcePath_WritesIntoNamedNekoFolderAndRecordsFullPath()
+    {
+        using var t = new TempDir();
+        var vol = t.At("vol1");
+        var full = PipelineTestHelpers.WriteImageFile(Path.Combine(vol, "01.jpg"), seed: 1);
+        // 옛(v1.5.5) 이름으로 남은 이 원고의 결과 — 기본 결과 폴더이고 그 이름의 원고가 하나뿐이라 넘겨받는다. 폴더 판정이 결과 폴더 규칙과 어긋나면 그대로 남는다
+        PipelineTestHelpers.WriteImageFile(Path.Combine(vol, "vol1_neko", "01.png"), seed: 7);
+        var s = PipelineTestHelpers.EnginelessSettings(t);
+        var log = new PipelineTestHelpers.ProgressLog();
+
+        using (new Cwd(vol))
+        using (var runner = new PipelineRunner(s))
+            await runner.RunAsync(["01.jpg"], log, CancellationToken.None);
+
+        Assert.Null(log.FinalOf("01.jpg").Error);   // 진행 보고의 키는 받은 경로 그대로다
+        Assert.Equal([Path.Combine("vol1_neko", ".neko", "01_jpg.owner"), Path.Combine("vol1_neko", "01_jpg.jpg")],
+            PipelineTestHelpers.FilesUnder(vol).Where(f => f != "01.jpg").ToArray());
+        var owner = ResultOwner.Load(PipelineRunner.OutputPathFor(s, full));
+        Assert.NotNull(owner);
+        Assert.True(Path.IsPathFullyQualified(owner.Source));   // 다음 실행의 현재 폴더와 무관하게 같은 원고로 가려진다
+        Assert.True(owner.MatchesSource(full));
+
+        using var runner2 = new PipelineRunner(s);
+        await runner2.RunAsync([full], log = new PipelineTestHelpers.ProgressLog(), CancellationToken.None);
+        Assert.Null(log.FinalOf(full).Error);   // 전체 경로로 다시 돌려도 같은 자리, 같은 원고
     }
 }

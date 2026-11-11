@@ -193,6 +193,9 @@ public partial class ResultWindow
                 return;
             }
             ImgIo.Write(target, _img);
+            // 이 결과가 어느 원고 것인지 러너처럼 적어 둔다(.neko의 주인 기록) — 안 적으면 낡은 남의 기록이 남은 자리에 저장한 결과가 그 원고 것으로 읽혀,
+            // 이 원고를 다시 돌리면 막히고 그 원고를 돌리면 방금 저장한 것이 덮인다. 원본을 모르는 --result 모드는 적을 주인이 없다
+            var ownerWarning = string.IsNullOrEmpty(r.Source) ? null : PipelineRunner.RecordResultOwner(target, r.Source);
             _dirty = false;
             BtnSave.IsEnabled = false;
             ChangedSources.Add(SourceOf(r));
@@ -211,6 +214,7 @@ public partial class ResultWindow
                                + (IsWaitingPage ? " — 검열 제거를 진행하면 이 결과물은 다시 만들어져요" : "");
             }
             else TxtStatus.Text = "저장했어요 → " + Path.GetFileName(target);
+            if (ownerWarning != null) TxtStatus.Text += " · ⚠ " + ownerWarning;
         }
         catch (Exception ex) { TxtStatus.Text = "저장 실패: " + ex.Message; }
     }

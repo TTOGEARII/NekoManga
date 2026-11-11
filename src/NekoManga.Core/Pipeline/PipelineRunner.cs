@@ -369,7 +369,10 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
             var asIs = AsIsPathFor(outPath, file);
             Directory.CreateDirectory(Path.GetDirectoryName(asIs)!);
             if (!string.Equals(asIs, file, StringComparison.OrdinalIgnoreCase))
+            {
                 ImgIo.CopyAtomic(file, asIs);   // 임시 파일 뒤 교체 + 수정 시각 지금 (결과 창이 복사 중인 파일을 읽지 않게)
+                SaveResultOwner(cx, pg);        // 이 복사본이 어느 원고 것인지 — 사이드카가 하나도 없는 장이라 이것이 유일한 근거다
+            }
             DeleteOther(outPath, asIs, file);   // 지난 실행의 png 결과가 남아 있으면 치운다 — 이 이름은 이 원고만 쓴다
             pg.FinalStage = "검열 없음 — 원본 그대로";
             progress.Report(new(name, pg.FinalStage + WarnSuffix(pg), 100, Done: true));
@@ -385,6 +388,8 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
                 throw new InvalidDataException($"결과 이미지를 읽지 못했어요: {Path.GetFileName(work)}");
             ImgIo.Write(outPath, done);
         }
+        // 결과물(png)이 어느 원고 것인지 남긴다 — 식자한 장도(식자 사이드카는 원고를 못 읽으면 안 남는다), 글자 없는 장도. 결과 창 [채색부터 다시]도 이 길로 온다
+        SaveResultOwner(cx, pg);
         DeleteOther(AsIsPathFor(outPath, file), outPath, file);   // 지난 실행의 '원본 그대로' 복사본이 남아 있으면 치운다
 
         pg.FinalStage = "완료";
