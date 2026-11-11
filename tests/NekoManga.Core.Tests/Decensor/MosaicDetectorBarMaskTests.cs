@@ -79,7 +79,7 @@ public class MosaicDetectorBarMaskTests
         Assert.True(mask == null, $"{shape}: {CountAll(mask)}px가 막대로 잡혔다");
     }
 
-    [Fact(Skip = "알려진 결함: DecomposeBars가 C자로 말리며 굵기가 4→24→4px로 변하는 붓획(중심 반지름 30px, 270°)의 93.7%를 곧은 띠로 덮어 막대로 받아들인다 — 문서 주석은 휘고 굵기가 변하는 붓획은 덮이지 않는다고 한다")]
+    [Fact]
     public void BuildBarMask_ThickCurledStroke_IsNotABar()
     {
         // 효과음 'つ'·말린 머리카락 같은 C자 붓획 — 휘고 굵기가 변하므로 곧은 띠들의 합으로 설명되지 않아야 한다.
@@ -90,6 +90,106 @@ public class MosaicDetectorBarMaskTests
         using var mask = BlackOnly(img);
 
         Assert.True(mask == null, $"말린 붓획 {CountAll(mask)}px가 막대로 잡혔다");
+    }
+
+    [Theory]
+    [InlineData(60, 20, 180)]   // 크게 휜 반원 붓획: 띠 토막들이 20~30°씩 돌며 겹친다
+    [InlineData(20, 20, 300)]   // 작게 감긴 붓획
+    public void BuildBarMask_OtherThickCurledStrokes_AreNotBars(int radius, int maxThick, int sweepDeg)
+    {
+        // 굵기가 4→maxThick→4px로 변하며 sweepDeg만큼 말린 붓획 — 곧은 띠 토막들이 덮음 기준(88%)을 넘기지만 막대 뭉치가 아니다.
+        using var img = SolidPage(400, 400);
+        double rad = sweepDeg * Math.PI / 180;
+        DrawStroke(img, Math.Max(120, sweepDeg), t => (200 + radius * Math.Cos(t * rad), 200 + radius * Math.Sin(t * rad)),
+            t => 2 + (maxThick / 2.0 - 2) * Math.Sin(Math.PI * t));
+
+        using var mask = BlackOnly(img);
+
+        Assert.True(mask == null, $"반지름 {radius}·{sweepDeg}° 붓획 {CountAll(mask)}px가 막대로 잡혔다");
+    }
+
+    [Theory]
+    [InlineData("zigzag")]         // 막대 셋이 60°씩 꺾이며 이어짐
+    [InlineData("uShape")]         // ㄷ자로 맞닿은 막대 셋
+    [InlineData("thinTriangle")]   // 얇은 막대 셋이 삼각형으로 맞닿음 — 실원고 검은 막대 뭉치에 있던 꼴
+    [InlineData("skewedPair")]     // 5° 어긋나게 나란히 붙은 막대 둘
+    public void BuildBarMask_BarClustersMeetingAtAngles_AreStillRecovered(string layout)
+    {
+        // 굽은 획 거르기는 띠끼리 크게 겹칠 때만 버린다 — 막대끼리는 만나는 자리만 겹치므로 각을 이뤄 맞닿은 뭉치는 그대로 되살린다.
+        using var img = SolidPage(400, 400);
+        using var region = EmptyMask(img);
+        void Bar(Point2f c, Size2f s, float a)
+        {
+            FillRotated(img, c, s, a, Black);
+            FillRotated(region, c, s, a, White);
+        }
+        void BarBetween(Point2f p, Point2f q, float thick) =>
+            Bar(new Point2f((p.X + q.X) / 2, (p.Y + q.Y) / 2),
+                new Size2f((float)Math.Sqrt((p.X - q.X) * (p.X - q.X) + (p.Y - q.Y) * (p.Y - q.Y)) + thick, thick),
+                (float)(Math.Atan2(q.Y - p.Y, q.X - p.X) * 180 / Math.PI));
+        switch (layout)
+        {
+            case "zigzag":
+                Bar(new Point2f(120, 200), new Size2f(120, 22), 30);
+                Bar(new Point2f(200, 200), new Size2f(120, 22), -30);
+                Bar(new Point2f(280, 200), new Size2f(120, 22), 30);
+                break;
+            case "uShape":
+                Bar(new Point2f(200, 120), new Size2f(180, 22), 0);
+                Bar(new Point2f(120, 190), new Size2f(160, 22), 90);
+                Bar(new Point2f(200, 260), new Size2f(180, 22), 0);
+                break;
+            case "thinTriangle":
+                var (p1, p2, p3) = (new Point2f(170, 180), new Point2f(235, 172), new Point2f(208, 222));
+                BarBetween(p1, p2, 17);
+                BarBetween(p2, p3, 17);
+                BarBetween(p3, p1, 17);
+                break;
+            default:
+                Bar(new Point2f(200, 200), new Size2f(180, 22), 0);
+                Bar(new Point2f(220, 220), new Size2f(170, 22), 5);
+                break;
+        }
+
+        using var mask = BlackOnly(img);
+
+        Assert.True(Coverage(mask, region) >= 0.95, $"{layout}: 막대 뭉치 덮음 {Coverage(mask, region):P1}");
+    }
+
+    [Theory]
+    [InlineData(80, 22, 60)]
+    [InlineData(60, 16, 40)]
+    [InlineData(100, 12, 25)]
+    public void BuildBarMask_ShortThickBarsCrossingInX_AreStillRecovered(int length, int thick, int crossDeg)
+    {
+        // 짧고 굵은 막대 둘의 교차는 두 막대 사이 각도의 띠가 진짜 막대 띠와 절반 넘게 겹친다 — 띠 둘로 덮이는 덩어리는 굽은 획으로 보지 않는다.
+        using var img = SolidPage(400, 400);
+        using var region = EmptyMask(img);
+        foreach (var a in new[] { 10, 10 + crossDeg })
+        {
+            FillRotated(img, new Point2f(200, 200), new Size2f(length, thick), a, Black);
+            FillRotated(region, new Point2f(200, 200), new Size2f(length, thick), a, White);
+        }
+
+        using var mask = BlackOnly(img);
+
+        Assert.True(Coverage(mask, region) >= 0.95, $"X {length}x{thick} 교차 {crossDeg}°: 덮음 {Coverage(mask, region):P1}");
+    }
+
+    [Fact]
+    public void BuildBarMask_ShortSlantedStemOnBar_IsStillRecovered()
+    {
+        // 220×16 막대에 60px 줄기가 30°로 붙은 T자
+        using var img = SolidPage(400, 400);
+        using var region = EmptyMask(img);
+        void Bar(Point2f c, Size2f s, float a) { FillRotated(img, c, s, a, Black); FillRotated(region, c, s, a, White); }
+        Bar(new Point2f(200, 150), new Size2f(220, 16), 0);
+        double r = 30 * Math.PI / 180;
+        Bar(new Point2f((float)(200 + 30 * Math.Cos(r)), (float)(150 + 30 * Math.Sin(r))), new Size2f(60, 16), 30);
+
+        using var mask = BlackOnly(img);
+
+        Assert.True(Coverage(mask, region) >= 0.95, $"T자: 덮음 {Coverage(mask, region):P1}");
     }
 
     [Theory]

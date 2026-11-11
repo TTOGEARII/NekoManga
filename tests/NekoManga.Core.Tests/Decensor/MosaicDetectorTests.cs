@@ -48,7 +48,7 @@ public class MosaicDetectorTests
         Assert.Null(mask);
     }
 
-    [Fact(Skip = "알려진 결함: 평탄한 회색 톤(140·200) 위에 2px 선 두 줄만 그어도 선 양옆의 평탄 블록이 '격자 경계' 후보가 되고 닫기가 둘을 이어 띠로 남겨 17,728px이 모자이크로 잡힌다(Auto도 'Mosaic'을 고른다). 흰 종이 위의 같은 선은 0px")]
+    [Fact]
     public void BuildMask_LineArtOverFlatTone_IsNotMosaic()
     {
         // 피부·배경을 평탄한 톤으로 칠하고 외곽선을 그은 것은 흔한 원고다 — 격자 패턴이 아니므로 모자이크가 아니다.
@@ -59,6 +59,82 @@ public class MosaicDetectorTests
         using var mask = MosaicDetector.BuildMask(img, Block, Threshold, grow: 0);
 
         Assert.True(mask == null, $"선화 {CountAll(mask)}px가 모자이크로 잡혔다");
+    }
+
+    [Theory]
+    [InlineData(1, 0, 140)]
+    [InlineData(2, 30, 200)]
+    [InlineData(2, 90, 100)]
+    [InlineData(3, 15, 60)]
+    [InlineData(4, 60, 140)]
+    [InlineData(4, 120, 100)]
+    [InlineData(4, 165, 140)]
+    public void BuildMask_ThinAntialiasedLineOverFlatTone_IsNotMosaicAtAnyAngle(int thickness, int angleDeg, byte tone)
+    {
+        // 원고의 외곽선은 안티에일리어스가 들어가 비스듬히 블록 두세 칸에 걸친다 — 4px 안팎이면 어느 각도로 지나가도
+        // 선 너머가 같은 톤으로 이어지므로 격자 경계가 아니다. (고치기 전에는 이 선 하나로 7~9천 px가 잡혔다)
+        using var img = SolidPage(480, 360, tone);
+        double a = angleDeg * Math.PI / 180;
+        int dx = (int)Math.Round(150 * Math.Cos(a)), dy = (int)Math.Round(150 * Math.Sin(a));
+        Cv2.Line(img, new Point(240 - dx, 180 - dy), new Point(240 + dx, 180 + dy), Black, thickness, LineTypes.AntiAlias);
+
+        using var mask = MosaicDetector.BuildMask(img, Block, Threshold, grow: 0);
+
+        Assert.True(mask == null, $"{thickness}px·{angleDeg}° 선 {CountAll(mask)}px가 모자이크로 잡혔다");
+    }
+
+    [Fact]
+    public void BuildMask_MosaicBesideLineArtOnSameTone_KeepsMosaicAndDropsLines()
+    {
+        // 같은 톤 위에 외곽선과 진짜 모자이크가 함께 있는 쪽 — 선만 빠지고 모자이크는 그대로 덮여야 한다.
+        using var img = SolidPage(320, 256, gray: 170);
+        var patch = new Rect(160, 64, 96, 96);
+        DrawMosaic(img, patch, Block);
+        Cv2.Line(img, new Point(20, 20), new Point(120, 230), Black, 2);
+        Cv2.Line(img, new Point(10, 200), new Point(130, 150), Black, 3);
+
+        using var mask = MosaicDetector.BuildMask(img, Block, Threshold, grow: 0);
+
+        Assert.NotNull(mask);
+        Assert.True(Coverage(mask, patch) >= 0.99, $"모자이크 덮음 {Coverage(mask, patch):P1}");
+        Assert.Equal(0, CountIn(mask, new Rect(0, 0, 140, 256)));   // 선화 쪽
+    }
+
+    [Theory]
+    [InlineData(12, 3, 5)]
+    [InlineData(13, 5, 2)]
+    [InlineData(20, 4, 6)]
+    public void BuildMask_MosaicCellsMisalignedWithBlockGrid_AreStillFound(int tile, int offX, int offY)
+    {
+        // 실원고의 모자이크 칸은 감지 블록 격자와 어긋나 칸 경계가 블록을 가른다 — 그 블록은 평탄하지 않아도
+        // 너머가 다른 칸(다른 톤)이므로 격자 경계로 세야 한다. 평탄한 블록끼리만 세면 이런 모자이크를 거의 다 놓친다.
+        using var img = SolidPage(320, 320, gray: 170);
+        var patch = new Rect(96 + offX, 96 + offY, tile * (128 / tile), tile * (128 / tile));
+        DrawMosaic(img, patch, tile);
+
+        using var mask = MosaicDetector.BuildMask(img, Block, Threshold, grow: 0);
+
+        Assert.True(Coverage(mask, patch) >= 0.95, $"칸 {tile}px: 모자이크 덮음 {Coverage(mask, patch):P1}");
+        Assert.Equal(0, CountIn(mask, new Rect(0, 0, 64, 64)));
+        Assert.Equal(0, CountIn(mask, new Rect(256, 256, 64, 64)));
+    }
+
+    [Theory]
+    [InlineData(8)]
+    [InlineData(16)]
+    public void BuildMask_MosaicOfBlackAndGrayCellsOnly_IsStillFound(int tile)
+    {
+        // 칸 톤이 검정·회색 둘뿐인 모자이크 — 고르게 검은 칸은 '평탄'으로 치지 않지만(밝기 20 이하) 선이 지나는 블록도 아니다.
+        // 가는 선 건너뛰기가 검은 칸까지 건너뛰면 회색 칸끼리 같은 톤이라 격자가 통째로 빠진다.
+        using var img = SolidPage(320, 320, gray: 255);
+        var patch = new Rect(96, 96, 128, 128);
+        for (int y = 0; y < patch.Height; y += tile)
+        for (int x = 0; x < patch.Width; x += tile)
+            Cv2.Rectangle(img, new Rect(patch.X + x, patch.Y + y, tile, tile), GrayColor(((x + y) / tile) % 2 == 0 ? 10 : 120), -1);
+
+        using var mask = MosaicDetector.BuildMask(img, Block, Threshold, grow: 0);
+
+        Assert.True(Coverage(mask, patch) >= 0.9, $"칸 {tile}px: 모자이크 덮음 {Coverage(mask, patch):P1}");
     }
 
     [Fact]
@@ -128,6 +204,30 @@ public class MosaicDetectorTests
                 bool hole = (x, y) is (1, 0) or (2, 1) or (3, 2);
                 Assert.Equal(hole ? 0 : 255, got.Item3);
             }
+    }
+
+    [Theory]
+    [InlineData("grayImage", "img")]     // 그림이 BGR 8비트가 아니다
+    [InlineData("smallerMask", "mask")]  // 마스크가 그림보다 작다 — 검사 전에는 버퍼 밖을 읽었다
+    [InlineData("largerMask", "mask")]
+    [InlineData("colorMask", "mask")]    // 마스크가 한 채널이 아니다
+    [InlineData("floatMask", "mask")]
+    public void ToMaskedPng_InvalidInput_IsRejectedBeforePointerAccess(string kind, string param)
+    {
+        // 알파는 포인터로 직접 채운다 — 형식·크기가 어긋난 마스크는 메모리를 망가뜨릴 수 있으므로 먼저 막아야 한다.
+        using var img = kind == "grayImage" ? new Mat(64, 64, MatType.CV_8UC1, Scalar.All(128)) : SolidPage(64, 64, gray: 128);
+        using var mask = kind switch
+        {
+            "smallerMask" => new Mat(32, 32, MatType.CV_8UC1, Scalar.All(255)),
+            "largerMask" => new Mat(64, 96, MatType.CV_8UC1, Scalar.All(255)),
+            "colorMask" => new Mat(64, 64, MatType.CV_8UC3, Scalar.All(255)),
+            "floatMask" => new Mat(64, 64, MatType.CV_32FC1, Scalar.All(1)),
+            _ => new Mat(64, 64, MatType.CV_8UC1, Scalar.All(255)),
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() => MosaicDetector.ToMaskedPng(img, mask));
+
+        Assert.Equal(param, ex.ParamName);
     }
 
     /// <summary>가로로 아주 완만한 회색 그러데이션(80→150) — 8px 블록 사이 색차가 2 남짓이다.</summary>

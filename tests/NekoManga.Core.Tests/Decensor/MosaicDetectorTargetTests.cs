@@ -72,6 +72,7 @@ public class MosaicDetectorTargetTests
 
     [Theory]
     [InlineData("clean")]           // 흰 종이에 가는 선화뿐인 깨끗한 페이지
+    [InlineData("lineArtOnTone")]   // 평탄한 톤(피부 등) 위의 같은 선화 — 모자이크 격자가 아니다
     [InlineData("smallBarOnly")]    // 큰 막대 기준(최대 성분 6000px)에 못 미치는 막대 하나
     [InlineData("manyFragments")]   // 큰 막대가 있어도 조각이 많으면 효과음 붓획 쪽으로 본다
     public void BuildMaskForTarget_Auto_WithoutConvincingCensor_ReportsNone(string page)
@@ -80,6 +81,7 @@ public class MosaicDetectorTargetTests
         switch (page)
         {
             case "clean":
+            case "lineArtOnTone":
                 Cv2.Line(img, new Point(40, 300), new Point(440, 260), Black, 2);
                 Cv2.Line(img, new Point(60, 40), new Point(200, 330), Black, 2);
                 break;

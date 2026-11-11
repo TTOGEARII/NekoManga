@@ -34,18 +34,20 @@ public static class WhiteStripDetector
 
     public readonly record struct Strip(Point2f Center, Size2f Size, float AngleDeg);
 
-    /// <summary>검출된 스트립들을 mask에 흰색으로 채운다. 채운 픽셀 수를 돌려준다.</summary>
+    /// <summary>검출된 스트립들을 grow만큼 넓혀 mask(8UC1)에 흰색으로 채운다. 이번에 새로 칠한 픽셀 수를 돌려준다
+    /// (넓힌 만큼은 들어가고, 스트립끼리 겹친 자리·이미 흰 자리는 세지 않는다).</summary>
     public static int AddToMask(Mat imgBgr, Mat mask, int grow)
     {
-        int added = 0;
+        // 칠하기 전후 마스크의 흰 픽셀 차이로 센다 — 스트립 면적(폭×길이)을 더하면 넓힌 테두리가 빠진다
+        // (grow 10: 실제 31,622px을 칠하고 22,332를 돌려줬다).
+        int before = Cv2.CountNonZero(mask);
         foreach (var s in Detect(imgBgr))
         {
             var rr = new RotatedRect(s.Center, new Size2f(s.Size.Width + grow * 2, s.Size.Height + grow * 2), s.AngleDeg);
             var pts = rr.Points().Select(p => new Point((int)Math.Round(p.X), (int)Math.Round(p.Y))).ToArray();
             Cv2.FillConvexPoly(mask, pts, Scalar.White);
-            added += (int)(s.Size.Width * s.Size.Height);
         }
-        return added;
+        return Cv2.CountNonZero(mask) - before;
     }
 
     public static List<Strip> Detect(Mat imgBgr)
@@ -241,6 +243,9 @@ public static class WhiteStripDetector
         }
 
         // 6a) 연쇄 평행 그룹 ≥4 = 장식 줄무늬 패널
+        // 그룹 크기는 후보(긴 테두리 하나) 수다 — 스트립 하나가 양쪽 테두리에서 후보를 둘 내므로 가까이 나란한 스트립은 둘만 있어도 4가 되어 함께 버려진다.
+        // 서로 다른 스트립 수로 세 보면 검열 없는 흑백 원고 1,121쪽 중 2쪽에서 완만하게 기운 긴 흰 띠(8~13°, 길이 약 900~1,750px — 테두리가 조각나 후보가 여럿)가
+        // 새로 검열로 잡혀(실측) 지금 셈을 유지한다.
         int nC = cand.Count;
         var parent = Enumerable.Range(0, nC).ToArray();
         int Find(int i) { while (parent[i] != i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; }

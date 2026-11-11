@@ -11,7 +11,8 @@ public static class MosaicDetector
     ///
     /// 모자이크의 특징은 "블록 내부는 평탄한데 인접 블록과는 색이 뚜렷이 다르다"(격자 패턴)이다.
     /// 평탄함만 보면 피부·하늘 같은 매끈한 배경을 통째로 오탐하므로, 블록 평균색 그리드를 만들어
-    /// 이웃과의 색차(격자 경계)가 충분한 평탄 블록만 모자이크 후보로 삼는다.</summary>
+    /// 이웃과의 색차(격자 경계)가 충분한 평탄 블록만 모자이크 후보로 삼는다.
+    /// 평탄하지 않은 이웃과의 색차는 그 너머가 나와 같은 톤으로 이어지면 세지 않는다 — 평탄한 톤 위에 그은 외곽선은 격자가 아니다.</summary>
     public static Mat? BuildMask(Mat img, int blockSize, int threshold, int grow)
     {
         if (blockSize < 2) blockSize = 2;
@@ -23,6 +24,7 @@ public static class MosaicDetector
 
         var meanGrid = new double[gh, gw];
         var flat = new bool[gh, gw];
+        var lined = new bool[gh, gw];   // 블록 안에서 밝기가 크게 흩어진다 — 선·경계가 지나는 블록
         unsafe
         {
             byte* pg = (byte*)gray.DataPointer; long sg = (long)gray.Step();
@@ -42,23 +44,49 @@ public static class MosaicDetector
                 meanGrid[gy, gx] = mean;
                 double std = Math.Sqrt(Math.Max(0, sumSq / n - mean * mean));
                 flat[gy, gx] = std < threshold && mean is > 20 and < 235;
+                lined[gy, gx] = std >= threshold;
             }
         }
 
         // 격자 경계 확인: 평탄 블록이면서 이웃(상하좌우) 중 하나와 색차가 임계 이상
         const double EdgeDelta = 8; // 인접 블록 평균색 차 (모자이크 격자 특징)
+        // 선이 지나는 이웃 너머로 같은 톤을 찾아볼 거리(이 블록에서 몇 칸까지) — 4px 안팎의 가는 선은 어느 각도로 지나가도
+        // 선이 지나는 블록이 세 칸을 넘게 이어지지 않는다 (합성 측정: 세 칸까지만 보면 비스듬한 3~4px 선이 남았다. 블록 크기 8 기준).
+        const int LineReach = 4;
+
+        // (gy,gx) 블록과 (dy,dx) 쪽 이웃의 색차. 이웃이 선이 지나는 블록(안에서 밝기가 흩어진 블록)이고 그 너머에서 처음 만나는
+        // 블록이 나와 같은 톤의 평탄 블록이면, 같은 톤 위를 지나는 가는 선이 이웃 블록의 평균만 바꾼 것이라 격자 경계가 아니다(0).
+        // 그대로 세면 선 양옆의 평탄 블록이 다 후보가 되고 닫기가 두 줄을 이어 열기도 통과하는 띠가 남는다
+        // (실측: 480×360 톤 140 위 2px 선 두 줄 → 17,728px, Auto도 'Mosaic').
+        // 모자이크 칸 경계가 블록을 가르는 경우는 너머가 다른 칸(다른 톤)이라 그대로 센다. 고르게 검거나 흰 이웃(밝기가 흩어지지 않은 블록)은
+        // 선이 아니라 칸이므로 건너뛰지 않는다 — 건너뛰면 칸 톤이 검정·회색 둘뿐인 모자이크가 통째로 빠진다.
+        // 실원고 144쪽 측정: 모자이크 라벨 적중 26/89 그대로, 모자이크가 아닌 쪽에 잡힌 오탐 21.1M → 18.4M px.
+        // 남는 것: 5px를 넘는 굵은 선, 가까이 나란한 선 둘, 서로 다른 두 톤의 경계는 지금도 후보가 된다.
+        double EdgeTo(int gy, int gx, int dy, int dx)
+        {
+            int ny = gy + dy, nx = gx + dx;
+            if (ny < 0 || ny >= gh || nx < 0 || nx >= gw) return 0;
+            double m = meanGrid[gy, gx];
+            if (lined[ny, nx])
+                for (int s = 2; s <= LineReach; s++)
+                {
+                    int sy = gy + s * dy, sx = gx + s * dx;
+                    if (sy < 0 || sy >= gh || sx < 0 || sx >= gw) break;
+                    if (lined[sy, sx]) continue;
+                    if (flat[sy, sx] && Math.Abs(m - meanGrid[sy, sx]) < EdgeDelta) return 0;
+                    break;
+                }
+            return Math.Abs(m - meanGrid[ny, nx]);
+        }
+
         var mask = new Mat(img.Rows, img.Cols, MatType.CV_8UC1, Scalar.Black);
         bool any = false;
         for (int gy = 0; gy < gh; gy++)
         for (int gx = 0; gx < gw; gx++)
         {
             if (!flat[gy, gx]) continue;
-            double m = meanGrid[gy, gx];
-            double maxDelta = 0;
-            if (gx > 0) maxDelta = Math.Max(maxDelta, Math.Abs(m - meanGrid[gy, gx - 1]));
-            if (gx < gw - 1) maxDelta = Math.Max(maxDelta, Math.Abs(m - meanGrid[gy, gx + 1]));
-            if (gy > 0) maxDelta = Math.Max(maxDelta, Math.Abs(m - meanGrid[gy - 1, gx]));
-            if (gy < gh - 1) maxDelta = Math.Max(maxDelta, Math.Abs(m - meanGrid[gy + 1, gx]));
+            double maxDelta = Math.Max(Math.Max(EdgeTo(gy, gx, 0, -1), EdgeTo(gy, gx, 0, 1)),
+                Math.Max(EdgeTo(gy, gx, -1, 0), EdgeTo(gy, gx, 1, 0)));
             if (maxDelta >= EdgeDelta)
             {
                 any = true;
@@ -340,7 +368,9 @@ public static class MosaicDetector
     ///
     /// 각도별로 따로 라벨링해야 한다 — 전 각도 결과를 먼저 OR하면 교차한 막대가 도로 한 덩어리가 된다.
     /// '띠들의 합으로 설명되는가'가 핵심 판별식이다: 검열 막대 뭉치는 곧은 띠 몇 개로 전부 덮이지만,
-    /// 머리카락·검은 옷·효과음 붓획은 휘고 굵기가 변해 덮이지 않는다.
+    /// 머리카락·검은 옷·효과음 붓획은 대개 휘고 굵기가 변해 덮이지 않는다.
+    /// 다만 굵게 말린 붓획(효과음 'つ'·말린 머리카락)은 짧은 띠 토막 여럿이 각도를 바꿔 가며 서로 겹쳐 88% 넘게 덮어 버린다
+    /// (실측: 반지름 30·굵기 4→24→4·270° 붓획 94.6%) — 덮음만으로는 못 가르므로 <see cref="IsCurledStroke"/>로 한 번 더 거른다.
     /// (실측: 합성 원고에서 교차·짧은 막대 검출률 0% → 98%, 그림 손상 0px)</summary>
     private static Mat? DecomposeBars(Mat comp, int area)
     {
@@ -352,6 +382,7 @@ public static class MosaicDetector
 
         var sub = new Mat(comp.Rows, comp.Cols, MatType.CV_8UC1, Scalar.Black);
         using var roi = new Mat(comp.Rows, comp.Cols, MatType.CV_8UC1);
+        var bands = new List<(Point[] Box, RotatedRect Rr)>();   // 받아들인 띠 — 굽은 획 판정에 다시 쓴다
 
         for (int deg = 0; deg < 180; deg += 10)
         {
@@ -389,18 +420,103 @@ public static class MosaicDetector
                 if ((double)Cv2.CountNonZero(inside) / total < BandFill) continue;
 
                 Cv2.FillConvexPoly(sub, box, Scalar.White);
+                bands.Add((box, rr));
             }
         }
 
         using var covered = new Mat();
         Cv2.BitwiseAnd(sub, comp, covered);
-        if ((double)Cv2.CountNonZero(covered) / Math.Max(1, area) < Cover)
+        if ((double)Cv2.CountNonZero(covered) / Math.Max(1, area) < Cover || IsCurledStroke(comp, area, bands, Cover))
         {
             sub.Dispose();
             return null;
         }
         // 막대 끝의 안티에일리어싱까지 덮도록 띠 사각형 그대로(덩어리 밖은 제외하지 않고) 돌려준다.
         return sub;
+    }
+
+    /// <summary>띠들로 덮인 덩어리가 맞닿은 막대 뭉치가 아니라 굽은 붓획인지 본다 — 가르는 것은 띠끼리 겹치는 정도다.
+    ///
+    /// 곧은 막대 둘이 각을 이루며 교차하거나 맞닿으면 겹치는 곳은 만나는 자리(굵기×굵기 남짓)뿐이라 작은 막대의 일부에 그친다
+    /// (막대는 길쭉하다). 굽은 획은 짧은 띠 토막들이 획을 따라 조금씩 방향을 바꾸며 서로 크게 겹쳐야 덮인다.
+    /// 그래서 덮음을 실제로 설명하는 띠만 고르고(새로 덮는 픽셀이 가장 많은 띠부터 cover에 이를 때까지 — 같은 막대를
+    /// 이웃 각도의 커널이 거듭 찾은 띠는 이미 덮인 자리라 뽑히지 않는다), 그중 방향이 BendAngle 이상 다른 두 띠가
+    /// 작은 띠의 BendOverlap 이상을 겹치면 굽은 획으로 본다. 띠 둘로 다 덮이는 덩어리는 막대 둘이 만난 것으로 보고 거르지 않는다.
+    /// (실측: 말린 붓획 반지름 30·굵기 4→24→4·270°는 37~40° 차이 띠 쌍이 작은 띠의 59~67%를 겹치고 띠 4~6개가 뽑힌다. 실원고 144쪽에서
+    /// 분해로 받아들인 성분 가운데 라벨 위 막대 뭉치 13개는 이 겹침이 34% 이하이고, 합성 ㄱ자·지그재그·ㄷ자·삼각형 막대는 41% 이하다.
+    /// 짧고 굵은 막대 둘의 X·T자 교차는 50%를 넘기도 해서 띠 수로 가른다)</summary>
+    private static bool IsCurledStroke(Mat comp, int area, List<(Point[] Box, RotatedRect Rr)> bands, double cover)
+    {
+        // 같은 막대를 거듭 찾은 띠끼리도 방향이 몇 도 어긋난다(실원고에서 11°까지) — 커널 각도 두 칸(20°) 이상 다른 쌍만 본다
+        const double BendAngle = 20;
+        const double BendOverlap = 0.5;   // 작은 띠의 절반 이상이 겹치면 막대끼리 만난 자리가 아니다
+
+        var masks = new List<Mat>();
+        try
+        {
+            foreach (var (box, _) in bands)
+            {
+                var m = new Mat(comp.Rows, comp.Cols, MatType.CV_8UC1, Scalar.Black);
+                Cv2.FillConvexPoly(m, box, Scalar.White);
+                masks.Add(m);
+            }
+
+            // 덮음을 설명하는 띠 고르기(탐욕 덮기) — 띠들의 합이 cover를 넘는 것은 이미 확인했으므로 끝난다
+            var picked = new List<int>();
+            using var left = comp.Clone();   // 아직 덮이지 않은 덩어리 픽셀
+            using var gain = new Mat();
+            int remain = Cv2.CountNonZero(left);
+            while ((double)(area - remain) / Math.Max(1, area) < cover)
+            {
+                int best = -1, bestGain = 0;
+                for (int i = 0; i < masks.Count; i++)
+                {
+                    if (picked.Contains(i)) continue;
+                    Cv2.BitwiseAnd(masks[i], left, gain);
+                    int g = Cv2.CountNonZero(gain);
+                    if (g > bestGain) { bestGain = g; best = i; }
+                }
+                if (best < 0) break;
+                picked.Add(best);
+                left.SetTo(Scalar.Black, masks[best]);
+                remain -= bestGain;
+            }
+            // 굽은 획은 토막 셋 이상이 차례로 꺾여야 덮인다. 띠 둘로 다 덮이는 덩어리는 막대 둘이 만난 것이다 — 짧고 굵은 막대의 X·T자 교차는
+            // 두 막대 사이 각도의 커널이 만든 '섞인 띠'가 먼저 뽑혀 진짜 막대 띠와 절반 넘게 겹치므로, 여기서 가르지 않으면 통째로 버려진다
+            // (실측: 80×22 막대 둘의 60° 교차 58%, 60×16의 45° 교차 54.5%).
+            if (picked.Count < 3) return false;
+
+            using var both = new Mat();
+            for (int a = 0; a < picked.Count; a++)
+            for (int b = a + 1; b < picked.Count; b++)
+            {
+                int i = picked[a], j = picked[b];
+                if (DirDiff(LongAxisDeg(bands[i].Rr), LongAxisDeg(bands[j].Rr)) < BendAngle) continue;
+                Cv2.BitwiseAnd(masks[i], masks[j], both);
+                int small = Math.Min(Cv2.CountNonZero(masks[i]), Cv2.CountNonZero(masks[j]));
+                if (small > 0 && (double)Cv2.CountNonZero(both) / small >= BendOverlap) return true;
+            }
+            return false;
+        }
+        finally
+        {
+            foreach (var m in masks) m.Dispose();
+        }
+    }
+
+    /// <summary>회전 사각형의 긴 변 방향(도, 0~180).</summary>
+    private static double LongAxisDeg(RotatedRect rr)
+    {
+        double d = rr.Size.Width >= rr.Size.Height ? rr.Angle : rr.Angle + 90;
+        d %= 180;
+        return d < 0 ? d + 180 : d;
+    }
+
+    /// <summary>두 방향(0~180도, 180도 주기)의 차이 — 0~90도.</summary>
+    private static double DirDiff(double a, double b)
+    {
+        double d = Math.Abs(a - b) % 180;
+        return Math.Min(d, 180 - d);
     }
 
     /// <summary>지정한 각도로 누운 length×thick 직사각형 구조요소.</summary>
@@ -417,6 +533,9 @@ public static class MosaicDetector
     /// 엔진 LaMa(ComfyLama) 경로가 쓴다. (SDXL 인페인트용 블러·점진 링 옵션은 2026-10-19 Strong 경로와 함께 폐기.)</summary>
     public static byte[] ToMaskedPng(Mat img, Mat mask)
     {
+        // 아래는 포인터로 직접 읽고 쓴다 — 형식·크기가 어긋나면(그림보다 작은 마스크면 버퍼 밖을 읽는다) 메모리를 망가뜨리므로 먼저 막는다
+        if (img.Type() != MatType.CV_8UC3) throw new ArgumentException("그림은 BGR 8비트(CV_8UC3)여야 해요.", nameof(img));
+        if (mask.Type() != MatType.CV_8UC1 || mask.Size() != img.Size()) throw new ArgumentException("마스크는 그림과 같은 크기의 8비트 한 채널이어야 해요.", nameof(mask));
         using var rgba = new Mat();
         Cv2.CvtColor(img, rgba, ColorConversionCodes.BGR2BGRA);
         unsafe

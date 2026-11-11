@@ -108,7 +108,7 @@ public class WhiteStripDetectorTests
         Assert.Equal(50 * 20, Cv2.CountNonZero(mask));
     }
 
-    [Fact(Skip = "알려진 결함: AddToMask는 grow만큼 넓힌 사각형을 칠하지만 넓히기 전 면적(폭×길이)을 돌려준다 — grow 10에서 실제 31622px을 칠하고 22332를 보고")]
+    [Fact]
     public void AddToMask_WithGrow_ReturnsFilledPixelCount()
     {
         // 문서 주석: "채운 픽셀 수를 돌려준다" — 넓힌 만큼도 칠한 픽셀이다.
@@ -120,6 +120,51 @@ public class WhiteStripDetectorTests
 
         int filled = Cv2.CountNonZero(mask);
         Assert.InRange(added, filled * 0.95, filled * 1.05);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(10)]
+    public void AddToMask_OverAlreadyMaskedArea_CountsOnlyNewlyFilledPixels(int grow)
+    {
+        // 다른 감지기가 이미 칠한 자리는 이번에 새로 칠한 것이 아니다 — 돌려준 값 = 마스크에서 늘어난 픽셀 수.
+        using var img = SolidPage(600, 600, gray: 120);
+        FillRotated(img, new Point2f(300, 300), new Size2f(360, 60), 30, White);
+        using var existing = EmptyMask(img);
+        Cv2.Rectangle(existing, new Rect(250, 250, 100, 100), White, -1);   // 스트립 가운데를 덮는 기존 마스크
+        using var mask = existing.Clone();
+        using var alone = EmptyMask(img);
+        int aloneAdded = WhiteStripDetector.AddToMask(img, alone, grow);     // 빈 마스크에 칠한 스트립 자체
+
+        int added = WhiteStripDetector.AddToMask(img, mask, grow);
+
+        using var overlap = new Mat();
+        Cv2.BitwiseAnd(alone, existing, overlap);
+        Assert.True(Cv2.CountNonZero(overlap) > 0, "시험 배치: 기존 마스크가 스트립과 겹쳐야 한다");
+        Assert.Equal(aloneAdded - Cv2.CountNonZero(overlap), added);
+        Assert.Equal(Cv2.CountNonZero(mask) - Cv2.CountNonZero(existing), added);
+    }
+
+    [Fact]
+    public void AddToMask_PaintsTheSamePixelsAsTheDetectedStrips()
+    {
+        // 돌려주는 값은 칠한 결과에서 센 것이고, 칠하는 모양은 검출한 회전 사각형(+grow) 그대로다.
+        using var img = SolidPage(600, 600, gray: 120);
+        FillRotated(img, new Point2f(300, 300), new Size2f(360, 60), 30, White);
+        using var mask = EmptyMask(img);
+        using var expected = EmptyMask(img);
+        const int grow = 4;
+        var strips = WhiteStripDetector.Detect(img);
+        Assert.NotEmpty(strips);
+        foreach (var s in strips)
+            FillRotated(expected, s.Center, new Size2f(s.Size.Width + grow * 2, s.Size.Height + grow * 2), s.AngleDeg, White);
+
+        int added = WhiteStripDetector.AddToMask(img, mask, grow);
+
+        using var diff = new Mat();
+        Cv2.Compare(mask, expected, diff, CmpTypes.NE);
+        Assert.Equal(0, Cv2.CountNonZero(diff));
+        Assert.Equal(Cv2.CountNonZero(expected), added);
     }
 
     /// <summary>기울기 angle(°)의 두 각도 차(180° 주기).</summary>
