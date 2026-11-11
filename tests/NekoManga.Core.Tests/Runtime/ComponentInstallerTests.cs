@@ -177,6 +177,45 @@ public class ComponentInstallerTests
         Assert.False(Directory.Exists(Path.Combine(dest, "sub")));
     }
 
+    [Theory]
+    [InlineData("auto", "nvidia-old", "nvidia-old", 0)]   // 자동 감지 + 점검이 넘긴 종류 → 그대로 쓰고 다시 묻지 않는다
+    [InlineData("auto", null, "amd", 1)]                  // 넘겨받은 것이 없으면(설치기만 따로 쓸 때) 여기서 한 번 묻는다
+    [InlineData("nvidia", "amd", "nvidia", 0)]            // 사용자가 고른 종류가 감지보다 먼저
+    [InlineData("nvidia", null, "nvidia", 0)]
+    public void ComfyVendor_UsesVendorDetectedByTheCheck_AsksOnlyWithoutIt(string setting, string? detected, string expected, int asked)
+    {
+        using var t = new TempDir();
+        int calls = 0;
+        var installer = new ComponentInstaller(new AppSettings { RuntimeRoot = t.At("런타임"), GpuVendor = setting })
+        {
+            DetectVendor = () => { calls++; return "amd"; },
+        };
+
+        Assert.Equal(expected, installer.ComfyVendor(detected));
+        Assert.Equal(asked, calls);
+    }
+
+    [Theory]
+    [InlineData("nvidia", 0)]   // 설치 창의 [준비 시작!]: 점검에 쓴 nvidia-smi 답으로 정한 종류를 넘긴다
+    [InlineData(null, 1)]
+    public async Task InstallAsync_ComfyPortable_DoesNotDetectVendorAgainWhenGiven(string? detected, int asked)
+    {
+        // 예전에는 점검이 nvidia-smi를 한 번, 설치기가 포터블을 받을 때 또 한 번 불렀다 — 멈춘 nvidia-smi면 8초씩 두 번.
+        // 내려받지 않고 보려고, 지난번에 풀어 두고 이름만 못 바꾼 AMD 폴더가 있는 경우(다운로드를 건너뛴다)를 쓴다
+        using var t = new TempDir();
+        int calls = 0;
+        var installer = new ComponentInstaller(new AppSettings { RuntimeRoot = t.At("런타임"), GpuVendor = "auto" })
+        {
+            DetectVendor = () => { calls++; return "amd"; },
+        };
+        RuntimeTestHelpers.Touch(Path.Combine(installer.Resolve(ComponentCatalog.ComfyAmdDirName), "ComfyUI", "main.py"));
+
+        await installer.InstallAsync(ComponentCatalog.ComfyPortable, new Progress<InstallProgress>(), CancellationToken.None, detected);
+
+        Assert.Equal(asked, calls);
+        Assert.True(installer.IsInstalled(ComponentCatalog.ComfyPortable));   // 이름을 표준 폴더로 맞췄다
+    }
+
     /// <summary>적은 이름 그대로 항목을 담은 zip을 만든다 — ZipArchive는 '../'·절대 경로 이름도 막지 않아 악성 zip을 흉내 낼 수 있다.
     /// '/'로 끝나는 이름은 폴더 항목, 나머지는 자기 이름을 내용으로 담은 파일.</summary>
     private static string MakeZip(string path, params string[] entries)

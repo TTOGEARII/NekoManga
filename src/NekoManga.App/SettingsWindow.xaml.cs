@@ -71,10 +71,16 @@ public partial class SettingsWindow
         foreach (ComboBoxItem it in CmbGpuVendor.Items) if ((string)it.Tag == s.GpuVendor) { CmbGpuVendor.SelectedItem = it; break; }
         if (CmbGpuVendor.SelectedItem == null) CmbGpuVendor.SelectedIndex = 0;
         SelectComboByTag(CmbOnnxGpu, s.OnnxGpu);
-        _ = Task.Run(SystemCheck.DetectVendor).ContinueWith(t =>
+        _ = Task.Run(() =>
         {
-            var (v, name) = t.Result;
-            var label = v switch { "nvidia" => "NVIDIA (RTX 20 이상 → CUDA 13 빌드)", "nvidia-old" => "NVIDIA 구형 (GTX 10 이하 → CUDA 12.6 빌드)", "amd" => "AMD Radeon (→ ROCm 빌드, Windows 11 필요)", _ => "전용 그래픽카드 없음" };
+            var smi = SystemCheck.QueryNvidiaAll();   // 한 번만 묻고 감지와 '너무 오래된 카드' 판정이 같은 목록을 쓴다
+            var (v, name) = SystemCheck.DetectVendor(smi);
+            return (v, name, tooOld: v is "nvidia" or "nvidia-old" && SystemCheck.NvidiaTooOld(smi));
+        }).ContinueWith(t =>
+        {
+            var (v, name, tooOld) = t.Result;
+            // 케플러·페르미는 'nvidia-old'로 감지되지만 구형 묶음도 못 돌린다 — "CUDA 12.6 빌드"라고 적으면 될 것처럼 읽힌다
+            var label = tooOld ? "너무 오래된 그래픽카드예요 (채색 엔진은 쓸 수 없어요 — 번역·기본 검열 제거는 CPU로 돼요)" : v switch { "nvidia" => "NVIDIA (RTX 20 이상 → CUDA 13 빌드)", "nvidia-old" => "NVIDIA 구형 (GTX 10 이하 → CUDA 12.6 빌드)", "amd" => "AMD Radeon (→ ROCm 빌드, Windows 11 필요)", _ => "전용 그래픽카드 없음" };
             Dispatcher.Invoke(() => TxtGpuDetected.Text = "감지됨: " + (name.Length > 0 ? name + " — " : "") + label);
         });
 

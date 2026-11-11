@@ -39,7 +39,17 @@ public class ComponentInstaller(AppSettings settings)
     public IReadOnlyList<Component> MissingEngine() =>
         ComponentCatalog.EngineComponents.Where(c => !IsInstalled(c)).ToList();
 
-    public async Task InstallAsync(Component c, IProgress<InstallProgress> progress, CancellationToken ct)
+    /// <summary>자동 감지(GpuVendor=auto)일 때 그래픽카드 종류를 묻는 함수 — 시험에서 nvidia-smi 대신 넣는다.</summary>
+    internal Func<string> DetectVendor = () => SystemCheck.DetectVendor().Vendor;
+
+    /// <summary>ComfyUI 포터블을 어느 그래픽카드용 묶음으로 받을지: 설정에서 고른 종류, 자동이면 호출자가 넘긴 감지 결과, 그것도 없으면 여기서 감지.</summary>
+    internal string ComfyVendor(string? detectedVendor) =>
+        settings.GpuVendor != "auto" ? settings.GpuVendor : detectedVendor ?? DetectVendor();
+
+    /// <summary>detectedVendor = 같은 흐름의 PC 점검이 이미 감지한 그래픽카드 종류(<see cref="SystemCheck.DetectVendor(IReadOnlyList{SystemCheck.Gpu})"/>).
+    /// 설치 창은 [준비 시작!] 때 점검에 쓴 nvidia-smi 답으로 정한 종류를 넘긴다 — 2026-11-11까지는 점검이 한 번, 여기서 또 한 번 물어
+    /// 멈춘 nvidia-smi면 8초를 두 번 기다렸고 점검이 본 카드와 받는 묶음이 어긋날 수 있었다. null이면(설치기만 따로 쓸 때) 여기서 새로 묻는다.</summary>
+    public async Task InstallAsync(Component c, IProgress<InstallProgress> progress, CancellationToken ct, string? detectedVendor = null)
     {
         Directory.CreateDirectory(settings.RuntimeRoot);
         switch (c.Kind)
@@ -65,7 +75,7 @@ public class ComponentInstaller(AppSettings settings)
                 string vendor = "nvidia";
                 if (isComfy)
                 {
-                    vendor = settings.GpuVendor == "auto" ? SystemCheck.DetectVendor().Vendor : settings.GpuVendor;
+                    vendor = ComfyVendor(detectedVendor);
                     c = c with { Url = ComponentCatalog.ComfyPortableUrl(vendor) };
                 }
                 var amdDir = Resolve(ComponentCatalog.ComfyAmdDirName); var stdDir = Resolve(ComponentCatalog.ComfyDirName);

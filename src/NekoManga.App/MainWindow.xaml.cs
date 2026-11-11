@@ -76,6 +76,26 @@ public partial class MainWindow
         };
     }
 
+    private bool _syncingSwitches;
+
+    /// <summary>기능 스위치와 배지를 지금 설정으로 다시 채운다 — 이 창을 만든 뒤 다른 창이 설정을 바꿨을 때.
+    /// 첫 실행에서는 이 창이 준비 창보다 먼저 만들어진다: 준비 창의 PC 맞춤 설정이 자동 채색을 꺼도 스위치는 켜진 채 보였고,
+    /// 다른 스위치를 건드리면 Feature_Changed가 세 값을 모두 스위치에서 읽어 자동 채색을 도로 켜서 저장했다.
+    /// 채우는 동안에는 Feature_Changed가 저장하지 않게 막는다 — 스위치를 하나씩 바꾸는 사이 나머지 스위치의 옛 화면 값이 설정을 덮지 않게.</summary>
+    internal void SyncFromSettings()
+    {
+        var s = App.Settings;
+        _syncingSwitches = true;
+        try
+        {
+            SwColor.IsChecked = s.EnableAutoColor;
+            SwDecensor.IsChecked = s.EnableDecensor;
+            SwTranslate.IsChecked = s.EnableTranslate;
+        }
+        finally { _syncingSwitches = false; }
+        RefreshComfyBadges();
+    }
+
     /// <summary>ComfyUI가 필요한 기능(채색·엔진 LaMa 검열) 카드에 설치 필요 배지를 띄운다.</summary>
     private void RefreshComfyBadges()
     {
@@ -304,7 +324,7 @@ public partial class MainWindow
     // ── 실행 ──────────────────────────────────────────────────
     private void Feature_Changed(object sender, RoutedEventArgs e)
     {
-        if (!IsLoaded) return;
+        if (!IsLoaded || _syncingSwitches) return;
         var s = App.Settings;
         s.EnableAutoColor = SwColor.IsChecked == true;
         s.EnableDecensor = SwDecensor.IsChecked == true;

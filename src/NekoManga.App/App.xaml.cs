@@ -97,7 +97,10 @@ public partial class App : Application
         // ComfyUI(채색·엔진 LaMa 검열)는 선택 — 마법사에서도 선택으로 표시된다.
         var installer = new ComponentInstaller(Settings);
         if (installer.MissingEngine().Count > 0)
+        {
             new SetupWindow().ShowDialog();
+            main.SyncFromSettings();   // 메인 창은 위에서 이미 만들어졌다 — 준비 창이 바꾼 설정(PC 맞춤 설정이 끈 자동 채색 등)을 스위치에 다시 채운다
+        }
 
         main.Show();
 

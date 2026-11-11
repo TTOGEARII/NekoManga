@@ -24,25 +24,43 @@ public static class AutoTune
     }
 
     /// <summary>현재 설정과 비교해 바꿀 항목을 계산한다 (적용은 안 함). 하드웨어 조회는 1~2초(nvidia-smi) 걸릴 수 있으니 UI 스레드 밖에서 부를 것.</summary>
-    public static Plan Build(AppSettings s)
-    {
-        var (vendor, name) = SystemCheck.DetectVendor();
-        if (s.GpuVendor != "auto") { vendor = s.GpuVendor; name = SystemCheck.AdapterNameFor(vendor); }   // 고른 벤더의 카드 이름으로만 판정
-        int vram = 0;
-        var nv = vendor is "nvidia" or "nvidia-old" ? SystemCheck.QueryNvidia() : null;
-        if (nv != null) { vram = nv.MemoryMb; name = nv.Name; }   // 이름도 같은 카드의 것으로 — 레지스트리 첫 키는 뽑아낸 옛 카드의 흔적일 수 있다
-        if (vram == 0 && name.Length > 0) vram = SystemCheck.AdapterVramMb(name);
-        double ram = SystemCheck.RamGb();
+    public static Plan Build(AppSettings s) => Build(s, SystemCheck.QueryNvidiaAll());
 
+    /// <summary>이미 물어 둔 nvidia-smi 목록(<see cref="SystemCheck.QueryNvidiaAll"/>)으로 계획을 세운다 — nvidia-smi를 다시 부르지 않는다.
+    /// 2026-11-11까지는 벤더 감지와 VRAM 조회가 nvidia-smi를 따로 불러, 멈춘 nvidia-smi면 8초씩 두 번 기다렸다. 설치 창은 점검에 쓴 목록을 그대로 넘긴다.</summary>
+    public static Plan Build(AppSettings s, IReadOnlyList<SystemCheck.Gpu> smi) => Build(s, smi, SystemCheck.DisplayAdapters(), SystemCheck.RamGb());
+
+    /// <summary>하드웨어에서 읽은 것(nvidia-smi 목록·레지스트리 어댑터 이름·RAM)을 받아 계획까지 잇는다 — 카드 고르기, 그 카드의 VRAM, '너무 오래됨' 판정이
+    /// 모두 같은 목록에서 나온다. (nvidia-smi가 VRAM을 못 준 카드와 AMD의 VRAM만 여기서 레지스트리를 읽는다.)</summary>
+    internal static Plan Build(AppSettings s, IReadOnlyList<SystemCheck.Gpu> smi, IReadOnlyList<string> adapters, double ram)
+    {
+        var (vendor, name) = SystemCheck.JudgeVendor(smi, adapters);
+        if (s.GpuVendor != "auto") { vendor = s.GpuVendor; name = SystemCheck.AdapterNameFor(vendor, adapters); }   // 고른 벤더의 카드 이름으로만 판정
+        int vram = 0;
+        bool nvidia = vendor is "nvidia" or "nvidia-old";
+        // 엔진이 쓸 카드 한 장(PickNvidiaGpu — 묶음 종류를 정하고 점검 창에 보이는 그 카드)의 VRAM과 이름으로 조정한다. 레지스트리 첫 키는 뽑아낸 옛 카드의 흔적일 수 있다
+        var nv = nvidia ? SystemCheck.PickNvidiaGpu(smi) : null;
+        if (nv != null) { vram = nv.MemoryMb; name = nv.Name; }
+        if (vram == 0 && name.Length > 0) vram = SystemCheck.AdapterVramMb(name);
+        return BuildFor(s, vendor, name, vram, ram, nvidia && SystemCheck.NvidiaTooOld(smi, adapters));
+    }
+
+    /// <summary>계획 세우기 — 하드웨어를 묻지 않는다. gpuTooOld = NVIDIA 카드가 어느 묶음으로도 채색 엔진을 돌릴 수 없는 세대(<see cref="SystemCheck.NvidiaTooOld(IReadOnlyList{SystemCheck.Gpu})"/>).</summary>
+    internal static Plan BuildFor(AppSettings s, string vendor, string name, int vram, double ram, bool gpuTooOld = false)
+    {
         var ch = new List<Change>();
         var d = new AppSettings(); // 기본값 원본
         string Mp(double v) => v <= 0 ? "원본 크기" : v.ToString("0.#", CultureInfo.InvariantCulture) + "MP";
 
+        // 케플러·페르미는 'nvidia-old'로 감지되지만 구형 묶음도 못 돌린다 — VRAM에 맞춰 낮추는 것이 아니라 GPU가 없는 PC처럼 채색을 끈다(2026-11-11까지는 --lowvram·1.0MP를 권했다)
         bool gpuUsable = vendor is "nvidia" or "nvidia-old" or "amd"
-                         && (vendor != "amd" || name.Length == 0 || SystemCheck.LooksRocmSupported(name));
+                         && (vendor != "amd" || name.Length == 0 || SystemCheck.LooksRocmSupported(name))
+                         && !gpuTooOld;
+        string why = vendor == "none" ? "전용 그래픽카드가 없어요"
+                   : gpuTooOld ? "그래픽카드가 너무 오래돼 채색 엔진을 돌릴 수 없어요"
+                   : "엔진 빌드가 이 그래픽카드를 지원하지 않아요";
         if (!gpuUsable)
         {
-            string why = vendor == "none" ? "전용 그래픽카드가 없어요" : "엔진 빌드가 이 그래픽카드를 지원하지 않아요";
             if (s.EnableAutoColor) ch.Add(new("color-off", "자동 채색", "켬", "끔", why, x => x.EnableAutoColor = false));
             if (s.DecensorMode is "ComfyLama" or "ComfyRegen" or "ComfyCustom") ch.Add(new("decensor-basic", "검열 제거 방식", s.DecensorMode, "기본 (내장 모델)", why, x => x.DecensorMode = "Basic"));
             if (s.EnableSelfTraining) ch.Add(new("selftrain-off", "자가 학습", "켬", "끔", why, x => x.EnableSelfTraining = false));
@@ -74,7 +92,7 @@ public static class AutoTune
         }
 
         // 엔진 상주: GPU를 못 쓰면 켤 이유가 없고, RAM이 16GB 미만이면 ComfyUI(실측 최대 13GB)를 평소엔 꺼 두는 게 낫다
-        string? warmWhy = !gpuUsable ? (vendor == "none" ? "전용 그래픽카드가 없어요" : "엔진 빌드가 이 그래픽카드를 지원하지 않아요")
+        string? warmWhy = !gpuUsable ? why
                         : ram > 0 && ram < 15.5 ? $"RAM {ram:0}GB — 엔진이 메모리를 10GB 넘게 써서 평소엔 꺼 두는 게 나아요" : null;
         if (warmWhy != null)
         {

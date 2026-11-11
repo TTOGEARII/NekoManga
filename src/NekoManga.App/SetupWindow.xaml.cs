@@ -39,21 +39,28 @@ public partial class SetupWindow
         CompList.ItemsSource = _rows;
         PopulateDrives();
         RefreshList();
-        Loaded += async (_, _) =>
-        {
-            try { await CheckRequirementsAsync(); } catch { /* 점검 실패는 설치를 막지 않는다 */ }
-            try { await RefreshTuneAsync(); } catch { }
-        };
+        Loaded += async (_, _) => await RefreshPcAsync();
+    }
+
+    /// <summary>점검 패널과 맞춤 설정을 함께 새로 고친다 — nvidia-smi는 한 번만 묻고 둘이 같은 답을 쓴다.
+    /// 멈춘 nvidia-smi는 부를 때마다 8초를 기다리게 한다: 2026-11-11까지는 창이 열릴 때 점검 1번 + 맞춤 설정 2번을 따로 불렀다.
+    /// 설치할 것이 없으면 두 패널 다 숨으니 묻지 않는다.</summary>
+    private async Task RefreshPcAsync()
+    {
+        var smi = _rows.Any(r => r.Status == "필요") ? Task.Run(SystemCheck.QueryNvidiaAll) : null;
+        try { await CheckRequirementsAsync(smi); } catch { /* 점검 실패는 설치를 막지 않는다 */ }
+        try { await RefreshTuneAsync(smi); } catch { }
     }
 
     // ── PC 사양 맞춤 설정 (2026-10-21) — 설치 대상이 있을 때만 보여 주고 [준비 시작!] 때 적용한다 ──
     private AutoTune.Plan? _tune;
 
-    private async Task RefreshTuneAsync()
+    /// <summary>smi = 같은 흐름에서 이미 묻기 시작한 nvidia-smi 결과(없으면 여기서 묻는다).</summary>
+    private async Task RefreshTuneAsync(Task<IReadOnlyList<SystemCheck.Gpu>>? smi = null)
     {
         if (!_rows.Any(r => r.Status == "필요")) { PnlTune.Visibility = Visibility.Collapsed; _tune = null; return; }
         var s = App.Settings;
-        _tune = await Task.Run(() => AutoTune.Build(s));
+        _tune = await Task.Run(async () => smi != null ? AutoTune.Build(s, await smi) : AutoTune.Build(s));
         TxtTuneHw.Text = "감지: " + _tune.HardwareLine;
         TxtTune.Text = _tune.Summary;
         PnlTune.Visibility = Visibility.Visible;
@@ -209,8 +216,10 @@ public partial class SetupWindow
     // ── ComfyUI 묶음 전제 조건 점검 (2026-10-20: 다른 PC에서 옛 드라이버로 torch c10.dll 1114 크래시 → 설치 전에 안내) ──
     private SystemCheck.Report? _req;
 
-    /// <summary>ComfyUI 묶음이 설치 대상에 있으면 PC를 점검해 패널에 보여 준다. 막히는 항목이 있으면 true.</summary>
-    private async Task<bool> CheckRequirementsAsync()
+    /// <summary>ComfyUI 묶음이 설치 대상에 있으면 PC를 점검해 패널에 보여 준다. 막히는 항목이 있으면 true.
+    /// smi = 같은 흐름에서 이미 묻기 시작한 nvidia-smi 결과(없으면 여기서 묻는다). 붙잡아 둔 옛 답을 넘기지 않는다 —
+    /// [다시 확인]·[준비 시작!]은 드라이버를 올린 뒤일 수 있어 부르는 쪽이 그때마다 새로 물어서 넘긴다.</summary>
+    private async Task<bool> CheckRequirementsAsync(Task<IReadOnlyList<SystemCheck.Gpu>>? smi = null)
     {
         bool needComfy = _rows.Any(r => r.Component.ForComfy && r.Status == "필요");
         if (!needComfy) { PnlReq.Visibility = Visibility.Collapsed; _req = null; return false; }
@@ -218,7 +227,7 @@ public partial class SetupWindow
         if (CmbGpu.SelectedItem == null)
             foreach (ComboBoxItem it in CmbGpu.Items) if ((string)it.Tag == App.Settings.GpuVendor) { CmbGpu.SelectedItem = it; break; }
         var vendor = App.Settings.GpuVendor;
-        _req = await Task.Run(() => SystemCheck.CheckForComfy(vendor));
+        _req = await Task.Run(async () => smi != null ? SystemCheck.CheckForComfy(vendor, await smi) : SystemCheck.CheckForComfy(vendor));
         var r = _req;
         BtnReqDriver.Visibility = r.Items.Any(i => !i.Ok && (i.FixUrl == SystemCheck.DriverUrl || i.FixUrl == SystemCheck.AmdDriverUrl)) ? Visibility.Visible : Visibility.Collapsed;
         BtnReqDriver.Content = r.Items.Any(i => !i.Ok && i.FixUrl == SystemCheck.AmdDriverUrl) ? "⬇ AMD 드라이버 받기" : "⬇ NVIDIA 드라이버 받기";
@@ -226,7 +235,7 @@ public partial class SetupWindow
         if (r.HasBlocking)
         {
             TxtReqTitle.Text = "✖ 채색 엔진(ComfyUI)을 쓰려면 먼저 해야 할 일이 있어요";
-            TxtReq.Text = r.Summary + "\n번역·검열 감지·기본 복원은 영향 없이 설치돼요. 위 항목을 해결한 뒤 [다시 확인]을 누르면 엔진 묶음도 이어서 받아요.";
+            TxtReq.Text = r.Summary + "\n" + r.BlockedNote;   // 너무 오래된 카드에는 "위 항목을 해결한 뒤…"를 붙이지 않는다(Report.BlockedNote)
         }
         else if (r.HasWarning)
         {
@@ -251,12 +260,13 @@ public partial class SetupWindow
         var tag = (string)it.Tag;
         if (tag == App.Settings.GpuVendor) return;
         App.Settings.GpuVendor = tag; if (!_demo) App.Settings.Save();
-        try { await CheckRequirementsAsync(); } catch { }
-        await RefreshTuneSafeAsync();
+        await RefreshPcAsync();
     }
     private void BtnReqVc_Click(object sender, RoutedEventArgs e) =>
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(SystemCheck.VcRedistUrl) { UseShellExecute = true });
-    private async void BtnReqRecheck_Click(object sender, RoutedEventArgs e) { if (!_running) await CheckRequirementsAsync(); }
+    // [다시 확인]은 점검과 맞춤 설정을 같이 새로 고친다(nvidia-smi는 한 번, 둘이 같은 답) — 2026-11-11 검수: 점검만 새로 해서, 드라이버를 올리거나 카드를 바꾼 뒤에도
+    // 맞춤 설정 패널에는 창을 열 때의 계획("자동 채색: 켬 → 끔")이 남았고 [준비 시작!]이 그것을 적용했다
+    private async void BtnReqRecheck_Click(object sender, RoutedEventArgs e) { if (!_running) await RefreshPcAsync(); }
 
     private async void BtnInstall_Click(object sender, RoutedEventArgs e)
     {
@@ -276,8 +286,12 @@ public partial class SetupWindow
 
         try
         {
-            // 엔진 묶음 전제 조건이 안 맞으면 그 묶음은 건너뛰고(내장 엔진은 그대로 설치) 안내만 남긴다
-            bool blocked = await CheckRequirementsAsync();
+            // 엔진 묶음 전제 조건이 안 맞으면 그 묶음은 건너뛰고(내장 엔진은 그대로 설치) 안내만 남긴다.
+            // nvidia-smi는 여기서 한 번만 새로 묻고(드라이버를 올린 뒤일 수 있다) 점검과 설치기의 묶음 고르기가 그 답을 같이 쓴다 —
+            // 2026-11-11까지는 설치기가 ComfyUI 포터블을 받을 때 한 번 더 물었다(멈춘 nvidia-smi면 8초 더, 점검이 본 카드와 받는 묶음이 어긋날 수도)
+            var smi = _rows.Any(r => r.Component.ForComfy && r.Status == "필요") ? Task.Run(SystemCheck.QueryNvidiaAll) : null;
+            bool blocked = await CheckRequirementsAsync(smi);
+            string? detectedVendor = smi != null ? await Task.Run(async () => SystemCheck.DetectVendor(await smi).Vendor) : null;
             if (blocked)
                 foreach (var row in _rows.Where(r => r.Component.ForComfy && r.Status == "필요")) row.Status = "조건 미충족 — 위 안내 참고";
 
@@ -292,12 +306,13 @@ public partial class SetupWindow
             foreach (var row in _rows.Where(r => r.Status == "필요").ToList())
             {
                 row.Status = "내려받는 중";
-                await _installer.InstallAsync(row.Component, progress, CancellationToken.None);
+                await _installer.InstallAsync(row.Component, progress, CancellationToken.None, detectedVendor);
                 row.Status = "설치됨 ✓";
                 row.Percent = 100;
             }
             bool leftover = _rows.Any(r => r.Status.StartsWith("조건 미충족"));
-            TxtNote.Text = leftover ? "내장 엔진은 준비됐어요. 채색 엔진은 위 조건을 해결한 뒤 [다시 확인] → [준비 시작!]으로 받아요."
+            // 너무 오래된 카드에는 "위 조건을 해결한 뒤…"라고 하지 않는다 — 해결할 조건이 없다(Report.LeftoverNote)
+            TxtNote.Text = leftover ? (_req ?? new SystemCheck.Report([])).LeftoverNote
                                     : "준비 끝! 이제 바로 쓸 수 있어요 (ﾉ´ヮ`)ﾉ*:･ﾟ✧";
             BtnSkip.Content = "시작하기";
             if (leftover) { foreach (var row in _rows.Where(r => r.Status.StartsWith("조건 미충족"))) row.Status = "필요"; BtnInstall.IsEnabled = true; }
