@@ -40,10 +40,11 @@ public class CensorNet(OnnxEnv env)
     /// 잡아 필터가 진짜 흰선을 지웠다(Confusion 실라벨 78개 중 15% 기준 11개·60% 기준 6개 손실) → 설정 DecensorBubbleFilter로 끌 수 있게.</param>
     /// <param name="white">false면 흰 검출을 마스크에서 뺀다. <paramref name="black"/>·<paramref name="mosaic"/>도 같다 — 2026-11-09부터 감지 주력이
     /// Aletheia Lens이고, 이 모델은 Aletheia가 놓치는 종류(기본: 가는 흰 막대선)만 골라 보완하는 데 쓴다(AletheiaDecensor.Detect). 셋 다 true면 교체 전과 같다.</param>
+    /// <param name="conf">강한 검출 임계. null이면 기본 0.40 — '흰색 막대만'의 보완처럼 오탐을 더 줄여야 하는 호출부가 높여 준다. 환경변수 NEKO_CENSOR_CONF가 있으면 그 값이 이긴다.</param>
     public Mat? BuildMask(Mat imgBgr, IReadOnlyList<Rect>? exclude, int grow, out string summary, bool bubbleFilter = true,
-        bool white = true, bool black = true, bool mosaic = true)
+        bool white = true, bool black = true, bool mosaic = true, float? conf = null)
     {
-        float strongConf = ConfOverride ?? 0.40f;
+        float strongConf = ConfOverride ?? conf ?? 0.40f;
         var (w, b, m, dets) = Detect(imgBgr, strongConf);
         using (w) using (b) using (m)
         {

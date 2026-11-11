@@ -23,6 +23,25 @@ public class AletheiaDecensorTests
     }
 
     [Theory]
+    [InlineData("WhiteBar", true, true)]
+    [InlineData("WhiteBar", false, false)]   // 전용 AI가 없으면 예전처럼 규칙 감지기로 보완한다
+    [InlineData("Color", true, false)]       // 색 검열은 전용 AI가 보지 않는 종류다
+    [InlineData("Auto", true, false)]        // 자동의 보완은 DecensorLegacyAssist가 정한다
+    [InlineData("BlackBar", true, false)]
+    public void WhiteBarAssist_UsesDedicatedNetOnlyWhenInstalled(string target, bool netReady, bool expected)
+    {
+        Assert.Equal(expected, AletheiaDecensor.WhiteBarAssistUsesNet(target, netReady));
+    }
+
+    [Fact]
+    public void WhiteBarAssistConf_IsStricterThanTheDefaultDetectionThreshold()
+    {
+        // 0.40(자동의 보완이 쓰는 기본 임계)으로는 검열 없는 쪽의 오탐이 세 배였다 — 기본값 아래로 내려가면 안 된다.
+        Assert.True(AletheiaDecensor.WhiteBarAssistConf > 0.40f);
+        Assert.True(AletheiaDecensor.WhiteBarAssistConf < 1f);
+    }
+
+    [Theory]
     [InlineData(new string[0], false, false)]
     [InlineData(new[] { DetectorFile }, true, false)]
     [InlineData(new[] { BarFile }, false, false)]               // 복원은 막대·모자이크 모델 둘 다 있어야 한다

@@ -20,7 +20,8 @@ public static class CensorKind
 /// **감지** = Aletheia Lens의 Mask R-CNN(<see cref="AletheiaDetector"/>: 막대·모자이크) + **기존 방식 보완**:
 ///   - Auto: CensorNet의 **흰 검출만** 더한다. 실측(mashiro Confusion 흰선 실라벨 78개, 적중 = 라벨의 30% 이상 덮음):
 ///     Aletheia 51 · CensorNet c11 72 · 합집합 75 — Aletheia는 굵은 흰 막대는 잡지만 가는 흰선 24개를 놓쳤다.
-///   - WhiteBar / Color: 그 종류의 기존 규칙 감지기(흰 막대·흰 스트립 / 채도)를 더한다.
+///   - WhiteBar: CensorNet의 흰 검출을 높은 임계(<see cref="AletheiaDecensor.WhiteBarAssistConf"/>)로 더한다. CensorNet이 없으면 규칙 감지기(흰 막대·흰 스트립).
+///   - Color: 색 검열 규칙 감지기(채도)를 더한다.
 /// 설정의 '무엇을 검열로 볼까요'(DecensorTarget)는 그대로 뜻을 유지한다: BlackBar/WhiteBar/Color는 막대 인스턴스 중 그 색조만,
 /// Mosaic은 모자이크 인스턴스만, Auto는 전부.
 ///
@@ -38,6 +39,15 @@ public sealed class AletheiaDecensor(AppSettings settings, OnnxEnv env)
     public const string InpainterMissing = "검열 복원 모델(Aletheia Lens)이 아직 설치되지 않았어요 — 설정 → 구성요소에서 받아주세요.";
 
     private enum Tone { Dark, Bright, Color }
+
+    /// <summary>'흰색 막대만'에서 전용 AI(CensorNet)의 흰 검출을 받는 강한 임계 — 기본 0.40보다 높다(2026-11-11, 사용자 확인).</summary>
+    /// <remarks>실측(사용자 설정 경로, 흰선 실라벨 78개 · 검열 없는 흑백 원고 표본 72쪽의 발화):
+    /// 규칙 감지 53개 · 69쪽 170만 px / 전용 AI 0.40 73개 · 13쪽 19.5만 px / 0.60 71개 · 10쪽 7.5만 px / 0.75 71개 · 9쪽 6.5만 px(그중 7쪽 2.9만 px은 Aletheia 자체 검출).
+    /// 오탐 자리의 확신도가 0.56~0.82라 조금 올려서는 안 걸러진다. 표본 13쪽에 맞춘 값이니 전용 AI를 다시 학습하면 다시 잰다.</remarks>
+    internal const float WhiteBarAssistConf = 0.75f;
+
+    /// <summary>'흰색 막대만'의 보완을 전용 AI로 하는가 — 전용 AI가 설치돼 있을 때만. 없으면 예전처럼 규칙 감지기로 보완한다(색 검열은 늘 규칙 감지기).</summary>
+    internal static bool WhiteBarAssistUsesNet(string target, bool censorNetReady) => target == "WhiteBar" && censorNetReady;
 
     /// <summary>검열 마스크(255=지울 곳, DecensorMaskGrow 적용)와 종류 지도를 만든다. 검출이 없으면 둘 다 null.</summary>
     /// <param name="exclude">글자 블록 — 기존 방식 보완(CensorNet 말풍선 필터·규칙 감지기)에만 쓴다. Aletheia 검출에는 원본처럼 필터를 걸지 않는다.</param>
@@ -112,9 +122,21 @@ public sealed class AletheiaDecensor(AppSettings settings, OnnxEnv env)
         }
         else if (target is "WhiteBar" or "Color")
         {
-            var s2 = settings.ShallowClone(); s2.DecensorMaskGrow = assistGrow;
-            legacy = MosaicDetector.BuildMaskForTarget(s2, img, exclude, out _);
-            legacyNote = $" + 기존 {(target == "WhiteBar" ? "흰 막대" : "색")} 감지";
+            // 흰 막대의 보완은 전용 AI의 흰 검출로 한다 — 규칙 흰 막대 감지는 검열 없는 쪽에서도 칸 사이 여백 같은 가는 흰 조각을 수십 곳씩 잡았고,
+            // 규칙이 잡는 라벨은 전용 AI가 전부 잡는다(수치는 WhiteBarAssistConf). 전용 AI가 없는 PC에서는 예전처럼 규칙 감지기.
+            var net = new CensorNet(env);
+            if (WhiteBarAssistUsesNet(target, net.IsReady))
+            {
+                legacy = net.BuildMask(img, exclude, assistGrow, out _, bubbleFilter: settings.DecensorBubbleFilter,
+                    white: true, black: false, mosaic: false, conf: WhiteBarAssistConf);
+                legacyNote = " + 전용 AI 흰선";
+            }
+            else
+            {
+                var s2 = settings.ShallowClone(); s2.DecensorMaskGrow = assistGrow;
+                legacy = MosaicDetector.BuildMaskForTarget(s2, img, exclude, out _);
+                legacyNote = $" + 기존 {(target == "WhiteBar" ? "흰 막대" : "색")} 감지";
+            }
         }
 
         // 기본 복원에서는 **Aletheia가 찾은 자리는 Aletheia 것만** 쓴다 — 두 감지기가 같은 막대를 조금 다르게 그리므로 그대로 합치면 그 막대가

@@ -34,7 +34,8 @@ internal static class DecensorLabels
                 _ => "고, 전용 AI가 놓친 가는 흰 막대선을 보완해요.",
             }),
             "BlackBar" => "Aletheia Lens가 찾은 막대 중 검은 것만 써요.",
-            "WhiteBar" => "Aletheia Lens가 찾은 막대 중 흰 것에, 흰 막대 규칙 감지를 더해요.",
+            "WhiteBar" => censorNetInstalled ? "Aletheia Lens가 찾은 막대 중 흰 것에, 전용 AI가 찾은 가는 흰 막대선을 더해요."
+                : "Aletheia Lens가 찾은 막대 중 흰 것에, 흰 막대 규칙 감지를 더해요. (전용 AI를 설치하면 잘못 잡는 곳이 줄어요)",
             "Mosaic" => "Aletheia Lens가 찾은 모자이크만 써요.",
             _ => "Aletheia Lens가 찾은 막대 중 색 있는 것에, 색 검열 규칙 감지를 더해요.",
         };

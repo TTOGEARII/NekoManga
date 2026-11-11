@@ -68,11 +68,13 @@ public partial class SettingsWindow
             TxtCensorAi.Text = !aleDetect ? "Aletheia Lens 감지 모델이 설치되어 있지 않아요 — 검열 제거를 시작할 수 없어요"
                 : needRepair && !aleRepair ? "Aletheia Lens 복원 모델이 설치되어 있지 않아요 — '기본' 방식으로 지울 수 없어요"
                 : "Aletheia Lens 준비됨 — 막대·모자이크 감지" + (needRepair ? " + 복원" : "");
-            bool assistWanted = target == "Auto" && assist != "None";
+            bool whiteOnly = target == "WhiteBar";   // '흰색 막대만'은 보완 설정과 상관없이 전용 AI의 흰 검출을 더한다(없으면 규칙 감지)
+            bool assistWanted = whiteOnly || (target == "Auto" && assist != "None");
             RowAssistAi.Visibility = Visibility.Visible;
             DotAssistAi.Fill = !censorNet ? (assistWanted ? missing : idle) : assistWanted ? ok : idle;
-            TxtAssistAi.Text = !censorNet ? (assistWanted ? "전용 AI가 설치되어 있지 않아요 — 보완 없이 Aletheia Lens만 찾아요" : "전용 AI 미설치 (지금 설정에서는 쓰이지 않아요)")
-                : assistWanted ? "전용 AI 준비됨 — " + assist switch { "WhiteMosaic" => "흰 막대선·모자이크 보완", "All" => "흰·검·모자이크 전부 합치기", _ => "가는 흰 막대선 보완" }
+            TxtAssistAi.Text = !censorNet ? (whiteOnly ? "전용 AI가 설치되어 있지 않아요 — 흰 막대는 규칙 감지로 보완해요 (잘못 잡는 곳이 많아요)"
+                    : assistWanted ? "전용 AI가 설치되어 있지 않아요 — 보완 없이 Aletheia Lens만 찾아요" : "전용 AI 미설치 (지금 설정에서는 쓰이지 않아요)")
+                : assistWanted ? "전용 AI 준비됨 — " + (whiteOnly ? "White" : assist) switch { "WhiteMosaic" => "흰 막대선·모자이크 보완", "All" => "흰·검·모자이크 전부 합치기", _ => "가는 흰 막대선 보완" }
                 : "전용 AI 준비됨 — 지금 설정에서는 쉬어요";
             TxtCensorAiHint.Text = "Aletheia Lens는 컬러·흑백 그림의 막대와 모자이크를 찾는 공개 모델이고, 전용 AI는 이 앱용으로 직접 학습한 모델이에요. 잘못 잡힌 곳은 ③의 검토에서 지우면 돼요.";
             needInstall = !aleOk || (assistWanted && !censorNet);

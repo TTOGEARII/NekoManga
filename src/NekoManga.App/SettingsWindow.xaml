@@ -203,7 +203,7 @@
                                Click="BtnManualDetect_Click" Margin="0,12,0,0" Padding="14,6"/>
                     <StackPanel x:Name="PnlManualDetect" Visibility="Collapsed">
                     <TextBlock Style="{StaticResource HintText}" Margin="0,6,0,0"
-                               Text="아래 값들은 규칙 감지기에만 쓰여요 — 감지 엔진이 '이전 방식'이고 자동이 아닌 종류를 골랐을 때, 그리고 Aletheia Lens에서 '흰색 막대만'을 골랐을 때의 흰 막대 규칙 감지(막대 비율·크기). AI 감지에는 영향이 없어요."/>
+                               Text="아래 값들은 규칙 감지기에만 쓰여요 — 감지 엔진이 '이전 방식'이고 자동이 아닌 종류를 골랐을 때, 그리고 Aletheia Lens에서 '흰색 막대만'을 골랐는데 전용 AI가 없을 때의 흰 막대 규칙 감지(막대 비율·크기). AI 감지에는 영향이 없어요."/>
                     <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
                         <DockPanel>
                             <TextBlock Text="막대 최소 비율 (1 ~ 10)" Style="{StaticResource FieldLabel}" Width="160"/>
