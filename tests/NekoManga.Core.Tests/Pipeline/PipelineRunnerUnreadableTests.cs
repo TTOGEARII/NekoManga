@@ -1,3 +1,4 @@
+using NekoManga.Core.Decensor;
 using NekoManga.Core.Engine;
 using NekoManga.Core.Pipeline;
 using OpenCvSharp;
@@ -6,7 +7,7 @@ using static NekoManga.Core.Tests.PipelineTestHelpers;
 namespace NekoManga.Core.Tests;
 
 /// <summary>읽지 못한 파일(0바이트·깨진 원고, 깨지거나 잠긴 마스크 사이드카)이 결과를 조용히 바꾸지 않고 그 장의 실패로 멈추는지 — 검열 제거를 켠 흐름까지 돌려 본다.
-/// 모델 없이 돈다: 감지는 이전 방식(Legacy)의 규칙 감지기(검은 막대)이고, 기본 복원의 LaMa 자리에는 준비 확인(파일 있음)만 통과시키는 가짜 파일을 둔다.
+/// 모델 없이 돈다: 감지는 규칙 감지기(시험 이음새 DetectorOverride)(검은 막대)이고, 기본 복원의 LaMa 자리에는 준비 확인(파일 있음)만 통과시키는 가짜 파일을 둔다.
 /// 여기 시험들은 복원기까지 가지 않는다 — 지울 곳이 남은 장이 2차로 가면 가짜 모델을 열다 실패한다(고치기 전 코드가 그 길로 샜다).</summary>
 public class PipelineRunnerUnreadableTests
 {
@@ -19,7 +20,7 @@ public class PipelineRunnerUnreadableTests
         var s = new AppSettings
         {
             EnableTranslate = false, EnableDecensor = true, EnableAutoColor = false,
-            DecensorEngine = "Legacy", DecensorMode = "Basic", DecensorTarget = target,
+            DecensorMode = "Basic", DecensorTarget = target,
             DecensorReview = true, DecensorReviewMode = "PerPage", ReuseStoredMasks = true,
             CollectCorrections = false, OnnxGpu = "Off",
             RuntimeRoot = t.At("runtime"), OutputRoot = "",
@@ -28,7 +29,12 @@ public class PipelineRunnerUnreadableTests
         return s;
     }
 
-    /// <summary>밝은 바탕에 검은 막대 하나가 있는 원고 — 이전 방식의 검은 막대 감지기가 그 막대를 찾는다.</summary>
+    /// <summary>모델 없이 돌리는 러너 — 감지를 규칙 감지기(검은 막대)로 바꿔 끼운다. '이전 방식' 엔진(규칙 감지기 경로)이 2026-11-12 삭제돼
+    /// Aletheia 모델 없이는 감지가 안 되므로 시험 이음새 DetectorOverride를 쓴다.</summary>
+    private static PipelineRunner RuleRunner(AppSettings s) =>
+        new(s) { DetectorOverride = (img, exclude) => MosaicDetector.BuildMaskForTarget(s, img, exclude, out _) };
+
+    /// <summary>밝은 바탕에 검은 막대 하나가 있는 원고 — 규칙 검은 막대 감지기(시험 이음새)가 그 막대를 찾는다.</summary>
     private static string WriteBarPage(string path, int x = 120)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -88,7 +94,7 @@ public class PipelineRunnerUnreadableTests
         var outDir = Path.GetDirectoryName(outPath)!;
         var before = Snapshot(outDir);
 
-        using (var runner = new PipelineRunner(s))
+        using (var runner = RuleRunner(s))
         {
             var ex = await Assert.ThrowsAsync<InvalidDataException>(() => runner.RedoPageAsync(src, new ProgressLog(), CancellationToken.None));
             Assert.Contains(".mask.png", ex.Message);
@@ -112,7 +118,7 @@ public class PipelineRunnerUnreadableTests
         BreakMaskPng(outPath, "zero");
         var log = new ProgressLog();
 
-        using (var runner = new PipelineRunner(s))
+        using (var runner = RuleRunner(s))
             await runner.RedoPageAsync(src, log, CancellationToken.None);
 
         Assert.Null(log.FinalOf(src).Error);
@@ -134,7 +140,7 @@ public class PipelineRunnerUnreadableTests
         var outDir = Path.GetDirectoryName(outPath)!;
         var before = Snapshot(outDir);
 
-        using (var runner = new PipelineRunner(s))
+        using (var runner = RuleRunner(s))
         {
             var ex = await Assert.ThrowsAsync<InvalidDataException>(() => runner.RedoPageAsync(src, new ProgressLog(), CancellationToken.None));
             Assert.Equal("이미지를 읽지 못했어요: 01.pre.png", ex.Message);
@@ -165,7 +171,7 @@ public class PipelineRunnerUnreadableTests
         using (var probe = ImgIo.Read(src)) Assert.True(probe.Empty());   // 전제: 그림으로 못 읽는 원고
         var log = new ProgressLog();
 
-        using (var runner = new PipelineRunner(s))
+        using (var runner = RuleRunner(s))
         {
             runner.PageWaiting += _ => { };   // 페이지별 검토 흐름 — 대기에 들어가거나 사이드카를 남기지 않아야 한다
             await runner.RunAsync([src], log, CancellationToken.None);
@@ -189,7 +195,7 @@ public class PipelineRunnerUnreadableTests
         var before = Snapshot(vol);
         var log = new ProgressLog();
 
-        using (var runner = new PipelineRunner(s))
+        using (var runner = RuleRunner(s))
             await runner.RunAsync([src], log, CancellationToken.None);
 
         Assert.Equal("이미지를 읽지 못했어요: 01.jpg", log.FinalOf(src).Error);
@@ -233,7 +239,7 @@ public class PipelineRunnerUnreadableTests
         var b = WriteBarPage(t.At("vol1", "02.png"), x: 60);
         var outA = PipelineRunner.OutputPathFor(s, a);
         var log = new ProgressLog();
-        using var runner = new PipelineRunner(s);
+        using var runner = RuleRunner(s);
         var run = await StartTwoWaitingPagesAsync(runner, s, a, b, log);
 
         BreakMaskPng(outA, how);
@@ -258,7 +264,7 @@ public class PipelineRunnerUnreadableTests
         var b = WriteBarPage(t.At("vol1", "02.png"), x: 60);
         var outA = PipelineRunner.OutputPathFor(s, a);
         var log = new ProgressLog();
-        using var runner = new PipelineRunner(s);
+        using var runner = RuleRunner(s);
         var run = await StartTwoWaitingPagesAsync(runner, s, a, b, log);
 
         (MaskSidecar.Load(outA)! with { Skip = true }).Save(outA);
@@ -283,7 +289,7 @@ public class PipelineRunnerUnreadableTests
         var b = WriteBarPage(t.At("vol1", "02.png"), x: 60);
         var outA = PipelineRunner.OutputPathFor(s, a);
         var log = new ProgressLog();
-        using var runner = new PipelineRunner(s);
+        using var runner = RuleRunner(s);
         var run = await StartTwoWaitingPagesAsync(runner, s, a, b, log);
 
         using (new FileStream(MaskSidecar.MaskPathFor(outA), FileMode.Open, FileAccess.Read, FileShare.None))
@@ -312,7 +318,7 @@ public class PipelineRunnerUnreadableTests
         var b = WriteBarPage(t.At("vol1", "02.png"), x: 60);
         var outA = PipelineRunner.OutputPathFor(s, a);
         var log = new ProgressLog();
-        using var runner = new PipelineRunner(s);
+        using var runner = RuleRunner(s);
         var run = await StartTwoWaitingPagesAsync(runner, s, a, b, log);
 
         ClearMask(s, a);   // 첫 장도 사용자가 다 지웠다
@@ -350,7 +356,7 @@ public class PipelineRunnerUnreadableTests
         var b = WriteBarPage(t.At("vol1", "02.png"), x: 60);
         var outA = PipelineRunner.OutputPathFor(s, a);
         var log = new ProgressLog();
-        using var runner = new PipelineRunner(s);
+        using var runner = RuleRunner(s);
         var run = await StartTwoWaitingPagesAsync(runner, s, a, b, log);
 
         if (userEdit == "skip") MarkNoCensor(outA); else ClearMask(s, a);
@@ -381,7 +387,7 @@ public class PipelineRunnerUnreadableTests
         var b = WriteBarPage(t.At("vol1", "02.png"), x: 60);
         var outA = PipelineRunner.OutputPathFor(s, a);
         var log = new ProgressLog();
-        using var runner = new PipelineRunner(s);
+        using var runner = RuleRunner(s);
         var run = await StartTwoWaitingPagesAsync(runner, s, a, b, log);
 
         MarkNoCensor(outA);
@@ -414,7 +420,7 @@ public class PipelineRunnerUnreadableTests
         var b = WriteBarPage(t.At("vol1", "02.png"), x: 60);
         var outA = PipelineRunner.OutputPathFor(s, a);
         var log = new ProgressLog();
-        using var runner = new PipelineRunner(s);
+        using var runner = RuleRunner(s);
         var run = await StartTwoWaitingPagesAsync(runner, s, a, b, log);
 
         var json = MaskSidecar.JsonPathFor(outA);
@@ -479,7 +485,7 @@ public class PipelineRunnerUnreadableTests
         var outDir = Path.GetDirectoryName(outPath)!;
         var before = Snapshot(outDir);
 
-        using (var runner = new PipelineRunner(s))
+        using (var runner = RuleRunner(s))
         using (new FileStream(held, FileMode.Open, FileAccess.Read, FileShare.None))
         {
             var ex = await Assert.ThrowsAsync<IOException>(() => runner.RedoPageAsync(src, new ProgressLog(), CancellationToken.None));
@@ -499,7 +505,7 @@ public class PipelineRunnerUnreadableTests
         var src = WriteBarPage(t.At("vol1", "01.png"));
         var outPath = WriteRedoSlot(s, src, skip: true);   // '검열 없음'으로 표시한 장 — 복원기 없이 끝난다
         var log = new ProgressLog();
-        using var runner = new PipelineRunner(s);
+        using var runner = RuleRunner(s);
 
         Task redo;
         using (new FileStream(MaskSidecar.JsonPathFor(outPath), FileMode.Open, FileAccess.Read, FileShare.None))
@@ -542,7 +548,7 @@ public class PipelineRunnerUnreadableTests
 
         try
         {
-            using var runner = new PipelineRunner(s);
+            using var runner = RuleRunner(s);
             await runner.RedoPageAsync(src, progress, CancellationToken.None);   // 끝까지 잠겨 있다 — 기다렸다 다시 읽어도 못 읽는다
         }
         finally { held?.Dispose(); }
@@ -574,7 +580,7 @@ public class PipelineRunnerUnreadableTests
             release = Task.Delay(300).ContinueWith(_ => held.Dispose());   // 다시 읽기(0.7초 뒤)보다 먼저 풀린다
         });
 
-        using (var runner = new PipelineRunner(s))
+        using (var runner = RuleRunner(s))
             await runner.RedoPageAsync(src, progress, CancellationToken.None);
         await release!;
 
@@ -594,7 +600,7 @@ public class PipelineRunnerUnreadableTests
         var log = new ProgressLog();
         var progress = new OnFirstDone(log, () => File.Delete(MaskSidecar.JsonPathFor(outPath)));
 
-        using (var runner = new PipelineRunner(s))
+        using (var runner = RuleRunner(s))
             await runner.RedoPageAsync(src, progress, CancellationToken.None);
 
         Assert.Null(log.FinalOf(src).Error);
@@ -624,7 +630,7 @@ public class PipelineRunnerUnreadableTests
 
         try
         {
-            using var runner = new PipelineRunner(s);
+            using var runner = RuleRunner(s);
             await runner.RedoPageAsync(src, progress, CancellationToken.None);
             afterDone.Stop();
         }
@@ -649,7 +655,7 @@ public class PipelineRunnerUnreadableTests
         var before = Snapshot(outDir);
         var log = new ProgressLog();
 
-        using (var runner = new PipelineRunner(s))
+        using (var runner = RuleRunner(s))
         using (new FileStream(MaskSidecar.MaskPathFor(outPath), FileMode.Open, FileAccess.Read, FileShare.None))
         {
             runner.PageWaiting += _ => { };
@@ -672,7 +678,7 @@ public class PipelineRunnerUnreadableTests
         var src = WriteBarPage(t.At("vol1", "01.png"));
         var outPath = WriteRedoSlot(s, src, skip: true);   // '검열 없음'으로 표시한 장 — 저장된 마스크를 받으면 기다리지 않고 복원기 없이 끝난다
         var log = new ProgressLog();
-        using var runner = new PipelineRunner(s);
+        using var runner = RuleRunner(s);
         runner.PageWaiting += _ => { };
 
         Task run;

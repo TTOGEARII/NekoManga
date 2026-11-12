@@ -147,8 +147,9 @@ public partial class PipelineRunner
     private const int RedoPageIndex = 950;
 
     /// <summary>결과 창에서 '채색부터 다시': 보존해 둔 검열 제거 전 원고(.pre.png)와 저장된 마스크로 이 페이지의 2차(제거→채색→식자→저장)를 다시 돌린다.</summary>
-    public async Task RedoPageAsync(string file, IProgress<PageProgress> progress, CancellationToken ct, string? outPath = null)
+    public async Task RedoPageAsync(string file, IProgress<PageProgress> progress, CancellationToken ct, string? outPath = null, RedoPageOptions? options = null)
     {
+        options ??= new RedoPageOptions();
         outPath ??= OutputPathFor(file);   // 결과 창은 자기 PageRef의 OutPath를 넘긴다
         if (!string.Equals(Path.GetExtension(outPath), ".png", StringComparison.OrdinalIgnoreCase))
             outPath = Path.ChangeExtension(outPath, ".png");   // --result 모드는 보던 파일(원본 그대로 복사본 jpg)을 OutPath로 넘긴다 — 결과는 항상 png (사이드카 이름은 같다)
@@ -160,6 +161,17 @@ public partial class PipelineRunner
         // 2차가 검열 제거를 건너뛰고 검열 제거 전 원고로 결과물을 덮은 뒤 '확인됨'까지 찍는다. 검열 제거를 끈 다시 돌리기는 마스크를 쓰지 않는다
         var mask = LoadMaskWaitingOutLock(outPath);
         if (mask == null && settings.EnableDecensor && !sc.Skip) throw new InvalidDataException(StoredMaskUnreadable);
+        if (mask != null && options.Grow > 0) { var grown = Grown(mask, options.Grow); mask.Dispose(); mask = grown; }   // 결과 창의 여유(px) — 저장 마스크는 그대로 두고 지울 때만 부풀린다
+        var lsc = LetterSidecar.Load(outPath) is { } l && l.BelongsTo(file, (sc.SrcW, sc.SrcH)) ? l : null;
+        // 결과 창 [지우기](채색 없이 검열 제거·식자만): 채색된 장은 base(채색 뒤·식자 전)에서 지워야 색을 잃지 않는다. 채색 안 한 장은 pre에서 — 잘못 지운 곳도 되살아난다.
+        // 어느 쪽인지는 저장된 그림으로 가린다(LooksColorized) — 그때 채색을 켰었는지는 사이드카에 없다. 못 읽으면 pre.
+        var workPath = MaskSidecar.PrePathFor(outPath);
+        if (options.DecensorAndLetterOnly && lsc != null)
+        {
+            using var preImg = ImgIo.Read(workPath, ImreadModes.Color);
+            using var baseImg = ImgIo.Read(lsc.BasePath, ImreadModes.Color);
+            if (!preImg.Empty() && !baseImg.Empty() && LooksColorized(preImg, baseImg, mask)) workPath = lsc.BasePath;
+        }
         RunContext cx;
         try { cx = await PrepareAsync([file], progress, needTranslator: false, ct); }
         catch { mask?.Dispose(); throw; }   // 페이지가 아직 없어 아래 finally가 놓지 못한다
@@ -168,13 +180,13 @@ public partial class PipelineRunner
             OutPath = outPath,
             Stem = Path.GetFileNameWithoutExtension(outPath),
             WorkKey = $"{RedoPageIndex}_{Path.GetFileNameWithoutExtension(outPath)}",
-            WorkPath = MaskSidecar.PrePathFor(outPath),
+            WorkPath = workPath,
             Mask = mask,
             Kinds = MaskSidecar.LoadKinds(outPath),
             Skip = sc.Skip,
             StoredConfirmed = sc.Confirmed,   // 끝난 장을 다시 돌리는 것이면 이미 '확인됨'이다 — 끝에서 표시를 다시 찍지 않는다(MarkSidecarConfirmed)
             Summary = sc.Summary,
-            Blocks = LetterSidecar.Load(outPath) is { } lsc && lsc.BelongsTo(file, (sc.SrcW, sc.SrcH)) ? lsc.Blocks : [],
+            Blocks = lsc?.Blocks ?? [],
         };
         // ComfyUI 업로드 이름(nm_cl_<i> 등)은 페이지 번호로 구분된다 — 본 작업이 쓰는 0~N·수동 제거의 900번대와 겹치지 않게 950
         try { await Stage2(cx, pg, RedoPageIndex); }

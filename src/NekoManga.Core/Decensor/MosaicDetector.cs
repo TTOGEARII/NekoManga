@@ -680,7 +680,7 @@ public static class MosaicDetector
     }
 
     /// <summary>ComfyUI LoadImage용 마스크 PNG (알파 0 = 복원 영역, 255 = 보존 — ComfyUI 마스크 = 1 − 알파/255).
-    /// 엔진 LaMa(ComfyLama) 경로가 쓴다. (SDXL 인페인트용 블러·점진 링 옵션은 2026-10-19 Strong 경로와 함께 폐기.)</summary>
+    /// 재생성·커스텀 워크플로 경로가 쓴다. (SDXL 인페인트용 블러·점진 링 옵션은 2026-10-19 Strong 경로와 함께 폐기, 엔진 LaMa 경로는 2026-11-12 삭제.)</summary>
     public static byte[] ToMaskedPng(Mat img, Mat mask)
     {
         // 아래는 포인터로 직접 읽고 쓴다 — 형식·크기가 어긋나면(그림보다 작은 마스크면 버퍼 밖을 읽는다) 메모리를 망가뜨리므로 먼저 막는다

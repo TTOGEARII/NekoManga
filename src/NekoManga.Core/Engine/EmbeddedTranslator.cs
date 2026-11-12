@@ -22,7 +22,8 @@ public record TextBlockInfo(
     bool Italic = false,           // 페이지 기본(LetterItalic)에 더해 켠다
     double LineSpacing = 0,        // 줄간격 배율 — 0이면 페이지 기본(LetterLineSpacing) 따름
     string ColorOverride = "",     // 블록별 글자색 #RRGGBB (비면 전역 규칙)
-    double RotationDeg = 0);       // 글자 기울이기(회전, 도)
+    double RotationDeg = 0,        // 글자 기울이기(회전, 도)
+    bool Hidden = false);          // 결과 창 [이 블록 숨기기] — 지우지 않고 그리지만 않는다(되살릴 수 있게). 옛 json에는 없다 → false
 
 public record PageTranslation(string InpaintedPath, IReadOnlyList<TextBlockInfo> Blocks);
 

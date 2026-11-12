@@ -102,7 +102,6 @@ public class AppSettingsTests
     [InlineData(nameof(AppSettings.TranslateEngine), "null")]
     [InlineData(nameof(AppSettings.DecensorMode), "\"Strong\"")]          // 폐기된 SDXL+LoRA 모드
     [InlineData(nameof(AppSettings.DecensorMode), "\"DeepCream\"")]       // 폐기된 DeepCreamPy 모드
-    [InlineData(nameof(AppSettings.DecensorEngine), "\"Unknown\"")]
     [InlineData(nameof(AppSettings.DecensorLegacyAssist), "\"Black\"")]
     [InlineData(nameof(AppSettings.DecensorAssistRepair), "\"PConv\"")]
     [InlineData(nameof(AppSettings.OnnxGpu), "\"Maybe\"")]
@@ -127,10 +126,8 @@ public class AppSettingsTests
     [InlineData(nameof(AppSettings.TranslateEngine), "DeepL")]
     [InlineData(nameof(AppSettings.TranslateEngine), "DeepSeek")]
     [InlineData(nameof(AppSettings.TranslateEngine), "Grok")]
-    [InlineData(nameof(AppSettings.DecensorMode), "ComfyLama")]
     [InlineData(nameof(AppSettings.DecensorMode), "ComfyRegen")]
     [InlineData(nameof(AppSettings.DecensorMode), "ComfyCustom")]
-    [InlineData(nameof(AppSettings.DecensorEngine), "Legacy")]
     [InlineData(nameof(AppSettings.DecensorLegacyAssist), "WhiteMosaic")]
     [InlineData(nameof(AppSettings.DecensorLegacyAssist), "All")]
     [InlineData(nameof(AppSettings.DecensorLegacyAssist), "None")]
@@ -164,8 +161,6 @@ public class AppSettingsTests
     [InlineData(nameof(AppSettings.SelfTrainFreeze), "99", 22.0)]
     [InlineData(nameof(AppSettings.SelfTrainMinPages), "1", 5.0)]
     [InlineData(nameof(AppSettings.SelfTrainMinPages), "100000", 500.0)]
-    [InlineData(nameof(AppSettings.LamaMaskGrow), "-1", 0.0)]
-    [InlineData(nameof(AppSettings.LamaMaskBlur), "65", 64.0)]
     [InlineData(nameof(AppSettings.RegenSteps), "0", 1.0)]
     [InlineData(nameof(AppSettings.RegenSteps), "1000", 150.0)]
     [InlineData(nameof(AppSettings.RegenCfg), "-2", 0.0)]
@@ -176,11 +171,8 @@ public class AppSettingsTests
     [InlineData(nameof(AppSettings.RegenCnEnd), "1.2", 1.0)]
     [InlineData(nameof(AppSettings.RegenPreprocResolution), "100", 256.0)]
     [InlineData(nameof(AppSettings.RegenPreprocResolution), "99999", 4096.0)]
-    [InlineData(nameof(AppSettings.RegenLamaGrow), "65", 64.0)]
     [InlineData(nameof(AppSettings.RegenEdgeGrow), "500", 128.0)]
     [InlineData(nameof(AppSettings.RegenCoreBlur), "-1", 0.0)]
-    [InlineData(nameof(AppSettings.RegenMegapixels), "-1", 0.0)]          // 0 = 원본 크기
-    [InlineData(nameof(AppSettings.RegenMegapixels), "20", 8.0)]
     [InlineData(nameof(AppSettings.CnLineartStrength), "3", 2.0)]
     [InlineData(nameof(AppSettings.CnLineartEnd), "-0.5", 0.0)]           // 적용 구간은 0~1
     [InlineData(nameof(AppSettings.CnScribbleStart), "2", 1.0)]
@@ -193,6 +185,16 @@ public class AppSettingsTests
     [InlineData(nameof(AppSettings.LetterLineSpacing), "10", 3.0)]
     [InlineData(nameof(AppSettings.LetterWordSpacing), "0.1", 0.3)]
     [InlineData(nameof(AppSettings.LetterWordSpacing), "5", 2.0)]
+    [InlineData(nameof(AppSettings.RegenRegionConf), "5", 0.9)]           // 부위 감지 임계 — 재생성 영역(2026-11-12)
+    [InlineData(nameof(AppSettings.RegenRegionConf), "0", 0.01)]
+    [InlineData(nameof(AppSettings.RegenRegionPad), "-1", 0.0)]
+    [InlineData(nameof(AppSettings.RegenRegionPad), "3", 1.0)]
+    [InlineData(nameof(AppSettings.RegenRegionGrow), "99", 3.0)]
+    [InlineData(nameof(AppSettings.RegenRegionGrow), "-2", 0.0)]
+    [InlineData(nameof(AppSettings.RegenCropSize), "100", 512.0)]            // 재생성 v3 자를 크기 (2026-11-12)
+    [InlineData(nameof(AppSettings.RegenCropSize), "9999", 2048.0)]
+    [InlineData(nameof(AppSettings.RegenInpaintGrow), "-1", 0.0)]
+    [InlineData(nameof(AppSettings.RegenInpaintGrow), "99", 64.0)]
     public void Load_OutOfRangeNumber_ClampedToNearestBound(string property, string json, double expected)
     {
         using var t = new TempDir();
@@ -201,6 +203,74 @@ public class AppSettingsTests
         var s = LoadJson(t, $"{{\"{property}\": {json}}}");
 
         Assert.Equal(expected, Convert.ToDouble(Value(s, property)));
+    }
+
+
+    [Fact]
+    public void Defaults_RegenRegion_WholeRegionOnWithEvaluatedValues()
+    {
+        // 재생성·커스텀의 부위 통째 다시 그리기(2026-11-12): 라벨 원고 144쪽 평가에서 고른 값 — 임계 0.12(검은 94%·모자이크 79%), 여백 10%, 조각 확장 0.6배
+        var s = new AppSettings();
+        Assert.True(s.RegenWholeRegion);
+        Assert.Equal(0.12, s.RegenRegionConf);
+        Assert.Equal(0.10, s.RegenRegionPad);
+        Assert.Equal(0.6, s.RegenRegionGrow);
+    }
+
+
+    // ── 재생성 v3 (2026-11-12): 종류별 태그·자를 크기·인페인트 확장, 옛 한 줄 태그 이관 ──
+
+    [Fact]
+    public void Defaults_RegenV3()
+    {
+        var s = new AppSettings();
+        Assert.Equal("penis, glans", s.RegenBodyTagsMale);
+        Assert.Equal("clitoris, pussy, vulva, cum in pussy", s.RegenBodyTagsFemale);
+        Assert.Equal(1024, s.RegenCropSize);
+        Assert.Equal(8, s.RegenInpaintGrow);
+        Assert.Equal("", s.RegenBodyTags);   // 옛 칸 — 이관 뒤 비어 있다
+    }
+
+    [Fact]
+    public void Load_RemovedEngineAndComfyLamaKeys_AreIgnored()
+    {
+        // 2026-11-12 정리(사용자 선택): '이전 방식' 감지 엔진(DecensorEngine)과 엔진 LaMa 복원(ComfyLama·LamaMask*), 안 쓰던 재생성 값(RegenMegapixels·RegenLama*)을 뺐다
+        // — 옛 settings.json의 키는 무시되고, ComfyLama는 기본으로 돌아간다
+        using var t = new TempDir();
+        var s = LoadJson(t, "{\"DecensorEngine\": \"Legacy\", \"DecensorMode\": \"ComfyLama\", \"LamaMaskGrow\": 13}");
+        Assert.Equal("Basic", s.DecensorMode);
+        Assert.DoesNotContain(RuntimeTestHelpers.PersistedProperties,
+            p => p.Name is "DecensorEngine" or "LamaMaskGrow" or "LamaMaskBlur" or "RegenMegapixels" or "RegenLamaGrow" or "RegenLamaBlur");
+    }
+
+    [Fact]
+    public void Load_LegacyBodyTags_SplitIntoMaleAndFemale()
+    {
+        // v1.8.3까지의 한 줄 태그(사용자가 고쳤을 수 있다)를 penis/glans(glains 오타 포함)는 남성, 나머지는 여성으로 나눠 옮기고 옛 칸은 비운다
+        using var t = new TempDir();
+        var s = LoadJson(t, "{\"RegenBodyTags\": \"penis, glains, clitoris, pussy, vulva, cum in pussy\"}");
+        Assert.Equal("penis, glans", s.RegenBodyTagsMale);
+        Assert.Equal("clitoris, pussy, vulva, cum in pussy", s.RegenBodyTagsFemale);
+        Assert.Equal("", s.RegenBodyTags);
+    }
+
+    [Fact]
+    public void Load_LegacyBodyTags_OnlyFemaleWords_MaleKeepsDefault()
+    {
+        using var t = new TempDir();
+        var s = LoadJson(t, "{\"RegenBodyTags\": \"cum in pussy, vulva\"}");
+        Assert.Equal("penis, glans", s.RegenBodyTagsMale);
+        Assert.Equal("cum in pussy, vulva", s.RegenBodyTagsFemale);
+    }
+
+    [Fact]
+    public void Load_NewTagsPresent_LegacyIgnored()
+    {
+        // 이미 나뉜 설정에 옛 칸이 비어 있으면 아무것도 안 바꾼다
+        using var t = new TempDir();
+        var s = LoadJson(t, "{\"RegenBodyTags\": \"\", \"RegenBodyTagsMale\": \"penis\", \"RegenBodyTagsFemale\": \"pussy\"}");
+        Assert.Equal("penis", s.RegenBodyTagsMale);
+        Assert.Equal("pussy", s.RegenBodyTagsFemale);
     }
 
     [Fact]

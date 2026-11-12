@@ -35,7 +35,7 @@ public sealed class OnnxEnv(AppSettings settings) : IDisposable
     private static readonly Lazy<int> BestVramMb = new(Runtime.SystemCheck.BestAdapterVramMb);
 
     /// <summary>지금 설정에서 내장 모델을 GPU(DirectML)에 올려도 되는가 (AppSettings.OnnxGpu).
-    /// "Auto"(기본): **전용 VRAM이 6GB 이상이고 ComfyUI를 쓰지 않는 작업일 때만 GPU.** ComfyUI를 쓰는 작업(자동 채색·엔진 LaMa·재생성·커스텀)이면 CPU —
+    /// "Auto"(기본): **전용 VRAM이 6GB 이상이고 ComfyUI를 쓰지 않는 작업일 때만 GPU.** ComfyUI를 쓰는 작업(자동 채색·재생성·커스텀)이면 CPU —
     /// 내장 모델을 전부 GPU에 올리면 VRAM을 ~5GB 잡아(실측) 8GB 카드에서 SDXL과 다투다 메모리 부족이 난다.
     /// "On" = 항상 GPU(VRAM 검사 없음), "Off" = 항상 CPU. NEKO_FORCE_CPU=1이 가장 우선.</summary>
     public bool GpuAllowed
@@ -48,7 +48,7 @@ public sealed class OnnxEnv(AppSettings settings) : IDisposable
                 "On" => true,
                 "Off" => false,
                 _ => BestVramMb.Value >= AutoMinVramMb
-                     && !(settings.EnableAutoColor || (settings.EnableDecensor && settings.DecensorMode is "ComfyLama" or "ComfyRegen" or "ComfyCustom")),
+                     && !(settings.EnableAutoColor || (settings.EnableDecensor && settings.DecensorMode is "ComfyRegen" or "ComfyCustom")),
             };
         }
     }

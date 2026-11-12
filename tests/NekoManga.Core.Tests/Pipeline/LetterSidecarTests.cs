@@ -203,4 +203,39 @@ public class LetterSidecarTests
         Assert.Equal(File.ReadAllBytes(otherBase), File.ReadAllBytes(moved.BasePath));
         Assert.Null(LetterSidecar.Load(legacyOut));
     }
+
+
+    // ── 블록 숨김(Hidden) — 결과 창 [이 블록 숨기기]를 삭제 대신 플래그로 남긴다 (2026-11-11) ──
+
+    [Fact]
+    public void SaveThenLoad_HiddenBlock_RoundTrips()
+    {
+        using var t = new TempDir();
+        var src = WriteImageFile(t.At("v", "01.jpg"), seed: 1, width: 80, height: 100);
+        var outPath = t.At("v", "v_neko", "01_jpg.png");
+        var basePath = WriteImageFile(LetterSidecar.BasePathFor(outPath), seed: 2, width: 80, height: 100);
+        var blocks = new[] { Blocks[0], Blocks[1] with { Hidden = true } };
+        new LetterSidecar(src, 80, 100, basePath, [.. blocks], MaskSidecar.LengthOf(src)).Save(outPath);
+
+        var back = LetterSidecar.Load(outPath)!;
+
+        Assert.False(back.Blocks[0].Hidden);
+        Assert.True(back.Blocks[1].Hidden);
+    }
+
+    [Fact]
+    public void Load_OldJsonWithoutHidden_AllVisible()
+    {
+        // v1.8.3까지의 json에는 Hidden이 없다 — 기본 false로 읽혀 전부 보인다
+        using var t = new TempDir();
+        var outPath = t.At("v", "v_neko", "01_jpg.png");
+        var basePath = WriteImageFile(LetterSidecar.BasePathFor(outPath), seed: 2, width: 80, height: 100);
+        var json = JsonSerializer.Serialize(new LetterSidecar("x.jpg", 80, 100, basePath, [.. Blocks], 0)).Replace(",\"Hidden\":false", "");   // 옛 json 모양
+        Assert.DoesNotContain("Hidden", json);
+        File.WriteAllText(LetterSidecar.JsonPathFor(outPath), json);
+
+        var back = LetterSidecar.Load(outPath)!;
+
+        Assert.All(back.Blocks, b => Assert.False(b.Hidden));
+    }
 }

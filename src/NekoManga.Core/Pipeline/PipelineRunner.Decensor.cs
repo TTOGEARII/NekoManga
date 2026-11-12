@@ -6,7 +6,7 @@ using System.Text.Json.Nodes;
 
 namespace NekoManga.Core.Pipeline;
 
-// 검열 감지와 복원 — 마스크 감지, 결과 창의 수동 복원, ComfyUI 엔진 복원(커스텀 워크플로·재생성·엔진 LaMa)
+// 검열 감지와 복원 — 마스크 감지, 결과 창의 수동 복원, ComfyUI 엔진 복원(커스텀 워크플로·재생성)
 public partial class PipelineRunner
 {
     /// <summary>검열 마스크만 필요할 때 (진단·검토 창 미리보기) — 종류 지도는 버린다.</summary>
@@ -17,12 +17,12 @@ public partial class PipelineRunner
         return mask;
     }
 
-    /// <summary>검열 마스크 + 종류 지도. 기본 엔진은 Aletheia Lens(막대·모자이크)에 기존 방식의 흰선 감지를 더한 것(AletheiaDecensor.Detect),
-    /// DecensorEngine="Legacy"면 교체 전 경로 — AI 전용 모델(CensorNet) 1순위, 규칙 기반 폴백(종류 지도 없음).</summary>
+    /// <summary>검열 마스크 + 종류 지도 — Aletheia Lens(막대·모자이크)에 기존 방식의 흰선 보완을 더한 것(AletheiaDecensor.Detect).
+    /// 시험용 DetectorOverride가 있으면 그것이 감지한다(종류 지도 없음). ('이전 방식' CensorNet 1순위·규칙 폴백 경로는 2026-11-12 삭제.)</summary>
     public Mat? DetectCensorMask(Mat img, IReadOnlyList<Rect>? exclude, out string kindUsed, out Mat? kinds, bool autoBubbles = false) =>
-        DetectCensor(img, exclude, out kindUsed, out kinds, autoBubbles, UseAletheia);
+        DetectCensor(img, exclude, out kindUsed, out kinds, autoBubbles);
 
-    private Mat? DetectCensor(Mat img, IReadOnlyList<Rect>? exclude, out string kindUsed, out Mat? kinds, bool autoBubbles, bool aletheia)
+    private Mat? DetectCensor(Mat img, IReadOnlyList<Rect>? exclude, out string kindUsed, out Mat? kinds, bool autoBubbles)
     {
         kinds = null;
         // 말풍선 오탐(실측 Confusion 12·21쪽: 흰 말풍선을 흰 검열로 봄)은 BuildMask의 텍스트 블록 필터가 걸러 주는데, 번역을 끄면
@@ -41,28 +41,22 @@ public partial class PipelineRunner
                 catch { /* 글자 감지 실패는 치명적이지 않다 — 필터 없이 진행 */ }
             }
         }
-        if (aletheia) return Aletheia.Detect(img, exclude, out kindUsed, out kinds);
-
-        var net = new CensorNet(_onnx);
-        if (settings.DecensorTarget == "Auto" && net.IsReady)
-        {
-            // AI 모델이 있으면 AI가 유일한 판정자 — '없음'도 판정이다.
-            // 규칙 기반으로 폴백하면 모델이 안 속는 장식 줄무늬 오탐이 도로 살아난다 (실측 22p).
-            var aiMask = net.BuildMask(img, exclude, settings.DecensorMaskGrow, out kindUsed, bubbleFilter: settings.DecensorBubbleFilter);
-            if (aiMask == null) kindUsed += " → 검열 없음";
-            return aiMask;
-        }
-        return MosaicDetector.BuildMaskForTarget(settings, img, exclude, out kindUsed);
+        if (DetectorOverride != null) { kindUsed = "시험용 감지기"; return DetectorOverride(img, exclude); }
+        return Aletheia.Detect(img, exclude, out kindUsed, out kinds);
     }
 
     /// <summary>결과 보기 창에서 사용자가 손으로 고른 영역을 지운다 (자동 감지가 놓친 검열용).
     /// 파이프라인과 같은 복원 경로를 쓰므로 결과물의 성격이 일관된다.
-    /// mode: "Basic" | "ComfyLama" | "ComfyRegen" (옛 "Strong"·"DeepCream"은 2026-10-19 폐기 — 모르는 값은 ArgumentException).</summary>
+    /// mode: "Basic" | "ComfyRegen" | "ComfyCustom" (옛 "Strong"·"DeepCream"은 2026-10-19, "ComfyLama"는 2026-11-12 폐기 — 모르는 값은 ArgumentException).</summary>
     /// <param name="regenSettings">재생성(ComfyRegen)에서만 쓰는 설정 — 결과 창이 '이 페이지만' 프롬프트·수치를 바꾼 사본(null이면 전역 설정).</param>
     /// <param name="kinds">기본(Basic)에서만 쓰는 종류 지도 — 없으면 손으로 칠한 자리로 보고 전부 막대 모델로 지운다(Aletheia 수동 복원과 같다).</param>
     public async Task ManualDecensorAsync(Mat img, Mat mask, string mode,
         IProgress<string>? status, CancellationToken ct, AppSettings? regenSettings = null, Mat? kinds = null)
     {
+        // 커스텀은 검열 조각이 덮은 부위 전체(합집합 마스크 하나)를, 재생성 v3는 영역 계획(영역마다 자르기·종류별 태그)을 쓴다 — 파이프라인 Stage2와 같은 규칙
+        using var wideMask = mode == "ComfyCustom" ? RegenMaskFor(img, mask, new BodyPartDetector(_onnx), regenSettings) : null;
+        var plan = mode == "ComfyRegen" ? RegenPlanFor(img, mask, new BodyPartDetector(_onnx), regenSettings) : null;
+        if (wideMask != null) mask = wideMask;
         switch (mode)
         {
             case "ComfyCustom":
@@ -83,43 +77,60 @@ public partial class PipelineRunner
                 var client = new ComfyClient(_server.BaseUrl);
                 var outDir = Path.Combine(settings.ComfyRoot, "ComfyUI", "output");
                 status?.Report("검열 자리 재생성 중 (SDXL)...");
-                await ComfyRegenDecensorAsync(client, outDir, img, mask, 901, ct, regenSettings);
+                try { await ComfyRegenDecensorAsync(client, outDir, img, plan!, 901, ct, regenSettings, status); }
+                finally { foreach (var rg in plan!) rg.Dispose(); }
                 return;
             }
             case "Basic":
             {
-                var lama = new LamaInpainter(_onnx);
-                if (UseAletheia)
-                {
-                    if (!Aletheia.InpainterReady) throw new InvalidOperationException(AletheiaDecensor.InpainterMissing);
-                    status?.Report("복원 중...");
-                    Aletheia.Repair(img, mask, kinds, lama);
-                    return;
-                }
-                if (!lama.IsReady)
-                    throw new InvalidOperationException("복원 모델(LaMa)이 없어요 — 설정 → 구성요소에서 설치해 주세요.");
+                var lama = new LamaInpainter(_onnx);   // 보완으로 찾은 자리(CensorKind.Legacy)만 LaMa로
+                if (!Aletheia.InpainterReady) throw new InvalidOperationException(AletheiaDecensor.InpainterMissing);
                 status?.Report("복원 중...");
-                using var m = mask.Clone(); // LaMa 내부 FindContours가 마스크를 파괴한다
-                lama.Inpaint(img, m);
-                return;
-            }
-            case "ComfyLama":
-            {
-                await _server.EnsureRunningAsync(status, ct);
-                var client = new ComfyClient(_server.BaseUrl);
-                var outDir = Path.Combine(settings.ComfyRoot, "ComfyUI", "output");
-                status?.Report("엔진 LaMa로 복원 중...");
-                // 페이지 번호는 파일 이름 충돌만 피하면 되므로 손수정 전용 번호를 쓴다
-                await ComfyLamaDecensorAsync(client, outDir, img, mask, 900, ct);
+                Aletheia.Repair(img, mask, kinds, lama);
                 return;
             }
             default:
-                throw new ArgumentException($"알 수 없는 복원 방식: {mode} (Basic | ComfyLama | ComfyRegen | ComfyCustom)", nameof(mode));
+                throw new ArgumentException($"알 수 없는 복원 방식: {mode} (Basic | ComfyRegen | ComfyCustom)", nameof(mode));
         }
     }
 
     /// <summary>커스텀 워크플로 검열제거 — 사용자가 ComfyUI 화면에서 짠 API JSON(CustomWorkflow 규약)에 마스크 PNG(알파=마스크)를 넣어 돌리고,
     /// 결과를 마스크 둘레 CustomDecensorReach px 안쪽만(0이면 전체) 원본에 되돌린다. 워크플로 내용은 앱이 손대지 않는다.</summary>
+    /// <summary>재생성·커스텀이 다시 그릴 마스크 — 설정(또는 결과 창의 페이지 설정 사본 <paramref name="s"/>)의 '부위 통째 다시 그리기'가 꺼져 있으면 사본 그대로.
+    /// 켜져 있으면 부위 감지기(penis/pussy, 임계 RegenRegionConf)가 찾은 상자 중 검열 조각과 겹치는 것을 여백만큼 넓혀 합치고, 검출이 없는 조각은 배율로 넓힌다
+    /// (<see cref="RegenRegion.Build"/>). 감지기가 없거나(모델 미설치) null이면 전부 확장 경로 — 기능은 돌아간다. 돌려주는 Mat은 호출자가 해제한다.</summary>
+    public Mat RegenMaskFor(Mat img, Mat mask, BodyPartDetector? detector, AppSettings? s = null)
+    {
+        s ??= settings;
+        if (!s.RegenWholeRegion) return mask.Clone();
+        IReadOnlyList<Rect> parts = detector is { IsReady: true }
+            ? detector.Detect(img, (float)s.RegenRegionConf).Where(p => p.Cls is BodyPartDetector.ClsPenis or BodyPartDetector.ClsPussy).Select(p => p.Box).ToList()
+            : [];
+        return RegenRegion.Build(mask, parts, s.RegenRegionPad, s.RegenRegionGrow);
+    }
+
+    /// <summary>재생성 v3의 영역 계획 — 검열 조각마다 (넓힌 영역, 지우기 마스크, 부위 종류). 설정이 꺼져 있으면 영역 = 조각 그대로(Unknown).
+    /// 감지기가 없거나 모델이 없으면 확장 경로(Unknown). 창이 겹치는 영역은 RegenRegion.BuildRegions가 합친다. 호출자가 Dispose.</summary>
+    internal List<RegenRegionInfo> RegenPlanFor(Mat img, Mat censorMask, BodyPartDetector? detector, AppSettings? s = null)
+    {
+        s ??= settings;
+        IReadOnlyList<BodyPart> parts = s.RegenWholeRegion && detector is { IsReady: true }
+            ? detector.Detect(img, (float)s.RegenRegionConf).Where(p => p.Cls is BodyPartDetector.ClsPenis or BodyPartDetector.ClsPussy).ToList()
+            : [];
+        return RegenRegion.BuildRegions(censorMask, parts, s.RegenRegionPad, s.RegenWholeRegion ? s.RegenRegionGrow : 0, img.Size(), s.RegenCropSize);
+    }
+
+    /// <summary>부위 상자(penis/pussy, 그림 좌표)만 — 결과 창 미리보기의 **페이지별 검출 캐시**용. 모델이 없으면 빈 목록.
+    /// 미리보기는 그림 사본으로 이것을 한 번 돌려 두고, 마스크를 칠할 때마다 <see cref="RegenRegion.Build"/>(순수 함수)만 다시 한다 —
+    /// 창의 그림을 백그라운드에서 빌려 쓰다 해제되는 사고(검수 Critical)를 피하고 획마다 YOLO를 돌리지 않는다.</summary>
+    public IReadOnlyList<Rect> DetectBodyParts(Mat img, AppSettings? s = null)
+    {
+        s ??= settings;
+        var detector = new BodyPartDetector(_onnx);
+        if (!detector.IsReady) return [];
+        return detector.Detect(img, (float)s.RegenRegionConf).Where(p => p.Cls is BodyPartDetector.ClsPenis or BodyPartDetector.ClsPussy).Select(p => p.Box).ToList();
+    }
+
     private async Task ComfyCustomDecensorAsync(ComfyClient client, string comfyOutputDir, JsonObject workflow,
         Mat img, Mat mask, int pageIdx, CancellationToken ct)
     {
@@ -165,53 +176,39 @@ public partial class PipelineRunner
             throw new FileNotFoundException($"재생성 ControlNet이 없어요: {cn}\n설정 → 검열 제거 → 고급 옵션의 '재생성 ControlNet'을 ComfyUI models\\controlnet 안의 파일 이름으로 맞춰 주세요.");
     }
 
-    /// <summary>재생성 검열제거 — 사용자가 ComfyUI에서 직접 짠 워크플로(2026-10-20, WorkflowBuilder.BuildRegenDecensor)로
-    /// 페이지 전체를 보내 LaMa 1차 복원 → SDXL img2img(denoise 0.62, 선화 ControlNet) → 마스크 둘레만 합성해 받는다.
-    /// 되가져올 때는 워크플로의 엣지 마스크(확장+블러)가 닿는 범위까지만 받아들이고 나머지 픽셀은 원본 그대로 둔다
-    /// (VAE 왕복은 마스크 밖도 미세하게 바꾸지만 워크플로가 LaMa 결과 위에 합성하므로 밖은 LaMa 결과=원본이다).</summary>
+    /// <summary>재생성 v3 검열제거(2026-11-12) — 영역(RegenPlanFor)마다 그 주변을 잘라(RegenCrop.WindowFor, 기본 1024) 두 PNG(알파=영역 / 알파=조각)를 올리고
+    /// SDXL 두 단계 그래프(WorkflowBuilder.BuildRegenCrop, LaMa 없음)를 돌린 뒤, 결과를 창 크기로 되돌려 영역을 reach만큼 넓힌 범위 안쪽만 창 자리에 복사한다.
+    /// 종류별 태그(RegenTags.For)는 영역의 부위 종류(penis/pussy 검출)로 고른다. 영역은 순서대로 돈다(ComfyUI 큐 하나).</summary>
     private async Task ComfyRegenDecensorAsync(ComfyClient client, string comfyOutputDir,
-        Mat img, Mat mask, int pageIdx, CancellationToken ct, AppSettings? regenSettings = null)
+        Mat img, IReadOnlyList<RegenRegionInfo> regions, int pageIdx, CancellationToken ct, AppSettings? regenSettings = null, IProgress<string>? status = null)
     {
-        var rs = regenSettings ?? settings;   // 결과 창의 '이 페이지만' 프롬프트·수치 (마스크 확장값은 전역과 같아 되가져오는 범위도 그대로)
-        var maskedPng = MosaicDetector.ToMaskedPng(img, mask);
-        var up = await client.UploadImageAsync(maskedPng, $"nm_regen_{pageIdx}.png", ct);
-        var pid = await client.QueuePromptAsync(
-            WorkflowBuilder.BuildRegenDecensor(rs, up, $"nm_regenout_{pageIdx}"), ct);
-        var r = await client.WaitAsync(pid, comfyOutputDir, TimeSpan.FromMinutes(20), ct);
-        if (r.OutputFiles.Count == 0)
-            throw new InvalidOperationException("재생성 결과 파일이 없어요.");
-
-        using var outImg = ImgIo.Read(r.OutputFiles[^1], ImreadModes.Color);
-        if (outImg.Empty()) throw new InvalidDataException("재생성 결과를 읽지 못했어요.");
-        using var resized = outImg.Width == img.Width && outImg.Height == img.Height
-            ? outImg.Clone()
-            : outImg.Resize(new OpenCvSharp.Size(img.Width, img.Height), 0, 0, InterpolationFlags.Lanczos4);
-        // 엣지 마스크(확장+블러)가 닿는 범위 + 여유 2px 안쪽만 받아들인다
-        int reach = Math.Max(settings.RegenEdgeGrow + settings.RegenEdgeBlur, settings.RegenCoreGrow + settings.RegenCoreBlur) + 2;
-        using var take = new Mat();
-        Cv2.Dilate(mask, take, Cv2.GetStructuringElement(MorphShapes.Ellipse, new OpenCvSharp.Size(reach * 2 + 1, reach * 2 + 1)));
-        resized.CopyTo(img, take);
-    }
-
-    /// <summary>엔진 LaMa 검열제거 — 사용자의 원본 ComfyUI 파이프라인(LayerUtility: LaMa, GPU,
-    /// 확장 8·블러 8) 그대로. 전체 이미지를 통째로 보내므로 ROI 분할이 필요 없다.</summary>
-    private async Task ComfyLamaDecensorAsync(ComfyClient client, string comfyOutputDir,
-        Mat img, Mat mask, int pageIdx, CancellationToken ct)
-    {
-        var maskedPng = MosaicDetector.ToMaskedPng(img, mask);
-        var up = await client.UploadImageAsync(maskedPng, $"nm_lama_{pageIdx}.png", ct);
-        var pid = await client.QueuePromptAsync(
-            WorkflowBuilder.BuildLamaDecensor(settings, up, $"nm_lamaout_{pageIdx}"), ct);
-        var r = await client.WaitAsync(pid, comfyOutputDir, TimeSpan.FromMinutes(10), ct);
-        if (r.OutputFiles.Count == 0)
-            throw new InvalidOperationException("엔진 LaMa 결과 파일이 없어요.");
-
-        using var outImg = ImgIo.Read(r.OutputFiles[^1], ImreadModes.Color);
-        if (outImg.Empty()) throw new InvalidDataException("엔진 LaMa 결과를 읽지 못했어요.");
-        using var resized = outImg.Width == img.Width && outImg.Height == img.Height
-            ? outImg.Clone()
-            : outImg.Resize(new OpenCvSharp.Size(img.Width, img.Height));
-        // 마스크 영역만 받아들인다 — 나머지 픽셀은 원본 그대로 보존
-        resized.CopyTo(img, mask);
+        var rs = regenSettings ?? settings;
+        int reach = Math.Max(rs.RegenEdgeGrow + rs.RegenEdgeBlur, rs.RegenCoreGrow + rs.RegenCoreBlur) + 2;
+        for (int k = 0; k < regions.Count; k++)
+        {
+            ct.ThrowIfCancellationRequested();
+            var region = regions[k];
+            status?.Report($"재생성 중 ({k + 1}/{regions.Count})");
+            var w = RegenCrop.WindowFor(region.Bounds, img.Size(), rs.RegenCropSize);
+            var (crop, cropRegion, cropErase) = RegenCrop.CropAndScale(img, region.Region, region.Erase, w);
+            using (crop) using (cropRegion) using (cropErase)
+            {
+                var up = await client.UploadImageAsync(MosaicDetector.ToMaskedPng(crop, cropRegion), $"nm_regen_{pageIdx}_{k}.png", ct);
+                var eraseUp = await client.UploadImageAsync(MosaicDetector.ToMaskedPng(crop, cropErase), $"nm_regenmask_{pageIdx}_{k}.png", ct);
+                var graph = WorkflowBuilder.BuildRegenCrop(rs, up, eraseUp, $"nm_regenout_{pageIdx}_{k}", RegenTags.For(region.Kind, rs), w.SendW, w.SendH);
+                var pid = await client.QueuePromptAsync(graph, ct);
+                var r = await client.WaitAsync(pid, comfyOutputDir, TimeSpan.FromMinutes(20), ct);
+                if (r.OutputFiles.Count == 0) throw new InvalidOperationException("재생성 결과 파일이 없어요.");
+                using var outImg = ImgIo.Read(r.OutputFiles[^1], ImreadModes.Color);
+                if (outImg.Empty()) throw new InvalidDataException("재생성 결과를 읽지 못했어요.");
+                using var back = outImg.Size() == w.Window.Size ? outImg.Clone() : outImg.Resize(w.Window.Size, 0, 0, InterpolationFlags.Lanczos4);
+                // 영역(+엣지가 닿는 범위)만 창 자리에 — 나머지 픽셀은 원본 그대로
+                using var regionRoi = new Mat(region.Region, w.Window);
+                using var take = new Mat();
+                Cv2.Dilate(regionRoi, take, Cv2.GetStructuringElement(MorphShapes.Ellipse, new OpenCvSharp.Size(reach * 2 + 1, reach * 2 + 1)));
+                using var dst = new Mat(img, w.Window);
+                back.CopyTo(dst, take);
+            }
+        }
     }
 }

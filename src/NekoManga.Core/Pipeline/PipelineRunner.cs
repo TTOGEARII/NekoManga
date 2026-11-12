@@ -13,20 +13,22 @@ public record PageProgress(string File, string Stage, double Percent, bool Done 
 /// <summary>페이지 처리 파이프라인.
 ///
 ///   원고 → [번역: 내장 엔진이 글자 감지→OCR→번역→글자 지움]
-///        → [검열제거: 검열 감지(Aletheia Lens + 기존 흰선 보완) → 기본(Aletheia DeepCreamPy, 기존 흰선은 LaMa) / 엔진 LaMa·재생성·커스텀(ComfyUI)]
+///        → [검열제거: 검열 감지(Aletheia Lens + 기존 흰선 보완) → 기본(Aletheia DeepCreamPy, 기존 흰선은 LaMa) / 재생성·커스텀(ComfyUI)]
 ///        → [자동채색: ComfyUI SDXL]
 ///        → [식자: 번역문을 C#으로 렌더]
 ///        → 완성본
 ///
-/// 번역·기본 검열제거는 전부 프로세스 안(ONNX)에서 돌고, 채색·엔진 LaMa만 ComfyUI가 필요하다.
-/// 검열 감지·기본 복원은 2026-11-09에 Aletheia Lens 이식(AletheiaDecensor)으로 교체 — 옛 경로(CensorNet/규칙 + LaMa)는
-/// settings.json의 DecensorEngine="Legacy"로 남아 있다.</summary>
+/// 번역·기본 검열제거는 전부 프로세스 안(ONNX)에서 돌고, 채색·재생성·커스텀 검열제거만 ComfyUI가 필요하다.
+/// 검열 감지·기본 복원은 2026-11-09에 Aletheia Lens 이식(AletheiaDecensor)으로 교체했고, 옛 경로('이전 방식' 엔진 = CensorNet/규칙 + LaMa)는
+/// 2026-11-12 사용자 선택으로 삭제 — CensorNet·규칙 감지기는 Aletheia의 보완(흰 막대·색 검열)으로만 남는다.</summary>
 public partial class PipelineRunner(AppSettings settings) : IDisposable
 {
     private readonly OnnxEnv _onnx = new(settings);
     private AletheiaDecensor? _aletheia;
     private AletheiaDecensor Aletheia => _aletheia ??= new AletheiaDecensor(settings, _onnx);
-    private bool UseAletheia => settings.DecensorEngine != "Legacy";
+    /// <summary>시험용 — 모델 없이 파이프라인을 돌릴 때 감지기를 바꿔 끼운다(규칙 감지기 등). 있으면 준비 단계의 Aletheia 모델 확인도 건너뛴다.
+    /// ('이전 방식' 엔진이 있을 때는 그 규칙 감지기가 이 역할을 했다.)</summary>
+    internal Func<Mat, IReadOnlyList<Rect>?, Mat?>? DetectorOverride { get; set; }
     private string? _refImageName;   // IPAdapter용으로 업로드한 표지 (서버에 없으면 null)
     private readonly ComfyServer _server = new(settings);
 
@@ -39,10 +41,9 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         public required IProgress<PageProgress> Progress;
         public EmbeddedTranslator? Translator;
         public required LamaInpainter Lama;
-        public bool ComfyLama, ComfyRegen, ComfyCustom;
-        /// <summary>이번 실행의 감지·기본 복원 엔진(Aletheia / 이전 방식) — 시작할 때 박제한다. 실행 중에 설정 창에서 엔진을 바꿔도
-        /// 준비 단계에서 확인하지 않은 모델을 찾다 남은 장이 전부 실패하거나, 한 엔진의 마스크를 다른 엔진이 지우는 일이 없게.</summary>
-        public bool Aletheia;
+        public bool ComfyRegen, ComfyCustom;
+        /// <summary>재생성·커스텀의 '부위 통째 다시 그리기'용 부위 감지기 — 그 모드이고 설정이 켜져 있을 때만. 모델이 없으면(IsReady false) 확장 경로만.</summary>
+        public BodyPartDetector? BodyParts;
         public JsonObject? CustomDecensor, CustomColor;
         public ComfyClient? Client;
         public string ComfyOutputDir = "";
@@ -120,24 +121,23 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         var translator = needTranslator ? new EmbeddedTranslator(settings, _onnx) : null;
         var lama = new LamaInpainter(_onnx);
 
-        bool comfyLama = settings.EnableDecensor && settings.DecensorMode == "ComfyLama";
         bool comfyRegen = settings.EnableDecensor && settings.DecensorMode == "ComfyRegen";
         bool comfyCustom = settings.EnableDecensor && settings.DecensorMode == "ComfyCustom";
         bool colorCustom = settings.EnableAutoColor && !string.IsNullOrWhiteSpace(settings.ColorCustomWorkflow);
-        bool needComfy = settings.EnableAutoColor || comfyLama || comfyRegen || comfyCustom;
+        bool needComfy = settings.EnableAutoColor || comfyRegen || comfyCustom;
 
         if (translator is { IsReady: false })
             throw new FileNotFoundException("번역 엔진 모델이 아직 설치되지 않았어요 — 설정 → 구성요소에서 받아주세요.");
-        if (settings.EnableDecensor && !comfyLama && !comfyRegen && !comfyCustom && !lama.IsReady)
+        if (settings.EnableDecensor && !comfyRegen && !comfyCustom && !lama.IsReady)
             throw new FileNotFoundException("검열제거(기본) 모델(LaMa)이 아직 설치되지 않았어요 — 설정 → 구성요소에서 받아주세요.");
-        if (settings.EnableDecensor && UseAletheia)
+        if (settings.EnableDecensor && DetectorOverride == null)
         {
             if (!Aletheia.DetectorReady) throw new FileNotFoundException(AletheiaDecensor.DetectorMissing);
-            if (!comfyLama && !comfyRegen && !comfyCustom && !Aletheia.InpainterReady) throw new FileNotFoundException(AletheiaDecensor.InpainterMissing);
+            if (!comfyRegen && !comfyCustom && !Aletheia.InpainterReady) throw new FileNotFoundException(AletheiaDecensor.InpainterMissing);
         }
         if (needComfy && !settings.ComfyAvailable)
             throw new FileNotFoundException(
-                (settings.EnableAutoColor ? "자동 채색" : comfyRegen ? "재생성 검열제거" : comfyCustom ? "커스텀 워크플로 검열제거" : "엔진 LaMa 검열제거") +
+                (settings.EnableAutoColor ? "자동 채색" : comfyRegen ? "재생성 검열제거" : "커스텀 워크플로 검열제거") +
                 " 기능은 ComfyUI가 필요해요 — 설정 → 구성요소에서 ComfyUI를 설치해 주세요.");
         if (comfyRegen) CheckRegenModels();
 
@@ -146,8 +146,8 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
             Progress = progress,
             Translator = translator,
             Lama = lama,
-            ComfyLama = comfyLama, ComfyRegen = comfyRegen, ComfyCustom = comfyCustom,
-            Aletheia = UseAletheia,
+            ComfyRegen = comfyRegen, ComfyCustom = comfyCustom,
+            BodyParts = (comfyRegen || comfyCustom) && settings.RegenWholeRegion ? new BodyPartDetector(_onnx) : null,
             // 커스텀 워크플로 파일은 시작 전에 한 번 읽어 규약(LoadImage/SaveImage)을 검사한다 — 페이지마다 같은 오류로 실패하지 않게
             CustomDecensor = comfyCustom ? CustomWorkflow.Load(settings.CustomDecensorWorkflow) : null,
             CustomColor = colorCustom ? CustomWorkflow.Load(settings.ColorCustomWorkflow) : null,
@@ -259,7 +259,7 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
             new Rect(b.X1, b.Y1, Math.Max(1, b.X2 - b.X1), Math.Max(1, b.Y2 - b.Y1))).ToList();
         // 검열 추적: AI 모델(합성 학습 전용 모델)이 있으면 그게 1순위 — 흰/검/모자이크를 한 번에 찾는다. 없거나 못 찾으면 규칙 기반으로 폴백.
         // autoBubbles는 말풍선 필터를 켠 경우에만 — 필터가 꺼져 있으면 글자 감지는 검/모자이크의 글자 상자 빼기에만 쓰여 비용 대비 효과가 작다
-        var mask = DetectCensor(img, exclude, out var kindUsed, out var kinds, autoBubbles: settings.DecensorBubbleFilter, aletheia: cx.Aletheia);
+        var mask = DetectCensor(img, exclude, out var kindUsed, out var kinds, autoBubbles: settings.DecensorBubbleFilter);
         pg.Kinds = kinds;
         pg.Summary = kindUsed;
         if (settings.DecensorTarget == "Auto")
@@ -280,6 +280,9 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
     {
         var name = pg.File; var file = pg.File; var work = pg.WorkPath; var blocks = pg.Blocks;
         var progress = cx.Progress;
+        // 취소는 단계 경계에서 — 결과 창 [취소]. 돌기 시작한 ONNX 추론은 끊지 않는다(ct를 RunOptions에 넣지 않았다).
+        // 결과물·base·식자 json은 이 메서드 끝에서만 쓰므로 여기서 멈추면 지난 결과가 그대로 남는다(2026-11-11 테스트 RedoPageAsync_AlreadyCancelled…).
+        cx.Ct.ThrowIfCancellationRequested();
         if (settings.EnableDecensor && pg.Mask != null && !pg.Skip && Cv2.CountNonZero(pg.Mask) > 0)
         {
             using var img = ImgIo.Read(work, ImreadModes.Color);
@@ -292,35 +295,37 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
             }
             if (cx.ComfyCustom)
             {
+                // 부위 통째 다시 그리기(2026-11-12): 검열 조각이 덮은 부위 전체로 마스크를 넓힌다(합집합 하나 — 커스텀 규약은 LoadImage 알파 하나). 저장 마스크(pg.Mask)는 그대로
+                var wide = RegenMaskFor(img, mask, cx.BodyParts);
+                if (!ReferenceEquals(mask, pg.Mask)) mask.Dispose();
+                mask = wide;
                 progress.Report(new(name, "검열 지우는 중 (커스텀 워크플로·GPU)", 50));
                 await ComfyCustomDecensorAsync(cx.Client!, cx.ComfyOutputDir, cx.CustomDecensor!, img, mask, i, cx.Ct);
             }
             else if (cx.ComfyRegen)
             {
-                progress.Report(new(name, "검열 자리 재생성 중 (SDXL·GPU)", 50));
-                await ComfyRegenDecensorAsync(cx.Client!, cx.ComfyOutputDir, img, mask, i, cx.Ct);
-            }
-            else if (cx.ComfyLama)
-            {
-                progress.Report(new(name, "검열 지우는 중 (엔진 LaMa·GPU)", 50));
-                await ComfyLamaDecensorAsync(cx.Client!, cx.ComfyOutputDir, img, mask, i, cx.Ct);
-            }
-            else if (cx.Aletheia)
-            {
-                progress.Report(new(name, "검열 지우는 중 (기본·Aletheia)", 50));
-                var kindsMap = pg.Kinds;
-                await Task.Run(() => Aletheia.Repair(img, mask, kindsMap, cx.Lama), cx.Ct);
+                // 재생성 v3: 영역마다 잘라 SDXL 두 단계(RegenPlanFor → ComfyRegenDecensorAsync). 저장 마스크는 그대로
+                var plan = RegenPlanFor(img, mask, cx.BodyParts);
+                try
+                {
+                    var stage = new Progress<string>(m => progress.Report(new(name, "검열 자리 " + m + " (SDXL·GPU)", 50)));
+                    progress.Report(new(name, $"검열 자리 재생성 중 (SDXL·GPU, 영역 {plan.Count})", 50));
+                    await ComfyRegenDecensorAsync(cx.Client!, cx.ComfyOutputDir, img, plan, i, cx.Ct, status: stage);
+                }
+                finally { foreach (var rg in plan) rg.Dispose(); }
             }
             else
             {
-                progress.Report(new(name, "검열 지우는 중 (기본·LaMa)", 50));
-                await Task.Run(() => cx.Lama.Inpaint(img, mask), cx.Ct);
+                progress.Report(new(name, "검열 지우는 중 (기본·Aletheia)", 50));
+                var kindsMap = pg.Kinds;
+                await Task.Run(() => Aletheia.Repair(img, mask, kindsMap, cx.Lama), cx.Ct);   // 보완으로 찾은 자리(CensorKind.Legacy)는 LaMa로
             }
             if (!ReferenceEquals(mask, pg.Mask)) mask.Dispose();
             work = Path.Combine(cx.WorkDir, pg.WorkKey + ".decensored.png");   // 한 작업 폴더를 모든 장이 쓴다 — 1화\001.jpg·2화\001.jpg가 서로 덮지 않게 순번 포함 키
             Directory.CreateDirectory(cx.WorkDir);
             ImgIo.Write(work, img);
         }
+        cx.Ct.ThrowIfCancellationRequested();   // 검열 제거 뒤 (기본 모델은 ct를 모르고 끝까지 돈다 — 여기서 잡는다)
 
         // ── 자동채색 (ComfyUI) ──
         if (settings.EnableAutoColor && cx.Client != null)
@@ -336,6 +341,7 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
                 throw new InvalidOperationException("채색 결과 파일이 없어요.");
             work = r.OutputFiles[^1];
         }
+        cx.Ct.ThrowIfCancellationRequested();   // 채색 뒤·식자 전 — 결과물을 쓰기 전의 마지막 경계
 
         // ── 식자(번역문 렌더) 및 최종 저장 ──
         var outPath = pg.OutPath;   // 작업 시작 때 정한 경로 — 다시 계산하지 않는다 (1차의 마스크 사이드카와 같은 이름이어야 한다)

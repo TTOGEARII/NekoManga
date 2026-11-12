@@ -64,6 +64,21 @@ public class ComponentCatalogTests
                    c => Assert.Equal(32, Convert.FromHexString(c.Sha256!).Length));
     }
 
+
+    [Fact]
+    public void All_ContainsBodyParts_AsComfyOptionalWithSha()
+    {
+        // 부위 감지 모델(2026-11-12): 재생성·커스텀 전용 선택 구성요소 — 내장 엔진 필수 목록에는 없고, 남의 저장소(HF) 파일이라 해시로 확인한다
+        var c = ComponentCatalog.ModelBodyParts;
+        Assert.Contains(c, ComponentCatalog.All);
+        Assert.True(c.ForComfy);
+        Assert.DoesNotContain(c, ComponentCatalog.EngineComponents);
+        Assert.Equal(64, c.Sha256!.Length);
+        Assert.Equal(c.Target, c.Probe);
+        Assert.Equal("models/bodyparts.onnx", c.Target);
+        Assert.Equal(ComponentKind.File, c.Kind);
+    }
+
     [Fact]
     public void Obsolete_NeverDeletesAnotherComponentsFile()
     {

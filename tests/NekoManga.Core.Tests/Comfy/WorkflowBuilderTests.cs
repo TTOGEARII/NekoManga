@@ -202,109 +202,116 @@ public class WorkflowBuilderTests
         Assert.Equal("nm_color_3", Str(Inputs(save)["filename_prefix"]));
     }
 
-    // ───────── 엔진 LaMa 검열 제거 ─────────
-
-    [Fact]
-    public void BuildLamaDecensor_UploadAlphaIsMaskAndSettingsSetGrowAndBlur()
-    {
-        var g = WorkflowBuilder.BuildLamaDecensor(new AppSettings { LamaMaskGrow = 13, LamaMaskBlur = 3 }, "nm_lama_2.png", "nm_lamaout_2");
-
-        var (loadId, load) = Only(g, "LoadImage");
-        Assert.Equal("nm_lama_2.png", Str(Inputs(load)["image"]));
-        // 업로드 PNG의 알파가 마스크다 — LoadImage의 두 번째 출력(MASK)을 뒤집지 않고 LaMa에 준다
-        var (lamaId, lama) = Only(g, "LayerUtility: LaMa");
-        var l = Inputs(lama);
-        Assert.Equal((loadId, 0), LinkOf(l["image"]));
-        Assert.Equal((loadId, 1), LinkOf(l["mask"]));
-        Assert.False(Bool(l["invert_mask"]));
-        Assert.Equal(13, Num(l["mask_grow"]));
-        Assert.Equal(3, Num(l["mask_blur"]));
-        var (_, save) = Only(g, "SaveImage");
-        Assert.Equal((lamaId, 0), LinkOf(Inputs(save)["images"]));
-        Assert.Equal("nm_lamaout_2", Str(Inputs(save)["filename_prefix"]));
-    }
-
     // ───────── 재생성 검열 제거 ─────────
 
-    [Fact]
-    public void BuildRegenDecensor_WithoutScaling_FeedsUploadedImageAndMaskDirectly()
-    {
-        var g = WorkflowBuilder.BuildRegenDecensor(new AppSettings { RegenSeed = 1, RegenMegapixels = 0 }, "nm_regen_0.png", "out");
+    // ───────── 재생성 v3 그래프 (2026-11-12): 영역 자르기 입력, SDXL 두 단계, LaMa 없음 ─────────
 
-        // 0이면 원본 해상도 그대로(사용자 워크플로) — 축소·마스크 변환 노드가 없다
-        Assert.Empty(OfType(g, "ImageScaleToTotalPixels"));
-        Assert.Empty(OfType(g, "MaskToImage"));
-        Assert.Empty(OfType(g, "ImageToMask"));
-        var (loadId, load) = Only(g, "LoadImage");
-        Assert.Equal("nm_regen_0.png", Str(Inputs(load)["image"]));
-        // LaMa는 업로드한 그림을, 마스크 3종은 업로드 PNG의 알파(LoadImage 두 번째 출력)를 바로 쓴다
-        Assert.Equal((loadId, 0), LinkOf(Inputs(Only(g, "LayerUtility: LaMa").Node)["image"]));
-        var grows = OfType(g, "LayerMask: MaskGrow");
-        Assert.Equal(3, grows.Count);
-        Assert.All(grows, m => Assert.Equal((loadId, 1), LinkOf(Inputs(m.Node)["mask"])));
+    private static void AssertMaskGrow(JsonObject node, int grow, int blur)
+    {
+        Assert.Equal("LayerMask: MaskGrow", ClassType(node));
+        Assert.Equal(grow, Num(Inputs(node)["grow"]));
+        Assert.Equal(blur, Num(Inputs(node)["blur"]));
+    }
+
+    private static JsonObject Crop(AppSettings? s = null, string tags = "penis, glans", int w = 1024, int h = 1024) =>
+        WorkflowBuilder.BuildRegenCrop(s ?? new AppSettings { RegenSeed = 1 }, "nm_regen_0_0.png", "nm_regenmask_0_0.png", "out", tags, w, h);
+
+    [Fact]
+    public void BuildRegenCrop_HasNoLamaNode_AndTwoLoadImages()
+    {
+        var g = Crop();
+        Assert.Empty(OfType(g, "LayerUtility: LaMa"));
+        Assert.Empty(OfType(g, "ImageScaleToTotalPixels"));   // 자르기는 호출자가 — 그래프에서 축소하지 않는다
+        var loads = OfType(g, "LoadImage");
+        Assert.Equal(2, loads.Count);
+        Assert.Contains(loads, l => Str(Inputs(l.Node)["image"]) == "nm_regen_0_0.png");
+        Assert.Contains(loads, l => Str(Inputs(l.Node)["image"]) == "nm_regenmask_0_0.png");
     }
 
     [Fact]
-    public void BuildRegenDecensor_WithScaling_ShrinksImageAndMaskToTheSameSize()
+    public void BuildRegenCrop_TwoPasses_InpaintPieceThenRefineRegion()
     {
-        var g = WorkflowBuilder.BuildRegenDecensor(new AppSettings { RegenSeed = 1, RegenMegapixels = 1.5 }, "nm_regen_0.png", "out");
-        var (loadId, _) = Only(g, "LoadImage");
-
-        // 그림: 업로드 → 설정한 메가픽셀로 축소 → LaMa
-        var imageScale = Source(g, Inputs(Only(g, "LayerUtility: LaMa").Node)["image"]);
-        Assert.Equal("ImageScaleToTotalPixels", ClassType(imageScale));
-        Assert.Equal((loadId, 0), LinkOf(Inputs(imageScale)["image"]));
-        Assert.Equal(1.5, Num(Inputs(imageScale)["megapixels"]));
-
-        // 마스크: 업로드 알파 → 이미지로 → 그림과 같은 조건으로 축소 → 다시 마스크 → 마스크 3종 모두
-        var grows = OfType(g, "LayerMask: MaskGrow");
-        Assert.Equal(3, grows.Count);
-        var toMaskLink = LinkOf(Inputs(grows[0].Node)["mask"]);
-        Assert.Equal(0, toMaskLink.Slot);
-        Assert.All(grows, m => Assert.Equal(toMaskLink, LinkOf(Inputs(m.Node)["mask"])));
-        var toMask = Source(g, Inputs(grows[0].Node)["mask"]);
-        Assert.Equal("ImageToMask", ClassType(toMask));
-        var maskScale = Source(g, Inputs(toMask)["image"]);
-        Assert.Equal("ImageScaleToTotalPixels", ClassType(maskScale));
-        Assert.Equal(Num(Inputs(imageScale)["megapixels"]), Num(Inputs(maskScale)["megapixels"]));
-        Assert.Equal(Num(Inputs(imageScale)["resolution_steps"]), Num(Inputs(maskScale)["resolution_steps"]));
-        var maskToImage = Source(g, Inputs(maskScale)["image"]);
-        Assert.Equal("MaskToImage", ClassType(maskToImage));
-        Assert.Equal((loadId, 1), LinkOf(Inputs(maskToImage)["mask"]));
+        var s = new AppSettings { RegenSeed = 7, RegenDenoise = 0.62, RegenInpaintGrow = 8 };
+        var g = Crop(s);
+        var region = Assert.Single(OfType(g, "LoadImage"), l => Str(Inputs(l.Node)["image"]) == "nm_regen_0_0.png");
+        var erase = Assert.Single(OfType(g, "LoadImage"), l => Str(Inputs(l.Node)["image"]) == "nm_regenmask_0_0.png");
+        var samplers = OfType(g, "KSampler");
+        Assert.Equal(2, samplers.Count);
+        // 1단계: 디노이즈 1.0, 잠재 ← SetLatentNoiseMask(마스크 ← 지우기 마스크의 MaskGrow(RegenInpaintGrow))
+        var pass1 = Assert.Single(samplers, k => Num(Inputs(k.Node)["denoise"]) == 1.0);
+        var noise1 = Source(g, Inputs(pass1.Node)["latent_image"]);
+        Assert.Equal("SetLatentNoiseMask", ClassType(noise1));
+        var grow1 = Source(g, Inputs(noise1)["mask"]);
+        AssertMaskGrow(grow1, 8, 2);
+        Assert.Equal((erase.Id, 1), LinkOf(Inputs(grow1)["mask"]));
+        Assert.Equal((region.Id, 0), LinkOf(Inputs(Source(g, Inputs(noise1)["samples"]))["pixels"]));   // 잠재는 원고에서
+        Assert.Equal(7, Num(Inputs(pass1.Node)["seed"]));
+        // 2단계: 디노이즈 설정값, 노이즈 마스크 ← 영역(원고 알파)의 MaskGrow(0, 4), 잠재 ← 1단계 합성 결과, 시드+1
+        var pass2 = Assert.Single(samplers, k => Num(Inputs(k.Node)["denoise"]) == 0.62);
+        var noise2 = Source(g, Inputs(pass2.Node)["latent_image"]);
+        Assert.Equal("SetLatentNoiseMask", ClassType(noise2));
+        var grow2 = Source(g, Inputs(noise2)["mask"]);
+        AssertMaskGrow(grow2, 0, 4);
+        Assert.Equal((region.Id, 1), LinkOf(Inputs(grow2)["mask"]));
+        var stage1 = Source(g, Inputs(Source(g, Inputs(noise2)["samples"]))["pixels"]);
+        Assert.Equal("ImageCompositeMasked", ClassType(stage1));
+        Assert.Equal((region.Id, 0), LinkOf(Inputs(stage1)["destination"]));       // 원고 위에
+        Assert.Equal("VAEDecode", ClassType(Source(g, Inputs(stage1)["source"])));  // 1단계 결과를
+        Assert.Equal(8, Num(Inputs(pass2.Node)["seed"]));
     }
 
     [Fact]
-    public void BuildRegenDecensor_MaskGrowSettings_ReachLamaEdgeAndCoreSteps()
+    public void BuildRegenCrop_Stage1ControlImage_BlacksOutThePiece()
     {
-        var s = new AppSettings
-        {
-            RegenSeed = 1,
-            RegenLamaGrow = 11, RegenLamaBlur = 12, RegenEdgeGrow = 21, RegenEdgeBlur = 22, RegenCoreGrow = 31, RegenCoreBlur = 32,
-        };
-        var g = WorkflowBuilder.BuildRegenDecensor(s, "in.png", "out");
+        var g = Crop(w: 1000, h: 800);
+        var erase = Assert.Single(OfType(g, "LoadImage"), l => Str(Inputs(l.Node)["image"]) == "nm_regenmask_0_0.png");
+        var applies = OfType(g, "ControlNetApplyAdvanced");
+        Assert.Equal(2, applies.Count);
+        // 1단계 선화 = 원고 선화 위에 검은 EmptyImage를 지우기 마스크로 덮은 것 — 막대 테두리를 선으로 읽지 않게
+        var blackout = Assert.Single(applies, a => ClassType(Source(g, Inputs(a.Node)["image"])) == "ImageCompositeMasked").Node;
+        var comp = Source(g, Inputs(blackout)["image"]);
+        var empty = Source(g, Inputs(comp)["source"]);
+        Assert.Equal("EmptyImage", ClassType(empty));
+        Assert.Equal((1000, 800, 0), ((int)Num(Inputs(empty)["width"]), (int)Num(Inputs(empty)["height"]), (int)Num(Inputs(empty)["color"])));
+        Assert.Equal((erase.Id, 1), LinkOf(Inputs(Source(g, Inputs(comp)["mask"]))["mask"]));
+        var lineart1 = Source(g, Inputs(comp)["destination"]);
+        Assert.Equal("AIO_Preprocessor", ClassType(lineart1));
+        Assert.Equal("LoadImage", ClassType(Source(g, Inputs(lineart1)["image"])));   // 원고에서
+    }
 
-        // LaMa 1차 복원은 LaMa용 마스크로
-        var (lamaId, lama) = Only(g, "LayerUtility: LaMa");
-        AssertMaskGrow(Source(g, Inputs(lama)["mask"]), 11, 12);
-        // 합성 1단: LaMa 결과 위에 생성 결과를 엣지 마스크로
-        var composites = OfType(g, "ImageCompositeMasked");
-        Assert.Equal(2, composites.Count);
-        var edge = Assert.Single(composites, c => LinkOf(Inputs(c.Node)["destination"]).Id == lamaId);
-        AssertMaskGrow(Source(g, Inputs(edge.Node)["mask"]), 21, 22);
-        // 합성 2단: 1단 결과 위에 코어 마스크로 — 이것이 저장된다
-        var core = Assert.Single(composites, c => LinkOf(Inputs(c.Node)["destination"]).Id == edge.Id);
-        AssertMaskGrow(Source(g, Inputs(core.Node)["mask"]), 31, 32);
-        Assert.Equal((core.Id, 0), LinkOf(Inputs(Only(g, "SaveImage").Node)["images"]));
-        // 두 합성 모두 같은 생성 결과(VAEDecode)를 얹는다
-        Assert.All(composites, c => Assert.Equal("VAEDecode", ClassType(Source(g, Inputs(c.Node)["source"]))));
+    [Fact]
+    public void BuildRegenCrop_Stage2_LineartFromStage1()
+    {
+        var g = Crop();
+        var applies = OfType(g, "ControlNetApplyAdvanced");
+        var second = Assert.Single(applies, a => ClassType(Source(g, Inputs(a.Node)["image"])) == "AIO_Preprocessor").Node;
+        var lineart2 = Source(g, Inputs(second)["image"]);
+        Assert.Equal("ImageCompositeMasked", ClassType(Source(g, Inputs(lineart2)["image"])));   // 1단계 합성 결과에서 선화를 다시 뽑는다
+    }
 
-        static void AssertMaskGrow(JsonObject maskGrow, int grow, int blur)
-        {
-            Assert.Equal("LayerMask: MaskGrow", ClassType(maskGrow));
-            Assert.Equal(grow, Num(Inputs(maskGrow)["grow"]));
-            Assert.Equal(blur, Num(Inputs(maskGrow)["blur"]));
-            Assert.False(Bool(Inputs(maskGrow)["invert_mask"]));
-        }
+    [Fact]
+    public void BuildRegenCrop_Composites_UseRegionEdgeAndCore_AndSave()
+    {
+        var s = new AppSettings { RegenSeed = 1, RegenEdgeGrow = 21, RegenEdgeBlur = 22, RegenCoreGrow = 31, RegenCoreBlur = 32 };
+        var g = Crop(s);
+        var region = Assert.Single(OfType(g, "LoadImage"), l => Str(Inputs(l.Node)["image"]) == "nm_regen_0_0.png");
+        var (saveId, save) = Only(g, "SaveImage");
+        var core = Source(g, Inputs(save)["images"]);
+        Assert.Equal("ImageCompositeMasked", ClassType(core));
+        AssertMaskGrow(Source(g, Inputs(core)["mask"]), 31, 32);
+        Assert.Equal((region.Id, 1), LinkOf(Inputs(Source(g, Inputs(core)["mask"]))["mask"]));
+        var edge = Source(g, Inputs(core)["destination"]);
+        AssertMaskGrow(Source(g, Inputs(edge)["mask"]), 21, 22);
+        Assert.Equal("out", Str(Inputs(save)["filename_prefix"]));
+    }
+
+    [Theory]
+    [InlineData("masterpiece, manga,", "penis, glans", "masterpiece, manga, penis, glans")]
+    [InlineData("masterpiece, manga", "", "masterpiece, manga")]
+    public void BuildRegenCrop_Prompt_IsPromptThenGivenTags(string prompt, string tags, string expected)
+    {
+        var g = Crop(new AppSettings { RegenSeed = 1, RegenPrompt = prompt }, tags);
+        Assert.All(OfType(g, "ControlNetApplyAdvanced"), a => Assert.Equal(expected, Str(Inputs(Source(g, Inputs(a.Node)["positive"]))["text"])));
     }
 
     [Theory]
@@ -313,24 +320,21 @@ public class WorkflowBuilderTests
     [InlineData("xinsir-UNION-sdxl-1.0.safetensors", true)]
     [InlineData("mistoLine_rank256.safetensors", false)]
     [InlineData("control-lora-canny-rank256.safetensors", false)]
-    public void BuildRegenDecensor_ControlNetName_AddsUnionLineartTypeOnlyForUnionModels(string controlNet, bool union)
+    public void BuildRegenCrop_ControlNetName_AddsUnionLineartTypeOnlyForUnionModels(string controlNet, bool union)
     {
-        var g = WorkflowBuilder.BuildRegenDecensor(new AppSettings { RegenSeed = 1, RegenControlNet = controlNet }, "in.png", "out");
-
+        var g = Crop(new AppSettings { RegenSeed = 1, RegenControlNet = controlNet });
         var (loaderId, loader) = Only(g, "ControlNetLoader");
         Assert.Equal(controlNet, Str(Inputs(loader)["control_net_name"]));
-        // union(promax) 모델은 어떤 힌트인지 알려 줘야 선화로 쓴다 — 이름에 union·promax가 들면(대소문자 무관) 타입 노드를 끼운다
-        var cn = Source(g, Inputs(Only(g, "ControlNetApplyAdvanced").Node)["control_net"]);
-        Assert.Equal(union ? "SetUnionControlNetType" : "ControlNetLoader", ClassType(cn));
-        if (union)
+        Assert.All(OfType(g, "ControlNetApplyAdvanced"), a =>
         {
-            Assert.Equal("canny/lineart/anime_lineart/mlsd", Str(Inputs(cn)["type"]));
-            Assert.Equal((loaderId, 0), LinkOf(Inputs(cn)["control_net"]));
-        }
+            var cn = Source(g, Inputs(a.Node)["control_net"]);
+            Assert.Equal(union ? "SetUnionControlNetType" : "ControlNetLoader", ClassType(cn));
+            if (union) Assert.Equal((loaderId, 0), LinkOf(Inputs(cn)["control_net"]));
+        });
     }
 
     [Fact]
-    public void BuildRegenDecensor_SamplerAndControlNetSettings_ReachTheirNodes()
+    public void BuildRegenCrop_SamplerAndControlNetSettings_ReachBothPasses()
     {
         var s = new AppSettings
         {
@@ -338,49 +342,19 @@ public class WorkflowBuilderTests
             RegenSteps = 30, RegenCfg = 4.5, RegenSampler = "euler", RegenScheduler = "simple", RegenDenoise = 0.5, RegenSeed = 0,
             RegenCnStrength = 0.6, RegenCnEnd = 0.7, RegenPreprocResolution = 1024,
         };
-        var g = WorkflowBuilder.BuildRegenDecensor(s, "in.png", "out");
-
-        var k = Inputs(Only(g, "KSampler").Node);
-        Assert.Equal(30, Num(k["steps"]));
-        Assert.Equal(4.5, Num(k["cfg"]));
-        Assert.Equal("euler", Str(k["sampler_name"]));
-        Assert.Equal("simple", Str(k["scheduler"]));
-        Assert.Equal(0.5, Num(k["denoise"]));
-        Assert.Equal(0, Num(k["seed"]));   // 0도 고정 시드다
-        Assert.Equal("waiNSFW v14.safetensors", Str(Inputs(Source(g, k["model"]))["ckpt_name"]));
-        // img2img의 잠재는 LaMa 1차 복원 결과에서
-        var encode = Source(g, k["latent_image"]);
-        Assert.Equal("VAEEncode", ClassType(encode));
-        Assert.Equal("LayerUtility: LaMa", ClassType(Source(g, Inputs(encode)["pixels"])));
-
-        // ControlNet: 강도·끝 지점은 설정, 시작은 0. KSampler는 그 positive·negative 두 출력을 받는다
-        var (applyId, _) = LinkOf(k["positive"]);
-        Assert.Equal((applyId, 1), LinkOf(k["negative"]));
-        var apply = Inputs(Assert.IsType<JsonObject>(g[applyId]));
-        Assert.Equal(0.6, Num(apply["strength"]));
-        Assert.Equal(0.0, Num(apply["start_percent"]));
-        Assert.Equal(0.7, Num(apply["end_percent"]));
-        Assert.Equal("text, watermark", Str(Inputs(Source(g, apply["negative"]))["text"]));
-        // 선화 힌트는 LaMa 결과에서 Manga2Anime 전처리로, 설정한 해상도로 뽑는다
-        var hint = Source(g, apply["image"]);
-        Assert.Equal("AIO_Preprocessor", ClassType(hint));
-        Assert.Equal("Manga2Anime_LineArt_Preprocessor", Str(Inputs(hint)["preprocessor"]));
-        Assert.Equal(1024, Num(Inputs(hint)["resolution"]));
-        Assert.Equal("LayerUtility: LaMa", ClassType(Source(g, Inputs(hint)["image"])));
-    }
-
-    [Theory]
-    [InlineData("masterpiece, manga,", "  detailed skin  ", "masterpiece, manga, detailed skin")]
-    [InlineData("masterpiece, manga", "   ", "masterpiece, manga")]
-    [InlineData("", "detailed skin", "detailed skin")]
-    public void BuildRegenDecensor_PositivePrompt_IsPromptThenBodyTagsSkippingBlanks(string prompt, string bodyTags, string expected)
-    {
-        var s = new AppSettings { RegenSeed = 1, RegenPrompt = prompt, RegenBodyTags = bodyTags };
-        var g = WorkflowBuilder.BuildRegenDecensor(s, "in.png", "out");
-
-        // 신체부위 태그는 기본 프롬프트 뒤에 ", "로 붙는다 — 빈 칸은 빼고, 끝에 남은 쉼표는 지운다
-        var apply = Inputs(Only(g, "ControlNetApplyAdvanced").Node);
-        Assert.Equal(expected, Str(Inputs(Source(g, apply["positive"]))["text"]));
+        var g = Crop(s);
+        foreach (var k in OfType(g, "KSampler").Select(x => Inputs(x.Node)))
+        {
+            Assert.Equal(30, Num(k["steps"])); Assert.Equal(4.5, Num(k["cfg"]));
+            Assert.Equal("euler", Str(k["sampler_name"])); Assert.Equal("simple", Str(k["scheduler"]));
+            Assert.Equal("waiNSFW v14.safetensors", Str(Inputs(Source(g, k["model"]))["ckpt_name"]));
+        }
+        foreach (var a in OfType(g, "ControlNetApplyAdvanced").Select(x => Inputs(x.Node)))
+        {
+            Assert.Equal(0.6, Num(a["strength"])); Assert.Equal(0.0, Num(a["start_percent"])); Assert.Equal(0.7, Num(a["end_percent"]));
+            Assert.Equal("text, watermark", Str(Inputs(Source(g, a["negative"]))["text"]));
+        }
+        Assert.All(OfType(g, "AIO_Preprocessor"), p => { Assert.Equal("Manga2Anime_LineArt_Preprocessor", Str(Inputs(p.Node)["preprocessor"])); Assert.Equal(1024, Num(Inputs(p.Node)["resolution"])); });
     }
 
     // ───────── 태그 추출 ─────────
@@ -416,20 +390,17 @@ public class WorkflowBuilderTests
         var s = new AppSettings { ColorSeed = seed, RegenSeed = seed };
         var g = builder == "autocolor"
             ? WorkflowBuilder.BuildAutoColor(s, "in.png", "out")
-            : WorkflowBuilder.BuildRegenDecensor(s, "in.png", "out");
+            : WorkflowBuilder.BuildRegenCrop(s, "in.png", "erase.png", "out", "", 1024, 1024);
 
-        // 음수는 '매번 무작위'라는 설정일 뿐이다 — ComfyUI KSampler는 음수 시드를 받지 않으므로 그래프에는 0 이상의 정수가 실려야 한다
-        var sent = Inputs(Only(g, "KSampler").Node)["seed"]!.GetValue<long>();
-        Assert.True(sent >= 0, $"보낸 시드 {sent}");
+        // 음수는 '매번 무작위'라는 설정일 뿐이다 — ComfyUI KSampler는 음수 시드를 받지 않으므로 그래프에는 0 이상의 정수가 실려야 한다 (재생성은 두 단계 모두)
+        Assert.All(OfType(g, "KSampler"), k => Assert.True(Inputs(k.Node)["seed"]!.GetValue<long>() >= 0));
     }
 
     [Theory]
     [InlineData("autocolor")]
     [InlineData("autocolor-with-reference")]
     [InlineData("autocolor-without-blend")]
-    [InlineData("lama")]
     [InlineData("regen")]
-    [InlineData("regen-scaled")]
     [InlineData("regen-plain-controlnet")]
     [InlineData("tag-extract")]
     public void Builders_EveryLinkHitsAnExistingNodeAndEveryNodeFeedsAnOutput(string variant)
@@ -463,11 +434,9 @@ public class WorkflowBuilderTests
         "autocolor" => WorkflowBuilder.BuildAutoColor(new AppSettings { ColorSeed = 1 }, "in.png", "nm_out"),
         "autocolor-with-reference" => WorkflowBuilder.BuildAutoColor(new AppSettings { ColorSeed = 1 }, "in.png", "nm_out", "ref.png"),
         "autocolor-without-blend" => WorkflowBuilder.BuildAutoColor(new AppSettings { ColorSeed = 1, ColorLineartOpacity = 0 }, "in.png", "nm_out"),
-        "lama" => WorkflowBuilder.BuildLamaDecensor(new AppSettings(), "in.png", "nm_out"),
-        "regen" => WorkflowBuilder.BuildRegenDecensor(new AppSettings { RegenSeed = 1 }, "in.png", "nm_out"),
-        "regen-scaled" => WorkflowBuilder.BuildRegenDecensor(new AppSettings { RegenSeed = 1, RegenMegapixels = 1.5 }, "in.png", "nm_out"),
-        "regen-plain-controlnet" => WorkflowBuilder.BuildRegenDecensor(
-            new AppSettings { RegenSeed = 1, RegenControlNet = "mistoLine_rank256.safetensors" }, "in.png", "nm_out"),
+        "regen" => WorkflowBuilder.BuildRegenCrop(new AppSettings { RegenSeed = 1 }, "in.png", "erase.png", "nm_out", "penis, glans", 1024, 1024),
+        "regen-plain-controlnet" => WorkflowBuilder.BuildRegenCrop(
+            new AppSettings { RegenSeed = 1, RegenControlNet = "mistoLine_rank256.safetensors" }, "in.png", "erase.png", "nm_out", "penis, glans", 1024, 1024),
         "tag-extract" => WorkflowBuilder.BuildTagExtract(new AppSettings(), "in.png"),
         _ => throw new ArgumentOutOfRangeException(nameof(variant), variant, null),
     };

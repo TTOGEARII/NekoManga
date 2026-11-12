@@ -818,6 +818,28 @@ public class TextRendererTests
         Cv2.InRange(img, lower, upper, m);
         return Cv2.CountNonZero(m);
     }
+
+
+    // ── 숨긴 블록(Hidden)은 그리지 않는다 (2026-11-11) ──
+
+    [Fact]
+    public void RenderBlocks_HiddenBlock_DrawsNothingThere()
+    {
+        using var t = new TempDir();
+        using var page = SolidPage(400, 300, 255);
+        var img = t.At("p.png"); Assert.True(ImgIo.Write(img, page));
+        var shown = Manual(20, 20, 180, 120, "보이는 글");
+        var hidden = Manual(220, 150, 380, 280, "숨긴 글") with { Hidden = true };
+
+        var outA = t.At("a.png"); TextRenderer.RenderBlocks(img, img, [shown, hidden], outA, Arial());
+        var outB = t.At("b.png"); TextRenderer.RenderBlocks(img, img, [shown], outB, Arial());
+
+        using var a = ImgIo.Read(outA); using var b = ImgIo.Read(outB);
+        PipelineTestHelpers.AssertSamePixels(b, a);   // 숨긴 블록이 있어도 없을 때와 픽셀이 같다
+        var layouts = TextRenderer.PlanLayout(page, [shown, hidden], 1, 1, Arial());
+        Assert.True(layouts[0].Size > 0);
+        Assert.Equal(0, layouts[1].Size);
+    }
 }
 
 /// <summary>현재 폴더를 바꾸는 식자 테스트 — 프로세스 전체가 같이 쓰는 상태라 다른 테스트와 동시에 돌리지 않는다.</summary>

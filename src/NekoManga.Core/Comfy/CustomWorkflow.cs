@@ -12,7 +12,7 @@ namespace NekoManga.Core.Comfy;
 ///
 /// 규약(둘만 지키면 된다):
 ///  · LoadImage 노드 하나 = 앱이 넣어 주는 입력. 여러 개면 제목(_meta.title)에 "neko"나 "입력"이 든 것, 없으면 첫 번째.
-///    검열제거용이면 알파 채널이 마스크다(ComfyUI LoadImage 규약, 기존 엔진 LaMa·재생성과 동일).
+///    검열제거용이면 알파 채널이 마스크다(ComfyUI LoadImage 규약, 재생성과 동일).
 ///  · SaveImage 노드 하나 = 앱이 받아 오는 출력. 여러 개면 제목에 "neko"나 "출력"이 든 것, 없으면 첫 번째. 나머지 SaveImage는
 ///    PreviewImage로 바꿔 결과 파일이 섞이지 않게 한다.
 /// 그 밖의 노드·값(모델·프롬프트·시드·샘플러…)은 파일에 적힌 그대로 보낸다 — 앱은 건드리지 않는다.</summary>

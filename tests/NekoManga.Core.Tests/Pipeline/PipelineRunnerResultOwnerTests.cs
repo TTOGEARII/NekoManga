@@ -1,3 +1,4 @@
+using NekoManga.Core.Decensor;
 using NekoManga.Core.Engine;
 using NekoManga.Core.Pipeline;
 using OpenCvSharp;
@@ -13,7 +14,7 @@ public class PipelineRunnerResultOwnerTests
     private static async Task<ProgressLog> RunAsync(AppSettings s, params string[] files)
     {
         var log = new ProgressLog();
-        using var runner = new PipelineRunner(s);
+        using var runner = RuleRunner(s);
         await runner.RunAsync(files, log, CancellationToken.None);
         return log;
     }
@@ -56,13 +57,13 @@ public class PipelineRunnerResultOwnerTests
 
     private const int BarW = 400, BarH = 300;
 
-    /// <summary>검열 제거를 켠 페이지별 검토 흐름(이전 방식의 규칙 감지기 — 모델 없이 돈다) — 1차와 2차 사이에 끼어들어야 하는 시험용. 복원기까지 가지 않게 쓴다.</summary>
+    /// <summary>검열 제거를 켠 페이지별 검토 흐름(규칙 감지기(시험 이음새 DetectorOverride) — 모델 없이 돈다) — 1차와 2차 사이에 끼어들어야 하는 시험용. 복원기까지 가지 않게 쓴다.</summary>
     private static AppSettings BarPageSettings(TempDir t, string outputRoot)
     {
         var s = new AppSettings
         {
             EnableTranslate = false, EnableDecensor = true, EnableAutoColor = false,
-            DecensorEngine = "Legacy", DecensorMode = "Basic", DecensorTarget = "BlackBar",
+            DecensorMode = "Basic", DecensorTarget = "BlackBar",
             DecensorReview = true, DecensorReviewMode = "PerPage", ReuseStoredMasks = true,
             CollectCorrections = false, OnnxGpu = "Off",
             RuntimeRoot = t.At("runtime"), OutputRoot = outputRoot,
@@ -70,6 +71,11 @@ public class PipelineRunnerResultOwnerTests
         WriteBytesFile(Path.Combine(s.RuntimeRoot, "models", LamaInpainter.ActiveModelFile), 64);
         return s;
     }
+
+    /// <summary>모델 없이 돌리는 러너 — 감지를 규칙 감지기(검은 막대)로 바꿔 끼운다. '이전 방식' 엔진(규칙 감지기 경로)이 2026-11-12 삭제돼
+    /// Aletheia 모델 없이는 감지가 안 되므로 시험 이음새 DetectorOverride를 쓴다.</summary>
+    private static PipelineRunner RuleRunner(AppSettings s) =>
+        new(s) { DetectorOverride = (img, exclude) => MosaicDetector.BuildMaskForTarget(s, img, exclude, out _) };
 
     /// <summary>밝은 바탕에 검은 막대 하나가 있는 원고 — 규칙 감지기가 그 막대를 찾아 '검토 대기'에 들어간다.</summary>
     private static string WriteBarPage(string path, int x)
@@ -525,7 +531,7 @@ public class PipelineRunnerResultOwnerTests
         ResultOwner.Write(outPath, a);   // A의 결과물은 없고 기록만 남은 자리
         var log = new ProgressLog();
         bool? recordLeftAfterSlotCheck = null;
-        using var runner = new PipelineRunner(s);
+        using var runner = RuleRunner(s);
         runner.PageWaiting += pg =>
         {
             recordLeftAfterSlotCheck = File.Exists(record);
@@ -737,7 +743,7 @@ public class PipelineRunnerResultOwnerTests
         Directory.CreateDirectory(outPath);   // 결과 png 자리를 폴더가 막고 있다
         var log = new ProgressLog();
 
-        using (var runner = new PipelineRunner(s))
+        using (var runner = RuleRunner(s))
             await Assert.ThrowsAnyAsync<Exception>(() => runner.RedoPageAsync(src, log, CancellationToken.None));
 
         Assert.Equal(before, ResultOwner.Load(outPath));
@@ -755,7 +761,7 @@ public class PipelineRunnerResultOwnerTests
         using (var mask = RectMask(60, 40, new Rect(5, 5, 10, 10)))
         using (var pre = ColorImage(60, 40, seed: 4))
             MaskSidecar.Write(outPath, a, mask, null, pre, "감지", skip: false, edited: true, confirmed: false);
-        using (var runner = new PipelineRunner(s))
+        using (var runner = RuleRunner(s))
             await runner.RedoPageAsync(a, new ProgressLog(), CancellationToken.None);
         var outDir = Path.GetDirectoryName(outPath)!;
         foreach (var f in new[] { MaskSidecar.JsonPathFor(outPath), MaskSidecar.MaskPathFor(outPath), MaskSidecar.PrePathFor(outPath) }) File.Delete(f);
@@ -795,7 +801,7 @@ public class PipelineRunnerResultOwnerTests
         Assert.False(File.Exists(ResultOwner.PathFor(outPath)));
         var log = new ProgressLog();
 
-        using (var runner = new PipelineRunner(s))
+        using (var runner = RuleRunner(s))
             await runner.RedoPageAsync(src, log, CancellationToken.None);
 
         Assert.Null(log.FinalOf(src).Error);

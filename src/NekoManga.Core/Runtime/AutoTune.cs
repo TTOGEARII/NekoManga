@@ -62,18 +62,17 @@ public static class AutoTune
         if (!gpuUsable)
         {
             if (s.EnableAutoColor) ch.Add(new("color-off", "자동 채색", "켬", "끔", why, x => x.EnableAutoColor = false));
-            if (s.DecensorMode is "ComfyLama" or "ComfyRegen" or "ComfyCustom") ch.Add(new("decensor-basic", "검열 제거 방식", s.DecensorMode, "기본 (내장 모델)", why, x => x.DecensorMode = "Basic"));
+            if (s.DecensorMode is "ComfyRegen" or "ComfyCustom") ch.Add(new("decensor-basic", "검열 제거 방식", s.DecensorMode, "기본 (내장 모델)", why, x => x.DecensorMode = "Basic"));
             if (s.EnableSelfTraining) ch.Add(new("selftrain-off", "자가 학습", "켬", "끔", why, x => x.EnableSelfTraining = false));
         }
         else if (vram > 0)
         {
-            // VRAM 등급: <8 빠듯(--lowvram·1.0MP) / 8~12 표준(실측 기준 PC: 1.5MP) / 12+ 여유(2.0MP·재생성 원본 크기)
+            // VRAM 등급: <8 빠듯(--lowvram·1.0MP) / 8~12 표준(실측 기준 PC: 1.5MP) / 12+ 여유(2.0MP)
+            // 재생성 축소(regen-mp)는 재생성 v3(2026-11-12)부터 제안하지 않는다 — 영역마다 RegenCropSize로 잘라 보내므로 쪽 전체 축소가 필요 없다
             double colorMp = vram < 8000 ? 1.0 : vram < 12000 ? 1.5 : 2.0;
-            double regenMp = vram < 8000 ? 1.0 : vram < 12000 ? 1.5 : 0;
             string tier = $"VRAM {vram / 1024.0:0.#}GB";
             bool lowvram = vram < 8000;
             if (Math.Abs(s.ColorMegapixels - colorMp) > 0.01) ch.Add(new("color-mp", "채색 해상도", Mp(s.ColorMegapixels), Mp(colorMp), tier, x => x.ColorMegapixels = colorMp));
-            if (Math.Abs(s.RegenMegapixels - regenMp) > 0.01) ch.Add(new("regen-mp", "재생성 축소", Mp(s.RegenMegapixels), Mp(regenMp), tier, x => x.RegenMegapixels = regenMp));
             // 선화 추출 해상도는 빠듯한 카드에서만 낮춘다 — 넉넉한 카드에서 사용자가 올려 둔 값을 '기본값'으로 되돌릴 이유는 없다
             if (lowvram && s.PreprocResolution > 1024) ch.Add(new("preproc-res", "선화 추출 해상도", s.PreprocResolution.ToString(), "1024", tier, x => x.PreprocResolution = 1024));
             if (lowvram && s.RegenPreprocResolution > 1024) ch.Add(new("regen-res", "재생성 선화 해상도", s.RegenPreprocResolution.ToString(), "1024", tier, x => x.RegenPreprocResolution = 1024));

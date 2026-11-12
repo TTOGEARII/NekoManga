@@ -134,7 +134,7 @@ public class CustomWorkflowTests
         // 규약 점검은 읽기만 한다 — 검열 제거·채색의 실행 그래프는 Load가 돌려준 그래프에서 만들어지므로 파일 내용과 한 글자도 달라지면 안 된다
         using var t = new TempDir();
         var path = t.At("재생성 레시피 (API).json");
-        var recipe = WorkflowBuilder.BuildRegenDecensor(new AppSettings { RegenSeed = 1 }, "nm_regen_input.png", "NekoManga_out");
+        var recipe = WorkflowBuilder.BuildRegenCrop(new AppSettings { RegenSeed = 1 }, "nm_regen_input.png", "nm_regen_erase.png", "NekoManga_out", "penis, glans", 1024, 1024);
         File.WriteAllText(path, recipe.ToJsonString());
 
         var loaded = CustomWorkflow.Load(path);
@@ -457,12 +457,13 @@ public class CustomWorkflowTests
         // 설정 창의 'API로 내보내기'는 재생성 레시피를 커스텀 워크플로로 쓰라고 저장한다 — 그대로 규약을 통과해야 한다
         using var t = new TempDir();
         var path = t.At("재생성 레시피 (API).json");
-        var recipe = WorkflowBuilder.BuildRegenDecensor(new AppSettings { RegenSeed = 1 }, "nm_regen_input.png", "NekoManga_out");
+        // 재생성 v3 레시피는 LoadImage가 둘(그림+영역 알파 / 그림+조각 알파) — 제목에 "neko 입력"이 든 그림 노드가 앱 입력으로 뽑혀야 한다
+        var recipe = WorkflowBuilder.BuildRegenCrop(new AppSettings { RegenSeed = 1 }, "nm_regen_input.png", "nm_regen_erase.png", "NekoManga_out", "penis, glans", 1024, 1024);
         File.WriteAllText(path, recipe.ToJsonString());
 
         var prepared = CustomWorkflow.Prepare(CustomWorkflow.Load(path), "nm_custom_2.png", "nm_customout_2");
 
-        Assert.Equal(Only(recipe, "LoadImage").Id, prepared.InputNodeId);
+        Assert.Equal("1", prepared.InputNodeId);
         Assert.Equal(Only(recipe, "SaveImage").Id, prepared.OutputNodeId);
         Assert.Equal("nm_custom_2.png", Str(prepared.Prompt[prepared.InputNodeId]!["inputs"]!["image"]));
         Assert.Equal("nm_customout_2", Str(prepared.Prompt[prepared.OutputNodeId]!["inputs"]!["filename_prefix"]));

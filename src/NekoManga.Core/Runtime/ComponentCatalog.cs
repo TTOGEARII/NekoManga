@@ -24,7 +24,7 @@ public record Component(
     bool StripRootFolder = false,
     /// <summary>civitai처럼 Authorization 토큰이 필요할 수 있는 다운로드.</summary>
     bool UseCivitaiKey = false,
-    /// <summary>채색·엔진 LaMa(ComfyUI) 전용 구성요소 — 내장 기능(번역·기본 검열제거)에는 불필요.</summary>
+    /// <summary>채색·재생성·커스텀(ComfyUI) 전용 구성요소 — 내장 기능(번역·기본 검열제거)에는 불필요.</summary>
     bool ForComfy = false,
     /// <summary>이 구성요소가 대체한 옛 파일(RuntimeRoot 기준 상대) — 설치가 끝나면 지운다 (예: 만화판 LaMa가 대체한 Carve lama_fp32.onnx).</summary>
     string[]? Obsolete = null,
@@ -118,7 +118,17 @@ public static class ComponentCatalog
         "https://github.com/TTOGEARII/NekoManga/releases/latest/download/censor_seg.pt",
         "models/censor_seg.pt", "models/censor_seg.pt", 7_120_000, ForComfy: true);
 
-    // ── ComfyUI (채색·엔진 LaMa 검열제거 전용 — 선택 설치) ──
+    /// <summary>부위 감지 모델 — deepghs/anime_censor_detection v1.0_s(MIT, YOLOv8s detect, 만화·일러스트 학습, 클래스 nipple_f·penis·pussy).
+    /// 재생성·커스텀 ComfyUI 검열 제거가 검열 조각이 덮은 부위 전체를 다시 그리게 하는 데 쓴다(RegenRegion, 2026-11-12 사용자 요청). 선택 구성요소 —
+    /// 없으면 조각을 배율로만 넓힌다. ModelCtd처럼 Hugging Face에서 직접 받는다(파일 44.6MB, 그쪽 LFS 주소가 안정적). SHA-256은 2026-11-11에 받아 잰 값.
+    /// 라벨 원고 144쪽 평가: 임계 0.12에서 검은 막대 94%·모자이크 79%·흰선 36%의 조각이 부위 상자로 덮였다(scratchpad censor_model/eval_detector.py).</summary>
+    public static readonly Component ModelBodyParts = new(
+        "model-bodyparts", "부위 감지 모델 (anime_censor_detection, MIT) — 재생성·커스텀용", ComponentKind.File,
+        "https://huggingface.co/deepghs/anime_censor_detection/resolve/main/censor_detect_v1.0_s/model.onnx",
+        "models/bodyparts.onnx", "models/bodyparts.onnx", 44_586_353, ForComfy: true,
+        Sha256: "2c2524824d7d320c5619a0a73702a2e2186f619067c823d211e94f7cfe489cba");
+
+    // ── ComfyUI (채색·재생성·커스텀 검열제거 전용 — 선택 설치) ──
     public static readonly Component SevenZip = new(
         "7zr", "7-Zip 압축해제기", ComponentKind.File,
         "https://www.7-zip.org/a/7zr.exe",
@@ -211,7 +221,7 @@ public static class ComponentCatalog
         ModelAletheiaDetector, ModelAletheiaBar, ModelAletheiaMosaic,
         SevenZip, ComfyPortable,
         NodeWd14, NodeCustomScripts, NodeLayerStyle, NodeControlnetAux, NodeIpAdapter,
-        ModelCheckpoint, ModelControlnet, ModelIpAdapter, ModelClipVision, ModelCensorPt,
+        ModelCheckpoint, ModelControlnet, ModelIpAdapter, ModelClipVision, ModelCensorPt, ModelBodyParts,
     };
 
     public static IEnumerable<Component> EngineComponents => All.Where(c => !c.ForComfy);

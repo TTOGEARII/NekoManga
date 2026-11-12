@@ -36,7 +36,6 @@ internal static class RuntimeTestHelpers
     {
         [nameof(AppSettings.TranslateEngine)] = "DeepSeek",
         [nameof(AppSettings.DecensorMode)] = "ComfyRegen",
-        [nameof(AppSettings.DecensorEngine)] = "Legacy",
         [nameof(AppSettings.DecensorLegacyAssist)] = "WhiteMosaic",
         [nameof(AppSettings.DecensorAssistRepair)] = "Lama",
         [nameof(AppSettings.OnnxGpu)] = "Off",

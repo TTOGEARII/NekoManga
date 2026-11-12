@@ -245,7 +245,7 @@ public static class TextRenderer
                     partial[i] = visible.Width * visible.Height < rect.Width * rect.Height * 0.5f;
                     rect = visible;
                 }
-                if (rect.Width < 4 || rect.Height < 4 || string.IsNullOrWhiteSpace(b.Translation)) continue;
+                if (b.Hidden || rect.Width < 4 || rect.Height < 4 || string.IsNullOrWhiteSpace(b.Translation)) continue;   // 숨긴 블록은 자리도 크기도 없다(Size 0) → 그리지 않는다
 
                 // 감지 블록은 '글자가 있던 자리'라 풍선보다 작다. 세로쓰기는 글자 기둥만 잡혀 아주 좁기도 하다(실측 26px).
                 // 원고에서 풍선의 실제 흰 폭·높이를 재서 넓힌다. 다른 블록 영역은 벽으로 삼는다 — 결합 풍선은 내부가 이어져

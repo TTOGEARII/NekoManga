@@ -76,8 +76,8 @@ public class AutoTuneTests
         // 이 PC(RTX 2070 SUPER 8GB, RAM 40GB)에 기본 설정 — v1.8.2가 내던 한 줄 그대로
         var plan = AutoTune.BuildFor(new AppSettings(), "nvidia", "NVIDIA GeForce RTX 2070 SUPER", 8192, 39.9);
 
-        var c = Assert.Single(plan.Changes);
-        Assert.Equal(("regen-mp", "원본 크기", "1.5MP", "VRAM 8GB"), (c.Key, c.From, c.To, c.Why));
+        // 재생성 v3(2026-11-12)부터 쪽 전체 축소(regen-mp)를 제안하지 않는다 — 영역마다 1024로 잘라 보내므로. 8GB 등급은 채색 1.5MP가 기본값이라 바꿀 것이 없다
+        Assert.Empty(plan.Changes);
         Assert.Equal(("nvidia", "NVIDIA GeForce RTX 2070 SUPER", 8192), (plan.Vendor, plan.GpuName, plan.VramMb));
     }
 
@@ -104,7 +104,7 @@ public class AutoTuneTests
     public void BuildFor_CardTooOldForAnyEngineBuild_TurnsGpuFeaturesOffInsteadOfLoweringThem()
     {
         // 케플러(GTX 680 2GB)는 'nvidia-old'로 감지되지만 구형 묶음도 못 돌린다 — 예전에는 쓸 수 있는 카드로 보고 --lowvram·1.0MP를 권했다
-        var s = new AppSettings { EnableAutoColor = true, DecensorMode = "ComfyLama", EnableSelfTraining = true, PrewarmComfyOnLaunch = true, KeepComfyWarm = true };
+        var s = new AppSettings { EnableAutoColor = true, DecensorMode = "ComfyRegen", EnableSelfTraining = true, PrewarmComfyOnLaunch = true, KeepComfyWarm = true };
 
         var plan = AutoTune.BuildFor(s, "nvidia-old", "NVIDIA GeForce GTX 680", 2048, 16, gpuTooOld: true);
 
@@ -127,12 +127,13 @@ public class AutoTuneTests
     // nvidia-smi 첫 줄이 아니라 고른 카드(PickNvidiaGpu)의 이름과 VRAM — 점검 창에 보이는 카드와 같은 카드
     [InlineData("NVIDIA GeForce RTX 2060", 6144, "NVIDIA GeForce RTX 4070", 12282, "NVIDIA GeForce RTX 4070", 12282, "color-mp")]   // 12GB 등급: 채색 2.0MP
     [InlineData("NVIDIA GeForce RTX 4070", 12282, "NVIDIA GeForce RTX 2060", 6144, "NVIDIA GeForce RTX 4070", 12282, "color-mp")]
-    // 느린 카드가 메모리만 큰 조합: 엔진이 쓸 3080의 10GB에 맞춘다(8~12GB 등급: 재생성 축소 1.5MP) — 12GB에 맞추면 채색 2.0MP·재생성 원본 크기가 된다(검수 지적)
-    [InlineData("NVIDIA GeForce RTX 3080", 10240, "NVIDIA GeForce RTX 3060", 12288, "NVIDIA GeForce RTX 3080", 10240, "regen-mp")]
-    [InlineData("NVIDIA GeForce RTX 3060", 12288, "NVIDIA GeForce RTX 3080", 10240, "NVIDIA GeForce RTX 3080", 10240, "regen-mp")]
+    // 느린 카드가 메모리만 큰 조합: 엔진이 쓸 3080의 10GB에 맞춘다(8~12GB 등급은 기본값 그대로 — 바꿀 것 없음) — 12GB에 맞추면 채색 2.0MP가 된다(검수 지적).
+    // 재생성 v3부터 재생성 축소(regen-mp)는 제안하지 않는다
+    [InlineData("NVIDIA GeForce RTX 3080", 10240, "NVIDIA GeForce RTX 3060", 12288, "NVIDIA GeForce RTX 3080", 10240, null)]
+    [InlineData("NVIDIA GeForce RTX 3060", 12288, "NVIDIA GeForce RTX 3080", 10240, "NVIDIA GeForce RTX 3080", 10240, null)]
     // 이름으로 못 가르면 작은 VRAM에 맞춘다
-    [InlineData("NVIDIA RTX A4000", 16376, "NVIDIA GeForce RTX 3080", 10240, "NVIDIA GeForce RTX 3080", 10240, "regen-mp")]
-    public void Build_SeveralCards_TunesForThePickedCardsVram(string first, int firstMb, string second, int secondMb, string name, int vramMb, string onlyChange)
+    [InlineData("NVIDIA RTX A4000", 16376, "NVIDIA GeForce RTX 3080", 10240, "NVIDIA GeForce RTX 3080", 10240, null)]
+    public void Build_SeveralCards_TunesForThePickedCardsVram(string first, int firstMb, string second, int secondMb, string name, int vramMb, string? onlyChange)
     {
         SystemCheck.Gpu[] smi = [Card(first, firstMb), Card(second, secondMb)];
 
@@ -140,7 +141,7 @@ public class AutoTuneTests
 
         Assert.Equal(("nvidia", name, vramMb), (plan.Vendor, plan.GpuName, plan.VramMb));
         Assert.Equal(smi.Single(g => g.Name == name), SystemCheck.PickNvidiaGpu(smi));
-        Assert.Equal([onlyChange], plan.Changes.Select(c => c.Key));
+        Assert.Equal(onlyChange == null ? [] : new[] { onlyChange }, plan.Changes.Select(c => c.Key));
     }
 
     [Fact]

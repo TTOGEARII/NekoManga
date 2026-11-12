@@ -43,14 +43,10 @@ public class AppSettings
 
     // ── 검열제거 (검열 감지 + 복원) ────────────────────
     /// <summary>"Basic"=내장 엔진 (빠름, 추가 설치 불필요 — 2026-11-09부터 Aletheia Lens의 DeepCreamPy 막대/모자이크 모델,
-    /// 기존 방식으로 찾은 흰선만 LaMa 만화판) / "ComfyLama"=ComfyUI LayerUtility LaMa (GPU, 원본 레시피) / "ComfyRegen" / "ComfyCustom".
-    /// 옛 "Strong"(SDXL+LoRA 재생성)과 "DeepCream"(DeepCreamPy PConv)은 2026-10-19 폐기 — MigrateLegacy가 Basic으로 바꾼다.
-    /// 검열 **감지**는 모드와 무관하게 <see cref="DecensorEngine"/>이 정한 감지기가 맡는다.</summary>
+    /// 기존 방식으로 찾은 흰선만 LaMa 만화판) / "ComfyRegen"(SDXL 영역 재생성) / "ComfyCustom"(사용자 워크플로).
+    /// 옛 "Strong"(SDXL+LoRA 재생성)과 "DeepCream"(DeepCreamPy PConv)은 2026-10-19, "ComfyLama"(ComfyUI LayerUtility LaMa)는 2026-11-12 폐기 — MigrateLegacy가 Basic으로 바꾼다.
+    /// 검열 **감지**는 모드와 무관하게 Aletheia Lens(Mask R-CNN) + 전용 AI(CensorNet) 보완이 맡는다 — 옛 "DecensorEngine"(Aletheia/Legacy 선택)은 2026-11-12 삭제, json의 키는 무시된다.</summary>
     public string DecensorMode { get; set; } = "Basic";
-    /// <summary>내장 검열 감지·기본 복원 엔진 (설정 창에는 없다 — settings.json 전용 비상구).
-    /// "Aletheia"(기본, 2026-11-09 사용자 지시로 교체) = Aletheia Lens의 Mask R-CNN 감지 + DeepCreamPy 복원, 놓치는 흰 막대선만 기존 CensorNet·LaMa로 보완.
-    /// "Legacy" = 교체 전 그대로(CensorNet/규칙 감지 + LaMa) — A/B 비교·되돌리기용.</summary>
-    public string DecensorEngine { get; set; } = "Aletheia";
     /// <summary>Aletheia 엔진의 자동 감지(Auto)에서 기존 CensorNet이 보완할 종류 (settings.json 전용).
     /// "White"(기본 — 사용자 지시 "Aletheia가 못 잡는 흰 막대선은 기존 방식으로") / "WhiteMosaic" / "All" / "None".
     /// 2026-11-09 실측(사용자 덧칠 라벨, 적중 = 라벨의 30% 이상 덮음; Aletheia / CensorNet c11 / 합집합):
@@ -134,9 +130,6 @@ public class AppSettings
     // ── 고급 옵션 (설정 창의 [고급 옵션] — 기본값 = 기존 하드코딩, 워크플로를 아는 사용자용) ──
     // (강력(SDXL) 워크플로 설정 DecensorStrong*/DecensorLora*/DecensorCn*/DecensorSeed/DecensorCompositeGrow는
     //  2026-10-19 폐기 — 옛 settings.json에 남은 값은 역직렬화에서 무시된다.)
-    /// <summary>엔진 LaMa(원본 레시피) 워크플로의 마스크 확장/블러.</summary>
-    public int LamaMaskGrow { get; set; } = 8;
-    public int LamaMaskBlur { get; set; } = 8;
 
     // ── 재생성(ComfyRegen) — 사용자가 ComfyUI에서 직접 짠 "manga_restore_masked_uncensor_v2" 워크플로(2026-10-20)를 그대로 이식 ──
     //   LaMa 1차 복원(마스크 확장 4·블러 4) → Manga2Anime 선화 전처리(1472) → SDXL 체크포인트 + ControlNet(0.85, 0~0.85)
@@ -147,8 +140,12 @@ public class AppSettings
     /// <summary>사용자 워크플로 원본은 diffusion_pytorch_model_promax(xinsir union promax) — 앱 설치본과 같은 모델이라 사용자 결정(10-20)으로 설치된 이름을 기본으로 쓴다.</summary>
     public string RegenControlNet { get; set; } = "controlnet-union-sdxl-promax.safetensors";
     public string RegenPrompt { get; set; } = "masterpiece, monochrome manga, clean lineart, consistent screentone, preserve original composition, preserve original character design, preserve original grayscale tone, seamless restoration, no sticker effect, no residual censorship marks";
-    /// <summary>사용자 워크플로의 "신체부위 복원 태그 (직접 수정)" 노드 — 기본 프롬프트 뒤에 ", "로 붙는다.</summary>
-    public string RegenBodyTags { get; set; } = "penis, glains, clitoris, pussy, vulva, cum in pussy";
+    /// <summary>(옛 칸, v1.8.3까지) 한 줄 신체부위 태그 — Load 때 MigrateLegacy가 남성/여성으로 나눠 옮기고 비운다. 코드는 더 읽지 않는다.</summary>
+    public string RegenBodyTags { get; set; } = "";
+    /// <summary>부위 종류별 태그(재생성 v3, 2026-11-12 사용자: "여자는 잘 나오는데 남자는 이상하다" — 한 줄 태그에 여성 태그가 늘 섞였다).
+    /// 부위 감지(penis/pussy)로 영역의 종류를 정해 고른다(RegenTags.For). 기본값은 옛 한 줄을 나눈 것(glains→glans 오타 수정).</summary>
+    public string RegenBodyTagsMale { get; set; } = "penis, glans";
+    public string RegenBodyTagsFemale { get; set; } = "clitoris, pussy, vulva, cum in pussy";
     public string RegenNegative { get; set; } = "text, letters, sound effects, symbols, watermark, speech bubble text, black bar censor, bar censor, mosaic censoring, censorship, broken lines, extra limbs, blurry lineart, colorized, oversmoothed, residual artifacts";
     public int RegenSteps { get; set; } = 24;
     public double RegenCfg { get; set; } = 5.0;
@@ -160,14 +157,23 @@ public class AppSettings
     public double RegenCnStrength { get; set; } = 0.85;
     public double RegenCnEnd { get; set; } = 0.85;
     public int RegenPreprocResolution { get; set; } = 1472;
-    public int RegenLamaGrow { get; set; } = 4;
-    public int RegenLamaBlur { get; set; } = 4;
     public int RegenEdgeGrow { get; set; } = 12;
     public int RegenEdgeBlur { get; set; } = 8;
     public int RegenCoreGrow { get; set; } = 4;
     public int RegenCoreBlur { get; set; } = 1;
-    /// <summary>0이면 원본 해상도 그대로(사용자 워크플로). 큰 페이지에서 VRAM이 모자라면 1.5 같은 값으로 줄여 보낸다(결과는 원본 크기로 되돌림).</summary>
-    public double RegenMegapixels { get; set; } = 0;
+    /// <summary>재생성 v3: 영역마다 그 주변을 이 크기(정사각, px)로 잘라 SDXL에 보낸다 — SDXL은 1024 근처에서 가장 잘 그린다. 영역이 더 크면 1.6배 창을 이 크기로 줄여 보내고 되돌린다.</summary>
+    public int RegenCropSize { get; set; } = 1024;
+    /// <summary>재생성 v3 1단계(검열 조각 인페인트, 디노이즈 1.0)의 노이즈 마스크 확장(px) — 조각 테두리의 잔상까지 새로 그리게.</summary>
+    public int RegenInpaintGrow { get; set; } = 8;
+
+    // ── 재생성·커스텀의 '부위 통째 다시 그리기' (2026-11-12, 사용자 요청: 막대 자리만이 아니라 검열이 덮은 부위 전체를 재생성) ──
+    // 검열 조각마다 겹치는 부위 검출 상자(BodyPartDetector, penis/pussy)를 여백만큼 넓혀 합치고, 검출이 없는 조각은 크기의 배율만큼 넓힌 타원으로(RegenRegion).
+    // 저장 마스크·감지 결과는 안 바뀐다 — 재생성 때만 계산. 라벨 원고 144쪽 평가(scratchpad censor_model/eval_detector.py): 임계 0.12에서 부위 상자가
+    // 검은 막대 94%·모자이크 79%·흰선 36%를 덮고 상자는 조각의 중앙값 4.5배. 가슴(nipple_f)은 쓰지 않는다(사용자 결정).
+    public bool RegenWholeRegion { get; set; } = true;
+    public double RegenRegionConf { get; set; } = 0.12;   // 부위 검출 임계 — 검열 조각과 겹치는 검출만 쓰므로 낮아도 오탐 비용이 없다
+    public double RegenRegionPad { get; set; } = 0.10;    // 검출 상자를 사방으로 넓히는 비율(상자 크기 기준)
+    public double RegenRegionGrow { get; set; } = 0.6;    // 검출이 없는 조각을 넓히는 배율(조각 크기 기준, 사방)
 
     // ── 커스텀 워크플로(ComfyCustom) — ComfyUI 화면에서 직접 짠 API 포맷 JSON을 그대로 돌린다 (2026-10-20, CustomWorkflow.cs 규약) ──
     /// <summary>검열제거용 커스텀 워크플로(API JSON) 경로. DecensorMode="ComfyCustom"일 때 쓴다.</summary>
@@ -280,8 +286,8 @@ public class AppSettings
         // Papago 등 구 BT 엔진만 Google로 되돌린다 (DeepSeek·Grok은 유효).
         if (TranslateEngine is not ("Google" or "DeepL" or "DeepSeek" or "Grok")) TranslateEngine = "Google";
         // 옛 '강력'(SDXL+LoRA)·DeepCream 모드는 2026-10-19 폐기 — 둘 다 기본(내장 LaMa)으로 돌린다
-        if (DecensorMode is not ("Basic" or "ComfyLama" or "ComfyRegen" or "ComfyCustom")) DecensorMode = "Basic";
-        if (DecensorEngine is not ("Aletheia" or "Legacy")) DecensorEngine = "Aletheia";
+        // ComfyLama(엔진 LaMa)는 2026-11-12 사용자 선택으로 삭제 — 기본으로. '이전 방식' 감지 엔진(DecensorEngine)도 같이 삭제(옛 json의 키는 무시된다)
+        if (DecensorMode is not ("Basic" or "ComfyRegen" or "ComfyCustom")) DecensorMode = "Basic";
         if (DecensorLegacyAssist is not ("White" or "WhiteMosaic" or "All" or "None")) DecensorLegacyAssist = "White";
         if (DecensorAssistRepair is not ("Lama" or "Aletheia")) DecensorAssistRepair = "Aletheia";
         if (OnnxGpu is not ("Auto" or "On" or "Off")) OnnxGpu = "Auto";
@@ -295,18 +301,34 @@ public class AppSettings
         SelfTrainFreeze = Math.Clamp(SelfTrainFreeze, 0, 22); SelfTrainMinPages = Math.Clamp(SelfTrainMinPages, 5, 500);
 
         // 고급 옵션 안전망 — 손으로 json을 고치다 깨진 값이 워크플로를 터뜨리지 않게
-        LamaMaskGrow = Math.Clamp(LamaMaskGrow, 0, 64);
-        LamaMaskBlur = Math.Clamp(LamaMaskBlur, 0, 64);
         RegenSteps = Math.Clamp(RegenSteps, 1, 150);
         RegenCfg = Math.Clamp(RegenCfg, 0, 30);
         RegenDenoise = Math.Clamp(RegenDenoise, 0.05, 1.0);
         RegenCnStrength = Math.Clamp(RegenCnStrength, 0, 2);
         RegenCnEnd = Math.Clamp(RegenCnEnd, 0, 1);
         RegenPreprocResolution = Math.Clamp(RegenPreprocResolution, 256, 4096);
-        RegenLamaGrow = Math.Clamp(RegenLamaGrow, 0, 64); RegenLamaBlur = Math.Clamp(RegenLamaBlur, 0, 64);
         RegenEdgeGrow = Math.Clamp(RegenEdgeGrow, 0, 128); RegenEdgeBlur = Math.Clamp(RegenEdgeBlur, 0, 64);
         RegenCoreGrow = Math.Clamp(RegenCoreGrow, 0, 64); RegenCoreBlur = Math.Clamp(RegenCoreBlur, 0, 64);
-        RegenMegapixels = Math.Clamp(RegenMegapixels, 0, 8);
+        RegenRegionConf = Math.Clamp(RegenRegionConf, 0.01, 0.9); RegenRegionPad = Math.Clamp(RegenRegionPad, 0, 1); RegenRegionGrow = Math.Clamp(RegenRegionGrow, 0, 3);
+        RegenCropSize = Math.Clamp(RegenCropSize, 512, 2048); RegenInpaintGrow = Math.Clamp(RegenInpaintGrow, 0, 64);
+        // 옛 한 줄 신체부위 태그(v1.8.3까지) → 남성/여성 두 칸(재생성 v3). penis/glans(glains 오타)는 남성, 나머지는 여성. 한 번 옮기면 비워 다시 안 옮긴다.
+        // 새 칸이 이미 기본값이 아니면(사용자가 나눈 뒤 저장한 json) 옛 칸은 그대로 둔다 — 저장·읽기 왕복에서 값이 변하지 않게
+        var fresh = new AppSettings();
+        if (!string.IsNullOrWhiteSpace(RegenBodyTags) && RegenBodyTagsMale == fresh.RegenBodyTagsMale && RegenBodyTagsFemale == fresh.RegenBodyTagsFemale)
+        {
+            var male = new List<string>(); var female = new List<string>();
+            foreach (var raw in RegenBodyTags.Split(','))
+            {
+                var tag = raw.Trim();
+                if (tag.Length == 0) continue;
+                var lower = tag.ToLowerInvariant();
+                if (lower.Contains("penis") || lower.Contains("glans") || lower.Contains("glains")) male.Add(lower == "glains" ? "glans" : tag);
+                else female.Add(tag);
+            }
+            if (male.Count > 0) RegenBodyTagsMale = string.Join(", ", male);
+            if (female.Count > 0) RegenBodyTagsFemale = string.Join(", ", female);
+            RegenBodyTags = "";
+        }
         if (string.IsNullOrWhiteSpace(RegenSampler)) RegenSampler = "dpmpp_sde_gpu";
         if (string.IsNullOrWhiteSpace(RegenScheduler)) RegenScheduler = "karras";
         CnLineartStrength = Math.Clamp(CnLineartStrength, 0, 2);
@@ -352,7 +374,7 @@ public class AppSettings
         !string.IsNullOrWhiteSpace(LinkedComfyRoot) ? LinkedComfyRoot
         : Path.Combine(RuntimeRoot, "ComfyUI_windows_portable");
 
-    /// <summary>ComfyUI가 사용 가능한가 (채색·엔진 LaMa 검열제거의 전제조건).</summary>
+    /// <summary>ComfyUI가 사용 가능한가 (채색·재생성·커스텀 검열제거의 전제조건).</summary>
     [JsonIgnore]
     public bool ComfyAvailable =>
         File.Exists(Path.Combine(ComfyRoot, "ComfyUI", "main.py")) &&
