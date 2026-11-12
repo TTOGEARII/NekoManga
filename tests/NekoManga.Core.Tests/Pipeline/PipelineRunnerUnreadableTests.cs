@@ -573,16 +573,18 @@ public class PipelineRunnerUnreadableTests
         var src = WriteBarPage(t.At("vol1", "01.png"));
         var outPath = WriteRedoSlot(s, src, skip: true);
         var log = new ProgressLog();
-        Task? release = null;
+        Thread? release = null;
         var progress = new OnFirstDone(log, () =>
         {
             var held = new FileStream(MaskSidecar.JsonPathFor(outPath), FileMode.Open, FileAccess.Read, FileShare.None);
-            release = Task.Delay(300).ContinueWith(_ => held.Dispose());   // 다시 읽기(0.7초 뒤)보다 먼저 풀린다
+            // 다시 읽기(0.7초 뒤)보다 먼저 풀린다 — 전용 스레드로(스레드풀 Task.Delay는 느린 CI에서 밀려 0.7초를 넘긴다, v1.9.1 Build Run 77)
+            release = new Thread(() => { Thread.Sleep(150); held.Dispose(); }) { IsBackground = true };
+            release.Start();
         });
 
         using (var runner = RuleRunner(s))
             await runner.RedoPageAsync(src, progress, CancellationToken.None);
-        await release!;
+        release!.Join();
 
         Assert.Null(log.FinalOf(src).Error);   // 끝 줄은 하나뿐이다 — 경고로 다시 보내지 않았다
         Assert.DoesNotContain("⚠", log.FinalOf(src).Stage);

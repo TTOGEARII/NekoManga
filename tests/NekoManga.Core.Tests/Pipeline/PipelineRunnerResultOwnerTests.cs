@@ -663,10 +663,13 @@ public class PipelineRunnerResultOwnerTests
         var outPath = PipelineRunner.OutputPathFor(s, a);
         Assert.Null((await RunAsync(s, a)).FinalOf(a).Error);
         var held = new FileStream(ResultOwner.PathFor(outPath), FileMode.Open, FileAccess.Read, FileShare.None);
-        var release = Task.Delay(300).ContinueWith(_ => held.Dispose());   // 다시 읽기(0.7초 뒤)보다 먼저 풀린다
+        // 다시 읽기(0.7초 뒤)보다 먼저 풀린다. 전용 스레드로 푼다 — Task.Delay(스레드풀)로 풀면 테스트가 병렬로 도는 느린 CI에서
+        // 풀이 밀려 0.7초를 넘겼다(v1.9.1 Build Run 77 실패: "…owner를 다른 프로그램이 쥐고 있어")
+        var release = new Thread(() => { Thread.Sleep(150); held.Dispose(); }) { IsBackground = true };
+        release.Start();
 
         var log = await RunAsync(s, a);
-        await release;
+        release.Join();
 
         Assert.Null(log.FinalOf(a).Error);
         Assert.DoesNotContain("⚠", log.FinalOf(a).Stage);
