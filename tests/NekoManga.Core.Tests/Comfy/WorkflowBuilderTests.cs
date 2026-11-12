@@ -261,9 +261,11 @@ public class WorkflowBuilderTests
     }
 
     [Fact]
-    public void BuildRegenCrop_Stage1ControlImage_BlacksOutThePiece()
+    public void BuildRegenCrop_Stage1ControlImage_Lineart_BlacksOutThePiece()
     {
+        // 기본(Lineart) — union이 아닌 ControlNet도 이 길이다
         var g = Crop(w: 1000, h: 800);
+        Assert.Equal("Lineart", new AppSettings().RegenInpaintControl);
         var erase = Assert.Single(OfType(g, "LoadImage"), l => Str(Inputs(l.Node)["image"]) == "nm_regenmask_0_0.png");
         var applies = OfType(g, "ControlNetApplyAdvanced");
         Assert.Equal(2, applies.Count);
@@ -277,6 +279,56 @@ public class WorkflowBuilderTests
         var lineart1 = Source(g, Inputs(comp)["destination"]);
         Assert.Equal("AIO_Preprocessor", ClassType(lineart1));
         Assert.Equal("LoadImage", ClassType(Source(g, Inputs(lineart1)["image"])));   // 원고에서
+        Assert.DoesNotContain(OfType(g, "SetUnionControlNetType"), n => Str(Inputs(n.Node)["type"]) == "repaint");
+    }
+
+    [Fact]
+    public void BuildRegenCrop_Stage1_NonUnionControlNet_AlwaysLineart()
+    {
+        // union이 아닌 ControlNet은 종류를 고를 수 없어 Repaint 설정이어도 선화 검게 칠하기
+        var g = Crop(new AppSettings { RegenSeed = 1, RegenControlNet = "mistoLine_rank256.safetensors", RegenInpaintControl = "Repaint" }, w: 1000, h: 800);
+        Assert.Empty(OfType(g, "SetUnionControlNetType"));
+        Assert.Equal(2, OfType(g, "AIO_Preprocessor").Count);
+        var stage1 = Assert.Single(OfType(g, "ControlNetApplyAdvanced"), a => ClassType(Source(g, Inputs(a.Node)["image"])) == "ImageCompositeMasked").Node;
+        Assert.Equal("AIO_Preprocessor", ClassType(Source(g, Inputs(Source(g, Inputs(stage1)["image"]))["destination"])));
+    }
+
+    [Fact]
+    public void BuildRegenCrop_Stage1_CnStrength_IsSeparateFromStage2()
+    {
+        // 1단계(조각 인페인트) ControlNet 강도는 따로(RegenInpaintCnStrength) — 맞닿은 남녀 부위에서 막대 밑 부위가 지워지는 보고에
+        // 선화 지시를 약하게 해 보는 손잡이. 기본값 0.5(2단계 0.85보다 약하게 — 막대 밑 부위가 빈 살결로 메워지던 쪽이 살아났다). 끝 지점(RegenCnEnd)은 둘이 같이 쓴다
+        var g = Crop(new AppSettings { RegenSeed = 1, RegenCnStrength = 0.9, RegenInpaintCnStrength = 0.4, RegenCnEnd = 0.7 });
+        var applies = OfType(g, "ControlNetApplyAdvanced");
+        var stage1 = Assert.Single(applies, a => ClassType(Source(g, Inputs(a.Node)["image"])) == "ImageCompositeMasked").Node;
+        var stage2 = Assert.Single(applies, a => ClassType(Source(g, Inputs(a.Node)["image"])) == "AIO_Preprocessor").Node;
+        Assert.Equal(0.4, Num(Inputs(stage1)["strength"]));
+        Assert.Equal(0.9, Num(Inputs(stage2)["strength"]));
+        Assert.Equal(0.7, Num(Inputs(stage1)["end_percent"])); Assert.Equal(0.7, Num(Inputs(stage2)["end_percent"]));
+        Assert.Equal(0.5, new AppSettings().RegenInpaintCnStrength);   // 실측으로 정한 기본값
+    }
+
+    [Fact]
+    public void BuildRegenCrop_Stage1_RepaintOption_UsesOriginalImageWithPieceBlackedAndRepaintType()
+    {
+        // 2026-11-12 사용자 보고: 남녀 부위가 맞닿은 장면에서 기둥만 남고 여성 쪽이 통째로 지워짐 — 1단계 선화 ControlNet이 조각 자리를
+        // "선 없음"으로 밀어붙이는 탓으로 보고 union promax의 'repaint' 종류를 시도했으나, 사용자 실측으로 검게 뭉개지고 더 나빴다 → 기본은 선화(Lineart)로 되돌리고
+        // 리페인트는 실험용 선택지로만 남긴다: 제어 그림 = 원고의 조각 자리를 검게 비운 것(선화 아님). 2단계는 그대로 선화.
+        var g = Crop(new AppSettings { RegenSeed = 1, RegenInpaintControl = "Repaint" }, w: 1000, h: 800);
+        var erase = Assert.Single(OfType(g, "LoadImage"), l => Str(Inputs(l.Node)["image"]) == "nm_regenmask_0_0.png");
+        var applies = OfType(g, "ControlNetApplyAdvanced");
+        Assert.Equal(2, applies.Count);
+        var stage1 = Assert.Single(applies, a => ClassType(Source(g, Inputs(a.Node)["image"])) == "ImageCompositeMasked").Node;
+        var cnType = Source(g, Inputs(stage1)["control_net"]);
+        Assert.Equal("SetUnionControlNetType", ClassType(cnType));
+        Assert.Equal("repaint", Str(Inputs(cnType)["type"]));
+        var comp = Source(g, Inputs(stage1)["image"]);
+        Assert.Equal("LoadImage", ClassType(Source(g, Inputs(comp)["destination"])));   // 선화가 아니라 원고 그대로
+        Assert.Equal("EmptyImage", ClassType(Source(g, Inputs(comp)["source"])));
+        Assert.Equal((erase.Id, 1), LinkOf(Inputs(Source(g, Inputs(comp)["mask"]))["mask"]));
+        var stage2 = Assert.Single(applies, a => ClassType(Source(g, Inputs(a.Node)["image"])) == "AIO_Preprocessor").Node;
+        Assert.Equal("canny/lineart/anime_lineart/mlsd", Str(Inputs(Source(g, Inputs(stage2)["control_net"]))["type"]));
+        Assert.Single(OfType(g, "AIO_Preprocessor"));   // 1단계 선화 추출은 없다
     }
 
     [Fact]
@@ -340,7 +392,7 @@ public class WorkflowBuilderTests
         {
             RegenCheckpoint = "waiNSFW v14.safetensors", RegenNegative = "text, watermark",
             RegenSteps = 30, RegenCfg = 4.5, RegenSampler = "euler", RegenScheduler = "simple", RegenDenoise = 0.5, RegenSeed = 0,
-            RegenCnStrength = 0.6, RegenCnEnd = 0.7, RegenPreprocResolution = 1024,
+            RegenCnStrength = 0.6, RegenInpaintCnStrength = 0.6, RegenCnEnd = 0.7, RegenPreprocResolution = 1024,   // 1단계 강도는 따로(RegenInpaintCnStrength) — 여기서는 같게 둔다
         };
         var g = Crop(s);
         foreach (var k in OfType(g, "KSampler").Select(x => Inputs(x.Node)))

@@ -142,6 +142,8 @@ public partial class SettingsWindow
         TxtRegenCnEnd.Text = s.RegenCnEnd.ToString(CultureInfo.InvariantCulture);
         TxtRegenCrop.Text = s.RegenCropSize.ToString();
         TxtRegenInpaintGrow.Text = s.RegenInpaintGrow.ToString();
+        SelectComboByTag(CmbRegenInpaintControl, s.RegenInpaintControl);
+        TxtRegenInpaintCnStr.Text = s.RegenInpaintCnStrength.ToString(CultureInfo.InvariantCulture);
         ChkRegenWhole.IsChecked = s.RegenWholeRegion;
         TxtRegenRegionConf.Text = s.RegenRegionConf.ToString(CultureInfo.InvariantCulture);
         TxtRegenRegionPad.Text = s.RegenRegionPad.ToString(CultureInfo.InvariantCulture);

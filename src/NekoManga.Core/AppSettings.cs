@@ -165,6 +165,13 @@ public class AppSettings
     public int RegenCropSize { get; set; } = 1024;
     /// <summary>재생성 v3 1단계(검열 조각 인페인트, 디노이즈 1.0)의 노이즈 마스크 확장(px) — 조각 테두리의 잔상까지 새로 그리게.</summary>
     public int RegenInpaintGrow { get; set; } = 8;
+    /// <summary>1단계 ControlNet 종류. "Lineart"(기본) = 선화 ControlNet에 조각 자리를 검게 칠한 것.
+    /// "Repaint"(실험용) = union promax의 repaint — 조각 자리를 검게 비운 원고를 넣어 채운다. 맞닿은 남녀 부위에서 막대 밑 부위가 지워지는 보고(2026-11-12)에 시도했으나
+    /// 사용자 실측으로 검게 뭉개지고(검은 선이 많은 원고일수록 심함 — 검게 비운 자리를 먹칠로 읽는다) 더 나빴다. union이 아닌 ControlNet은 종류 설정이 없어 늘 Lineart.</summary>
+    public string RegenInpaintControl { get; set; } = "Lineart";
+    /// <summary>1단계(조각 인페인트) ControlNet 강도 — 2단계(RegenCnStrength)와 따로. 기본 0.5(2026-11-12 실측·사용자 확인): 0.85에서는 조각 자리를 '선 없음'으로 밀어 막대 밑 부위가 빈 살결로 메워지는 쪽이 있었다
+    /// (시험 4쪽 중 2쪽 — 막대 안 선 밀도 0.004·0.009, 0.5에서는 0.25·0.22; 나머지 2쪽은 차이 없음. 여성 태그 추가·가중치는 효과 없음). 끝 지점(RegenCnEnd)은 둘이 같이 쓴다.</summary>
+    public double RegenInpaintCnStrength { get; set; } = 0.5;
 
     // ── 재생성·커스텀의 '부위 통째 다시 그리기' (2026-11-12, 사용자 요청: 막대 자리만이 아니라 검열이 덮은 부위 전체를 재생성) ──
     // 검열 조각마다 겹치는 부위 검출 상자(BodyPartDetector, penis/pussy)를 여백만큼 넓혀 합치고, 검출이 없는 조각은 크기의 배율만큼 넓힌 타원으로(RegenRegion).
@@ -329,6 +336,8 @@ public class AppSettings
             if (female.Count > 0) RegenBodyTagsFemale = string.Join(", ", female);
             RegenBodyTags = "";
         }
+        if (RegenInpaintControl is not ("Repaint" or "Lineart")) RegenInpaintControl = "Lineart";
+        RegenInpaintCnStrength = Math.Clamp(RegenInpaintCnStrength, 0, 2);
         if (string.IsNullOrWhiteSpace(RegenSampler)) RegenSampler = "dpmpp_sde_gpu";
         if (string.IsNullOrWhiteSpace(RegenScheduler)) RegenScheduler = "karras";
         CnLineartStrength = Math.Clamp(CnLineartStrength, 0, 2);

@@ -189,6 +189,8 @@ public partial class SettingsWindow
         s.RegenCnEnd = ParseD(TxtRegenCnEnd.Text, s.RegenCnEnd, 0, 1);
         s.RegenCropSize = ParseI(TxtRegenCrop.Text, s.RegenCropSize, 512, 2048);
         s.RegenInpaintGrow = ParseI(TxtRegenInpaintGrow.Text, s.RegenInpaintGrow, 0, 64);
+        s.RegenInpaintControl = ComboTag(CmbRegenInpaintControl, s.RegenInpaintControl);
+        s.RegenInpaintCnStrength = ParseD(TxtRegenInpaintCnStr.Text, s.RegenInpaintCnStrength, 0, 2);
         s.RegenWholeRegion = ChkRegenWhole.IsChecked == true;
         s.RegenRegionConf = ParseD(TxtRegenRegionConf.Text, s.RegenRegionConf, 0.01, 0.9);
         s.RegenRegionPad = ParseD(TxtRegenRegionPad.Text, s.RegenRegionPad, 0, 1);
@@ -259,7 +261,7 @@ public partial class SettingsWindow
         R(TxtBarAspect, 1.0, 10.0, false); R(TxtBarMinArea, 50, 500_000, true); R(TxtBlockSize, 2, 64, true); R(TxtThreshold, 1, 80, true);
         R(TxtMaskGrow, 0, 64, true); R(TxtCustomReach, 0, 512, true);
         R(TxtRegenDenoise, 0.05, 1.0, false); R(TxtRegenSteps, 1, 150, true); R(TxtRegenCfg, 0, 30, false);
-        R(TxtRegenCnStr, 0, 2, false); R(TxtRegenCnEnd, 0, 1, false); R(TxtRegenCrop, 512, 2048, true); R(TxtRegenInpaintGrow, 0, 64, true);
+        R(TxtRegenCnStr, 0, 2, false); R(TxtRegenCnEnd, 0, 1, false); R(TxtRegenCrop, 512, 2048, true); R(TxtRegenInpaintGrow, 0, 64, true); R(TxtRegenInpaintCnStr, 0, 2, false);
         R(TxtRegenRegionConf, 0.01, 0.9, false); R(TxtRegenRegionPad, 0, 1, false); R(TxtRegenRegionGrow, 0, 3, false);
         // 엔진
         R(TxtAdvPort, 1024, 65535, true); R(TxtAdvCnLineStr, 0, 2, false); R(TxtAdvCnLineEnd, 0, 1, false);

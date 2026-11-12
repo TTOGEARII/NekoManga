@@ -109,6 +109,7 @@ public class AppSettingsTests
     [InlineData(nameof(AppSettings.DecensorReviewMode), "\"Batch\"")]
     [InlineData(nameof(AppSettings.LetterAlign), "\"Justify\"")]
     [InlineData(nameof(AppSettings.RegenSampler), "\"   \"")]             // 빈 샘플러 이름은 워크플로를 터뜨린다
+    [InlineData(nameof(AppSettings.RegenInpaintControl), "\"Inpaint\"")]
     [InlineData(nameof(AppSettings.RegenScheduler), "\"\"")]
     [InlineData(nameof(AppSettings.LetterWordSpacing), "0")]              // 0 이하는 '좁게'가 아니라 깨진 값
     [InlineData(nameof(AppSettings.LetterWordSpacing), "-1.5")]
@@ -128,6 +129,7 @@ public class AppSettingsTests
     [InlineData(nameof(AppSettings.TranslateEngine), "Grok")]
     [InlineData(nameof(AppSettings.DecensorMode), "ComfyRegen")]
     [InlineData(nameof(AppSettings.DecensorMode), "ComfyCustom")]
+    [InlineData(nameof(AppSettings.RegenInpaintControl), "Repaint")]
     [InlineData(nameof(AppSettings.DecensorLegacyAssist), "WhiteMosaic")]
     [InlineData(nameof(AppSettings.DecensorLegacyAssist), "All")]
     [InlineData(nameof(AppSettings.DecensorLegacyAssist), "None")]
@@ -168,6 +170,7 @@ public class AppSettingsTests
     [InlineData(nameof(AppSettings.RegenDenoise), "0", 0.05)]
     [InlineData(nameof(AppSettings.RegenDenoise), "1.5", 1.0)]
     [InlineData(nameof(AppSettings.RegenCnStrength), "9", 2.0)]
+    [InlineData(nameof(AppSettings.RegenInpaintCnStrength), "-1", 0.0)]
     [InlineData(nameof(AppSettings.RegenCnEnd), "1.2", 1.0)]
     [InlineData(nameof(AppSettings.RegenPreprocResolution), "100", 256.0)]
     [InlineData(nameof(AppSettings.RegenPreprocResolution), "99999", 4096.0)]

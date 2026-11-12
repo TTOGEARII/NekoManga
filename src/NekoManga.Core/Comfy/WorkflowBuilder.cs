@@ -151,16 +151,17 @@ public static class WorkflowBuilder
         p["11"] = Node("CLIPTextEncode", new() { ["clip"] = Link("2", 1), ["text"] = s.RegenNegative });
         p["12"] = Node("ControlNetLoader", new() { ["control_net_name"] = s.RegenControlNet });
         string cn = "12";
-        if (s.RegenControlNet.Contains("union", StringComparison.OrdinalIgnoreCase) || s.RegenControlNet.Contains("promax", StringComparison.OrdinalIgnoreCase))
+        bool union = s.RegenControlNet.Contains("union", StringComparison.OrdinalIgnoreCase) || s.RegenControlNet.Contains("promax", StringComparison.OrdinalIgnoreCase);
+        if (union)
         {
             p["13"] = Node("SetUnionControlNetType", new() { ["control_net"] = Link("12", 0), ["type"] = "canny/lineart/anime_lineart/mlsd" });
             cn = "13";
         }
-        JsonObject CnApply(string imageNode) => Node("ControlNetApplyAdvanced", new()
+        JsonObject CnApply(string imageNode, string cnNode, double strength) => Node("ControlNetApplyAdvanced", new()
         {
             ["positive"] = Link("10", 0), ["negative"] = Link("11", 0),
-            ["control_net"] = Link(cn, 0), ["image"] = Link(imageNode, 0),
-            ["strength"] = s.RegenCnStrength, ["start_percent"] = 0.0, ["end_percent"] = s.RegenCnEnd, ["vae"] = Link("2", 2),
+            ["control_net"] = Link(cnNode, 0), ["image"] = Link(imageNode, 0),
+            ["strength"] = strength, ["start_percent"] = 0.0, ["end_percent"] = s.RegenCnEnd, ["vae"] = Link("2", 2),
         });
         JsonObject Sampler(string condNode, string latentNode, long sd, double denoise) => Node("KSampler", new()
         {
@@ -169,10 +170,23 @@ public static class WorkflowBuilder
             ["sampler_name"] = s.RegenSampler, ["scheduler"] = s.RegenScheduler, ["denoise"] = denoise,
         });
         // ── 1단계: 조각 인페인트 (디노이즈 1.0) ──
-        p["9"] = Node("AIO_Preprocessor", new() { ["image"] = Link("1", 0), ["preprocessor"] = "Manga2Anime_LineArt_Preprocessor", ["resolution"] = s.RegenPreprocResolution });
+        // 제어 그림은 조각 자리를 검게 비운 것. 기본(Lineart)은 원고 선화에 검게 칠한 것을 선화 종류로 — 조각 자리를 "선 없음"으로 밀어
+        // 맞닿은 남녀 부위에서 막대 밑 부위가 평평하게 지워지는 보고(2026-11-12)가 있어 강도만 따로(RegenInpaintCnStrength) 둔다.
+        // 'Repaint'(union promax repaint 종류에 원고 그대로)는 그 보고에 시도했으나 사용자 실측으로 검게 뭉개져(검은 선 많은 원고일수록) 실험용 선택지로만 남긴다
+        bool repaint = union && s.RegenInpaintControl == "Repaint";
         p["24"] = Node("EmptyImage", new() { ["width"] = w, ["height"] = h, ["batch_size"] = 1, ["color"] = 0 });
-        p["25"] = Node("ImageCompositeMasked", new() { ["destination"] = Link("9", 0), ["source"] = Link("24", 0), ["mask"] = Link("5", 0), ["x"] = 0, ["y"] = 0, ["resize_source"] = true });
-        p["14"] = CnApply("25");
+        if (repaint)
+        {
+            p["34"] = Node("SetUnionControlNetType", new() { ["control_net"] = Link("12", 0), ["type"] = "repaint" });
+            p["25"] = Node("ImageCompositeMasked", new() { ["destination"] = Link("1", 0), ["source"] = Link("24", 0), ["mask"] = Link("5", 0), ["x"] = 0, ["y"] = 0, ["resize_source"] = true });
+            p["14"] = CnApply("25", "34", s.RegenInpaintCnStrength);
+        }
+        else
+        {
+            p["9"] = Node("AIO_Preprocessor", new() { ["image"] = Link("1", 0), ["preprocessor"] = "Manga2Anime_LineArt_Preprocessor", ["resolution"] = s.RegenPreprocResolution });
+            p["25"] = Node("ImageCompositeMasked", new() { ["destination"] = Link("9", 0), ["source"] = Link("24", 0), ["mask"] = Link("5", 0), ["x"] = 0, ["y"] = 0, ["resize_source"] = true });
+            p["14"] = CnApply("25", cn, s.RegenInpaintCnStrength);
+        }
         p["15"] = Node("VAEEncode", new() { ["pixels"] = Link("1", 0), ["vae"] = Link("2", 2) });
         p["26"] = Node("SetLatentNoiseMask", new() { ["samples"] = Link("15", 0), ["mask"] = Link("5", 0) });
         p["16"] = Sampler("14", "26", seed, 1.0);
@@ -180,7 +194,7 @@ public static class WorkflowBuilder
         p["27"] = Node("ImageCompositeMasked", new() { ["destination"] = Link("1", 0), ["source"] = Link("17", 0), ["mask"] = Link("5", 0), ["x"] = 0, ["y"] = 0, ["resize_source"] = false });
         // ── 2단계: 영역 다듬기 (디노이즈 설정값) ──
         p["28"] = Node("AIO_Preprocessor", new() { ["image"] = Link("27", 0), ["preprocessor"] = "Manga2Anime_LineArt_Preprocessor", ["resolution"] = s.RegenPreprocResolution });
-        p["29"] = CnApply("28");
+        p["29"] = CnApply("28", cn, s.RegenCnStrength);
         p["30"] = Node("VAEEncode", new() { ["pixels"] = Link("27", 0), ["vae"] = Link("2", 2) });
         p["31"] = Node("SetLatentNoiseMask", new() { ["samples"] = Link("30", 0), ["mask"] = Link("23", 0) });
         p["32"] = Sampler("29", "31", seed + 1, s.RegenDenoise);
