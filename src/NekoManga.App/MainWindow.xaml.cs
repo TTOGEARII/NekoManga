@@ -96,18 +96,18 @@ public partial class MainWindow
         RefreshComfyBadges();
     }
 
-    /// <summary>ComfyUI가 필요한 기능(채색·엔진 LaMa 검열) 카드에 설치 필요 배지를 띄운다.</summary>
+    /// <summary>ComfyUI가 필요한 기능(채색·재생성·커스텀 검열) 카드에 설치 필요 배지를 띄운다.</summary>
     private void RefreshComfyBadges()
     {
         var comfyOk = App.Settings.ComfyAvailable;
         BadgeColor.Visibility = comfyOk ? Visibility.Collapsed : Visibility.Visible;
-        var comfyLama = App.Settings.DecensorMode is "ComfyLama" or "ComfyRegen" or "ComfyCustom";
-        BadgeDecensor.Visibility = !comfyOk && comfyLama ? Visibility.Visible : Visibility.Collapsed;
-        // 감지 엔진(Aletheia Lens / 이전 방식)·전용 AI 유무·복원 방식에 맞춰 설명을 바꾼다 — 문구는 설정 창 요약과 같은 곳(DecensorLabels)에서
+        var comfyDecensor = App.Settings.DecensorMode is "ComfyRegen" or "ComfyCustom";
+        BadgeDecensor.Visibility = !comfyOk && comfyDecensor ? Visibility.Visible : Visibility.Collapsed;
+        // 전용 AI 유무·복원 방식에 맞춰 설명을 바꾼다 — 문구는 설정 창 요약과 같은 곳(DecensorLabels)에서
         bool censorNet = File.Exists(Path.Combine(App.Settings.RuntimeRoot, "models", NekoManga.Core.Engine.CensorNet.ModelFile));
-        HintDecensor.Text = DecensorLabels.Card(App.Settings, censorNet);
-        HintDecensor.ToolTip = "① 찾기: " + DecensorLabels.Find(App.Settings.DecensorEngine, App.Settings.DecensorTarget, App.Settings.DecensorLegacyAssist, censorNet)
-            + "\n② 지우기: " + DecensorLabels.Fix(App.Settings.DecensorEngine, App.Settings.DecensorMode, App.Settings.DecensorTarget,
+        HintDecensor.Text = DecensorLabels.Card(App.Settings);
+        HintDecensor.ToolTip = "① 찾기: " + DecensorLabels.Find(App.Settings.DecensorTarget, App.Settings.DecensorLegacyAssist, censorNet)
+            + "\n② 지우기: " + DecensorLabels.Fix(App.Settings.DecensorMode, App.Settings.DecensorTarget,
                                                 App.Settings.DecensorLegacyAssist, App.Settings.DecensorAssistRepair)
             + "\n(⚙ 설정 → 검열 제거에서 바꿀 수 있어요)";
     }
@@ -349,10 +349,10 @@ public partial class MainWindow
 
         // ComfyUI가 필요한 조합인데 미설치면 바로 안내
         bool needComfy = s.EnableAutoColor
-            || (s.EnableDecensor && s.DecensorMode is "ComfyLama" or "ComfyRegen" or "ComfyCustom");
+            || (s.EnableDecensor && s.DecensorMode is "ComfyRegen" or "ComfyCustom");
         if (needComfy && !s.ComfyAvailable)
         {
-            TxtStatus.Text = "채색/엔진 LaMa·재생성 검열은 ComfyUI가 필요해요 — 설정 → 구성요소에서 설치해 주세요";
+            TxtStatus.Text = "채색·재생성·커스텀 검열 제거는 ComfyUI가 필요해요 — 설정 → 구성요소에서 설치해 주세요";
             return;
         }
 

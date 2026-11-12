@@ -27,8 +27,8 @@ using MessageBox = System.Windows.MessageBox;
 
 namespace NekoManga.App;
 
-// 화면 표시와 그리기 입력 — 창 맞춤·다시 그리기·확대/축소, 도형·브러시 오버레이,
-// 마우스(점 찍기·브러시·패닝)와 키 입력
+// 화면 표시와 그리기 입력 — 창 맞춤·다시 그리기·확대/축소, 마스크 다각형·브러시 커서 오버레이,
+// 마우스(마스크 칠하기·패닝)와 키 입력(포토샵식 단축키)
 public partial class ResultWindow
 {
     // ── 표시 ────────────────────────────────────────────────
@@ -104,40 +104,32 @@ public partial class ResultWindow
 
         // 식자 모드의 블록 표시는 EditLayer의 텍스트박스 자체가 담당한다
         if (LetterMode) return;
-        if (MaskMode)
+        // 마스크 보기 + 재생성/커스텀 모델: 실제 다시 그려질 부위(RegenRegion)의 외곽을 주황 점선으로 (마스크보다 넓다)
+        if (MaskMode && _regionContours != null)
         {
-            if (_maskPoly.Count > 0)
+            foreach (var c in _regionContours)
             {
-                var pl = new System.Windows.Shapes.Polyline { Stroke = Brushes.Gold, StrokeThickness = 2, StrokeDashArray = [4, 2] };
-                foreach (var p in _maskPoly) pl.Points.Add(new WinPoint(p.X * _scale, p.Y * _scale));
+                var pl = new System.Windows.Shapes.Polygon { Stroke = Brushes.DarkOrange, StrokeThickness = 2, StrokeDashArray = [6, 4], Fill = null };
+                foreach (var p in c) pl.Points.Add(new WinPoint(p.X * _scale, p.Y * _scale));
                 Overlay.Children.Add(pl);
-                foreach (var p in _maskPoly) Overlay.Children.Add(MakeDot(p));
             }
-            UpdateBrushCursor();
-            return;
         }
-
-        foreach (var s in _shapes) Overlay.Children.Add(MakePolygon(s, finished: true));
-        foreach (var (pts, r) in _brushStrokes) Overlay.Children.Add(MakeStroke(pts, r));
-
-        if (_pending.Count > 0)
+        // 마스크 보기: 찍는 중인 다각형 미리보기 (결과 보기에는 오버레이가 없다 — 옛 '점 찍기·브러시 도형'은 탭 통합으로 없어졌다, 2026-11-11)
+        if (MaskMode && _maskPoly.Count > 0)
         {
-            // 찍는 중: 지금까지의 점 + 마우스 위치까지 미리보기
-            var preview = new List<CvPoint>(_pending);
-            var hoverImg = ToImage(_hover);
-            if (_pending.Count >= 1) preview.Add(hoverImg);
-            if (preview.Count >= 2) Overlay.Children.Add(MakePolygon([.. preview], finished: false));
-            foreach (var p in _pending) Overlay.Children.Add(MakeDot(p));
+            var pl = new System.Windows.Shapes.Polyline { Stroke = Brushes.Gold, StrokeThickness = 2, StrokeDashArray = [4, 2] };
+            foreach (var p in _maskPoly) pl.Points.Add(new WinPoint(p.X * _scale, p.Y * _scale));
+            Overlay.Children.Add(pl);
+            foreach (var p in _maskPoly) Overlay.Children.Add(MakeDot(p));
         }
         UpdateBrushCursor();   // Clear로 지워진 브러시 커서를 다시 올린다
     }
 
     private void UpdateBrushCursor()
     {
-        bool show = _cursorVisible && !_img.Empty() && !LetterMode
-                    && (MaskMode ? (_maskMat != null && RbMPoly.IsChecked != true) : BrushMode);
-        double r = (MaskMode ? SldMBrush.Value : BrushRadius) * _scale;
-        _cursorInner.Stroke = MaskMode ? (RbMErase.IsChecked == true ? Brushes.DeepSkyBlue : Brushes.Red) : Brushes.OrangeRed;
+        bool show = _cursorVisible && !_img.Empty() && MaskMode && _maskMat != null && RbMPoly.IsChecked != true;
+        double r = SldMBrush.Value * _scale;
+        _cursorInner.Stroke = RbMErase.IsChecked == true ? Brushes.DeepSkyBlue : Brushes.Red;
         foreach (var el in new[] { _cursorOuter, _cursorInner })
         {
             if (!Overlay.Children.Contains(el)) Overlay.Children.Add(el);
@@ -150,43 +142,6 @@ public partial class ResultWindow
 
     private void Host_MouseLeave(object sender, MouseEventArgs e) { _cursorVisible = false; UpdateBrushCursor(); }
 
-    private System.Windows.Shapes.Polygon MakePolygon(CvPoint[] pts, bool finished)
-    {
-        var poly = new System.Windows.Shapes.Polygon
-        {
-            Stroke = finished ? Brushes.OrangeRed : Brushes.Gold,
-            StrokeThickness = 2,
-            StrokeDashArray = finished ? null : [4, 3],
-            Fill = new SolidColorBrush(Color.FromArgb(finished ? (byte)56 : (byte)28, 255, 90, 60)),
-        };
-        foreach (var p in pts) poly.Points.Add(new WinPoint(p.X * _scale, p.Y * _scale));
-        return poly;
-    }
-
-    /// <summary>브러시 획 미리보기 — 실제 마스크와 같은 두께의 반투명 선.</summary>
-    private System.Windows.Shapes.Shape MakeStroke(List<CvPoint> pts, int r)
-    {
-        var brush = new SolidColorBrush(Color.FromArgb(80, 255, 70, 40));
-        if (pts.Count == 1)
-        {
-            var dot = new System.Windows.Shapes.Ellipse
-            { Width = r * 2 * _scale, Height = r * 2 * _scale, Fill = brush };
-            Canvas.SetLeft(dot, (pts[0].X - r) * _scale);
-            Canvas.SetTop(dot, (pts[0].Y - r) * _scale);
-            return dot;
-        }
-        var line = new System.Windows.Shapes.Polyline
-        {
-            Stroke = brush,
-            StrokeThickness = r * 2 * _scale,
-            StrokeStartLineCap = PenLineCap.Round,
-            StrokeEndLineCap = PenLineCap.Round,
-            StrokeLineJoin = PenLineJoin.Round,
-        };
-        foreach (var p in pts) line.Points.Add(new WinPoint(p.X * _scale, p.Y * _scale));
-        return line;
-    }
-
     private System.Windows.Shapes.Ellipse MakeDot(CvPoint p)
     {
         var dot = new System.Windows.Shapes.Ellipse
@@ -198,7 +153,7 @@ public partial class ResultWindow
         return dot;
     }
 
-    // ── 점 찍기 ─────────────────────────────────────────────
+    // ── 좌표 ────────────────────────────────────────────────
     private CvPoint ToImage(WinPoint p)
     {
         var (w, h) = ShownSize;
@@ -206,20 +161,25 @@ public partial class ResultWindow
                    Math.Clamp((int)Math.Round(p.Y / _scale), 0, Math.Max(0, h - 1)));
     }
 
-    // ── 휠(가운데) 버튼 드래그 = 화면 이동(패닝). 좌클릭은 기존 동작 그대로 ──
+    // ── 화면 이동(패닝): 휠(가운데) 버튼 드래그, 또는 Space를 누른 채 왼쪽 드래그(포토샵 손 도구). 맨 좌클릭은 기존 동작 그대로 ──
     private bool _panning;
     private WinPoint _panStartScreen;
     private double _panStartH, _panStartV;
 
-    private void Host_MouseDown(object sender, MouseButtonEventArgs e)
+    private void StartPan(MouseButtonEventArgs e)
     {
-        if (e.ChangedButton != MouseButton.Middle || _img.Empty()) return;
         _panning = true;
         _panStartScreen = e.GetPosition(Scroller);
         _panStartH = Scroller.HorizontalOffset;
         _panStartV = Scroller.VerticalOffset;
         ImageHost.CaptureMouse();
         e.Handled = true;
+    }
+
+    private void Host_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Middle || _img.Empty()) return;
+        StartPan(e);
     }
 
     private void Host_MouseUp(object sender, MouseButtonEventArgs e)
@@ -232,40 +192,16 @@ public partial class ResultWindow
             e.Handled = true;
             return;
         }
-        if (e.ChangedButton == MouseButton.Left && _brushing)
-        {
-            _brushing = false;
-            ImageHost.ReleaseMouseCapture();
-            TxtStatus.Text = $"획 {_brushStrokes.Count}개 — [선택 영역 지우기]를 누르거나 계속 칠하세요";
-            e.Handled = true;
-            return;
-        }
-        if (e.ChangedButton != MouseButton.Middle || !_panning) return;
+        if (!_panning || (e.ChangedButton != MouseButton.Middle && e.ChangedButton != MouseButton.Left)) return;
         _panning = false;
         ImageHost.ReleaseMouseCapture();
         e.Handled = true;
     }
 
-    // ── 브러시 도구 ─────────────────────────────────────────
-    private readonly List<(List<CvPoint> Pts, int R)> _brushStrokes = [];
-    private bool _brushing;
-    private bool BrushMode => RbToolBrush.IsChecked == true;
-    private int BrushRadius => int.TryParse(TxtBrushSize.Text.Trim(), out var r) ? Math.Clamp(r, 3, 200) : 24;
-
-    private void Tool_Changed(object sender, RoutedEventArgs e)
-    {
-        if (IsLoaded) UpdateBrushCursor();
-        if (!IsLoaded) return;
-        _pending.Clear();
-        DrawShapes();
-        TxtStatus.Text = BrushMode
-            ? "브러시 — 지울 곳을 누른 채 칠하세요 (우클릭=마지막 획 취소)"
-            : "점 찍기 — 꼭짓점을 클릭하고 더블클릭으로 닫으세요";
-    }
-
     private void Host_LeftClick(object sender, MouseButtonEventArgs e)
     {
         if (_img.Empty() || _busy) return;
+        if (_spaceDown) { StartPan(e); return; }   // 손 도구 — 어느 탭이든 그리지 않고 화면을 끈다
 
         if (MaskMode) { MaskLeftClick(e); return; }
 
@@ -280,58 +216,19 @@ public partial class ResultWindow
             }
             return;
         }
-
-        if (BrushMode)
-        {
-            _brushing = true;
-            _brushStrokes.Add(([ToImage(e.GetPosition(ImageHost))], BrushRadius));
-            ImageHost.CaptureMouse();
-            DrawShapes();
-            e.Handled = true;
-            return;
-        }
-
-        // 더블클릭 = 도형 닫기 (첫 클릭이 이미 점을 추가했으므로 여기선 닫기만)
-        if (e.ClickCount >= 2) { CloseShape(); return; }
-
-        _pending.Add(ToImage(e.GetPosition(ImageHost)));
-        DrawShapes();
-        TxtStatus.Text = $"{_pending.Count}점 — 계속 찍고, 더블클릭(또는 Enter)으로 도형을 닫으세요";
+        // 결과 보기: 그림을 보기만 한다 — 칠하려면 마스크 보기로
+        if (ResultView) TxtStatus.Text = "결과 보기예요 — 지울 곳을 칠하려면 [🎭 마스크 보기]로 바꾸세요";
     }
 
     private void Host_RightClick(object sender, MouseButtonEventArgs e)
     {
-        if (LetterMode) return;
-        if (MaskMode)
-        {
-            if (_maskPoly.Count > 0) { _maskPoly.RemoveAt(_maskPoly.Count - 1); DrawShapes(); }
-            return;
-        }
-        if (BrushMode && _brushStrokes.Count > 0)
-        {
-            _brushStrokes.RemoveAt(_brushStrokes.Count - 1);
-            DrawShapes();
-            TxtStatus.Text = $"획을 취소했어요 — 남은 획 {_brushStrokes.Count}개";
-            return;
-        }
-        if (_pending.Count > 0)
-        {
-            _pending.RemoveAt(_pending.Count - 1);
-            DrawShapes();
-            TxtStatus.Text = _pending.Count == 0 ? "점을 취소했어요" : $"{_pending.Count}점";
-        }
-        else if (_shapes.Count > 0)
-        {
-            _shapes.RemoveAt(_shapes.Count - 1);
-            DrawShapes();
-            TxtStatus.Text = $"도형을 하나 지웠어요 — 남은 도형 {_shapes.Count}개";
-        }
+        if (MaskMode && _maskPoly.Count > 0) { _maskPoly.RemoveAt(_maskPoly.Count - 1); DrawShapes(); }
     }
 
     private void Host_MouseMove(object sender, MouseEventArgs e)
     {
-        // 휠 버튼 드래그 = 패닝 (확대 상태에서 화면 이동)
-        if (_panning && e.MiddleButton == MouseButtonState.Pressed)
+        // 휠 버튼 드래그(또는 Space+왼쪽 드래그) = 패닝 (확대 상태에서 화면 이동)
+        if (_panning && (e.MiddleButton == MouseButtonState.Pressed || e.LeftButton == MouseButtonState.Pressed))
         {
             var p = e.GetPosition(Scroller);
             Scroller.ScrollToHorizontalOffset(_panStartH - (p.X - _panStartScreen.X));
@@ -353,54 +250,92 @@ public partial class ResultWindow
             return;
         }
 
-        // 브러시 칠하는 중 — 2px 이상 움직였을 때만 점 추가 (과밀 방지)
-        if (_brushing && e.LeftButton == MouseButtonState.Pressed && _brushStrokes.Count > 0)
-        {
-            var p = ToImage(_hover);
-            var pts = _brushStrokes[^1].Pts;
-            var last = pts[^1];
-            if (Math.Abs(p.X - last.X) + Math.Abs(p.Y - last.Y) >= 2) { pts.Add(p); DrawShapes(); }
-            else UpdateBrushCursor();
-            return;
-        }
-
         if (LetterMode || _img.Empty()) return;
-        if (_pending.Count > 0) DrawShapes(); else UpdateBrushCursor();
-    }
-
-    private void CloseShape()
-    {
-        if (_pending.Count >= 3)
-        {
-            _shapes.Add([.. _pending]);
-            TxtStatus.Text = $"도형 {_shapes.Count}개 — [선택 영역 지우기]를 누르거나 계속 찍으세요";
-        }
-        _pending.Clear();
-        DrawShapes();
+        UpdateBrushCursor();
     }
 
     private void Window_KeyDown(object sender, KeyEventArgs e)
     {
+        // 도구·확대·저장 단축키는 Window_PreviewKeyDown(포토샵 맞춤)에 있다 — 여기는 Enter/Esc/페이지 넘김만
         if (MaskMode && Keyboard.FocusedElement is not TextBox)
         {
             switch (e.Key)
             {
                 case Key.Enter: MaskClosePolygon(); e.Handled = true; return;
                 case Key.Escape: _maskPoly.Clear(); DrawShapes(); e.Handled = true; return;
-                case Key.Z when Keyboard.Modifiers == ModifierKeys.Control: MaskUndo(); e.Handled = true; return;
-                case Key.B: RbMAdd.IsChecked = true; return;
-                case Key.E: RbMErase.IsChecked = true; return;
-                case Key.P: RbMPoly.IsChecked = true; return;
             }
         }
         switch (e.Key)
         {
-            case Key.Enter: CloseShape(); break;
-            case Key.Escape: _pending.Clear(); DrawShapes(); TxtStatus.Text = "찍던 점을 취소했어요"; break;
             // 텍스트박스에서 타이핑 중일 땐 방향키로 페이지를 넘기지 않는다 (커서 이동용)
             case Key.Left when !_busy && Keyboard.FocusedElement is not TextBox: LoadPage(_index - 1, fit: true); break;
             case Key.Right when !_busy && Keyboard.FocusedElement is not TextBox: LoadPage(_index + 1, fit: true); break;
         }
+    }
+
+    // ── 단축키 — 포토샵과 같게 (2026-11-11 사용자 요청: "포토샵대로") ──────────────────────
+    // 확대: Ctrl + '+' / '-', 화면 맞춤 Ctrl+0, 100% Ctrl+1, Alt+휠(커서 자리 기준). 맨 휠은 세로 스크롤, Ctrl+휠은 가로 스크롤.
+    // 이동: Space를 누른 채 드래그(손 도구) 또는 휠 버튼 드래그. 브러시 크기 [ ]. 도구 B(브러시/칠하기)·E(지우개)·L/P(점 찍기·다각형).
+    // 저장 Ctrl+S, 선택 지우기 Ctrl+D, 되돌리기 Ctrl+Z. 텍스트박스에 커서가 있으면(식자 편집·크기 칸) 글자 입력이 우선이라 전부 건너뛴다.
+    // Preview 단계에서 받는 이유: 라디오 버튼에 포커스가 있으면 Space가 버튼을 누르고(KeyDown을 버튼이 먹는다), 손 도구가 되지 않는다.
+    private const double ZoomStep = 1.25;
+    private bool _spaceDown;
+    private System.Windows.Input.Cursor? _hostCursor;
+
+    private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (Keyboard.FocusedElement is TextBox) return;
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        bool ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+        if (HandleShortcut(key, ctrl, e)) e.Handled = true;
+    }
+
+    private void Window_PreviewKeyUp(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Space) EndSpace();
+    }
+
+    protected override void OnDeactivated(EventArgs e)
+    {
+        base.OnDeactivated(e);
+        EndSpace();   // 창을 떠나며 Space를 놓으면 KeyUp이 안 온다
+    }
+
+    private void EndSpace()
+    {
+        if (!_spaceDown) return;
+        _spaceDown = false;
+        ImageHost.Cursor = _hostCursor;
+    }
+
+    private bool HandleShortcut(Key key, bool ctrl, KeyEventArgs e)
+    {
+        switch (key)
+        {
+            case Key.Space:
+                if (!_spaceDown && !_img.Empty()) { _spaceDown = true; _hostCursor = ImageHost.Cursor; ImageHost.Cursor = Cursors.Hand; }
+                return true;   // 키 반복도 삼킨다 — 포커스가 있는 버튼이 눌리지 않게
+            case Key.OemPlus or Key.Add when ctrl: ZoomBy(ZoomStep); return true;
+            case Key.OemMinus or Key.Subtract when ctrl: ZoomBy(1 / ZoomStep); return true;
+            case Key.D0 or Key.NumPad0 when ctrl: if (!_img.Empty()) FitToWindow(); return true;
+            case Key.D1 or Key.NumPad1 when ctrl: SldZoom.Value = 1; return true;
+            case Key.OemOpenBrackets when !ctrl: StepBrush(-1); return true;
+            case Key.OemCloseBrackets when !ctrl: StepBrush(+1); return true;
+            case Key.S when ctrl: if (BtnSave.IsEnabled && BtnSave.Visibility == Visibility.Visible && !_busy && !_loading) BtnSave_Click(this, e); return true;
+            case Key.D when ctrl: if (MaskMode && !_busy) BtnMClear_Click(this, e); return true;   // 포토샵 Ctrl+D(선택 해제) ≈ 마스크 전부 지우기 (되돌릴 수 있다)
+            case Key.Z when ctrl: if (!_busy) BtnUndo_Click(this, e); return true;
+            case Key.B when !ctrl: if (MaskMode) RbMAdd.IsChecked = true; return true;
+            case Key.E when !ctrl: if (MaskMode) RbMErase.IsChecked = true; return true;
+            case Key.L or Key.P when !ctrl: if (MaskMode) RbMPoly.IsChecked = true; return true;
+        }
+        return false;
+    }
+
+    /// <summary>[ ] — 브러시 반지름을 한 단계(±20%, 최소 1px) 바꾼다 (마스크 보기의 슬라이더).</summary>
+    private void StepBrush(int dir)
+    {
+        static double Step(double v, int d) => d > 0 ? Math.Max(v + 1, Math.Round(v * 1.2)) : Math.Min(v - 1, Math.Round(v / 1.2));
+        if (MaskMode) SldMBrush.Value = Math.Clamp(Step(SldMBrush.Value, dir), SldMBrush.Minimum, SldMBrush.Maximum);
     }
 
     // ── 확대/축소 ───────────────────────────────────────────
@@ -411,10 +346,38 @@ public partial class ResultWindow
         Redraw();
     }
 
+    /// <summary>배율을 factor배로 바꾸되 anchor(Scroller 안 좌표)가 가리키던 그림 자리가 제자리에 있게 스크롤을 맞춘다 — 포토샵의 커서 기준 확대.
+    /// anchor가 없으면 보이는 영역의 가운데.</summary>
+    private void ZoomBy(double factor, WinPoint? anchor = null)
+    {
+        if (_img.Empty()) return;
+        double before = SldZoom.Value;
+        double after = Math.Clamp(before * factor, SldZoom.Minimum, SldZoom.Maximum);
+        if (after == before) return;
+        var a = anchor ?? new WinPoint(Scroller.ViewportWidth / 2, Scroller.ViewportHeight / 2);
+        // ImageHost는 가운데 정렬이라 놓인 자리를 직접 잰다: 그림 좌표(배율 전) = (anchor - 놓인 자리) / 배율
+        var hostAt = ImageHost.TranslatePoint(new WinPoint(0, 0), Scroller);
+        double ix = (a.X - hostAt.X) / before, iy = (a.Y - hostAt.Y) / before;
+        SldZoom.Value = after;        // → Zoom_Changed → Redraw(ImageHost 크기가 바뀐다)
+        Scroller.UpdateLayout();
+        var hostAfter = ImageHost.TranslatePoint(new WinPoint(0, 0), Scroller);
+        Scroller.ScrollToHorizontalOffset(Scroller.HorizontalOffset + (hostAfter.X + ix * after) - a.X);
+        Scroller.ScrollToVerticalOffset(Scroller.VerticalOffset + (hostAfter.Y + iy * after) - a.Y);
+    }
+
     private void Scroller_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        SldZoom.Value = Math.Clamp(SldZoom.Value * (e.Delta > 0 ? 1.15 : 1 / 1.15),
-            SldZoom.Minimum, SldZoom.Maximum);
-        e.Handled = true;
+        var mods = Keyboard.Modifiers;
+        if (mods.HasFlag(ModifierKeys.Alt))
+        {
+            ZoomBy(e.Delta > 0 ? ZoomStep : 1 / ZoomStep, e.GetPosition(Scroller));
+            e.Handled = true;
+        }
+        else if (mods.HasFlag(ModifierKeys.Control))
+        {
+            Scroller.ScrollToHorizontalOffset(Scroller.HorizontalOffset - e.Delta);
+            e.Handled = true;
+        }
+        // 맨 휠은 ScrollViewer가 세로로 스크롤한다 (포토샵과 같다 — 전에는 휠이 확대였다)
     }
 }

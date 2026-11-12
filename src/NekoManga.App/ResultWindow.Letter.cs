@@ -46,7 +46,7 @@ public partial class ResultWindow
         for (int i = 0; i < _letterBlocks.Count; i++)
         {
             var t = _letterBlocks[i].Translation;
-            CmbBlocks.Items.Add($"{i + 1}. {(t.Length > 22 ? t[..22] + "…" : t)}");
+            CmbBlocks.Items.Add($"{i + 1}. {(_letterBlocks[i].Hidden ? "(숨김) " : "")}{(t.Length > 22 ? t[..22] + "…" : t)}");
         }
         if (_letterBlocks.Count > 0) CmbBlocks.SelectedIndex = 0;
         TxtBlockText.Text = _letterBlocks.Count > 0 ? _letterBlocks[0].Translation : "";
@@ -61,6 +61,7 @@ public partial class ResultWindow
         var b = _letterBlocks[CmbBlocks.SelectedIndex];
         TxtBlockText.Text = b.Translation;
         LoadBlockStyleUi(b);
+        BtnBlockHide.Content = b.Hidden ? "숨김 해제" : "이 블록 숨기기";
         _syncingBlockUi = false;
         DrawShapes();
     }
@@ -118,13 +119,30 @@ public partial class ResultWindow
                     { _syncingBlockUi = true; tb.Text = TxtBlockText.Text; _syncingBlockUi = false; }
     }
 
+    /// <summary>[이 블록 숨기기] ↔ [숨김 해제] — 지우지 않고 Hidden 플래그만 바꾼다(되살릴 수 있게, 사이드카에도 남는다).</summary>
     private void BtnBlockHide_Click(object sender, RoutedEventArgs e)
     {
-        if (CmbBlocks.SelectedIndex < 0) return;
-        _letterBlocks.RemoveAt(CmbBlocks.SelectedIndex);
+        int i = CmbBlocks.SelectedIndex;
+        if (i < 0) return;
+        bool hide = !_letterBlocks[i].Hidden;
+        _letterBlocks[i] = _letterBlocks[i] with { Hidden = hide };
         RefreshBlockCombo();
+        CmbBlocks.SelectedIndex = i;
         if (LetterMode && !_letterPreview) RebuildLetterBoxes();
-        TxtStatus.Text = $"블록을 숨겼어요 (남은 {_letterBlocks.Count}개) — 창을 다시 열면 복구돼요";
+        TxtStatus.Text = hide ? "블록을 숨겼어요 — [숨김 해제]로 되살릴 수 있어요 (다시 식자·지우기 때 저장돼요)" : "블록을 다시 보여요";
+    }
+
+    /// <summary>식자 탭의 편집(블록 글·숨김·블록별 스타일)을 사이드카 json에 쓴다 — [다시 식자]와 [지우기] 직전에.
+    /// 안 쓰면 다시 렌더링이 원래 블록으로 식자해 편집이 사라진다(v1.8.3까지의 결함). 페이지 전역 스타일(글꼴 등)은 설정값이라 사이드카에 자리가 없다.</summary>
+    private void SaveLetterSidecar()
+    {
+        if (_sidecar == null || _loading) return;
+        try
+        {
+            _sidecar = _sidecar with { Blocks = [.. _letterBlocks] };
+            _sidecar.Save(_refs[_index].OutPath);
+        }
+        catch (Exception ex) { TxtStatus.Text = "식자 편집 저장 실패: " + ex.Message; }
     }
 
     /// <summary>식자 탭의 스타일 값들로 재식자 전용 설정을 만든다 (전역 설정은 건드리지 않는다).</summary>
@@ -170,6 +188,8 @@ public partial class ResultWindow
             _dirty = true;
             BtnSave.IsEnabled = true;
             _letterPreview = true;   // 최종 렌더 결과를 보여준다 — 그림 클릭으로 편집 복귀
+            SaveLetterSidecar();     // 고친 블록이 다음 다시 렌더링에도 쓰이게
+            RefreshManualMaskBase(); // 저장 마스크 없는 장의 마스크 보기 바닥도 새 결과물로
             Redraw();
             TxtStatus.Text = $"최종 렌더링 미리보기 (블록 {_letterBlocks.Count}개) — [저장] 또는 그림 클릭으로 다시 편집";
         }
@@ -193,6 +213,7 @@ public partial class ResultWindow
         for (int i = 0; i < _letterBlocks.Count; i++)
         {
             var b = _letterBlocks[i];
+            if (b.Hidden) continue;   // 숨긴 블록은 텍스트박스도 없다 (PlanLayout도 Size 0을 준다)
 
             // 자리(풍선 쪽으로 넓힌 사각형)와 크기는 렌더와 같은 값 — 손으로 잡은 블록은 블록 사각형을 조금 안으로 들인 글 자리(90% × 94%)
             var rect = layouts[i].Rect;

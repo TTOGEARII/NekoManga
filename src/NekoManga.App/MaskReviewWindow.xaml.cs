@@ -154,7 +154,7 @@ public partial class MaskReviewWindow
     private void Host_MouseDown(object sender, MouseButtonEventArgs e)
     {
         if (_cur?.Page.Mask == null) return;
-        if (e.ChangedButton == MouseButton.Middle)
+        if (e.ChangedButton == MouseButton.Middle || (e.ChangedButton == MouseButton.Left && _spaceDown))   // 휠 버튼 또는 Space+왼쪽 = 손 도구
         {
             _panning = true; _panStart = e.GetPosition(Scroller); _panH = Scroller.HorizontalOffset; _panV = Scroller.VerticalOffset;
             ImageHost.CaptureMouse(); return;
@@ -174,7 +174,7 @@ public partial class MaskReviewWindow
 
     private void Host_MouseMove(object sender, MouseEventArgs e)
     {
-        if (_panning && e.MiddleButton == MouseButtonState.Pressed)
+        if (_panning && (e.MiddleButton == MouseButtonState.Pressed || e.LeftButton == MouseButtonState.Pressed))
         {
             var p = e.GetPosition(Scroller);
             Scroller.ScrollToHorizontalOffset(_panH - (p.X - _panStart.X));
@@ -192,7 +192,7 @@ public partial class MaskReviewWindow
 
     private void Host_MouseUp(object sender, MouseButtonEventArgs e)
     {
-        if (e.ChangedButton == MouseButton.Middle) { _panning = false; ImageHost.ReleaseMouseCapture(); return; }
+        if (_panning && (e.ChangedButton == MouseButton.Middle || e.ChangedButton == MouseButton.Left)) { _panning = false; ImageHost.ReleaseMouseCapture(); return; }
         if (e.ChangedButton == MouseButton.Left && _painting) { _painting = false; ImageHost.ReleaseMouseCapture(); if (_cur != null) UpdateStatus(_cur); }
     }
 
@@ -284,9 +284,63 @@ public partial class MaskReviewWindow
         else if (e.Key == Key.Z && Keyboard.Modifiers == ModifierKeys.Control) { BtnUndo_Click(sender, e); e.Handled = true; }
         else if (e.Key == Key.Right && Keyboard.Modifiers == ModifierKeys.Control) BtnNext_Click(sender, e);
         else if (e.Key == Key.Left && Keyboard.Modifiers == ModifierKeys.Control) BtnPrev_Click(sender, e);
-        else if (e.Key == Key.B) RbAdd.IsChecked = true;
-        else if (e.Key == Key.E) RbErase.IsChecked = true;
-        else if (e.Key == Key.P) RbPoly.IsChecked = true;
+        // 도구·확대 단축키는 Window_PreviewKeyDown(포토샵 맞춤)에 있다
+    }
+
+    // ── 단축키 — 포토샵과 같게, 결과 창(ResultWindow.Canvas.cs)과 같은 배정 (2026-11-11) ──
+    // 확대 Ctrl+±·Alt+휠(커서 기준), 맞춤 Ctrl+0, 100% Ctrl+1, 맨 휠=세로 스크롤, Ctrl+휠=가로 스크롤,
+    // Space+드래그=이동, [ ]=브러시 크기, B/E/L(P)=칠하기/지우개/다각형. Preview 단계인 이유도 결과 창과 같다(포커스 있는 버튼이 Space를 먹는다).
+    private const double ZoomStep = 1.25;
+    private bool _spaceDown;
+
+    private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (Keyboard.FocusedElement is System.Windows.Controls.TextBox) return;
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        bool ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+        switch (key)
+        {
+            case Key.Space:
+                if (!_spaceDown) { _spaceDown = true; ImageHost.Cursor = System.Windows.Input.Cursors.Hand; }
+                break;
+            case Key.OemPlus or Key.Add when ctrl: ZoomBy(ZoomStep); break;
+            case Key.OemMinus or Key.Subtract when ctrl: ZoomBy(1 / ZoomStep); break;
+            case Key.D0 or Key.NumPad0 when ctrl: FitToWindow(); break;
+            case Key.D1 or Key.NumPad1 when ctrl: SldZoom.Value = Math.Clamp(1 / _dispScale, SldZoom.Minimum, SldZoom.Maximum); break;   // 배율 1 = 표시용 축소본 — 원본 100%는 그 역수
+            case Key.OemOpenBrackets when !ctrl: StepBrush(-1); break;
+            case Key.OemCloseBrackets when !ctrl: StepBrush(+1); break;
+            case Key.B when !ctrl: RbAdd.IsChecked = true; break;
+            case Key.E when !ctrl: RbErase.IsChecked = true; break;
+            case Key.L or Key.P when !ctrl: RbPoly.IsChecked = true; break;
+            default: return;
+        }
+        e.Handled = true;
+    }
+
+    private void Window_PreviewKeyUp(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Space) EndSpace();
+    }
+
+    protected override void OnDeactivated(EventArgs e)
+    {
+        base.OnDeactivated(e);
+        EndSpace();   // 창을 떠나며 Space를 놓으면 KeyUp이 안 온다
+    }
+
+    private void EndSpace()
+    {
+        if (!_spaceDown) return;
+        _spaceDown = false;
+        ImageHost.Cursor = System.Windows.Input.Cursors.Cross;
+    }
+
+    /// <summary>[ ] — 브러시 반지름을 한 단계(±20%, 최소 1px) 바꾼다.</summary>
+    private void StepBrush(int dir)
+    {
+        double v = SldBrush.Value;
+        double next = dir > 0 ? Math.Max(v + 1, Math.Round(v * 1.2)) : Math.Min(v - 1, Math.Round(v / 1.2));
+        SldBrush.Value = Math.Clamp(next, SldBrush.Minimum, SldBrush.Maximum);
     }
 
     // ── 확대 ──────────────────────────────────────────────────
@@ -296,10 +350,37 @@ public partial class MaskReviewWindow
         _zoom = e.NewValue; Redraw();
     }
 
+    /// <summary>보이는 영역에 페이지가 다 들어가는 배율(Ctrl+0).</summary>
+    private void FitToWindow()
+    {
+        if (_disp == null) return;
+        double w = Math.Max(200, Scroller.ActualWidth - 24), h = Math.Max(200, Scroller.ActualHeight - 24);
+        SldZoom.Value = Math.Clamp(Math.Min(w / _disp.Width, h / _disp.Height), SldZoom.Minimum, SldZoom.Maximum);
+    }
+
+    /// <summary>배율을 factor배로 바꾸되 anchor(Scroller 안 좌표)가 가리키던 그림 자리가 제자리에 있게 스크롤을 맞춘다. anchor가 없으면 보이는 영역의 가운데.</summary>
+    private void ZoomBy(double factor, WinPoint? anchor = null)
+    {
+        if (_disp == null) return;
+        double before = SldZoom.Value;
+        double after = Math.Clamp(before * factor, SldZoom.Minimum, SldZoom.Maximum);
+        if (after == before) return;
+        var a = anchor ?? new WinPoint(Scroller.ViewportWidth / 2, Scroller.ViewportHeight / 2);
+        var hostAt = ImageHost.TranslatePoint(new WinPoint(0, 0), Scroller);
+        double ix = (a.X - hostAt.X) / before, iy = (a.Y - hostAt.Y) / before;
+        SldZoom.Value = after;
+        Scroller.UpdateLayout();
+        var hostAfter = ImageHost.TranslatePoint(new WinPoint(0, 0), Scroller);
+        Scroller.ScrollToHorizontalOffset(Scroller.HorizontalOffset + (hostAfter.X + ix * after) - a.X);
+        Scroller.ScrollToVerticalOffset(Scroller.VerticalOffset + (hostAfter.Y + iy * after) - a.Y);
+    }
+
     private void Scroller_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        SldZoom.Value = Math.Clamp(SldZoom.Value * (e.Delta > 0 ? 1.15 : 1 / 1.15), SldZoom.Minimum, SldZoom.Maximum);
-        e.Handled = true;
+        var mods = Keyboard.Modifiers;
+        if (mods.HasFlag(ModifierKeys.Alt)) { ZoomBy(e.Delta > 0 ? ZoomStep : 1 / ZoomStep, e.GetPosition(Scroller)); e.Handled = true; }
+        else if (mods.HasFlag(ModifierKeys.Control)) { Scroller.ScrollToHorizontalOffset(Scroller.HorizontalOffset - e.Delta); e.Handled = true; }
+        // 맨 휠은 ScrollViewer가 세로로 스크롤한다 (포토샵과 같다)
     }
 
     protected override void OnClosed(EventArgs e)

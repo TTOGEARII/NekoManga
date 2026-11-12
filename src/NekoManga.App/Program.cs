@@ -44,7 +44,7 @@ public static class Program
             return;
         }
 
-        // 전체 검열제거 경로 테스트: --dctest <모드:Basic|ComfyLama|ComfyRegen|ComfyCustom> <이미지...>
+        // 전체 검열제거 경로 테스트: --dctest <모드:Basic|ComfyRegen|ComfyCustom> <이미지...>
         //   → <이미지>.dc_<모드>.png (AI 감지 + 선택한 복원까지 실제 파이프라인 경로로)
         var dcIdx = Array.IndexOf(args, "--dctest");
         if (dcIdx >= 0 && dcIdx + 2 < args.Length)
@@ -78,7 +78,7 @@ public static class Program
             return;
         }
 
-        // 마스크를 직접 주고 복원만: --dcmask <Basic|ComfyLama> <이미지> <마스크.png> [<이미지> <마스크.png> …]
+        // 마스크를 직접 주고 복원만: --dcmask <Basic|ComfyRegen|ComfyCustom> <이미지> <마스크.png> [<이미지> <마스크.png> …]
         //   → <이미지>.dcm_<모드>.png — 회귀 하네스(D:\NekoManga-train\bench\dc_batch.py)용: 감지를 건너뛰고 합성 마스크로
         //   복원 경로만 검증한다 (--dctest는 감지를 거쳐 가장자리·타원 같은 합성 마스크를 못 쓴다).
         //   stdout: "RESULT <파일> mask=<px>px <모드> <ms>ms -> <출력>" 또는 "FAIL <파일>: <이유>" (exit code는 0)
@@ -114,6 +114,39 @@ public static class Program
         }
 
         // (--loracheck는 2026-10-19 폐기 — SDXL+LoRA 재생성 경로 삭제. git 이력 c4adc65 참조.)
+
+        // 부위 감지 모델 단독 (재생성·커스텀의 '부위 통째 다시 그리기'용, 2026-11-12): --bodytest [--conf 0.12] <이미지...>
+        //   → <이미지>.bodyparts.txt (줄마다 "cls conf x y w h", penis/pussy만) + bodytest.log. 파이썬 평가(scratchpad censor_model/eval_detector.py)와 수치 대조용 — 그림은 안 그린다
+        var bpIdx = Array.IndexOf(args, "--bodytest");
+        if (bpIdx >= 0)
+        {
+            var settingsB = NekoManga.Core.AppSettings.Load();
+            using var envB = new NekoManga.Core.Engine.OnnxEnv(settingsB);
+            var detB = new NekoManga.Core.Engine.BodyPartDetector(envB);
+            if (!detB.IsReady) { Console.WriteLine("부위 감지 모델(models/bodyparts.onnx)이 없어요 — 설정 → 구성요소에서 설치해 주세요."); return; }
+            float confB = (float)settingsB.RegenRegionConf;
+            var cfB = Array.IndexOf(args, "--conf");
+            if (cfB >= 0 && cfB + 1 < args.Length) float.TryParse(args[cfB + 1], System.Globalization.CultureInfo.InvariantCulture, out confB);
+            foreach (var p in args.Skip(bpIdx + 1).Where(File.Exists))
+            {
+                using var imB = NekoManga.Core.ImgIo.Read(p);
+                if (imB.Empty()) { Console.WriteLine($"FAIL {Path.GetFileName(p)}: 이미지를 읽지 못했어요"); continue; }
+                var swB = System.Diagnostics.Stopwatch.StartNew();
+                if (Environment.GetEnvironmentVariable("NEKO_BODY_DUMP") == "1")
+                {
+                    // 전처리 대조용: letterbox 입력(RGB 0~1)을 8비트 BGR PNG로 — 파이썬 평가의 letterbox와 픽셀 차이를 재는 데 쓴다 (사람이 보지 않는다)
+                    var (lb, _, _, _) = NekoManga.Core.Engine.BodyPartDetector.Letterbox(imB);
+                    using (lb) { using var u8 = new OpenCvSharp.Mat(); lb.ConvertTo(u8, OpenCvSharp.MatType.CV_8UC3, 255); using var bgr8 = new OpenCvSharp.Mat(); OpenCvSharp.Cv2.CvtColor(u8, bgr8, OpenCvSharp.ColorConversionCodes.RGB2BGR); NekoManga.Core.ImgIo.Write(Path.ChangeExtension(p, null) + ".lb.png", bgr8); }
+                }
+                var parts = detB.Detect(imB, confB);
+                var ic = System.Globalization.CultureInfo.InvariantCulture;
+                File.WriteAllLines(Path.ChangeExtension(p, null) + ".bodyparts.txt",
+                    parts.Select(d => string.Join(' ', d.Cls, d.Conf.ToString("F4", ic), d.Box.X, d.Box.Y, d.Box.Width, d.Box.Height)));
+                File.AppendAllLines(Path.Combine(Path.GetDirectoryName(p)!, "bodytest.log"),
+                    new[] { $"{Path.GetFileName(p)} [conf≥{confB:F2}]: penis {parts.Count(d => d.Cls == NekoManga.Core.Engine.BodyPartDetector.ClsPenis)} pussy {parts.Count(d => d.Cls == NekoManga.Core.Engine.BodyPartDetector.ClsPussy)} ({swB.ElapsedMilliseconds}ms)" });
+            }
+            return;
+        }
 
         // AI 검열 모델 단독 테스트: --censortest <이미지...> → <이미지>.censor.png(오버레이) + censortest.log
         var ctIdx = Array.IndexOf(args, "--censortest");
@@ -337,8 +370,7 @@ public static class Program
             {
                 ["autocolor"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildAutoColor(s, "IN.png", "OUT"),
                 ["autocolor_with_ref"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildAutoColor(s, "IN.png", "OUT", "REF.png"),
-                ["lama_decensor"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildLamaDecensor(s, "IN.png", "OUT"),
-                ["regen_decensor"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildRegenDecensor(s, "IN.png", "OUT"),
+                ["regen_decensor"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildRegenCrop(s, "IN.png", "ERASE.png", "OUT", NekoManga.Core.Decensor.RegenTags.For(NekoManga.Core.Decensor.RegenKind.Both, s), 1024, 1024),
                 ["tag_extract"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildTagExtract(s, "IN.png"),
             };
             File.WriteAllText(args[dumpIdx + 1], all.ToJsonString(

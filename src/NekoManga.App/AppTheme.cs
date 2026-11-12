@@ -11,9 +11,12 @@ namespace NekoManga.App;
 
 /// <summary>일본 흑백 만화(원고/잡지) 풍 테마 — 화이트(기본)/다크 반전.
 ///
-/// 전환이 즉시 전체 창에 먹히는 원리: App.xaml의 브러시 키들을 시작 시
-/// **얼리지 않은(SolidColorBrush) 인스턴스로 교체**해 두고, 토글 때는 같은 인스턴스의
-/// Color만 바꾼다 — StaticResource는 객체 참조라서 열려 있는 창까지 그대로 따라온다.</summary>
+/// 전환 원리: Apply마다 App.xaml의 브러시 키들을 **새 인스턴스로 교체**하고, XAML은 전부 `DynamicResource`로
+/// 받는다. 같은 인스턴스의 Color만 바꿔 StaticResource까지 따라오게 하던 옛 방식은 성립하지 않았다 —
+/// Application.Resources(스레드 간 공유 사전)에 든 Freezable은 WPF가 **처음 조회하는 순간 얼려 버려서**
+/// (하네스 실측 2026-11-11: 창이 뜨자마자 8개 전부 IsFrozen), 다음 전환은 새 인스턴스 교체로 떨어지고
+/// 이미 열린 창의 StaticResource 참조는 옛 색에 묶였다(결과 창 위·아래 바가 흰색으로 남고 글씨 사라짐).
+/// 그래서 테마 브러시는 XAML에서 StaticResource로 받지 않는다.</summary>
 public static class AppTheme
 {
     // 만화 원고풍: 종이 흰색 + 먹선 검정. 포인트도 색 대신 굵기/반전으로.
@@ -35,8 +38,8 @@ public static class AppTheme
 
     public static bool IsDark { get; private set; }
 
-    /// <summary>테마를 따라 색이 바뀌는 라이브 브러시 (Apply 이후 유효).
-    /// 주의: Window.Icon 같은 freezable 소비처에 주지 말 것 — SnapshotBrush를 쓸 것.</summary>
+    /// <summary>지금 테마의 브러시 인스턴스 (Apply 이후 유효, 얼려 있다). 전환 때 교체되므로 들고 있지 말고
+    /// 그릴 때마다 다시 받는다. Window.Icon 같은 freezable 소비처에는 SnapshotBrush를 쓸 것.</summary>
     public static Brush GetBrush(string key) => Brushes[key];
 
     /// <summary>현재 테마 색의 스냅샷 브러시 — Freeze돼도 되는 사본.
@@ -60,26 +63,20 @@ public static class AppTheme
 
         foreach (var (key, colors) in Palette)
         {
-            var color = IsDark ? colors.Dark : colors.Light;
-            // IsFrozen 방어: 누가 얼려 버렸으면(freezable 소비처에 새어 들어간 경우)
-            // 색 변경 대신 새 인스턴스로 교체 — 크래시보다 일부 창의 지연 갱신이 낫다.
-            if (Brushes.TryGetValue(key, out var brush) && !brush.IsFrozen)
-                brush.Color = color;                 // 같은 인스턴스 색만 교체 → 전 창 즉시 반영
-            else
-            {
-                brush = new SolidColorBrush(color);  // 일부러 Freeze하지 않는다
-                Brushes[key] = brush;
-                res[key] = brush;
-            }
+            // 늘 새 인스턴스로 교체한다(어차피 사전이 조회 때 얼린다 — 클래스 주석). DynamicResource 소비처가 전부 따라온다.
+            var brush = new SolidColorBrush(IsDark ? colors.Dark : colors.Light);
+            brush.Freeze();
+            Brushes[key] = brush;
+            res[key] = brush;
         }
         res["NekoBgColor"] = IsDark ? Palette["NekoBg"].Dark : Palette["NekoBg"].Light;
 
-        // WPF-UI 컨트롤(TextBox·ComboBox 등) 테마 + 액센트(버튼 등)도 같이
-        Wpf.Ui.Appearance.ApplicationThemeManager.Apply(
-            IsDark ? Wpf.Ui.Appearance.ApplicationTheme.Dark : Wpf.Ui.Appearance.ApplicationTheme.Light,
-            Wpf.Ui.Controls.WindowBackdropType.None, false);
-        Wpf.Ui.Appearance.ApplicationAccentColorManager.Apply(
-            IsDark ? C("#F5F5F5") : C("#111111"),
-            IsDark ? Wpf.Ui.Appearance.ApplicationTheme.Dark : Wpf.Ui.Appearance.ApplicationTheme.Light);
+        // WPF-UI 컨트롤(TextBox·ComboBox 등) 테마 + 액센트(버튼 등)도 같이.
+        // 순서가 중요하다: 액센트를 **먼저** 바꾸고 테마 사전을 읽는다. 테마 사전(Light/Dark.xaml)의 액센트 브러시
+        // (강조 버튼 배경 등)는 사전을 읽는 순간의 SystemAccentColor로 만들어져서, 사전을 먼저 읽으면 강조 버튼 배경이
+        // 한 번 전 테마의 액센트로 남아 글씨와 같은 색이 됐다 (화이트→다크→화이트: 흰 바탕에 흰 글씨, 하네스 실측 2026-11-11).
+        var uiTheme = IsDark ? Wpf.Ui.Appearance.ApplicationTheme.Dark : Wpf.Ui.Appearance.ApplicationTheme.Light;
+        Wpf.Ui.Appearance.ApplicationAccentColorManager.Apply(IsDark ? C("#F5F5F5") : C("#111111"), uiTheme);
+        Wpf.Ui.Appearance.ApplicationThemeManager.Apply(uiTheme, Wpf.Ui.Controls.WindowBackdropType.None, false);
     }
 }

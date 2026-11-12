@@ -52,8 +52,6 @@ public partial class ResultWindow
 
     private Mat _img = new();
     private readonly Stack<Mat> _undo = new();
-    private readonly List<CvPoint[]> _shapes = [];   // 완성된 도형들 (이미지 좌표)
-    private readonly List<CvPoint> _pending = [];    // 찍는 중인 꼭짓점
     private WinPoint _hover;
 
     private double _scale = 1.0;
@@ -83,12 +81,7 @@ public partial class ResultWindow
         _index = Math.Clamp(startIndex, 0, _refs.Count - 1);
         _confirmPage = confirmPage; _isWaiting = isWaiting; _startOnMask = startOnMask; _isDone = isDone;
 
-        // '기본' 모델 이름은 감지·복원 엔진 설정을 따른다 (Aletheia Lens / 이전 방식 LaMa) — 손으로 고른 자리는 Aletheia에선 막대 모델로 지운다
-        ItemEngineBasic.Content = DecensorLabels.BasicModelLabel(App.Settings.DecensorEngine);
-        ItemEngineBasic.ToolTip = DecensorLabels.IsAletheia(App.Settings.DecensorEngine)
-            ? "Aletheia Lens 복원 모델 — 고른 자리를 비우고 주변 그림에 맞춰 채워요 (내장, 항상 같은 결과)"
-            : "내장 LaMa 모델, 항상 같은 결과";
-
+        // '기본' 모델은 늘 Aletheia Lens 복원('이전 방식' 엔진은 2026-11-12 삭제) — 손으로 고른 자리는 막대 모델로 지운다. 이름·툴팁은 XAML의 ItemEngineBasic
         foreach (var p in _refs) CmbPages.Items.Add(Path.GetFileName(p.ViewPath));
         SldMBrush.ValueChanged += (_, _) => { TxtMBrush.Text = $"{(int)SldMBrush.Value}px"; if (IsLoaded) UpdateBrushCursor(); };
 
@@ -120,7 +113,7 @@ public partial class ResultWindow
     {
         if (!IsLoaded || _loading) return;
         UpdateModeButtons();
-        _pending.Clear();
+        _maskPoly.Clear();
         _letterPreview = false;      // 탭에 들어오면 항상 편집 모드부터
         if (!_img.Empty()) FitToWindow();   // 마스크 탭은 검열 제거 전 원고(원본 크기)를, 다른 탭은 결과물을 보여 줘 크기가 다를 수 있다
         Redraw();
@@ -130,19 +123,60 @@ public partial class ResultWindow
                 : "이 장은 보일 블록이 없어요";
         else if (MaskMode)
             TxtStatus.Text = IsWaitingPage ? "검토 대기 중 — 빨간 마스크를 고친 뒤 [검열 제거 진행]을 누르세요"
-                                           : "저장된 마스크를 고친 뒤 [저장 마스크로 다시 검열 제거] 또는 [채색부터 다시]";
+                           : HasStoredMask ? "빨간 마스크를 고친 뒤 [지우기] — 이 장만 검열 제거·식자를 다시 해요"
+                           : "지울 곳을 칠한 뒤 [지우기] — 결과물에 바로 지워요";
     }
 
     /// <summary>탭에 따라 아래 버튼 바의 글자·표시를 맞춘다.</summary>
     private void UpdateModeButtons()
     {
         BtnApply.Content = LetterMode ? "✍ 다시 식자"
-                         : MaskMode ? (IsWaitingPage ? "✔ 검열 제거 진행" : "✨ 저장 마스크로 다시 검열 제거")
-                         : "✨ 선택 영역 지우기";
-        BtnClearSel.Visibility = LetterMode || MaskMode ? Visibility.Collapsed : Visibility.Visible;
+                         : IsWaitingPage ? "✔ 검열 제거 진행"
+                         : "✨ 지우기 (이 장 다시 렌더링)";
+        BtnApply.ToolTip = LetterMode ? null
+                         : IsWaitingPage ? "고친 마스크를 저장하고 이 장의 검열 제거를 진행해요"
+                         : HasStoredMask ? "검열 제거 전 원고에 이 마스크로 검열 제거 → 식자를 이 장만 다시 해요 (채색은 안 해요)"
+                         : "결과물에 이 마스크 자리를 바로 지워요 — 끝나면 [저장]";
         BtnSave.Content = MaskMode ? "💾 마스크 저장" : "💾 저장";
+        BtnSave.Visibility = MaskMode && !HasStoredMask ? Visibility.Collapsed : Visibility.Visible;   // 저장 마스크가 없는 장은 사이드카를 새로 만들지 않는다
         BtnSave.IsEnabled = MaskMode ? _maskDirty : _dirty;
         BtnUndo.IsEnabled = MaskMode ? _maskUndo.Count > 0 : _undo.Count > 0;
+    }
+
+    // ── 로딩 오버레이 ([지우기] 다시 렌더링 중) ───────────────────────────────────
+    private CancellationTokenSource? _redoCts;
+
+    /// <summary>캔버스를 덮는 오버레이를 켜고 끈다. 켜는 동안 탭·페이지 넘김·목록을 막는다(_busy와 같이).</summary>
+    private void ShowLoading(bool on, string stage = "", double pct = -1)
+    {
+        if (on)
+        {
+            TxtLoadStage.Text = stage;
+            TxtLoadPct.Text = pct < 0 ? "" : $"{pct:0}%";
+            if (PnlLoading.Visibility != Visibility.Visible)
+            {
+                TxtLoadCancelNote.Visibility = Visibility.Collapsed;
+                BtnLoadCancel.IsEnabled = true;
+                PnlLoading.Visibility = Visibility.Visible;
+            }
+            TabMode.IsEnabled = CmbPages.IsEnabled = false;
+            BtnPrev.IsEnabled = BtnNext.IsEnabled = false;
+            BtnApply.IsEnabled = BtnSave.IsEnabled = BtnUndo.IsEnabled = false;
+        }
+        else
+        {
+            PnlLoading.Visibility = Visibility.Collapsed;
+            TabMode.IsEnabled = CmbPages.IsEnabled = true;
+            BtnApply.IsEnabled = true;
+            if (!_loading) { BtnPrev.IsEnabled = _index > 0; BtnNext.IsEnabled = _index < _refs.Count - 1; }   // 다시 읽는 중이면 LoadPage가 끝날 때 켠다
+        }
+    }
+
+    private void BtnLoadCancel_Click(object sender, RoutedEventArgs e)
+    {
+        _redoCts?.Cancel();
+        TxtLoadCancelNote.Visibility = Visibility.Visible;
+        BtnLoadCancel.IsEnabled = false;
     }
 
     /// <summary>저장 안 한 수정이 있으면 물어본다. 계속해도 되면 true.</summary>
@@ -171,7 +205,11 @@ public partial class ResultWindow
 
     private void BtnSave_Click(object sender, RoutedEventArgs e)
     {
-        if (MaskMode) { SaveMaskSidecar(); TxtStatus.Text = "마스크를 저장했어요 — 다음에 다시 돌려도 이 마스크를 써요"; return; }
+        if (MaskMode)
+        {
+            if (!HasStoredMask) { TxtStatus.Text = "이 장은 저장 마스크가 없어 마스크를 저장하지 않아요 — [지우기]로 결과물에 지운 뒤 [저장]하세요"; return; }
+            SaveMaskSidecar(); TxtStatus.Text = "마스크를 저장했어요 — 다음에 다시 돌려도 이 마스크를 써요"; return;
+        }
         Save();
     }
 
@@ -235,7 +273,10 @@ public partial class ResultWindow
         // 복원이 돌고 있으면 그 Mat·러너는 지금 해제하지 않는다 — 쓰는 중인 네이티브 메모리를 해제하면 죽는다.
         // 러너는 그 작업이 끝날 때 정리하고(DisposeRunnerIfClosed — ComfyUI 사용도 그때 놓는다), Mat은 GC가 거둔다
         _closed = true;
-        if (!_busy) { _runner?.Dispose(); _img.Dispose(); }
+        if (!_busy && _previewInFlight == 0) { _runner?.Dispose(); _runner = null; _redoRunner?.Dispose(); _redoRunner = null; }   // 미리보기가 돌고 있으면 그 continuation의 DisposeRunnerIfClosed가 놓는다
+        if (!_busy) _img.Dispose();
+        _redoCts?.Cancel();   // 다시 렌더링 중 닫으면 러너를 멈춘다 — 취소 없이 Dispose만 하면 닫힌 창 뒤에서 끝까지 돌아 결과물을 덮었다(하네스 실측, 최종 검수)
+        _redoCts?.Dispose(); _redoCts = null;
         _baseImg?.Dispose();
         ResetMaskState(null);
         while (_undo.Count > 0) _undo.Pop().Dispose();
@@ -247,8 +288,10 @@ public partial class ResultWindow
     /// 놓지 않으면 KeepComfyWarm=false여도 이 창의 작업이 띄웠거나 같이 쓰던 서버가 꺼지지 않는다. 수동 작업의 finally에서 부른다.</summary>
     private void DisposeRunnerIfClosed()
     {
-        if (!_closed || _busy) return;
+        if (!_closed || _busy || _previewInFlight > 0) return;
         _runner?.Dispose();
         _runner = null;
+        _redoRunner?.Dispose();
+        _redoRunner = null;
     }
 }

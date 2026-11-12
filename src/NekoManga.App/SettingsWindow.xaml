@@ -7,7 +7,7 @@
         ExtendsContentIntoTitleBar="True"
         WindowBackdropType="None"
         WindowCornerPreference="Round"
-        Background="{StaticResource NekoBg}">
+        Background="{DynamicResource NekoBg}">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -68,13 +68,13 @@
                         <DockPanel Margin="0,4">
                             <!-- 미리보기 겸 드롭존 — 표지를 여기에 끌어다 놓으면 등록된다 -->
                             <Border x:Name="RefDropZone" DockPanel.Dock="Left" Width="96" Height="128"
-                                    Background="{StaticResource NekoCanvas}" CornerRadius="0" Margin="0,0,10,0"
-                                    BorderBrush="{StaticResource NekoStroke}" BorderThickness="1"
+                                    Background="{DynamicResource NekoCanvas}" CornerRadius="0" Margin="0,0,10,0"
+                                    BorderBrush="{DynamicResource NekoStroke}" BorderThickness="1"
                                     AllowDrop="True" Drop="RefDropZone_Drop" DragOver="RefDropZone_DragOver">
                                 <Grid>
                                     <TextBlock x:Name="TxtRefDropHint" Text="표지를&#10;끌어다&#10;놓으세요"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"
-                                               TextAlignment="Center" Foreground="{StaticResource NekoHint}"/>
+                                               TextAlignment="Center" Foreground="{DynamicResource NekoHint}"/>
                                     <Image x:Name="ImgRefPreview" Stretch="Uniform" Margin="3"/>
                                 </Grid>
                             </Border>
@@ -131,14 +131,8 @@
 
                     <!-- ── ① 검열 찾기 ── -->
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="① 검열 찾기"/></Border>
+                    <!-- 감지 엔진은 Aletheia Lens 하나 — '이전 방식'(전용 AI·규칙 감지기) 엔진 선택은 2026-11-12 사용자 선택으로 삭제 -->
                     <DockPanel Margin="0,2,0,0">
-                        <TextBlock Text="감지 엔진" Style="{StaticResource FieldLabel}" Width="130"/>
-                        <ComboBox x:Name="CmbDecensorEngine" MinWidth="430" HorizontalAlignment="Left" SelectionChanged="DecensorUi_Changed">
-                            <ComboBoxItem Tag="Aletheia" Content="Aletheia Lens — 막대·모자이크 감지 AI (권장)"/>
-                            <ComboBoxItem Tag="Legacy" Content="이전 방식 — NekoManga 전용 AI·규칙 감지기"/>
-                        </ComboBox>
-                    </DockPanel>
-                    <DockPanel Margin="0,6,0,0">
                         <TextBlock Text="무엇을 찾을까요" Style="{StaticResource FieldLabel}" Width="130"/>
                         <ComboBox x:Name="CmbDecensorTarget" MinWidth="430" HorizontalAlignment="Left"
                                   SelectionChanged="CmbDecensorTarget_Changed">
@@ -193,17 +187,17 @@
                         <TextBox x:Name="TxtMaskGrow" Width="90" HorizontalAlignment="Left"/>
                     </DockPanel>
                     <TextBlock Style="{StaticResource HintText}"
-                               Text="찾은 영역 둘레를 조금 더 넓게 지워요. LaMa·GPU 방식(엔진 LaMa·재생성·커스텀)과 이전 방식 엔진에 쓰여요 — Aletheia Lens 복원으로 지우는 자리는 원본 프로그램처럼 1px만 넓혀요 (넓게 칠할수록 그림이 뭉개져요)."/>
+                               Text="찾은 영역 둘레를 조금 더 넓게 지워요. GPU 방식(재생성·커스텀)과 보완으로 찾은 자리의 LaMa 복원에 쓰여요 — Aletheia Lens 복원으로 지우는 자리는 원본 프로그램처럼 1px만 넓혀요 (넓게 칠할수록 그림이 뭉개져요)."/>
                     <CheckBox x:Name="ChkBubbleFilter" Content="흰 말풍선 필터 (전용 AI의 흰 검출 중 글자 블록과 겹치는 것 버리기)" Margin="0,8,0,0"/>
                     <TextBlock Style="{StaticResource HintText}"
                                Text="기본 꺼짐. 켜면 흰 말풍선 오탐은 줄지만 진짜 흰선 검열도 일부 지워져요. 말풍선이 자꾸 지워지는 원고에서만."/>
 
-                    <!-- 규칙 감지기 전용 세부값 — 이전 방식이나 흰 막대 규칙 감지에만 쓰이므로 접어 둔다 -->
-                    <ui:Button x:Name="BtnManualDetect" Content="▸ 규칙 감지기 세부 설정 (이전 방식용)"
+                    <!-- 규칙 감지기 전용 세부값 — 전용 AI 없는 흰 막대·색 검열 규칙 감지에만 쓰이므로 접어 둔다 -->
+                    <ui:Button x:Name="BtnManualDetect" Content="▸ 규칙 감지기 세부 설정 (흰 막대·색 검열 규칙용)"
                                Click="BtnManualDetect_Click" Margin="0,12,0,0" Padding="14,6"/>
                     <StackPanel x:Name="PnlManualDetect" Visibility="Collapsed">
                     <TextBlock Style="{StaticResource HintText}" Margin="0,6,0,0"
-                               Text="아래 값들은 규칙 감지기에만 쓰여요 — 감지 엔진이 '이전 방식'이고 자동이 아닌 종류를 골랐을 때, 그리고 Aletheia Lens에서 '흰색 막대만'을 골랐는데 전용 AI가 없을 때의 흰 막대 규칙 감지(막대 비율·크기). AI 감지에는 영향이 없어요."/>
+                               Text="아래 값들은 규칙 감지기에만 쓰여요 — '흰색 막대만'을 골랐는데 전용 AI가 없을 때의 흰 막대 규칙 감지(막대 비율·크기)와 '색 검열만'의 규칙 감지. AI 감지에는 영향이 없어요."/>
                     <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
                         <DockPanel>
                             <TextBlock Text="막대 최소 비율 (1 ~ 10)" Style="{StaticResource FieldLabel}" Width="160"/>
@@ -217,7 +211,7 @@
                     <TextBlock Style="{StaticResource HintText}"
                                Text="비율은 가로세로 길이의 비(1.8이면 긴 쪽이 짧은 쪽의 1.8배 이상). 정사각형에 가까운 검열도 잡으려면 1.2까지 낮춰보세요. 크기는 px² 단위."/>
 
-                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="모자이크 규칙 감지 세부 (이전 방식)"/></Border>
+                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="모자이크 규칙 감지 세부 (지금은 Aletheia Lens가 모자이크를 찾아 쓰이지 않아요)"/></Border>
                     <DockPanel Margin="0,4">
                         <TextBlock Text="블록 크기 px (2 ~ 64)" Style="{StaticResource FieldLabel}" Width="160"/>
                         <TextBox x:Name="TxtBlockSize" Width="90" HorizontalAlignment="Left"/>
@@ -236,7 +230,6 @@
                         <TextBlock Text="제거 방식" Style="{StaticResource FieldLabel}" Width="130"/>
                         <ComboBox x:Name="CmbDecensorMode" MinWidth="430" HorizontalAlignment="Left" SelectionChanged="CmbDecensorMode_Changed">
                             <ComboBoxItem x:Name="ItemModeBasic" Content="기본 — Aletheia Lens 복원 (빠름, 추가 설치 불필요)" Tag="Basic"/>
-                            <ComboBoxItem Content="엔진 LaMa — GPU 복원 (원본 레시피, 엔진 필요)" Tag="ComfyLama"/>
                             <ComboBoxItem Content="재생성 — SDXL로 검열 자리를 그려 넣기 (내장 재생성 레시피, 엔진 필요)" Tag="ComfyRegen"/>
                             <ComboBoxItem Content="커스텀 ComfyUI — 내가 ComfyUI에서 짠 워크플로 파일로 (API JSON, 엔진 필요)" Tag="ComfyCustom"/>
                         </ComboBox>
@@ -286,7 +279,7 @@
                     <CheckBox x:Name="ChkSelfTrain" Content="자가 학습 기능 켜기" Margin="0,6,0,0" Checked="ChkSelfTrain_Changed" Unchecked="ChkSelfTrain_Changed"/>
                     <StackPanel x:Name="PnlSelfTrain" Visibility="Collapsed">
                         <TextBlock Style="{StaticResource HintText}"
-                                   Text="모은 재료로 NekoManga 전용 AI(흰 막대선 보완·이전 방식 감지를 맡는 모델)를 짧게 미세조정하고, 보류해 둔 페이지에서 전/후를 비교해 보여 줘요. Aletheia Lens 모델은 학습되지 않아요. [적용]을 눌러야 모델이 바뀌고 언제든 되돌릴 수 있어요. 학습 중엔 GPU를 쓰고 수 분~수십 분 걸려요. 시작할 때 채색 엔진(ComfyUI — 연결해 둔 ComfyUI면 그것)을 끄고, 그 엔진을 쓰는 작업이 있으면 시작하지 않아요."/>
+                                   Text="모은 재료로 NekoManga 전용 AI(흰 막대선 보완을 맡는 모델)를 짧게 미세조정하고, 보류해 둔 페이지에서 전/후를 비교해 보여 줘요. Aletheia Lens 모델은 학습되지 않아요. [적용]을 눌러야 모델이 바뀌고 언제든 되돌릴 수 있어요. 학습 중엔 GPU를 쓰고 수 분~수십 분 걸려요. 시작할 때 채색 엔진(ComfyUI — 연결해 둔 ComfyUI면 그것)을 끄고, 그 엔진을 쓰는 작업이 있으면 시작하지 않아요."/>
                         <TextBlock x:Name="TxtTrainMaterial" Style="{StaticResource HintText}" Margin="0,4,0,0" Text=""/>
                         <WrapPanel Margin="0,6,0,0">
                             <ui:Button x:Name="BtnSelfTrain" Content="🎓 지금까지 모은 재료로 학습" Click="BtnSelfTrain_Click" Padding="12,5"/>
@@ -325,19 +318,6 @@
                         <TextBlock Style="{StaticResource HintText}" Margin="0,6,0,0"
                                    Text="ComfyUI 워크플로에 들어가는 값 그대로예요. 기본값은 원본 레시피 — 바꾼 값은 다음 작업부터 적용돼요."/>
 
-                        <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="엔진 LaMa 워크플로"/></Border>
-                        <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
-                            <DockPanel>
-                                <TextBlock Text="마스크 확장 (0 ~ 64)" Style="{StaticResource FieldLabel}" Width="150"/>
-                                <TextBox x:Name="TxtAdvLamaGrow" Width="80" HorizontalAlignment="Left"/>
-                            </DockPanel>
-                            <DockPanel>
-                                <TextBlock Text="마스크 블러 (0 ~ 64)" Style="{StaticResource FieldLabel}" Width="150"/>
-                                <TextBox x:Name="TxtAdvLamaBlur" Width="80" HorizontalAlignment="Left"/>
-                            </DockPanel>
-                        </UniformGrid>
-                        <TextBlock Style="{StaticResource HintText}"
-                                   Text="LayerUtility: LaMa 노드의 mask_grow / mask_blur. 원본 레시피는 8 · 8이에요."/>
 
                         <Border Style="{StaticResource MangaTag}" Margin="0,12,0,0"><TextBlock Style="{StaticResource MangaTagText}" Text="재생성 워크플로 (SDXL)"/></Border>
                         <DockPanel Margin="0,4">
@@ -354,8 +334,10 @@
                                    Text="safetensors · ckpt · pt 파일. ComfyUI models 폴더 밖의 파일을 고르면 그 폴더로 복사해요."/>
                         <TextBlock Text="기본 프롬프트" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
                         <TextBox x:Name="TxtRegenPrompt" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="48"/>
-                        <TextBlock Text="신체부위 복원 태그 (직접 수정)" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
-                        <TextBox x:Name="TxtRegenBody" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="36"/>
+                        <TextBlock Text="신체부위 태그 — 남성 (부위 감지가 penis로 본 영역)" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
+                        <TextBox x:Name="TxtRegenBodyM" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="28"/>
+                        <TextBlock Text="신체부위 태그 — 여성 (pussy로 본 영역; 못 가르면 둘 다)" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
+                        <TextBox x:Name="TxtRegenBodyF" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="28"/>
                         <TextBlock Text="네거티브" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
                         <TextBox x:Name="TxtRegenNeg" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="48"/>
                         <UniformGrid Columns="2" Rows="3" Margin="0,8,0,0">
@@ -380,12 +362,36 @@
                                 <TextBox x:Name="TxtRegenCnEnd" Width="70" HorizontalAlignment="Left"/>
                             </DockPanel>
                             <DockPanel>
-                                <TextBlock Text="축소 MP (0 ~ 8, 0=원본)" Style="{StaticResource FieldLabel}" Width="150"/>
-                                <TextBox x:Name="TxtRegenMp" Width="70" HorizontalAlignment="Left"/>
+                                <TextBlock Text="자를 크기 (512 ~ 2048)" Style="{StaticResource FieldLabel}" Width="150"/>
+                                <TextBox x:Name="TxtRegenCrop" Width="70" HorizontalAlignment="Left" ToolTip="영역마다 그 주변을 이 크기로 잘라 SDXL에 보내요 — 1024가 SDXL에 가장 맞아요"/>
                             </DockPanel>
                         </UniformGrid>
+                        <DockPanel Margin="0,6,0,0">
+                            <TextBlock Text="조각 인페인트 확장 (0 ~ 64)" Style="{StaticResource FieldLabel}" Width="180"/>
+                            <TextBox x:Name="TxtRegenInpaintGrow" Width="70" HorizontalAlignment="Left" ToolTip="1단계(검열 조각을 노이즈에서 새로 그리기)의 마스크를 이만큼 넓혀요 — 막대 테두리 잔상까지"/>
+                        </DockPanel>
                         <TextBlock Style="{StaticResource HintText}"
-                                   Text="범위를 벗어난 값은 저장할 때 범위 안으로 잘려요. VRAM이 모자라면 '축소 MP'를 1.5 정도로."/>
+                                   Text="재생성 v3: 영역마다 잘라 SDXL 두 단계(조각 인페인트 → 영역 다듬기)로 그려요. LaMa는 쓰지 않아요. 범위를 벗어난 값은 저장할 때 범위 안으로 잘려요."/>
+
+                        <!-- 부위 통째 다시 그리기 (2026-11-12, 사용자 요청): 재생성·커스텀만 — 검열 조각이 덮은 부위 전체를 다시 그린다 -->
+                        <Border Style="{StaticResource MangaTag}" Margin="0,12,0,0"><TextBlock Style="{StaticResource MangaTagText}" Text="부위 통째 다시 그리기 (재생성·커스텀)"/></Border>
+                        <CheckBox x:Name="ChkRegenWhole" Content="검열 조각만이 아니라 그 조각이 덮은 부위 전체를 다시 그려요" Foreground="{DynamicResource NekoText}" Margin="0,6,0,0"/>
+                        <UniformGrid Columns="3" Rows="1" Margin="0,6,0,0">
+                            <DockPanel>
+                                <TextBlock Text="감지 임계 (0.01 ~ 0.9)" Style="{StaticResource FieldLabel}" Width="150"/>
+                                <TextBox x:Name="TxtRegenRegionConf" Width="70" HorizontalAlignment="Left" ToolTip="부위 감지 모델의 확신도 — 검열 조각과 겹치는 검출만 쓰므로 낮아도 괜찮아요"/>
+                            </DockPanel>
+                            <DockPanel>
+                                <TextBlock Text="부위 여백 (0 ~ 1)" Style="{StaticResource FieldLabel}" Width="150"/>
+                                <TextBox x:Name="TxtRegenRegionPad" Width="70" HorizontalAlignment="Left" ToolTip="찾은 부위 상자를 이 비율만큼 사방으로 넓혀요 (0.1 = 10%)"/>
+                            </DockPanel>
+                            <DockPanel>
+                                <TextBlock Text="조각 확장 배율 (0 ~ 3)" Style="{StaticResource FieldLabel}" Width="150"/>
+                                <TextBox x:Name="TxtRegenRegionGrow" Width="70" HorizontalAlignment="Left" ToolTip="부위를 못 찾은 검열 조각은 크기의 이 배율만큼 넓힌 타원으로 다시 그려요 (0 = 조각 그대로)"/>
+                            </DockPanel>
+                        </UniformGrid>
+                        <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,0"
+                                   Text="부위 감지 모델(구성요소 탭, 선택·45MB)이 있으면 검열 조각과 겹치는 부위를 찾아 그 전체를 다시 그려요 — 라벨 원고 144쪽에서 검은 막대 94%·모자이크 79%가 부위 상자로 잡혔어요. 모델이 없거나 못 찾은 조각은 배율로만 넓혀요. 가슴은 추적하지 않아요. 기본(Aletheia)에는 적용되지 않아요."/>
 
                         <ui:Button Content="기본값 복원" Click="BtnDecensorAdvReset_Click" Margin="0,10,0,0" Padding="12,5"/>
                     </StackPanel>
@@ -474,7 +480,7 @@
                     <DockPanel Margin="0,4">
                         <TextBlock Text="글꼴" Style="{StaticResource FieldLabel}" Width="110"/>
                         <ComboBox x:Name="CmbLetterFont" Width="240" HorizontalAlignment="Left" IsEditable="True"/>
-                        <CheckBox x:Name="ChkLetterBold" Content="굵게" Foreground="{StaticResource NekoText}"
+                        <CheckBox x:Name="ChkLetterBold" Content="굵게" Foreground="{DynamicResource NekoText}"
                                   VerticalAlignment="Center" Margin="14,0,0,0"/>
                     </DockPanel>
                     <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
@@ -509,7 +515,7 @@
                         <DockPanel>
                             <TextBlock Text="줄간격 (0.6 ~ 3)" Style="{StaticResource FieldLabel}" Width="140"/>
                             <TextBox x:Name="TxtLetterLineSp" Width="70" HorizontalAlignment="Left"/>
-                            <CheckBox x:Name="ChkLetterItalic" Content="기울임" Foreground="{StaticResource NekoText}"
+                            <CheckBox x:Name="ChkLetterItalic" Content="기울임" Foreground="{DynamicResource NekoText}"
                                       VerticalAlignment="Center" Margin="14,0,0,0"/>
                         </DockPanel>
                     </UniformGrid>
@@ -533,13 +539,13 @@
                 <StackPanel Margin="8,8,18,8">
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="채색 엔진"/></Border>
                     <TextBlock Style="{StaticResource HintText}"
-                               Text="채색과 엔진 LaMa 검열제거를 담당하는 엔진이에요. 창 없이 뒤에서 돌아가고, 앱이 알아서 켜고 꺼요 — 직접 실행할 일이 없어요."/>
-                    <Border Background="{StaticResource NekoCard}" BorderBrush="{StaticResource NekoStroke}" BorderThickness="2" CornerRadius="0" Padding="14,10" Margin="0,8,0,0">
+                               Text="채색과 재생성·커스텀 검열제거를 담당하는 엔진이에요. 창 없이 뒤에서 돌아가고, 앱이 알아서 켜고 꺼요 — 직접 실행할 일이 없어요."/>
+                    <Border Background="{DynamicResource NekoCard}" BorderBrush="{DynamicResource NekoStroke}" BorderThickness="2" CornerRadius="0" Padding="14,10" Margin="0,8,0,0">
                         <StackPanel>
                             <DockPanel>
                                 <Ellipse x:Name="DotEngine" Width="12" Height="12" Fill="Gray" VerticalAlignment="Center"/>
                                 <TextBlock x:Name="TxtEngineState" Text="상태 확인 중..." Margin="10,0,0,0"
-                                           Foreground="{StaticResource NekoText}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                           Foreground="{DynamicResource NekoText}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                     <ui:Button x:Name="BtnEngineStart" Content="▶ 켜기" Click="BtnEngineStart_Click" Padding="14,4"/>
                                     <ui:Button x:Name="BtnEngineStop" Content="■ 끄기" Click="BtnEngineStop_Click" Padding="14,4" Margin="8,0,0,0"/>
@@ -548,9 +554,9 @@
                             <!-- 연결해 둔 ComfyUI를 엔진으로 쓸 때만 보인다(LoadEngineTab) — [끄기]가 그 ComfyUI 자체를 닫는다는 안내 -->
                             <TextBlock x:Name="TxtEngineLinked" Style="{StaticResource HintText}" Margin="0,6,0,0" Visibility="Collapsed" Text=""/>
                             <CheckBox x:Name="ChkPrewarm" Content="앱을 켤 때 엔진도 미리 켜 두기 (첫 채색 대기 없음)"
-                                      Foreground="{StaticResource NekoText}" Margin="0,10,0,0"/>
+                                      Foreground="{DynamicResource NekoText}" Margin="0,10,0,0"/>
                             <CheckBox x:Name="ChkKeepWarm" Content="작업이 끝나도 엔진을 꺼두지 않기 (다음 작업이 빨라져요)"
-                                      Foreground="{StaticResource NekoText}" Margin="0,6,0,0"/>
+                                      Foreground="{DynamicResource NekoText}" Margin="0,6,0,0"/>
                             <DockPanel Margin="0,10,0,0">
                                 <TextBlock Text="그래픽카드 종류" Style="{StaticResource FieldLabel}" Width="110"/>
                                 <ui:Button DockPanel.Dock="Right" Content="이 PC에 맞게 조정" Click="BtnAutoTune_Click" Padding="10,4" Margin="8,0,0,0"
@@ -586,7 +592,7 @@
                         <ui:Button Content="내장 재생성 레시피를 ComfyUI에 넣기" Click="BtnInstallBundledWf_Click" Padding="12,5" Margin="8,0,0,0"
                                    ToolTip="앱에 내장된 재생성 레시피(검열 제거 방식 '재생성'이 쓰는 것)를 ComfyUI 워크플로 목록에 복사해요. 커스텀 워크플로를 만들 때 출발점으로 쓰세요."/>
                         <ui:Button Content="재생성 레시피를 API JSON으로 저장" Click="BtnExportRegenApi_Click" Padding="12,5" Margin="8,0,0,0"
-                                   ToolTip="지금 설정값이 반영된 재생성 레시피를 API 포맷 파일로 저장해요. 그대로 커스텀 ComfyUI 파일로 지정할 수 있어요."/>
+                                   ToolTip="지금 설정값이 반영된 재생성 레시피(영역 자르기·두 단계)를 API 포맷 파일로 저장해요 — 참고·수정용. 입력이 LoadImage 둘이라 그대로 커스텀 워크플로로 지정하면 두 번째 입력(지우기 마스크)이 비어 실패해요."/>
                     </WrapPanel>
                     <TextBlock x:Name="TxtWfStatus" Style="{StaticResource HintText}" Margin="0,4,0,0" Text=""/>
                     <DockPanel Margin="0,8,0,0">
@@ -706,7 +712,7 @@
                         <TextBox x:Name="TxtLinkedComfy"/>
                     </DockPanel>
                     <TextBlock Style="{StaticResource HintText}"
-                               Text="이미 설치해 둔 ComfyUI portable이 있으면 경로를 넣어 재다운로드(약 20GB)를 건너뛰어요. 채색과 GPU 검열 제거(엔진 LaMa·재생성·커스텀)에만 필요해요."/>
+                               Text="이미 설치해 둔 ComfyUI portable이 있으면 경로를 넣어 재다운로드(약 20GB)를 건너뛰어요. 채색과 GPU 검열 제거(재생성·커스텀)에만 필요해요."/>
 
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="civitai API 키 (선택)"/></Border>
                     <TextBox x:Name="TxtCivitaiKey"/>
@@ -724,7 +730,7 @@
                     <StackPanel Orientation="Horizontal" Margin="0,12,0,4">
                         <Image Source="{DynamicResource NekoLogo}" Width="46" Height="46" Margin="0,0,12,0"/>
                         <TextBlock Text="NekoManga" FontSize="24" FontWeight="ExtraBold"
-                                   Foreground="{StaticResource NekoText}" VerticalAlignment="Center"/>
+                                   Foreground="{DynamicResource NekoText}" VerticalAlignment="Center"/>
                     </StackPanel>
                     <TextBlock x:Name="TxtAboutVersion" Style="{StaticResource HintText}"/>
                     <TextBlock Style="{StaticResource HintText}" Margin="0,8,0,0"
@@ -735,7 +741,7 @@
                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,2,0,0" Text="• 텍스트 감지 — comictextdetector: 말풍선과 글자 위치를 찾아요 (BT와 같은 모델)."/>
                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 글자 인식 — manga-ocr: 일본어 세로쓰기·후리가나 특화 OCR."/>
                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 검열 감지 — Aletheia Lens(Mask R-CNN): 막대·모자이크를 찾아요. NekoManga 전용 학습 모델(YOLO-seg)이 가는 흰 막대선을 보완하고, 검토에서 고친 마스크로 자가 학습할 수 있어요."/>
-                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 기본 검열 제거 — Aletheia Lens(DeepCreamPy 막대·모자이크 모델): 찾은 자리를 주변 그림에 맞춰 채워요. '엔진 LaMa'는 ComfyUI 원본 레시피(GPU), '재생성'은 SDXL로 다시 그리기, '커스텀'은 내 ComfyUI 워크플로예요."/>
+                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 기본 검열 제거 — Aletheia Lens(DeepCreamPy 막대·모자이크 모델): 찾은 자리를 주변 그림에 맞춰 채워요. '재생성'은 SDXL로 다시 그리기(GPU), '커스텀'은 내 ComfyUI 워크플로예요."/>
                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 글자 지움 — LaMa(만화·애니 학습판): 지운 글자 자리를 주변과 어울리게 메워요. 전용 AI·규칙 감지기가 찾은 검열 자리도 기본값으로는 이 모델이 지워요."/>
                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 번역 — Google(무료) / DeepL / DeepSeek / Grok 중 선택."/>
                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 자동 채색 — SDXL(WAI-illustrious) + ControlNet 2단: 원고의 선을 따라 컬러로 그려요. WD14 태거가 장면 태그를 뽑아 프롬프트를 만들어요."/>
@@ -744,10 +750,10 @@
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="화면 테마"/></Border>
                     <StackPanel Orientation="Horizontal">
                         <RadioButton x:Name="RbThemeLight" Content="☀ 화이트 (원고지)" IsChecked="True"
-                                     Foreground="{StaticResource NekoText}" Margin="0,0,18,0"
+                                     Foreground="{DynamicResource NekoText}" Margin="0,0,18,0"
                                      Checked="Theme_Changed"/>
                         <RadioButton x:Name="RbThemeDark" Content="🌙 다크 (먹지)"
-                                     Foreground="{StaticResource NekoText}"
+                                     Foreground="{DynamicResource NekoText}"
                                      Checked="Theme_Changed"/>
                     </StackPanel>
                     <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,0"

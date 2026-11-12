@@ -27,10 +27,9 @@ public partial class SettingsWindow
     private void RefreshDecensorUi()
     {
         if (!_decensorUiReady) return;
-        string engine = ComboTag(CmbDecensorEngine, "Aletheia"), target = ComboTag(CmbDecensorTarget, "Auto");
+        string target = ComboTag(CmbDecensorTarget, "Auto");
         string assist = ComboTag(CmbLegacyAssist, "White"), mode = ComboTag(CmbDecensorMode, "Basic");
         string assistRepair = ChkAssistRepair.IsChecked == true ? "Aletheia" : "Lama";
-        bool ale = DecensorLabels.IsAletheia(engine);
         string models = Path.Combine(App.Settings.RuntimeRoot, "models");
         bool censorNet = File.Exists(Path.Combine(models, NekoManga.Core.Engine.CensorNet.ModelFile));
         bool aleDetect = File.Exists(Path.Combine(models, NekoManga.Core.Engine.AletheiaDetector.ModelFile));
@@ -38,58 +37,41 @@ public partial class SettingsWindow
                       && File.Exists(Path.Combine(models, NekoManga.Core.Engine.AletheiaInpainter.MosaicModelFile));
 
         // 요약
-        TxtFlowFind.Text = DecensorLabels.Find(engine, target, assist, censorNet);
-        TxtFlowFix.Text = DecensorLabels.Fix(engine, mode, target, assist, assistRepair);
+        TxtFlowFind.Text = DecensorLabels.Find(target, assist, censorNet);
+        TxtFlowFix.Text = DecensorLabels.Fix(mode, target, assist, assistRepair);
 
-        // 해당 없는 옵션은 숨긴다: 보완은 Aletheia + 자동에서만, 보완 자리 복원 선택은 기본 방식 + 보완이 있을 때만
-        PnlAssist.Visibility = ale && target == "Auto" ? Visibility.Visible : Visibility.Collapsed;
-        PnlAssistRepair.Visibility = mode == "Basic" && DecensorLabels.HasAssist(engine, target, assist) ? Visibility.Visible : Visibility.Collapsed;
-        ItemModeBasic.Content = DecensorLabels.BasicModeLabel(engine);
+        // 해당 없는 옵션은 숨긴다: 보완은 자동에서만, 보완 자리 복원 선택은 기본 방식 + 보완이 있을 때만
+        PnlAssist.Visibility = target == "Auto" ? Visibility.Visible : Visibility.Collapsed;
+        PnlAssistRepair.Visibility = mode == "Basic" && DecensorLabels.HasAssist(target, assist) ? Visibility.Visible : Visibility.Collapsed;
 
         // 고른 제거 방식 하나만 짧게 설명한다 (사용자 요청 10-20: 전부 늘어놓으면 가독성이 떨어짐)
         TxtDecensorModeHint.Text = mode switch
         {
-            "Basic" when ale => "Aletheia Lens의 복원 모델이 찾은 자리를 주변 그림에 맞춰 채워요. 막대는 가려진 곳을 비우고 새로 그리고, 모자이크는 흐려진 그림을 힌트 삼아 다듬어요. 빠르고 추가 설치가 없어요.",
-            "Basic" => "앱에 내장된 LaMa(만화·애니 학습판)가 검열 자리를 주변과 어울리게 메워요. 빠르고 추가 설치가 없어요. 먹줄·흰줄·가벼운 모자이크에 적합.",
-            "ComfyLama" => "ComfyUI의 LaMa 노드(사진 학습 모델, 확장 8·블러 8)로 메워요. 엔진이 필요하고 GPU를 써요.",
-            "ComfyRegen" => "내장 레시피: LaMa로 먼저 메운 뒤 SDXL이 선화를 따라 검열 자리를 다시 그려요. 엔진·GPU 필요. 프롬프트 등은 아래 고급 옵션.",
+            "Basic" => "Aletheia Lens의 복원 모델이 찾은 자리를 주변 그림에 맞춰 채워요. 막대는 가려진 곳을 비우고 새로 그리고, 모자이크는 흐려진 그림을 힌트 삼아 다듬어요. 빠르고 추가 설치가 없어요.",
+            "ComfyRegen" => "내장 레시피: 영역마다 주변을 1024로 잘라 SDXL 두 단계로 검열 조각을 새로 그리고 부위를 다듬어요(LaMa 없음). 엔진·GPU 필요. 프롬프트 등은 아래 고급 옵션.",
             "ComfyCustom" => "ComfyUI 화면에서 직접 짠 워크플로 파일을 그대로 실행해요. 엔진·GPU 필요. 파일은 엔진 탭에서 만들고 Export (API)로 저장.",
             _ => "",
         };
 
-        // 모델 상태 카드 — 첫 줄은 주 감지 엔진, 둘째 줄은 전용 AI(보완 또는 이전 방식의 주 감지기)
+        // 모델 상태 카드 — 첫 줄은 Aletheia Lens, 둘째 줄은 전용 AI(보완)
         var ok = System.Windows.Media.Brushes.MediumSeaGreen; var idle = System.Windows.Media.Brushes.Goldenrod; var missing = System.Windows.Media.Brushes.IndianRed;
         bool needInstall;
-        if (ale)
-        {
-            bool needRepair = mode == "Basic";
-            bool aleOk = aleDetect && (aleRepair || !needRepair);
-            DotCensorAi.Fill = aleOk ? ok : missing;
-            TxtCensorAi.Text = !aleDetect ? "Aletheia Lens 감지 모델이 설치되어 있지 않아요 — 검열 제거를 시작할 수 없어요"
-                : needRepair && !aleRepair ? "Aletheia Lens 복원 모델이 설치되어 있지 않아요 — '기본' 방식으로 지울 수 없어요"
-                : "Aletheia Lens 준비됨 — 막대·모자이크 감지" + (needRepair ? " + 복원" : "");
-            bool whiteOnly = target == "WhiteBar";   // '흰색 막대만'은 보완 설정과 상관없이 전용 AI의 흰 검출을 더한다(없으면 규칙 감지)
-            bool assistWanted = whiteOnly || (target == "Auto" && assist != "None");
-            RowAssistAi.Visibility = Visibility.Visible;
-            DotAssistAi.Fill = !censorNet ? (assistWanted ? missing : idle) : assistWanted ? ok : idle;
-            TxtAssistAi.Text = !censorNet ? (whiteOnly ? "전용 AI가 설치되어 있지 않아요 — 흰 막대는 규칙 감지로 보완해요 (잘못 잡는 곳이 많아요)"
-                    : assistWanted ? "전용 AI가 설치되어 있지 않아요 — 보완 없이 Aletheia Lens만 찾아요" : "전용 AI 미설치 (지금 설정에서는 쓰이지 않아요)")
-                : assistWanted ? "전용 AI 준비됨 — " + (whiteOnly ? "White" : assist) switch { "WhiteMosaic" => "흰 막대선·모자이크 보완", "All" => "흰·검·모자이크 전부 합치기", _ => "가는 흰 막대선 보완" }
-                : "전용 AI 준비됨 — 지금 설정에서는 쉬어요";
-            TxtCensorAiHint.Text = "Aletheia Lens는 컬러·흑백 그림의 막대와 모자이크를 찾는 공개 모델이고, 전용 AI는 이 앱용으로 직접 학습한 모델이에요. 잘못 잡힌 곳은 ③의 검토에서 지우면 돼요.";
-            needInstall = !aleOk || (assistWanted && !censorNet);
-        }
-        else
-        {
-            bool auto = target == "Auto";
-            DotCensorAi.Fill = censorNet ? (auto ? ok : idle) : missing;
-            TxtCensorAi.Text = !censorNet ? "전용 AI가 설치되어 있지 않아요 — 규칙으로 찾습니다"
-                : auto ? "전용 AI 사용 중 — 흰·검·모자이크를 한 번에 찾아요"
-                       : "전용 AI는 준비됐지만 규칙 감지 모드예요 — '자동'을 고르면 켜져요";
-            RowAssistAi.Visibility = Visibility.Collapsed;
-            TxtCensorAiHint.Text = "이전 방식: 이 앱 전용으로 직접 학습한 모델이 흰 막대·흰 박스·단색 밀기·검은 막대·모자이크를 한 번에 찾아요. 자동이 아닌 종류를 고르면 규칙 감지기가 그 종류만 겨냥해요.";
-            needInstall = !censorNet;
-        }
+        bool needRepair = mode == "Basic";
+        bool aleOk = aleDetect && (aleRepair || !needRepair);
+        DotCensorAi.Fill = aleOk ? ok : missing;
+        TxtCensorAi.Text = !aleDetect ? "Aletheia Lens 감지 모델이 설치되어 있지 않아요 — 검열 제거를 시작할 수 없어요"
+            : needRepair && !aleRepair ? "Aletheia Lens 복원 모델이 설치되어 있지 않아요 — '기본' 방식으로 지울 수 없어요"
+            : "Aletheia Lens 준비됨 — 막대·모자이크 감지" + (needRepair ? " + 복원" : "");
+        bool whiteOnly = target == "WhiteBar";   // '흰색 막대만'은 보완 설정과 상관없이 전용 AI의 흰 검출을 더한다(없으면 규칙 감지)
+        bool assistWanted = whiteOnly || (target == "Auto" && assist != "None");
+        RowAssistAi.Visibility = Visibility.Visible;
+        DotAssistAi.Fill = !censorNet ? (assistWanted ? missing : idle) : assistWanted ? ok : idle;
+        TxtAssistAi.Text = !censorNet ? (whiteOnly ? "전용 AI가 설치되어 있지 않아요 — 흰 막대는 규칙 감지로 보완해요 (잘못 잡는 곳이 많아요)"
+                : assistWanted ? "전용 AI가 설치되어 있지 않아요 — 보완 없이 Aletheia Lens만 찾아요" : "전용 AI 미설치 (지금 설정에서는 쓰이지 않아요)")
+            : assistWanted ? "전용 AI 준비됨 — " + (whiteOnly ? "White" : assist) switch { "WhiteMosaic" => "흰 막대선·모자이크 보완", "All" => "흰·검·모자이크 전부 합치기", _ => "가는 흰 막대선 보완" }
+            : "전용 AI 준비됨 — 지금 설정에서는 쉬어요";
+        TxtCensorAiHint.Text = "Aletheia Lens는 컬러·흑백 그림의 막대와 모자이크를 찾는 공개 모델이고, 전용 AI는 이 앱용으로 직접 학습한 모델이에요. 잘못 잡힌 곳은 ③의 검토에서 지우면 돼요.";
+        needInstall = !aleOk || (assistWanted && !censorNet);
         BtnInstallCensorAi.Visibility = needInstall ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -141,8 +123,6 @@ public partial class SettingsWindow
     private void BtnDecensorAdvReset_Click(object sender, RoutedEventArgs e)
     {
         var d = new NekoManga.Core.AppSettings(); // 기본값 원본
-        TxtAdvLamaGrow.Text = d.LamaMaskGrow.ToString();
-        TxtAdvLamaBlur.Text = d.LamaMaskBlur.ToString();
         LoadRegen(d);
     }
 
@@ -152,13 +132,19 @@ public partial class SettingsWindow
         TxtRegenCkpt.Text = s.RegenCheckpoint;
         TxtRegenCn.Text = s.RegenControlNet;
         TxtRegenPrompt.Text = s.RegenPrompt;
-        TxtRegenBody.Text = s.RegenBodyTags;
+        TxtRegenBodyM.Text = s.RegenBodyTagsMale;
+        TxtRegenBodyF.Text = s.RegenBodyTagsFemale;
         TxtRegenNeg.Text = s.RegenNegative;
         TxtRegenDenoise.Text = s.RegenDenoise.ToString(CultureInfo.InvariantCulture);
         TxtRegenSteps.Text = s.RegenSteps.ToString();
         TxtRegenCfg.Text = s.RegenCfg.ToString(CultureInfo.InvariantCulture);
         TxtRegenCnStr.Text = s.RegenCnStrength.ToString(CultureInfo.InvariantCulture);
         TxtRegenCnEnd.Text = s.RegenCnEnd.ToString(CultureInfo.InvariantCulture);
-        TxtRegenMp.Text = s.RegenMegapixels.ToString(CultureInfo.InvariantCulture);
+        TxtRegenCrop.Text = s.RegenCropSize.ToString();
+        TxtRegenInpaintGrow.Text = s.RegenInpaintGrow.ToString();
+        ChkRegenWhole.IsChecked = s.RegenWholeRegion;
+        TxtRegenRegionConf.Text = s.RegenRegionConf.ToString(CultureInfo.InvariantCulture);
+        TxtRegenRegionPad.Text = s.RegenRegionPad.ToString(CultureInfo.InvariantCulture);
+        TxtRegenRegionGrow.Text = s.RegenRegionGrow.ToString(CultureInfo.InvariantCulture);
     }
 }

@@ -5,68 +5,91 @@
                  Title="결과 보기 — 놓친 검열 직접 지우기"
                  Width="1180" Height="940" MinWidth="820" MinHeight="620"
                  WindowStartupLocation="CenterOwner"
-                 Background="{StaticResource NekoBg}" ExtendsContentIntoTitleBar="True"
-                 WindowBackdropType="Mica" KeyDown="Window_KeyDown">
+                 Background="{DynamicResource NekoBg}" ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="None" KeyDown="Window_KeyDown"
+                 PreviewKeyDown="Window_PreviewKeyDown" PreviewKeyUp="Window_PreviewKeyUp">
     <!-- Grid 별 행 대신 DockPanel을 쓴다 — 창이 작아져도 아래 버튼 바가 먼저 자리를 잡아
          잘려 사라지지 않는다 (Grid * 행에서는 실제로 잘렸다). -->
     <DockPanel>
         <ui:TitleBar DockPanel.Dock="Top" Title="결과 보기" ShowMaximize="True"/>
 
-        <Border DockPanel.Dock="Top" Background="{StaticResource NekoCard}" BorderBrush="{StaticResource NekoStroke}" BorderThickness="2" CornerRadius="0" Margin="16,8,16,8" Padding="14,10">
+        <Border DockPanel.Dock="Top" Background="{DynamicResource NekoCard}" BorderBrush="{DynamicResource NekoStroke}" BorderThickness="2" CornerRadius="0" Margin="16,8,16,8" Padding="14,10">
             <StackPanel>
                 <!-- 페이지 이동 -->
                 <DockPanel Margin="0,0,0,8">
                     <ui:Button x:Name="BtnPrev" DockPanel.Dock="Left" Content="◀ 이전" Click="BtnPrev_Click" Padding="12,4"/>
                     <ui:Button x:Name="BtnNext" DockPanel.Dock="Left" Content="다음 ▶" Click="BtnNext_Click" Padding="12,4" Margin="6,0,12,0"/>
                     <TextBlock x:Name="TxtCount" DockPanel.Dock="Left" VerticalAlignment="Center"
-                               Foreground="{StaticResource NekoPink}" FontWeight="SemiBold" Margin="0,0,12,0"/>
+                               Foreground="{DynamicResource NekoPink}" FontWeight="SemiBold" Margin="0,0,12,0"/>
                     <ComboBox x:Name="CmbPages" SelectionChanged="CmbPages_Changed" MaxWidth="560" HorizontalAlignment="Left"/>
                 </DockPanel>
 
                 <DockPanel>
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="확대" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBlock Text="확대" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="0,0,6,0"/>
                         <Slider x:Name="SldZoom" Minimum="0.2" Maximum="4" Value="1" Width="150"
                                 VerticalAlignment="Center" ValueChanged="Zoom_Changed"/>
-                        <TextBlock x:Name="TxtZoom" Text="100%" Foreground="{StaticResource NekoText}"
+                        <TextBlock x:Name="TxtZoom" Text="100%" Foreground="{DynamicResource NekoText}"
                                    VerticalAlignment="Center" Margin="8,0,0,0"/>
                     </StackPanel>
-                    <TextBlock x:Name="TxtFile" Foreground="{StaticResource NekoText}" FontWeight="SemiBold"
+                    <TextBlock x:Name="TxtFile" Foreground="{DynamicResource NekoText}" FontWeight="SemiBold"
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                 </DockPanel>
 
                 <TabControl x:Name="TabMode" Background="Transparent" BorderThickness="0" Margin="0,6,0,0"
                             SelectionChanged="TabMode_Changed">
-                    <TabItem Header="🙈 검열 지우기">
+                    <!-- 검열 지우기 = 마스크 편집 한 방식 (2026-11-11, 사용자 요청으로 '마스크 수정' 탭과 합침).
+                         마스크 보기: 검열 제거 전 원고(.pre.png) 위 빨간 마스크를 칠한다(저장 마스크가 없는 장은 결과물 위 빈 마스크).
+                         [지우기]는 이 장만 검열 제거·식자를 다시 한다 — 채색은 돌리지 않는다(사용자 결정). 끝나면 결과 보기로 바뀐다. -->
+                    <TabItem x:Name="TabDecensor" Header="🙈 검열 지우기">
                         <StackPanel Margin="0,8,0,0">
                             <TextBlock x:Name="TxtDecensorHint" Style="{StaticResource HintText}" Margin="0,0,0,6"
-                                       Text="점 찍기: 꼭짓점을 클릭하고 더블클릭(또는 Enter)으로 도형을 닫아요 — 점 수 제한 없음. 브러시: 누른 채 칠해요. 우클릭=마지막 점/획 취소, Esc=취소, 휠=확대, 휠 드래그=이동."/>
+                                       Text="빨간 곳이 지워져요. 놓친 검열은 칠하고(B), 잘못 잡힌 곳은 지우개(E)로, 다각형(L)은 꼭짓점 클릭 → 더블클릭/Enter로 닫기. 우클릭=마지막 점 취소, [ ]=브러시 크기, Alt+휠·Ctrl+±=확대, Ctrl+0=맞춤, Space+드래그=이동, Ctrl+Z=되돌리기. [지우기]는 이 장만 검열 제거·식자를 다시 해요 (채색은 안 해요)."/>
                             <WrapPanel>
-                                <TextBlock Text="도구" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                <RadioButton x:Name="RbToolPoly" Content="✏ 점 찍기" IsChecked="True" GroupName="Tool"
-                                             Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,10,0"
-                                             Checked="Tool_Changed"/>
-                                <RadioButton x:Name="RbToolBrush" Content="🖌 브러시" GroupName="Tool"
-                                             Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,8,0"
-                                             Checked="Tool_Changed"/>
-                                <TextBlock Text="브러시 크기" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                                <TextBox x:Name="TxtBrushSize" Text="24" Width="52" VerticalAlignment="Center" Margin="0,0,18,0"/>
-                                <TextBlock Text="지울 대상" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                                <RadioButton x:Name="RbDarkOnly" Content="검은 부분만" IsChecked="True"
-                                             Foreground="{StaticResource NekoText}" Margin="0,0,14,0"/>
-                                <RadioButton x:Name="RbWhiteOnly" Content="흰 부분만"
-                                             Foreground="{StaticResource NekoText}" Margin="0,0,14,0"/>
-                                <RadioButton x:Name="RbWholeRect" Content="도형 전체"
-                                             Foreground="{StaticResource NekoText}" Margin="0,0,24,0"/>
-                                <TextBlock Text="여유(px)" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                <TextBox x:Name="TxtGrow" Text="6" Width="56" VerticalAlignment="Center"/>
-                                <TextBlock Text="모델" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="20,0,6,0"/>
+                                <TextBlock Text="보기" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <RadioButton x:Name="RbViewMask" Content="🎭 마스크 보기" IsChecked="True" GroupName="View"
+                                             Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="0,0,10,0" Checked="View_Changed"
+                                             ToolTip="검열 제거 전 원고 위에 지워질 곳(빨강)을 칠해요"/>
+                                <RadioButton x:Name="RbViewResult" Content="👁 결과 보기" GroupName="View"
+                                             Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="0,0,20,0" Checked="View_Changed"
+                                             ToolTip="지금 결과물을 그대로 봐요 (칠하기는 마스크 보기에서)"/>
+                                <TextBlock Text="도구" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <RadioButton x:Name="RbMAdd" Content="🖌 칠하기" IsChecked="True" GroupName="MaskTool" ToolTip="B"
+                                             Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="0,0,10,0" Checked="MaskTool_Changed"/>
+                                <RadioButton x:Name="RbMErase" Content="🧽 지우개" GroupName="MaskTool" ToolTip="E"
+                                             Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="0,0,10,0" Checked="MaskTool_Changed"/>
+                                <RadioButton x:Name="RbMPoly" Content="⬠ 다각형" GroupName="MaskTool" ToolTip="L — 꼭짓점 클릭 → 더블클릭/Enter로 닫기"
+                                             Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="0,0,14,0" Checked="MaskTool_Changed"/>
+                                <TextBlock Text="브러시" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <Slider x:Name="SldMBrush" Minimum="4" Maximum="120" Value="24" Width="130" VerticalAlignment="Center" ToolTip="브러시 반지름(원본 px) — [ ] 키로도 바꿔요"/>
+                                <TextBlock x:Name="TxtMBrush" Text="24px" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                            </WrapPanel>
+                            <WrapPanel Margin="0,6,0,0">
+                                <TextBlock Text="지울 대상" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="0,0,10,0"
+                                           ToolTip="다각형을 닫을 때 안쪽에서 그 톤의 픽셀만 마스크에 더해요 (브러시는 늘 전체)"/>
+                                <RadioButton x:Name="RbDarkOnly" Content="검은 부분만" IsChecked="True" GroupName="Tone"
+                                             Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                                <RadioButton x:Name="RbWhiteOnly" Content="흰 부분만" GroupName="Tone"
+                                             Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                                <RadioButton x:Name="RbWholeRect" Content="도형 전체" GroupName="Tone"
+                                             Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="0,0,24,0"/>
+                                <TextBlock Text="여유(px)" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBox x:Name="TxtGrow" Text="0" Width="56" VerticalAlignment="Center"
+                                         ToolTip="지울 때 마스크를 이만큼 부풀려요 — 0이면 저장 마스크 그대로(파이프라인과 같은 결과)"/>
+                                <TextBlock Text="모델" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="20,0,6,0"/>
                                 <ComboBox x:Name="CmbEngine" Width="250" VerticalAlignment="Center" SelectionChanged="CmbEngine_Changed">
-                                    <ComboBoxItem x:Name="ItemEngineBasic" Tag="Basic" Content="기본 — Aletheia 복원 (빠름)" IsSelected="True" ToolTip="내장 모델, 항상 같은 결과"/>
-                                    <ComboBoxItem Tag="ComfyLama" Content="엔진 LaMa (GPU)" ToolTip="ComfyUI 원본 레시피"/>
+                                    <ComboBoxItem x:Name="ItemEngineBasic" Tag="Basic" Content="기본 — Aletheia 복원 (빠름)" IsSelected="True" ToolTip="Aletheia Lens 복원 모델 — 고른 자리를 비우고 주변 그림에 맞춰 채워요 (내장, 항상 같은 결과)"/>
                                     <ComboBoxItem Tag="ComfyRegen" Content="재생성 (SDXL·GPU)" ToolTip="내장 재생성 레시피로 다시 그려요"/>
                                     <ComboBoxItem Tag="ComfyCustom" Content="커스텀 ComfyUI" ToolTip="설정 → 검열 제거의 커스텀 워크플로 파일"/>
                                 </ComboBox>
+                            </WrapPanel>
+                            <WrapPanel Margin="0,6,0,0">
+                                <ui:Button Content="자동 감지로" Click="BtnMReset_Click" Padding="10,4" ToolTip="이 페이지 마스크를 자동 감지 결과로 되돌려요"/>
+                                <ui:Button Content="전부 지우기" Click="BtnMClear_Click" Padding="10,4" Margin="8,0,0,0" ToolTip="Ctrl+D"/>
+                                <CheckBox x:Name="ChkMSkip" Content="이 페이지는 검열 없음" Foreground="{DynamicResource NekoText}"
+                                          VerticalAlignment="Center" Margin="14,0,0,0" Checked="ChkMSkip_Changed" Unchecked="ChkMSkip_Changed"
+                                          ToolTip="마스크가 있어도 검열 제거를 건너뛰어요"/>
+                                <TextBlock x:Name="TxtMaskInfo" Foreground="{DynamicResource NekoPink}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="14,0,0,0" TextTrimming="CharacterEllipsis"/>
                             </WrapPanel>
 
                             <!-- 재생성(SDXL)일 때만: 이 페이지에만 쓰는 프롬프트·수치 (설정에는 저장 안 함, 페이지마다 따로 기억) -->
@@ -86,7 +109,7 @@
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
                                         <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
                                             <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
                                         </Grid.RowDefinitions>
                                         <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Style="{StaticResource HintText}" Margin="0,0,0,6"
@@ -94,12 +117,14 @@
                                         <TextBlock Grid.Row="1" Text="프롬프트" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,8,10,0"/>
                                         <TextBox Grid.Row="1" Grid.Column="1" x:Name="TxtRgPrompt" TextWrapping="Wrap" AcceptsReturn="True" MinLines="2" MaxLines="4" VerticalScrollBarVisibility="Auto"
                                                  ToolTip="SDXL에 주는 기본 프롬프트 — 원고 풍·선화 유지 같은 전체 지시"/>
-                                        <TextBlock Grid.Row="2" Text="신체 태그" Style="{StaticResource FieldLabel}" Margin="0,6,10,0"/>
-                                        <TextBox Grid.Row="2" Grid.Column="1" x:Name="TxtRgBody" Margin="0,6,0,0" ToolTip="복원할 부위를 나타내는 태그 — 프롬프트 뒤에 붙어요"/>
-                                        <TextBlock Grid.Row="3" Text="부정 프롬프트" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,14,10,0"/>
-                                        <TextBox Grid.Row="3" Grid.Column="1" x:Name="TxtRgNeg" Margin="0,6,0,0" TextWrapping="Wrap" AcceptsReturn="True" MinLines="2" MaxLines="4" VerticalScrollBarVisibility="Auto"
+                                        <TextBlock Grid.Row="2" Text="태그 — 남성" Style="{StaticResource FieldLabel}" Margin="0,6,10,0"/>
+                                        <TextBox Grid.Row="2" Grid.Column="1" x:Name="TxtRgBodyM" Margin="0,6,0,0" ToolTip="부위 감지가 penis로 본 영역의 태그 — 프롬프트 뒤에 붙어요"/>
+                                        <TextBlock Grid.Row="3" Text="태그 — 여성" Style="{StaticResource FieldLabel}" Margin="0,6,10,0"/>
+                                        <TextBox Grid.Row="3" Grid.Column="1" x:Name="TxtRgBodyF" Margin="0,6,0,0" ToolTip="pussy로 본 영역의 태그 — 못 가르면 남성·여성 둘 다 붙어요"/>
+                                        <TextBlock Grid.Row="4" Text="부정 프롬프트" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,14,10,0"/>
+                                        <TextBox Grid.Row="4" Grid.Column="1" x:Name="TxtRgNeg" Margin="0,6,0,0" TextWrapping="Wrap" AcceptsReturn="True" MinLines="2" MaxLines="4" VerticalScrollBarVisibility="Auto"
                                                  ToolTip="그리지 말아야 할 것 — 검열 흔적·글자·효과음 등"/>
-                                        <UniformGrid Grid.Row="4" Grid.ColumnSpan="2" Columns="3" Margin="0,8,0,0">
+                                        <UniformGrid Grid.Row="5" Grid.ColumnSpan="2" Columns="3" Margin="0,8,0,0">
                                             <DockPanel Margin="0,0,12,6"><TextBlock Text="Denoise (0.05 ~ 1)" Style="{StaticResource FieldLabel}" Width="140"/><TextBox x:Name="TxtRgDenoise" Width="70" HorizontalAlignment="Left" ToolTip="높을수록 많이 다시 그려요. 0.62가 기본"/></DockPanel>
                                             <DockPanel Margin="0,0,12,6"><TextBlock Text="스텝 (1 ~ 150)" Style="{StaticResource FieldLabel}" Width="140"/><TextBox x:Name="TxtRgSteps" Width="70" HorizontalAlignment="Left"/></DockPanel>
                                             <DockPanel Margin="0,0,0,6"><TextBlock Text="CFG (0 ~ 30)" Style="{StaticResource FieldLabel}" Width="140"/><TextBox x:Name="TxtRgCfg" Width="70" HorizontalAlignment="Left"/></DockPanel>
@@ -107,41 +132,11 @@
                                             <DockPanel Margin="0,0,12,0"><TextBlock Text="선화 강도 (0 ~ 2)" Style="{StaticResource FieldLabel}" Width="140"/><TextBox x:Name="TxtRgCnStr" Width="70" HorizontalAlignment="Left" ToolTip="원고 선을 얼마나 따를지 (ControlNet)"/></DockPanel>
                                             <DockPanel><TextBlock Text="선화 구간 끝 (0 ~ 1)" Style="{StaticResource FieldLabel}" Width="140"/><TextBox x:Name="TxtRgCnEnd" Width="70" HorizontalAlignment="Left" ToolTip="샘플링의 몇 %까지 선화를 따를지"/></DockPanel>
                                         </UniformGrid>
-                                        <ui:Button Grid.Row="5" Grid.ColumnSpan="2" Content="↺ 이 페이지 값을 설정값으로 되돌리기" Click="BtnRegenReset_Click" Padding="10,4" Margin="0,8,0,0" HorizontalAlignment="Left"
+                                        <ui:Button Grid.Row="6" Grid.ColumnSpan="2" Content="↺ 이 페이지 값을 설정값으로 되돌리기" Click="BtnRegenReset_Click" Padding="10,4" Margin="0,8,0,0" HorizontalAlignment="Left"
                                                    ToolTip="이 페이지의 값을 ⚙ 설정의 재생성 값으로 되돌려요"/>
                                     </Grid>
                                 </Expander>
                             </Border>
-                        </StackPanel>
-                    </TabItem>
-
-                    <!-- 검열 마스크 수정 (2026-10-21): 검토 대기 페이지는 여기서 고친 뒤 [검열 제거 진행], 끝난 페이지는 저장 마스크로 다시 제거 -->
-                    <TabItem x:Name="TabMask" Header="🎭 마스크 수정">
-                        <StackPanel Margin="0,8,0,0">
-                            <TextBlock x:Name="TxtMaskHint" Style="{StaticResource HintText}" Margin="0,0,0,6"
-                                       Text="빨간 곳이 지워져요. 놓친 검열은 칠하고(B), 잘못 잡힌 곳은 지우개(E)로 지우세요. 다각형(P)은 꼭짓점 클릭 → 더블클릭/Enter로 닫기. 우클릭=취소, Ctrl+Z=되돌리기."/>
-                            <WrapPanel>
-                                <TextBlock Text="도구" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                <RadioButton x:Name="RbMAdd" Content="🖌 칠하기" IsChecked="True" GroupName="MaskTool"
-                                             Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,10,0" Checked="MaskTool_Changed"/>
-                                <RadioButton x:Name="RbMErase" Content="🧽 지우개" GroupName="MaskTool"
-                                             Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,10,0" Checked="MaskTool_Changed"/>
-                                <RadioButton x:Name="RbMPoly" Content="⬠ 다각형" GroupName="MaskTool"
-                                             Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,14,0" Checked="MaskTool_Changed"/>
-                                <TextBlock Text="브러시" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                <Slider x:Name="SldMBrush" Minimum="4" Maximum="120" Value="24" Width="130" VerticalAlignment="Center" ToolTip="브러시 반지름(원본 px)"/>
-                                <TextBlock x:Name="TxtMBrush" Text="24px" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="6,0,18,0"/>
-                                <ui:Button Content="자동 감지로" Click="BtnMReset_Click" Padding="10,4" ToolTip="이 페이지 마스크를 자동 감지 결과로 되돌려요"/>
-                                <ui:Button Content="전부 지우기" Click="BtnMClear_Click" Padding="10,4" Margin="8,0,0,0"/>
-                                <CheckBox x:Name="ChkMSkip" Content="이 페이지는 검열 없음" Foreground="{StaticResource NekoText}"
-                                          VerticalAlignment="Center" Margin="14,0,0,0" Checked="ChkMSkip_Changed" Unchecked="ChkMSkip_Changed"
-                                          ToolTip="마스크가 있어도 검열 제거를 건너뛰어요"/>
-                            </WrapPanel>
-                            <DockPanel Margin="0,8,0,0">
-                                <ui:Button x:Name="BtnMRedo" DockPanel.Dock="Right" Content="🎨 채색부터 다시 (느림)" Click="BtnMRedo_Click" Padding="10,4"
-                                           ToolTip="보존해 둔 검열 제거 전 원고에 이 마스크를 적용하고 채색·식자까지 다시 돌려요 — 페이지당 2~3분"/>
-                                <TextBlock x:Name="TxtMaskInfo" Foreground="{StaticResource NekoPink}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                            </DockPanel>
                         </StackPanel>
                     </TabItem>
 
@@ -150,20 +145,20 @@
                             <TextBlock x:Name="TxtLetterHint" Style="{StaticResource HintText}" Margin="0,0,0,6"
                                        Text="말풍선 위 텍스트박스를 클릭해 바로 고치세요 — 타이핑이 즉시 보여요. 다 고치면 [다시 식자]가 최종 화질로 렌더링해요 (미리보기에서 그림을 클릭하면 다시 편집)."/>
                             <WrapPanel Margin="0,0,0,6">
-                                <TextBlock Text="글꼴" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock Text="글꼴" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                 <ComboBox x:Name="CmbLFont" Width="190" IsEditable="True" VerticalAlignment="Center"/>
-                                <CheckBox x:Name="ChkLBold" Content="굵게" Foreground="{StaticResource NekoText}"
+                                <CheckBox x:Name="ChkLBold" Content="굵게" Foreground="{DynamicResource NekoText}"
                                           VerticalAlignment="Center" Margin="10,0,0,0"/>
-                                <TextBlock Text="크기" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="16,0,6,0"/>
+                                <TextBlock Text="크기" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="16,0,6,0"/>
                                 <TextBox x:Name="TxtLSize" Width="52" VerticalAlignment="Center"/>
-                                <TextBlock Text="글자 색" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="16,0,6,0"/>
+                                <TextBlock Text="글자 색" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="16,0,6,0"/>
                                 <TextBox x:Name="TxtLColor" Width="86" VerticalAlignment="Center" ToolTip="#RRGGBB — 비우면 원문 색 자동"/>
-                                <TextBlock Text="외곽선" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="16,0,6,0"/>
+                                <TextBlock Text="외곽선" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="16,0,6,0"/>
                                 <TextBox x:Name="TxtLOutScale" Width="52" VerticalAlignment="Center"/>
                                 <TextBox x:Name="TxtLOutColor" Width="86" VerticalAlignment="Center" Margin="6,0,0,0"/>
                             </WrapPanel>
                             <DockPanel>
-                                <TextBlock Text="블록" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock Text="블록" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                 <ComboBox x:Name="CmbBlocks" Width="230" VerticalAlignment="Center"
                                           SelectionChanged="CmbBlocks_Changed"/>
                                 <ui:Button x:Name="BtnBlockHide" DockPanel.Dock="Right" Content="이 블록 숨기기"
@@ -174,32 +169,32 @@
                             <!-- 선택한 풍선만 적용되는 세부 스타일 (BT급 디테일 편집).
                                  WrapPanel: 창이 좁아도 잘리지 않고 다음 줄로 흐른다 -->
                             <WrapPanel Margin="0,6,0,0">
-                                <TextBlock Text="이 풍선만" Foreground="{StaticResource NekoPink}" FontWeight="SemiBold"
+                                <TextBlock Text="이 풍선만" Foreground="{DynamicResource NekoPink}" FontWeight="SemiBold"
                                            VerticalAlignment="Center" Margin="0,2,10,2"/>
-                                <TextBlock Text="크기×" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="0,2,4,2"/>
+                                <TextBlock Text="크기×" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="0,2,4,2"/>
                                 <TextBox x:Name="TxtBScale" Width="48" VerticalAlignment="Center" Margin="0,2,0,2" TextChanged="BlockStyle_Changed"/>
-                                <TextBlock Text="정렬" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
+                                <TextBlock Text="정렬" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
                                 <ComboBox x:Name="CmbBAlign" Width="126" VerticalAlignment="Center" Margin="0,2,0,2" SelectionChanged="BlockStyle_Changed">
                                     <ComboBoxItem Tag="" Content="페이지 설정" IsSelected="True"/>
                                     <ComboBoxItem Tag="Left" Content="왼쪽"/>
                                     <ComboBoxItem Tag="Center" Content="가운데"/>
                                     <ComboBoxItem Tag="Right" Content="오른쪽"/>
                                 </ComboBox>
-                                <TextBlock Text="굵기" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
+                                <TextBlock Text="굵기" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
                                 <ComboBox x:Name="CmbBBold" Width="124" VerticalAlignment="Center" Margin="0,2,0,2" SelectionChanged="BlockStyle_Changed">
                                     <ComboBoxItem Tag="-1" Content="페이지 설정" IsSelected="True"/>
                                     <ComboBoxItem Tag="1" Content="굵게"/>
                                     <ComboBoxItem Tag="0" Content="보통"/>
                                 </ComboBox>
-                                <CheckBox x:Name="ChkBItalic" Content="기울임" Foreground="{StaticResource NekoText}"
+                                <CheckBox x:Name="ChkBItalic" Content="기울임" Foreground="{DynamicResource NekoText}"
                                           VerticalAlignment="Center" Margin="12,2,0,2"
                                           Checked="BlockStyle_Changed" Unchecked="BlockStyle_Changed"/>
-                                <TextBlock Text="줄간격" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
+                                <TextBlock Text="줄간격" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
                                 <TextBox x:Name="TxtBLineSp" Width="48" VerticalAlignment="Center" Margin="0,2,0,2" TextChanged="BlockStyle_Changed"/>
-                                <TextBlock Text="색" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
+                                <TextBlock Text="색" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
                                 <TextBox x:Name="TxtBColor" Width="90" VerticalAlignment="Center" Margin="0,2,0,2" TextChanged="BlockStyle_Changed"
                                          ToolTip="#RRGGBB — 비우면 전역 설정"/>
-                                <TextBlock Text="회전°" Foreground="{StaticResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
+                                <TextBlock Text="회전°" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
                                 <TextBox x:Name="TxtBRot" Width="48" VerticalAlignment="Center" Margin="0,2,0,2" TextChanged="BlockStyle_Changed"/>
                             </WrapPanel>
                         </StackPanel>
@@ -208,12 +203,11 @@
             </StackPanel>
         </Border>
 
-        <Border DockPanel.Dock="Bottom" Background="{StaticResource NekoCard}" BorderBrush="{StaticResource NekoStroke}" BorderThickness="2" CornerRadius="0" Margin="16,8,16,12" Padding="14,8">
+        <Border DockPanel.Dock="Bottom" Background="{DynamicResource NekoCard}" BorderBrush="{DynamicResource NekoStroke}" BorderThickness="2" CornerRadius="0" Margin="16,8,16,12" Padding="14,8">
             <DockPanel>
                 <TextBlock x:Name="TxtStatus" DockPanel.Dock="Left" VerticalAlignment="Center"
-                           Foreground="{StaticResource NekoText}" Text="준비됐어요"/>
+                           Foreground="{DynamicResource NekoText}" Text="준비됐어요"/>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <ui:Button x:Name="BtnClearSel" Content="선택 지우기" Click="BtnClearSel_Click" Padding="14,6"/>
                     <ui:Button x:Name="BtnUndo" Content="↩ 되돌리기" Click="BtnUndo_Click" Padding="14,6" Margin="8,0,0,0" IsEnabled="False"/>
                     <ui:Button x:Name="BtnApply" Content="✨ 선택 영역 지우기" Click="BtnApply_Click"
                                Appearance="Primary" Padding="16,6" Margin="8,0,0,0"/>
@@ -224,7 +218,7 @@
 
         <!-- 원고 작업대: 격자 작업판 위에 원고(그림자·먹선)를 올려 둔 느낌 -->
         <Border Background="{DynamicResource NekoCanvas}" CornerRadius="0" Margin="16,0,16,0" ClipToBounds="True"
-                BorderBrush="{StaticResource NekoStroke}" BorderThickness="2">
+                BorderBrush="{DynamicResource NekoStroke}" BorderThickness="2">
             <Grid>
                 <Rectangle Fill="{DynamicResource MangaGrid}" IsHitTestVisible="False"/>
                 <ScrollViewer x:Name="Scroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
@@ -245,6 +239,19 @@
                         </Border>
                     </Grid>
                 </ScrollViewer>
+                <!-- 로딩 오버레이 — [지우기]로 이 장을 다시 렌더링하는 동안 캔버스를 덮는다 (2026-11-11 사용자 요청: 별도 창 대신 창 안 오버레이).
+                     테마 색은 전부 DynamicResource(app-ui.md 규칙). 취소는 단계 경계에서 멈춘다 — 안내 글은 누른 뒤에만 보인다 -->
+                <Grid x:Name="PnlLoading" Visibility="Collapsed" Background="{DynamicResource NekoBg}" Opacity="0.9">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="420">
+                        <ui:ProgressRing IsIndeterminate="True" Width="56" Height="56" HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="TxtLoadStage" Text="준비 중" Foreground="{DynamicResource NekoText}" FontSize="15" FontWeight="SemiBold"
+                                   TextAlignment="Center" TextWrapping="Wrap" Margin="0,14,0,4"/>
+                        <TextBlock x:Name="TxtLoadPct" Text="" Foreground="{DynamicResource NekoHint}" TextAlignment="Center"/>
+                        <TextBlock x:Name="TxtLoadCancelNote" Text="취소했어요 — 지금 단계가 끝나면 멈춰요 (결과물은 그대로예요)" Visibility="Collapsed"
+                                   Foreground="{DynamicResource NekoHint}" TextAlignment="Center" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                        <ui:Button x:Name="BtnLoadCancel" Content="취소" Click="BtnLoadCancel_Click" Padding="16,6" Margin="0,14,0,0" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </Grid>
             </Grid>
         </Border>
     </DockPanel>

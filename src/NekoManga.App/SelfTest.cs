@@ -79,7 +79,7 @@ public static class SelfTest
                 var exclude = result.Blocks.Select(b =>
                     new Rect(b.X1, b.Y1, Math.Max(1, b.X2 - b.X1), Math.Max(1, b.Y2 - b.Y1))).ToList();
 
-                // 파이프라인과 같은 경로로 — 감지(DecensorEngine이 정한 감지기) + 기본 복원
+                // 파이프라인과 같은 경로로 — 감지(Aletheia Lens + 보완) + 기본 복원
                 using var runner = new PipelineRunner(settings);
                 using var mask = runner.DetectCensorMask(img2, exclude, out var kindUsed, out var kindsMap);
                 using var _kindsDispose = kindsMap;

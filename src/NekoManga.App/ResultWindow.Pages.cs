@@ -219,9 +219,6 @@ public partial class ResultWindow
 
         _img.Dispose();
         while (_undo.Count > 0) _undo.Pop().Dispose();
-        _shapes.Clear();
-        _pending.Clear();
-        _brushStrokes.Clear();
         _dirty = false;
         BtnSave.IsEnabled = false;
         BtnUndo.IsEnabled = false;
@@ -247,20 +244,22 @@ public partial class ResultWindow
         _letterPreview = false;
         TabLetter.IsEnabled = _sidecar != null && _baseImg != null;
         if (!TabLetter.IsEnabled && TabMode.SelectedItem == TabLetter) TabMode.SelectedIndex = 0;
-        TabMask.IsEnabled = _maskMat != null && _maskPre != null;
-        if (!TabMask.IsEnabled && TabMode.SelectedItem == TabMask) TabMode.SelectedIndex = 0;
-        // 검토 대기 페이지(또는 마스크 탭으로 열라는 요청)는 마스크 탭부터 보여 준다
-        if (TabMask.IsEnabled && (_startOnMask || IsWaitingPage) && TabMode.SelectedItem != TabMask) TabMode.SelectedItem = TabMask;
+        TabDecensor.IsEnabled = _maskMat != null && _maskPre != null;   // ResetMaskState가 저장 마스크 없는 장에도 빈 마스크를 만든다 — 그림을 못 읽은 장만 꺼진다
+        if (!TabDecensor.IsEnabled && TabMode.SelectedItem == TabDecensor) TabMode.SelectedIndex = 1;
+        // 검토 대기 페이지(또는 마스크부터 열라는 요청)는 검열 지우기 탭의 마스크 보기부터 보여 준다
+        if (TabDecensor.IsEnabled && (_startOnMask || IsWaitingPage)) { TabMode.SelectedItem = TabDecensor; RbViewMask.IsChecked = true; }
         _startOnMask = false;
         RefreshBlockCombo();
         UpdateMaskInfo();
         UpdateModeButtons();
+        RefreshRegionPreview();
 
         if (fit) FitToWindow();
         Redraw();
         if (RegenMode) LoadRegenFields();   // 새 페이지의 재생성 값(기억된 것 또는 설정값)
-        TxtStatus.Text = statusAfter ?? (MaskMode ? (IsWaitingPage ? "검토 대기 중 — 빨간 마스크를 고친 뒤 [검열 제거 진행]을 누르세요" : "저장된 마스크 — 고친 뒤 [저장 마스크로 다시 검열 제거]")
-                       : "지울 검열의 꼭짓점을 클릭하세요");
+        TxtStatus.Text = statusAfter ?? (IsWaitingPage ? "검토 대기 중 — 빨간 마스크를 고친 뒤 [검열 제거 진행]을 누르세요"
+                       : MaskMode ? (HasStoredMask ? "빨간 마스크를 고친 뒤 [지우기] — 이 장만 검열 제거·식자를 다시 해요" : "지울 곳을 칠한 뒤 [지우기] — 결과물에 바로 지워요")
+                       : "결과 보기 — 지울 곳을 칠하려면 [🎭 마스크 보기]");
     }
 
     /// <summary>LoadPage가 끝난 뒤 상태 줄에 둘 안내 — 중간에 두면 LoadPage 끝의 기본 문구가 덮어쓴다 (다시 돌리기 완료·지난 결과물 표시).</summary>

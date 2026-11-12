@@ -55,9 +55,11 @@ public partial class SettingsWindow
         try
         {
             // 입력 자리 이름·출력 접두사는 실행 때 앱이 다시 채우므로 자리표시 값으로 둔다
-            var wf = NekoManga.Core.Comfy.WorkflowBuilder.BuildRegenDecensor(App.Settings, "nm_regen_input.png", "NekoManga_out");
+            // 재생성 v3는 영역을 잘라 두 장(그림+영역 알파, 그림+조각 알파)을 넣는 두 단계 그래프 — 커스텀 규약(LoadImage 하나)과 달라 그대로 커스텀에 끼우면 지우기 마스크 입력이 빈다
+            var wf = NekoManga.Core.Comfy.WorkflowBuilder.BuildRegenCrop(App.Settings, "nm_regen_input.png", "nm_regen_erase.png", "NekoManga_out",
+                NekoManga.Core.Decensor.RegenTags.For(NekoManga.Core.Decensor.RegenKind.Both, App.Settings), 1024, 1024);
             System.IO.File.WriteAllText(dlg.FileName, wf.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
-            TxtWfStatus.Text = $"저장했어요 → {dlg.FileName} (이 파일을 '커스텀 워크플로'로 지정하면 지금 재생성과 같은 결과예요)";
+            TxtWfStatus.Text = $"저장했어요 → {dlg.FileName} — 참고용이에요. 그대로 커스텀 워크플로로 지정하면 두 번째 LoadImage(지우기 마스크)가 비어 실패해요. 커스텀은 쪽 전체에 마스크 하나를 넣으니 영역 자르기도 안 돼요";
         }
         catch (Exception ex) { TxtWfStatus.Text = "저장하지 못했어요: " + ex.Message; }
     }
@@ -128,7 +130,6 @@ public partial class SettingsWindow
         s.Save();
         // 바뀐 칸만 다시 채운다
         TxtMegapixels.Text = s.ColorMegapixels.ToString(CultureInfo.InvariantCulture);
-        TxtRegenMp.Text = s.RegenMegapixels.ToString(CultureInfo.InvariantCulture);
         TxtAdvPreRes.Text = s.PreprocResolution.ToString();
         TxtAdvExtraArgs.Text = s.ComfyExtraArgs;
         ChkPrewarm.IsChecked = s.PrewarmComfyOnLaunch;

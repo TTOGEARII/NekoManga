@@ -5,7 +5,8 @@
         Title="검열 마스크 검토" Width="1280" Height="860" MinWidth="900" MinHeight="600"
         WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True"
         WindowBackdropType="None" WindowCornerPreference="Round"
-        Background="{DynamicResource NekoBg}" KeyDown="Window_KeyDown">
+        Background="{DynamicResource NekoBg}" KeyDown="Window_KeyDown"
+        PreviewKeyDown="Window_PreviewKeyDown" PreviewKeyUp="Window_PreviewKeyUp">
     <ui:FluentWindow.Resources>
         <!-- 페이지 목록 항목: WPF-UI 기본 선택색(액센트=먹색)이 글자를 삼켜서, 메인 목록(ListViewItem)과 같은 옅은 반전으로 -->
         <Style TargetType="ListBoxItem">
@@ -75,12 +76,12 @@
                     <ui:Button x:Name="BtnNext" Content="다음 ▶" Click="BtnNext_Click" Padding="12,4" Margin="0,0,20,0"/>
 
                     <Border Style="{StaticResource BarTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="도구"/></Border>
-                    <RadioButton x:Name="RbAdd" Content="🖌 칠하기" IsChecked="True" GroupName="tool" Margin="0,0,10,0" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center"/>
-                    <RadioButton x:Name="RbErase" Content="🧽 지우개" GroupName="tool" Margin="0,0,10,0" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center"/>
+                    <RadioButton x:Name="RbAdd" Content="🖌 칠하기" IsChecked="True" GroupName="tool" Margin="0,0,10,0" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" ToolTip="B"/>
+                    <RadioButton x:Name="RbErase" Content="🧽 지우개" GroupName="tool" Margin="0,0,10,0" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" ToolTip="E"/>
                     <RadioButton x:Name="RbPoly" Content="⬠ 다각형" GroupName="tool" Margin="0,0,16,0" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center"
-                                 ToolTip="꼭짓점을 클릭해 영역을 그리고 더블클릭(또는 Enter)으로 닫아요"/>
+                                 ToolTip="L — 꼭짓점을 클릭해 영역을 그리고 더블클릭(또는 Enter)으로 닫아요"/>
                     <TextBlock Text="브러시" VerticalAlignment="Center" Foreground="{DynamicResource NekoText}" Margin="0,0,6,0"/>
-                    <Slider x:Name="SldBrush" Minimum="4" Maximum="120" Value="24" Width="140" VerticalAlignment="Center" ToolTip="브러시 반지름(원본 px)"/>
+                    <Slider x:Name="SldBrush" Minimum="4" Maximum="120" Value="24" Width="140" VerticalAlignment="Center" ToolTip="브러시 반지름(원본 px) — [ ] 키로도 바꿔요"/>
                     <TextBlock x:Name="TxtBrush" Text="24px" VerticalAlignment="Center" Foreground="{DynamicResource NekoText}" Margin="6,0,20,0"/>
 
                     <Border Style="{StaticResource BarTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="마스크"/></Border>
@@ -92,7 +93,8 @@
 
                     <Border Style="{StaticResource BarTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="보기"/></Border>
                     <TextBlock Text="확대" VerticalAlignment="Center" Foreground="{DynamicResource NekoText}" Margin="0,0,6,0"/>
-                    <Slider x:Name="SldZoom" Minimum="0.2" Maximum="4" Value="1" Width="120" VerticalAlignment="Center" ValueChanged="Zoom_Changed"/>
+                    <Slider x:Name="SldZoom" Minimum="0.2" Maximum="4" Value="1" Width="120" VerticalAlignment="Center" ValueChanged="Zoom_Changed"
+                            ToolTip="포토샵식: Alt+휠·Ctrl+± 확대, Ctrl+0 맞춤, Ctrl+1 100%, 휠=스크롤, Ctrl+휠=가로 스크롤, Space+드래그=이동"/>
                 </WrapPanel>
             </Border>
 

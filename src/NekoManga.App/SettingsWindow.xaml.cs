@@ -35,7 +35,6 @@ public partial class SettingsWindow
         TxtExcludeTags.Text = s.ColorExcludeTags;
         TxtNegative.Text = s.ColorNegative;
 
-        SelectComboByTag(CmbDecensorEngine, s.DecensorEngine);
         SelectComboByTag(CmbLegacyAssist, s.DecensorLegacyAssist);
         ChkAssistRepair.IsChecked = s.DecensorAssistRepair == "Aletheia";
         SelectComboByTag(CmbDecensorTarget, s.DecensorTarget);
@@ -63,8 +62,6 @@ public partial class SettingsWindow
         BindRanges();
 
         // 고급 옵션 — 검열 제거
-        TxtAdvLamaGrow.Text = s.LamaMaskGrow.ToString();
-        TxtAdvLamaBlur.Text = s.LamaMaskBlur.ToString();
         LoadRegen(s);
 
         // 엔진 — 그래픽카드 종류 (ComfyUI 포터블 빌드 선택, 2026-10-21 AMD 지원)
@@ -155,7 +152,6 @@ public partial class SettingsWindow
         s.ColorExcludeTags = TxtExcludeTags.Text.Trim();
         s.ColorNegative = TxtNegative.Text.Trim();
 
-        s.DecensorEngine = ComboTag(CmbDecensorEngine, s.DecensorEngine);
         s.DecensorLegacyAssist = ComboTag(CmbLegacyAssist, s.DecensorLegacyAssist);
         s.DecensorAssistRepair = ChkAssistRepair.IsChecked == true ? "Aletheia" : "Lama";
         s.DecensorTarget = ComboTag(CmbDecensorTarget, s.DecensorTarget);
@@ -180,19 +176,23 @@ public partial class SettingsWindow
         s.ColorCustomWorkflow = TxtColorCustom.Text.Trim();
 
         // 고급 옵션 — 검열 제거
-        s.LamaMaskGrow = ParseI(TxtAdvLamaGrow.Text, s.LamaMaskGrow, 0, 64);
-        s.LamaMaskBlur = ParseI(TxtAdvLamaBlur.Text, s.LamaMaskBlur, 0, 64);
         s.RegenCheckpoint = string.IsNullOrWhiteSpace(TxtRegenCkpt.Text) ? s.RegenCheckpoint : TxtRegenCkpt.Text.Trim();
         s.RegenControlNet = string.IsNullOrWhiteSpace(TxtRegenCn.Text) ? s.RegenControlNet : TxtRegenCn.Text.Trim();
         s.RegenPrompt = TxtRegenPrompt.Text.Trim();
-        s.RegenBodyTags = TxtRegenBody.Text.Trim();
+        s.RegenBodyTagsMale = TxtRegenBodyM.Text.Trim();
+        s.RegenBodyTagsFemale = TxtRegenBodyF.Text.Trim();
         s.RegenNegative = TxtRegenNeg.Text.Trim();
         s.RegenDenoise = ParseD(TxtRegenDenoise.Text, s.RegenDenoise, 0.05, 1.0);
         s.RegenSteps = ParseI(TxtRegenSteps.Text, s.RegenSteps, 1, 150);
         s.RegenCfg = ParseD(TxtRegenCfg.Text, s.RegenCfg, 0, 30);
         s.RegenCnStrength = ParseD(TxtRegenCnStr.Text, s.RegenCnStrength, 0, 2);
         s.RegenCnEnd = ParseD(TxtRegenCnEnd.Text, s.RegenCnEnd, 0, 1);
-        s.RegenMegapixels = ParseD(TxtRegenMp.Text, s.RegenMegapixels, 0, 8);
+        s.RegenCropSize = ParseI(TxtRegenCrop.Text, s.RegenCropSize, 512, 2048);
+        s.RegenInpaintGrow = ParseI(TxtRegenInpaintGrow.Text, s.RegenInpaintGrow, 0, 64);
+        s.RegenWholeRegion = ChkRegenWhole.IsChecked == true;
+        s.RegenRegionConf = ParseD(TxtRegenRegionConf.Text, s.RegenRegionConf, 0.01, 0.9);
+        s.RegenRegionPad = ParseD(TxtRegenRegionPad.Text, s.RegenRegionPad, 0, 1);
+        s.RegenRegionGrow = ParseD(TxtRegenRegionGrow.Text, s.RegenRegionGrow, 0, 3);
 
         s.GpuVendor = CmbGpuVendor.SelectedItem is ComboBoxItem gv ? (string)gv.Tag : "auto";
         s.OnnxGpu = ComboTag(CmbOnnxGpu, s.OnnxGpu);
@@ -257,9 +257,10 @@ public partial class SettingsWindow
         R(TxtLineart, 0, 100, true); R(TxtRefStrength, 0, 1.5, false);
         // 검열 제거
         R(TxtBarAspect, 1.0, 10.0, false); R(TxtBarMinArea, 50, 500_000, true); R(TxtBlockSize, 2, 64, true); R(TxtThreshold, 1, 80, true);
-        R(TxtMaskGrow, 0, 64, true); R(TxtCustomReach, 0, 512, true); R(TxtAdvLamaGrow, 0, 64, true); R(TxtAdvLamaBlur, 0, 64, true);
+        R(TxtMaskGrow, 0, 64, true); R(TxtCustomReach, 0, 512, true);
         R(TxtRegenDenoise, 0.05, 1.0, false); R(TxtRegenSteps, 1, 150, true); R(TxtRegenCfg, 0, 30, false);
-        R(TxtRegenCnStr, 0, 2, false); R(TxtRegenCnEnd, 0, 1, false); R(TxtRegenMp, 0, 8, false);
+        R(TxtRegenCnStr, 0, 2, false); R(TxtRegenCnEnd, 0, 1, false); R(TxtRegenCrop, 512, 2048, true); R(TxtRegenInpaintGrow, 0, 64, true);
+        R(TxtRegenRegionConf, 0.01, 0.9, false); R(TxtRegenRegionPad, 0, 1, false); R(TxtRegenRegionGrow, 0, 3, false);
         // 엔진
         R(TxtAdvPort, 1024, 65535, true); R(TxtAdvCnLineStr, 0, 2, false); R(TxtAdvCnLineEnd, 0, 1, false);
         R(TxtAdvCnScrStr, 0, 2, false); R(TxtAdvCnScrStart, 0, 1, false); R(TxtAdvPreRes, 256, 4096, true);
