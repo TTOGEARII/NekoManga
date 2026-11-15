@@ -267,7 +267,7 @@
                         </ComboBox>
                     </WrapPanel>
                     <TextBlock Style="{StaticResource HintText}"
-                               Text="페이지별: 검열이 없는 장은 기다리지 않고 채색·식자까지 바로 끝나요. 감지된 장은 '검토 대기'로 남으니 목록에서 더블클릭 → 🎭 마스크 수정 탭에서 고친 뒤 [검열 제거 진행]을 누르세요. 메인 창의 [대기 중 전부 진행]으로 한꺼번에 보낼 수도 있어요."/>
+                               Text="페이지별: 검열이 없는 장은 기다리지 않고 채색·식자까지 바로 끝나요. 감지된 장은 '검토 대기'로 남으니 목록에서 더블클릭 → 🎭 마스크 수정 탭에서 고친 뒤 [검열 제거 시작]을 누르면 대기 중인 장이 전부 진행되고 창이 닫혀요. 이 장만 다시 지우기는 모든 장이 한 번 끝난 뒤에 할 수 있어요."/>
                     <CheckBox x:Name="ChkReuseMasks" Content="다시 돌릴 때 저장된 마스크(내가 고친 것 포함)를 감지 대신 쓰기" Margin="0,4,0,0"/>
                     <TextBlock Style="{StaticResource HintText}"
                                Text="마스크는 결과 폴더의 .neko에 남아요. 끄면 매번 새로 감지해요."/>
@@ -334,10 +334,16 @@
                                    Text="safetensors · ckpt · pt 파일. ComfyUI models 폴더 밖의 파일을 고르면 그 폴더로 복사해요."/>
                         <TextBlock Text="기본 프롬프트" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
                         <TextBox x:Name="TxtRegenPrompt" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="48"/>
-                        <TextBlock Text="신체부위 태그 — 남성 (부위 감지가 penis로 본 영역)" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
+                        <TextBlock Text="신체부위 태그 — 남성" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
                         <TextBox x:Name="TxtRegenBodyM" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="28"/>
-                        <TextBlock Text="신체부위 태그 — 여성 (pussy로 본 영역; 못 가르면 둘 다)" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
+                        <TextBlock Text="신체부위 태그 — 여성" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
                         <TextBox x:Name="TxtRegenBodyF" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="28"/>
+                        <!-- 2026-11-15 사용자 "남자거에 계속 여자거가 그려지는데 … 남/여 구분을 확실하게": 기본 켬 — 조각마다 성별을 가려(RegenRegion.PieceSex + 결과 창에서 직접 고른 것) 한쪽뿐인 영역에는 그쪽 태그만. 끄면 늘 같이(2026-11-13의 기본) -->
+                        <CheckBox x:Name="ChkRegenTagsBySex" Content="남성·여성이 확실한 부위에는 그쪽 태그만 넣어요 (확실하지 않으면 같이)" Foreground="{DynamicResource NekoText}" Margin="0,6,0,0"
+                                  ToolTip="검열 조각마다 부위 감지의 근거를 봐서, 한쪽 성별뿐인 영역에는 그쪽 태그만 넣어요. 삽입처럼 가려진 다른 쪽이 있을 수 있거나 부위를 못 찾은 조각이 있는 영역에는 두 태그를 같이 넣어요 — 그런 조각은 결과 창(검열 지우기 → 마스크 보기)의 남/여 표시를 눌러 직접 고를 수 있고, 고른 것은 그 장에 기억돼요. 꺼 두면 늘 같이 넣어요 — 남성 부위만 있는 장에 여성 부위가 그려질 수 있어요. 어느 태그로 그리는지는 진행 줄에 보여요. 아래 '부위 전체를 다시 그려요'가 꺼져 있거나 부위 감지 모델(구성요소)이 없으면 자동으로는 가릴 수 없어요(직접 고른 조각만 가려요)"/>
+                        <!-- 2026-11-15 자리별 태그: 그리는 방식이 바뀐다 — 사용자가 전/후를 보고 정하기 전까지 기본 끔 -->
+                        <CheckBox x:Name="ChkRegenTagsPerPiece" Content="남녀 부위가 한 범위에 같이 있으면 자리마다 그 성별의 태그만 넣어요 (시험 중)" Foreground="{DynamicResource NekoText}" Margin="0,6,0,0"
+                                  ToolTip="한 번에 그리는 범위에 남성 조각과 여성 조각이 같이 있으면, 그림을 조각의 성별로 나눠 남성 조각 쪽에는 남성 태그만, 여성 조각 쪽에는 여성 태그만 넣어요(모르는 조각 쪽에는 같이). 꺼 두면 그런 범위에는 남녀 태그를 통째로 같이 넣어요. 위 옵션이 켜져 있을 때만 쓰여요. 섞인 범위는 조금 느려져요(자리 수만큼 프롬프트를 따로 계산). 그리는 방식이 달라지니 결과를 보고 정해 주세요"/>
                         <TextBlock Text="네거티브" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
                         <TextBox x:Name="TxtRegenNeg" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="48"/>
                         <UniformGrid Columns="2" Rows="3" Margin="0,8,0,0">
@@ -381,6 +387,8 @@
                                 <ComboBoxItem Tag="Repaint" Content="리페인트 — union promax의 repaint (실험용)" ToolTip="조각 자리를 검게 비운 원고 그림을 repaint 종류로 넣어요. 실측에서 검게 뭉개지고(검은 선이 많을수록) 더 나빴어요 — 비교용으로만 남겨 둔 거예요."/>
                             </ComboBox>
                         </DockPanel>
+                        <CheckBox x:Name="ChkRegenEraseTight" Content="조각에서 검은 막대만 지우고 그려요 (막대 사이로 보이는 윤곽·손은 남겨요)" Foreground="{DynamicResource NekoText}" Margin="0,8,0,0"
+                                  ToolTip="끄면 감지된 조각을 통째로 지우고 그려요(v1.9.1까지의 방식). 흰 막대·모자이크처럼 검은 덩어리가 없는 조각은 켜 두어도 통째로 지워요"/>
                         <TextBlock Style="{StaticResource HintText}"
                                    Text="재생성 v3: 영역마다 잘라 SDXL 두 단계(조각 인페인트 → 영역 다듬기)로 그려요. LaMa는 쓰지 않아요. 범위를 벗어난 값은 저장할 때 범위 안으로 잘려요."/>
 

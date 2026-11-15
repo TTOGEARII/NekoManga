@@ -100,6 +100,11 @@
                 <ui:Button x:Name="BtnProceedAll" Click="BtnProceedAll_Click" Visibility="Collapsed"
                            Margin="0,6,0,0" Padding="22,6" HorizontalAlignment="Stretch" Appearance="Caution"
                            Content="대기 중 전부 진행" ToolTip="검토 대기 중인 장을 지금 마스크 그대로 검열 제거로 보내요"/>
+                <!-- 끝난 장의 마스크를 고쳐 저장해 둔 것이 있을 때만: 그 장들만 검열 제거·식자를 다시 한다 (2026-11-13 사용자 요청 — 끝나면 또 고쳐 반복) -->
+                <ui:Button x:Name="BtnRerenderEdited" Click="BtnRerenderEdited_Click" Visibility="Collapsed"
+                           Margin="0,6,0,0" Padding="22,6" HorizontalAlignment="Stretch" Appearance="Caution"
+                           Content="고친 장 다시 렌더링"
+                           ToolTip="마스크를 고쳐 저장한 장만 검열 제거·식자를 다시 해요 — ⚙ 설정의 검열 제거 방식으로 돌고, 채색은 그대로 둬요"/>
             </StackPanel>
         </Grid>
 
@@ -149,7 +154,7 @@
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="파일" Width="190" DisplayMemberBinding="{Binding Name}"/>
+                            <GridViewColumn Header="파일" Width="190" DisplayMemberBinding="{Binding Label}"/>
                             <GridViewColumn Header="상태" Width="190" DisplayMemberBinding="{Binding Stage}"/>
                             <GridViewColumn Header="진행" Width="100">
                                 <GridViewColumn.CellTemplate>

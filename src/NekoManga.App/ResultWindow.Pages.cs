@@ -169,7 +169,21 @@ public partial class ResultWindow
     {
         var statusAfter = _statusAfterLoad; _statusAfterLoad = null;   // 이 호출의 안내 — 일찍 끝나면(경합·취소) 버린다, 다른 페이지에 새지 않게
         if (_busy) return;                 // 복원이 돌고 있으면 _img를 건드리지 않는다
-        if (!ConfirmDiscard()) return;
+        if (!_loading) SettleMaskBeforeLeaving();   // 찍다 만 다각형은 닫고, 만졌지만 달라진 것이 없으면 고친 것으로 치지 않는다 — 아래의 '저장했어요' 안내가 실제와 맞게 여기서 먼저
+        bool maskEdited = _maskDirty && !_loading; int leaving = _index;
+        // 작업이 도는 중이고 이 장이 아직 끝나지 않았다(차례를 기다리거나 도는 중) — 저장한 마스크가 어떻게 쓰이는지 알려 준다(2026-11-13 점검 4번)
+        bool leavingUnfinished = maskEdited && JobRunning && !IsWaitingPage && !_pageFinished;
+        if (!ConfirmDiscard(autoSaveMask: true))
+        {
+            // 넘기지 못했다(마스크 저장 실패·손 편집 확인에서 취소) — 콤보로 넘기려던 것이면 콤보만 새 장을 가리키고 있다. 보고 있는 장으로 되돌린다
+            if (CmbPages.SelectedIndex != _index) CmbPages.SelectedIndex = _index;
+            return;
+        }
+        // 묻지 않고 저장했으니 저장했다는 것은 알린다(넘어간 장의 상태 줄에 한 번)
+        if (maskEdited && Math.Clamp(idx, 0, _refs.Count - 1) != leaving)
+            statusAfter ??= _pendingPages.Contains(leaving) ? "앞 장의 고친 마스크를 저장했어요 (✎) — [고친 장 모두 다시 렌더링]으로 한꺼번에 반영할 수 있어요"
+                          : leavingUnfinished ? "앞 장의 고친 마스크를 저장했어요 — 그 장의 검열 제거가 아직이면 이 마스크로 돌고, 이미 도는 중이었으면 끝난 뒤 고친 장(✎)으로 표시돼요"
+                                              : "앞 장의 고친 마스크를 저장했어요";
         StashRegenFields();                // 떠나는 페이지의 재생성 값을 기억
         int gen = ++_loadGen;
 
@@ -224,6 +238,8 @@ public partial class ResultWindow
         BtnUndo.IsEnabled = false;
         InvalidateBitmap();
         ResetMaskState(data);
+        _pageFinished = !data.Img.Empty() && PageFinished(idx);
+        if (readError == null && !data.Img.Empty()) SyncEditedPage(idx, IsWaitingPage ? null : _maskSc);   // 방금 읽은 사이드카가 이 장의 최신 상태다(다시 렌더링 뒤엔 표시가 지워져 있다)
 
         _img = data.Img;
         BtnPrev.IsEnabled = _index > 0;
@@ -232,6 +248,13 @@ public partial class ResultWindow
 
         if (_img.Empty())
         {
+            // 못 읽은 장 — 앞 장의 식자 상태를 비운다. 남겨 두면 이 장에서 [고친 장 모두 다시 렌더링]을 누를 때 앞 장의 블록이 이 장의 식자 사이드카로 쓰였다(2026-11-13 점검 14번)
+            _sidecar = null; _letterBlocks = []; _letterDirty = false;
+            _baseImg?.Dispose(); _baseImg = null;
+            _letterPreview = false;
+            EditLayer.Children.Clear();
+            RefreshBlockCombo();
+            RefreshSeedLockUi(); UpdateRegenHeader(_regenPerPage.ContainsKey(_index));   // 시드 고정 칸·머리글의 🔒도 앞 장의 것이 남지 않게(이 가지는 LoadRegenFields까지 가지 않는다)
             TxtStatus.Text = "이미지를 읽지 못했어요: " + Path.GetFileName(_refs[_index].ViewPath) + (readError != null ? " — " + readError : "");
             ImgView.Source = null;
             Overlay.Children.Clear();
@@ -239,6 +262,7 @@ public partial class ResultWindow
         }
         _sidecar = data.Sidecar;
         _letterBlocks = _sidecar?.Blocks.ToList() ?? [];
+        _letterDirty = false;
         _baseImg?.Dispose();
         _baseImg = data.Base;
         _letterPreview = false;
@@ -257,7 +281,7 @@ public partial class ResultWindow
         if (fit) FitToWindow();
         Redraw();
         if (RegenMode) LoadRegenFields();   // 새 페이지의 재생성 값(기억된 것 또는 설정값)
-        TxtStatus.Text = statusAfter ?? (IsWaitingPage ? "검토 대기 중 — 빨간 마스크를 고친 뒤 [검열 제거 진행]을 누르세요"
+        TxtStatus.Text = statusAfter ?? (IsWaitingPage ? "검토 대기 중 — 빨간 마스크를 고친 뒤 [검열 제거 시작]을 누르세요"
                        : MaskMode ? (HasStoredMask ? "빨간 마스크를 고친 뒤 [지우기] — 이 장만 검열 제거·식자를 다시 해요" : "지울 곳을 칠한 뒤 [지우기] — 결과물에 바로 지워요")
                        : "결과 보기 — 지울 곳을 칠하려면 [🎭 마스크 보기]");
     }

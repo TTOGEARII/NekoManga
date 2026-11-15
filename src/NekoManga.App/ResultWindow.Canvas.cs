@@ -54,16 +54,18 @@ public partial class ResultWindow
         {
             // 마스크 탭: 검열 제거 전 원고(축소본) 위에 빨간 마스크 합성 — 결과물이 아니라 마스크 좌표계(원본 크기)의 그림
             ImgView.Source = RenderMaskComposite();
-            ImageHost.Width = ImgView.Width = Overlay.Width = EditLayer.Width = _maskPre.Width * _scale;
-            ImageHost.Height = ImgView.Height = Overlay.Height = EditLayer.Height = _maskPre.Height * _scale;
+            ImageHost.Width = ImgView.Width = Overlay.Width = EditLayer.Width = SexLayer.Width = _maskPre.Width * _scale;
+            ImageHost.Height = ImgView.Height = Overlay.Height = EditLayer.Height = SexLayer.Height = _maskPre.Height * _scale;
             TxtZoom.Text = $"{_scale * 100:0}%";
             EditLayer.Visibility = Visibility.Collapsed;
             DrawShapes();
+            DrawSexBadges();   // 조각의 성별 표시도 배율에 맞춰 다시
             return;
         }
         // 식자 편집 모드에서는 글자가 안 구워진 원고(base)를 깔고 그 위에 텍스트박스를 띄운다
         bool editView = LetterMode && !_letterPreview && _baseImg != null;
         var shown = editView ? _baseImg! : _img;
+        SexLayer.Visibility = Visibility.Collapsed;   // 조각의 성별 표시는 마스크 보기에만
         ImgView.Source = ToBitmapCached(shown);
         ImageHost.Width = ImgView.Width = Overlay.Width = EditLayer.Width = shown.Width * _scale;
         ImageHost.Height = ImgView.Height = Overlay.Height = EditLayer.Height = shown.Height * _scale;
@@ -188,6 +190,7 @@ public partial class ResultWindow
         {
             _maskPainting = false;
             ImageHost.ReleaseMouseCapture();
+            SettleMaskDirty();   // 빈 곳을 지우거나 칠해진 곳을 덧칠한 획은 고친 것이 아니다
             UpdateMaskInfo();
             e.Handled = true;
             return;
@@ -268,8 +271,9 @@ public partial class ResultWindow
         switch (e.Key)
         {
             // 텍스트박스에서 타이핑 중일 땐 방향키로 페이지를 넘기지 않는다 (커서 이동용)
-            case Key.Left when !_busy && Keyboard.FocusedElement is not TextBox: LoadPage(_index - 1, fit: true); break;
-            case Key.Right when !_busy && Keyboard.FocusedElement is not TextBox: LoadPage(_index + 1, fit: true); break;
+            // 첫 장에서 ←·끝 장에서 →는 아무것도 하지 않는다 — LoadPage가 같은 장을 다시 읽으면서 마스크를 저장하고 되돌리기 기록·확대를 버렸다(2026-11-13 점검 17번)
+            case Key.Left when !_busy && _index > 0 && Keyboard.FocusedElement is not TextBox: LoadPage(_index - 1, fit: true); break;
+            case Key.Right when !_busy && _index < _refs.Count - 1 && Keyboard.FocusedElement is not TextBox: LoadPage(_index + 1, fit: true); break;
         }
     }
 

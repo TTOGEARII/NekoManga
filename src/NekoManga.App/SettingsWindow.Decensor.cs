@@ -134,6 +134,8 @@ public partial class SettingsWindow
         TxtRegenPrompt.Text = s.RegenPrompt;
         TxtRegenBodyM.Text = s.RegenBodyTagsMale;
         TxtRegenBodyF.Text = s.RegenBodyTagsFemale;
+        ChkRegenTagsBySex.IsChecked = s.RegenTagsBySex;
+        ChkRegenTagsPerPiece.IsChecked = s.RegenTagsPerPiece;
         TxtRegenNeg.Text = s.RegenNegative;
         TxtRegenDenoise.Text = s.RegenDenoise.ToString(CultureInfo.InvariantCulture);
         TxtRegenSteps.Text = s.RegenSteps.ToString();
@@ -144,6 +146,7 @@ public partial class SettingsWindow
         TxtRegenInpaintGrow.Text = s.RegenInpaintGrow.ToString();
         SelectComboByTag(CmbRegenInpaintControl, s.RegenInpaintControl);
         TxtRegenInpaintCnStr.Text = s.RegenInpaintCnStrength.ToString(CultureInfo.InvariantCulture);
+        ChkRegenEraseTight.IsChecked = s.RegenEraseTight;
         ChkRegenWhole.IsChecked = s.RegenWholeRegion;
         TxtRegenRegionConf.Text = s.RegenRegionConf.ToString(CultureInfo.InvariantCulture);
         TxtRegenRegionPad.Text = s.RegenRegionPad.ToString(CultureInfo.InvariantCulture);

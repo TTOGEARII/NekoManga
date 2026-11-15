@@ -181,6 +181,8 @@ public partial class SettingsWindow
         s.RegenPrompt = TxtRegenPrompt.Text.Trim();
         s.RegenBodyTagsMale = TxtRegenBodyM.Text.Trim();
         s.RegenBodyTagsFemale = TxtRegenBodyF.Text.Trim();
+        s.RegenTagsBySex = ChkRegenTagsBySex.IsChecked == true;
+        s.RegenTagsPerPiece = ChkRegenTagsPerPiece.IsChecked == true;
         s.RegenNegative = TxtRegenNeg.Text.Trim();
         s.RegenDenoise = ParseD(TxtRegenDenoise.Text, s.RegenDenoise, 0.05, 1.0);
         s.RegenSteps = ParseI(TxtRegenSteps.Text, s.RegenSteps, 1, 150);
@@ -191,6 +193,7 @@ public partial class SettingsWindow
         s.RegenInpaintGrow = ParseI(TxtRegenInpaintGrow.Text, s.RegenInpaintGrow, 0, 64);
         s.RegenInpaintControl = ComboTag(CmbRegenInpaintControl, s.RegenInpaintControl);
         s.RegenInpaintCnStrength = ParseD(TxtRegenInpaintCnStr.Text, s.RegenInpaintCnStrength, 0, 2);
+        s.RegenEraseTight = ChkRegenEraseTight.IsChecked == true;
         s.RegenWholeRegion = ChkRegenWhole.IsChecked == true;
         s.RegenRegionConf = ParseD(TxtRegenRegionConf.Text, s.RegenRegionConf, 0.01, 0.9);
         s.RegenRegionPad = ParseD(TxtRegenRegionPad.Text, s.RegenRegionPad, 0, 1);
@@ -372,6 +375,12 @@ public partial class SettingsWindow
 
     private void BtnUninstall_Click(object sender, RoutedEventArgs e)
     {
+        // 삭제는 Application.Shutdown으로 끝난다 — 그 길은 메인 창의 '멈추고 닫을까요?'에 '아니요'라고 해도 끝난다(닫기 취소를 무시한다). 작업 중에는 먼저 막는다
+        if (Owner is MainWindow { IsJobRunning: true })
+        {
+            MessageBox.Show("작업이 도는 중이에요 — 작업이 끝난 뒤에(또는 [멈추기] 뒤에) 삭제해 주세요.", "NekoManga", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
         var r = MessageBox.Show(
             "NekoManga를 삭제할까요?\n(내려받은 AI 구성요소 폴더는 남아요 — 직접 지워주세요)",
             "삭제 확인", MessageBoxButton.YesNo, MessageBoxImage.Warning);

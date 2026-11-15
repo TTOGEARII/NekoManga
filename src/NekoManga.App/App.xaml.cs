@@ -25,11 +25,72 @@ public partial class App : Application
     /// <summary>--review &lt;이미지…&gt;: 검열 감지만 돌려 검토 창을 띄운다 (검토 흐름 UI 확인용 — 제거는 안 한다).</summary>
     public List<string>? ReviewImages { get; set; }
 
+    // ── 처리되지 않은 예외 (2026-11-13 점검 9번) ──
+    // 전에는 받는 곳이 없어, 화면 처리기에서 샌 예외 하나(잠긴 파일을 읽는 버튼 등)로 앱이 도는 작업째 꺼졌다. 기록하고 알린 뒤 창은 살려 둔다 —
+    // 몇 시간짜리 작업이 버튼 하나의 오류로 같이 죽는 것보다 낫다. 연달아 터지면(그리는 중의 오류가 되풀이되는 식) 붙잡지 않고 끝낸다.
+    internal static string CrashLogPath => Path.Combine(AppSettings.DataDir, "crash.log");
+    private static readonly object CrashLock = new();
+    private bool _crashDialogOpen;
+    private readonly Queue<DateTime> _recentCrashes = new();
+
+    internal static void LogCrash(string where, Exception? ex)
+    {
+        try
+        {
+            lock (CrashLock)
+            {
+                Directory.CreateDirectory(AppSettings.DataDir);
+                var path = CrashLogPath;
+                if (File.Exists(path) && new FileInfo(path).Length > 1_000_000) File.Move(path, path + ".old", overwrite: true);   // 끝없이 자라지 않게
+                var version = typeof(App).Assembly.GetName().Version?.ToString(3) ?? "?";
+                File.AppendAllText(path, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] v{version} {where}{Environment.NewLine}{ex}{Environment.NewLine}{Environment.NewLine}");
+            }
+        }
+        catch { }
+    }
+
+    private void HookUnhandledExceptions()
+    {
+        DispatcherUnhandledException += (_, e) =>
+        {
+            LogCrash("화면", e.Exception);
+            var now = DateTime.UtcNow;
+            _recentCrashes.Enqueue(now);
+            while (_recentCrashes.Count > 0 && now - _recentCrashes.Peek() > TimeSpan.FromSeconds(10)) _recentCrashes.Dequeue();
+            if (_recentCrashes.Count >= 5)
+            {
+                // 10초에 다섯 번 — 살려 둘 수 없는 상태다. 붙잡지 않고 두면 알림 창이 떠 있을 때는 그 예외가 알림 창의 catch에 먹혀 끝나지도 않는다(2026-11-14 검수): 스스로 끝낸다
+                LogCrash("연달아 터져 앱을 끝냅니다", null);
+                Environment.Exit(1);
+            }
+            e.Handled = true;
+            if (_crashDialogOpen) return;            // 알림 창이 떠 있는 동안 또 난 것은 기록만
+            _crashDialogOpen = true;
+            try
+            {
+                System.Windows.MessageBox.Show(
+                    "예상하지 못한 오류가 났어요 — 방금 하던 동작은 끝나지 않았을 수 있어요. 도는 작업은 계속돼요.\n\n" +
+                    $"{e.Exception.GetType().Name}: {e.Exception.Message}\n\n자세한 기록: {CrashLogPath}",
+                    "NekoManga", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            catch { }
+            finally { _crashDialogOpen = false; }
+            // 창이 하나도 뜨기 전이었으면(시작 도중) 살려 둘 것이 없다 — 창 없는 프로세스로 남지 않게 끝낸다
+            if (!Windows.OfType<Window>().Any(w => w.IsVisible)) Shutdown(1);
+        };
+        TaskScheduler.UnobservedTaskException += (_, e) => { LogCrash("백그라운드 작업", e.Exception); e.SetObserved(); };
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => LogCrash("치명적", e.ExceptionObject as Exception);
+    }
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        HookUnhandledExceptions();
 
         Settings = AppSettings.Load();
+        // 설정 파일을 못 읽었으면(백업에서 되살렸거나 기본값으로 시작) 말없이 넘어가지 않는다 — 못 읽은 파일을 어디에 남겼는지도 알려 준다
+        if (AppSettings.LoadProblem is { } settingsProblem)
+            System.Windows.MessageBox.Show(settingsProblem, "NekoManga 설정", MessageBoxButton.OK, MessageBoxImage.Warning);
 
         // 앱이 끝날 때 KeepComfyWarm=false면 이 앱이 띄운 채색 엔진을 끈다('엔진 켜기'로 고정한 서버·사용자가 띄운 서버는 그대로) —
         // 작업 중에 닫으면 작업의 정리(사용 놓기)가 돌기 전에 프로세스가 끝나 서버가 남았다. Exit 이벤트가 아니라 ProcessExit에 건다:
@@ -50,7 +111,8 @@ public partial class App : Application
 
         // 기존 설치 자동 감지 — 이미 ComfyUI·BT를 쓰고 있으면 재다운로드 없이 연결한다.
         AutoLinkExistingInstalls();
-        Settings.Save();
+        try { Settings.Save(); }
+        catch (Exception ex) { LogCrash("시작할 때 설정 저장", ex); }   // 못 써도(잠김·디스크 가득) 앱은 뜬다 — 다음에 설정을 바꿀 때 다시 저장한다
 
         if (DemoSettings)
         {
@@ -103,6 +165,9 @@ public partial class App : Application
         }
 
         main.Show();
+
+        // 옛 작업 폴더 치우기 — 끝난 작업은 제 폴더를 지우지만, 꺼지거나 죽어서 남은 것과 옛 버전이 쌓아 둔 것은 여기서(7일 넘은 것만, 백그라운드)
+        _ = Task.Run(() => { try { NekoManga.Core.Pipeline.WorkFolders.SweepOld(); } catch { } });
 
         // --theme-test: 메인 창(아이콘 포함)이 뜬 뒤 테마를 자동 순환 — 아이콘이 로고 브러시를
         // 얼려 전환이 크래시하던 회귀의 자동 검증용. 결과를 파일로 남기고 종료한다.

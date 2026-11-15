@@ -47,7 +47,17 @@ public partial class ResultWindow
     // 페이지별 검토(2026-10-21): 메인 창이 넘겨 주는 러너 훅 — 원고 경로로 '검토 대기 중인지'와 '진행 확인'
     private readonly Func<string, bool>? _confirmPage;
     private readonly Func<string, bool>? _isWaiting;
+    // 작업이 도는 동안의 검토(2026-11-12 사용자 요청): [검열 제거 시작]은 대기 중인 장을 전부 보내고 창을 닫는다. 낱장 다시 렌더링은 모든 장이 한 번 끝난 뒤에만
+    private readonly Func<int>? _confirmAll;
+    private readonly Func<bool>? _isJobRunning;
+    private bool JobRunning => _isJobRunning?.Invoke() == true;
     private readonly Func<string, bool>? _isDone;   // 메인 창 행의 Done — 끝나지 않은 장이 지난 작업 결과물을 보여 줄 때 안내한다
+    // 고친 장 모두 다시 렌더링(2026-11-13 사용자 요청): 묶음은 메인 창이 돌린다(행이 진행을 보여 준다) — 이 창은 요청만 남기고 닫힌다. --result 모드는 돌려 줄 메인 창이 없어 버튼을 숨긴다
+    private readonly bool _canRerenderEdited;
+    /// <summary>[🔁 고친 장 모두 다시 렌더링]을 누르고 닫혔다 — 메인 창이 창이 닫힌 뒤 고친 장들을 다시 렌더링한다.</summary>
+    public bool RerenderEditedRequested { get; private set; }
+    /// <summary>그때 이 창이 알던 고친 장들(원고 경로·결과물 경로) — 메인 창이 자기가 훑은 것과 합친다.</summary>
+    public IReadOnlyList<(string Source, string OutPath)> RerenderEditedPages { get; private set; } = [];
     private bool _startOnMask;
 
     private Mat _img = new();
@@ -72,14 +82,18 @@ public partial class ResultWindow
     private Mat? _baseImg;                        // 식자 전 원고 — 편집 모드에서 이 위에 텍스트박스를 띄운다
     private PipelineRunner? _runner;              // 수동 복원·다시 돌리기용 러너 — 창 수명 동안 ONNX 세션과 ComfyUI 사용을 쥔다(창이 닫힐 때 놓는다)
     private bool _letterPreview;                  // true면 [다시 식자] 결과(_img)를 보여준다
+    private bool _letterDirty;                    // 식자 탭에서 블록(글·위치·숨김·풍선 스타일)을 고쳤고 아직 사이드카·결과물에 반영하지 않았다 — 넘기거나 닫을 때 말없이 잃지 않게(2026-11-13 점검 16번)
 
     public ResultWindow(IReadOnlyList<PageRef> pages, int startIndex,
-        Func<string, bool>? confirmPage = null, Func<string, bool>? isWaiting = null, bool startOnMask = false, Func<string, bool>? isDone = null)
+        Func<string, bool>? confirmPage = null, Func<string, bool>? isWaiting = null, bool startOnMask = false, Func<string, bool>? isDone = null,
+        Func<int>? confirmAll = null, Func<bool>? isJobRunning = null, bool canRerenderEdited = false)
     {
         InitializeComponent();
         _refs = pages.Count > 0 ? [.. pages] : [new PageRef("", "")];
         _index = Math.Clamp(startIndex, 0, _refs.Count - 1);
         _confirmPage = confirmPage; _isWaiting = isWaiting; _startOnMask = startOnMask; _isDone = isDone;
+        _confirmAll = confirmAll; _isJobRunning = isJobRunning; _canRerenderEdited = canRerenderEdited;
+        if (_canRerenderEdited) TxtDecensorHint.Text += " 여러 장을 고친 뒤 위의 [고친 장 모두 다시 렌더링]으로 한꺼번에 돌릴 수 있어요.";
 
         // '기본' 모델은 늘 Aletheia Lens 복원('이전 방식' 엔진은 2026-11-12 삭제) — 손으로 고른 자리는 막대 모델로 지운다. 이름·툴팁은 XAML의 ItemEngineBasic
         foreach (var p in _refs) CmbPages.Items.Add(Path.GetFileName(p.ViewPath));
@@ -88,6 +102,13 @@ public partial class ResultWindow
         foreach (var f in System.Drawing.FontFamily.Families.Select(f => f.Name).OrderBy(n => n))
             CmbLFont.Items.Add(f);
         var s = App.Settings;
+        // '모델' 칸은 ⚙ 설정의 검열 제거 방식으로 시작한다(2026-11-13 사용자 결정). 전에는 늘 '기본'이라, 재생성으로 돌린 작업의 장을 낱장 [지우기]로 고치면
+        // 직접 바꾸지 않는 한 기본 모델로 지워졌다([고친 장 모두 다시 렌더링]은 설정의 방식으로 돌아 둘이 어긋났다). 설정이 재생성·커스텀인데 ComfyUI가 없으면 바로 쓸 수 있는 '기본'으로 둔다
+        var startMode = s.DecensorMode is "ComfyRegen" or "ComfyCustom" && !s.ComfyAvailable ? "Basic" : s.DecensorMode;
+        foreach (var it in CmbEngine.Items.OfType<ComboBoxItem>())
+            if ((string?)it.Tag == startMode) { CmbEngine.SelectedItem = it; break; }
+        PnlSexAll.Visibility = RegenMode && s.RegenTagsBySex ? Visibility.Visible : Visibility.Collapsed;
+        PnlRegen.Visibility = RegenMode ? Visibility.Visible : Visibility.Collapsed;   // CmbEngine_Changed는 창이 뜨기 전에는 아무것도 하지 않는다 — 재생성 칸은 여기서 편다(값은 LoadPage가 채운다)
         CmbLFont.Text = s.LetterFontFamily;
         ChkLBold.IsChecked = s.LetterBold;
         TxtLSize.Text = s.LetterSizeScale.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -103,7 +124,7 @@ public partial class ResultWindow
         TxtLSize.TextChanged += (s, e) => LetterStyle_Changed(s, e);
         TxtLColor.TextChanged += (s, e) => LetterStyle_Changed(s, e);
 
-        Loaded += (_, _) => LoadPage(_index, fit: true);
+        Loaded += (_, _) => { LoadPage(_index, fit: true); ScanEditedPages(); };
     }
 
     /// <summary>이 창에서 저장하거나 다시 돌린 페이지의 원본 경로 — 메인 창이 닫힌 뒤 그 행들만 결과물로 다시 푼다 (시계·mtime에 기대지 않는다).</summary>
@@ -122,7 +143,7 @@ public partial class ResultWindow
                 ? $"번역 블록 {_letterBlocks.Count}개 — 말풍선의 텍스트박스를 바로 고치세요"
                 : "이 장은 보일 블록이 없어요";
         else if (MaskMode)
-            TxtStatus.Text = IsWaitingPage ? "검토 대기 중 — 빨간 마스크를 고친 뒤 [검열 제거 진행]을 누르세요"
+            TxtStatus.Text = IsWaitingPage ? "검토 대기 중 — 빨간 마스크를 고친 뒤 [검열 제거 시작]을 누르세요"
                            : HasStoredMask ? "빨간 마스크를 고친 뒤 [지우기] — 이 장만 검열 제거·식자를 다시 해요"
                            : "지울 곳을 칠한 뒤 [지우기] — 결과물에 바로 지워요";
     }
@@ -131,16 +152,18 @@ public partial class ResultWindow
     private void UpdateModeButtons()
     {
         BtnApply.Content = LetterMode ? "✍ 다시 식자"
-                         : IsWaitingPage ? "✔ 검열 제거 진행"
+                         : IsWaitingPage ? "✔ 검열 제거 시작"
                          : "✨ 지우기 (이 장 다시 렌더링)";
         BtnApply.ToolTip = LetterMode ? null
-                         : IsWaitingPage ? "고친 마스크를 저장하고 이 장의 검열 제거를 진행해요"
+                         : IsWaitingPage ? "고친 마스크를 저장하고, 검토 대기 중인 모든 장의 검열 제거를 시작해요 — 이 창은 닫혀요"
+                         : JobRunning ? "작업이 도는 중이에요 — 모든 장이 한 번 끝난 뒤에 이 장만 다시 지울 수 있어요"
                          : HasStoredMask ? "검열 제거 전 원고에 이 마스크로 검열 제거 → 식자를 이 장만 다시 해요 (채색은 안 해요)"
                          : "결과물에 이 마스크 자리를 바로 지워요 — 끝나면 [저장]";
         BtnSave.Content = MaskMode ? "💾 마스크 저장" : "💾 저장";
         BtnSave.Visibility = MaskMode && !HasStoredMask ? Visibility.Collapsed : Visibility.Visible;   // 저장 마스크가 없는 장은 사이드카를 새로 만들지 않는다
         BtnSave.IsEnabled = MaskMode ? _maskDirty : _dirty;
         BtnUndo.IsEnabled = MaskMode ? _maskUndo.Count > 0 : _undo.Count > 0;
+        UpdateRerenderButton();
     }
 
     // ── 로딩 오버레이 ([지우기] 다시 렌더링 중) ───────────────────────────────────
@@ -161,13 +184,14 @@ public partial class ResultWindow
             }
             TabMode.IsEnabled = CmbPages.IsEnabled = false;
             BtnPrev.IsEnabled = BtnNext.IsEnabled = false;
-            BtnApply.IsEnabled = BtnSave.IsEnabled = BtnUndo.IsEnabled = false;
+            BtnApply.IsEnabled = BtnSave.IsEnabled = BtnUndo.IsEnabled = BtnRerenderEdited.IsEnabled = false;
         }
         else
         {
             PnlLoading.Visibility = Visibility.Collapsed;
             TabMode.IsEnabled = CmbPages.IsEnabled = true;
             BtnApply.IsEnabled = true;
+            UpdateRerenderButton();
             if (!_loading) { BtnPrev.IsEnabled = _index > 0; BtnNext.IsEnabled = _index < _refs.Count - 1; }   // 다시 읽는 중이면 LoadPage가 끝날 때 켠다
         }
     }
@@ -179,22 +203,61 @@ public partial class ResultWindow
         BtnLoadCancel.IsEnabled = false;
     }
 
-    /// <summary>저장 안 한 수정이 있으면 물어본다. 계속해도 되면 true.</summary>
-    private bool ConfirmDiscard()
+    /// <summary>저장 안 한 수정이 있으면 물어본다. 계속해도 되면 true.
+    /// <paramref name="autoSaveMask"/>(장을 넘길 때): 고친 마스크는 묻지 않고 저장한다(2026-11-13 사용자 결정 — 여러 장을 고쳐 한꺼번에 돌리는 흐름에서 장마다 묻지 않게).
+    /// 고친 것을 버리려면 넘기기 전에 [되돌리기](Ctrl+Z)나 [자동 감지로]. 창을 닫을 때는 전처럼 묻고, 결과물의 손 편집(_dirty)은 늘 묻는다.</summary>
+    /// <para>'예'라고 했는데 저장이 실패하면 머문다(false) — 전에는 실패해도 넘어가거나 닫혀서 고친 것이 사라졌다(2026-11-13 점검 15번).</para>
+    private bool ConfirmDiscard(bool autoSaveMask = false)
     {
+        if (_loading)
+        {
+            // 앞선 넘김이 아직 읽는 중 — 화면의 마스크·식자 블록은 이미 떠난 장의 것이라 쓸 자리가 없다(그 장을 떠날 때 이미 물었거나 저장했다). 저장 함수들도 이때는 쓰지 않는다
+            _maskDirty = false; _letterDirty = false;
+        }
+        else SettleMaskBeforeLeaving();
+        // 버리기로 한 것의 표시는 떠나기로 확정된 끝에서 지운다 — 앞 물음에 '아니요', 뒤 물음에 '취소'면 이 장에 남는데,
+        // 그때 화면의 수정이 표시 없이 남으면 다음에 넘길 때 묻지도 저장하지도 않고 사라진다(2026-11-14 검수)
+        bool dropMask = false, dropLetter = false, dropResult = false;
+        if (_maskDirty && autoSaveMask && !SaveMaskSidecar()) return false;   // 저장 실패 — 상태 줄에 까닭이 있다. 고친 것을 말없이 잃지 않게 이 장에 머문다
         if (_maskDirty)
         {
             var mr = MessageBox.Show("고친 마스크를 저장할까요?", "마스크 수정", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
             if (mr == MessageBoxResult.Cancel) return false;
-            if (mr == MessageBoxResult.Yes) SaveMaskSidecar();
-            _maskDirty = false;
+            if (mr == MessageBoxResult.Yes) { if (!SaveMaskSidecar()) return false; }
+            else dropMask = true;
         }
-        if (!_dirty) return true;
-        var r = MessageBox.Show("저장하지 않은 수정이 있어요. 저장할까요?", "결과 보기",
-            MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
-        if (r == MessageBoxResult.Cancel) return false;
-        if (r == MessageBoxResult.Yes) Save();
-        _dirty = false;
+        if (_letterDirty && _sidecar != null)
+        {
+            // '다시 식자해서 저장할까요?'는 그것이 다른 것을 망가뜨리지 않을 때만 묻는다:
+            //  - 고친 장(✎)은 [고친 장 모두 다시 렌더링]이 새 글로 식자한다 — 글을 사이드카에 남겨 두기만 한다(전에는 마스크만 저장되고 글은 사라져 묶음이 옛 글로 돌았다)
+            //  - 결과 그림에 저장 안 한 손 편집(_dirty)이 있으면 다시 식자가 식자 전 원고에서 새로 그려 그 편집을 말없이 지운다 — 글은 사이드카에만, 그림은 아래에서 따로 묻는다
+            //  - 복원이 돌고 있으면(_busy) 그 그림을 갈아 끼울 수 없다(백그라운드가 쓰는 Mat이 되돌리기 기록으로 가 닫을 때 해제된다 — 2026-11-14 검수)
+            bool askReletter = !(_canRerenderEdited && _pendingPages.Contains(_index)) && !_dirty && !_busy;
+            if (askReletter)
+            {
+                var lr = MessageBox.Show("식자 탭에서 고친 글·위치를 아직 결과물에 반영하지 않았어요.\n다시 식자해서 저장할까요?", "식자 수정", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+                if (lr == MessageBoxResult.Cancel) return false;
+                if (lr == MessageBoxResult.Yes) { if (!(ApplyLettering() && Save())) return false; }
+                else dropLetter = true;
+            }
+            else if (!SaveLetterSidecar())
+            {
+                // 못 썼다(상태 줄에 까닭) — 버릴 길을 준다. 머물기만 하면 출력 폴더가 사라졌을 때(드라이브가 빠짐 등) 장을 넘길 수도 창을 닫을 수도 없다
+                if (MessageBox.Show("식자 탭에서 고친 내용을 저장하지 못했어요.\n버리고 계속할까요?", "식자 수정", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return false;
+                dropLetter = true;
+            }
+        }
+        if (_dirty)
+        {
+            var r = MessageBox.Show("저장하지 않은 수정이 있어요. 저장할까요?", "결과 보기",
+                MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+            if (r == MessageBoxResult.Cancel) return false;
+            if (r == MessageBoxResult.Yes) { if (!Save()) return false; }
+            else dropResult = true;
+        }
+        if (dropMask) _maskDirty = false;
+        if (dropLetter || _sidecar == null) _letterDirty = false;
+        if (dropResult) _dirty = false;
         return true;
     }
 
@@ -208,15 +271,20 @@ public partial class ResultWindow
         if (MaskMode)
         {
             if (!HasStoredMask) { TxtStatus.Text = "이 장은 저장 마스크가 없어 마스크를 저장하지 않아요 — [지우기]로 결과물에 지운 뒤 [저장]하세요"; return; }
-            SaveMaskSidecar(); TxtStatus.Text = "마스크를 저장했어요 — 다음에 다시 돌려도 이 마스크를 써요"; return;
+            if (!SaveMaskSidecar()) return;   // 저장 실패 — 상태 줄에 까닭이 있다
+            TxtStatus.Text = _canRerenderEdited && _maskSc?.Pending == true
+                ? "마스크를 저장했어요 — [지우기]로 이 장만, [고친 장 모두 다시 렌더링]으로 고친 장을 한꺼번에 결과물에 반영해요"
+                : "마스크를 저장했어요 — 다음에 다시 돌려도 이 마스크를 써요";
+            return;
         }
         Save();
     }
 
-    private void Save()
+    /// <summary>지금 보이는 결과 그림을 결과물 자리에 쓴다. 썼으면 true — 못 썼으면(읽는 중·원본과 같은 경로·쓰기 실패) 상태 줄에 까닭을 남기고 false.</summary>
+    private bool Save()
     {
         // 페이지를 읽는 동안(_index는 새 장, 그림·마스크는 아직 옛 장)에는 저장하지 않는다 — 옛 장의 그림이 새 장의 결과로 들어간다
-        if (_loading) { TxtStatus.Text = "페이지를 읽는 중이에요 — 잠시 뒤 다시 저장해 주세요"; return; }
+        if (_loading) { TxtStatus.Text = "페이지를 읽는 중이에요 — 잠시 뒤 다시 저장해 주세요"; return false; }
         try
         {
             var r = _refs[_index];
@@ -228,7 +296,7 @@ public partial class ResultWindow
             if (!string.IsNullOrEmpty(r.Source) && string.Equals(PipelineRunner.FileKey(target), PipelineRunner.FileKey(r.Source), StringComparison.Ordinal))
             {
                 TxtStatus.Text = "원본 원고와 같은 경로라 저장하지 않았어요 — 설정에서 출력 폴더를 따로 지정해 주세요";
-                return;
+                return false;
             }
             ImgIo.Write(target, _img);
             // 이 결과가 어느 원고 것인지 러너처럼 적어 둔다(.neko의 주인 기록) — 안 적으면 낡은 남의 기록이 남은 자리에 저장한 결과가 그 원고 것으로 읽혀,
@@ -253,8 +321,9 @@ public partial class ResultWindow
             }
             else TxtStatus.Text = "저장했어요 → " + Path.GetFileName(target);
             if (ownerWarning != null) TxtStatus.Text += " · ⚠ " + ownerWarning;
+            return true;
         }
-        catch (Exception ex) { TxtStatus.Text = "저장 실패: " + ex.Message; }
+        catch (Exception ex) { TxtStatus.Text = "저장 실패: " + ex.Message; return false; }
     }
 
     /// <summary>이 페이지가 보여 주는(=저장하는) 파일을 바꾼다 — 제목·페이지 콤보도 같이.</summary>
@@ -262,7 +331,7 @@ public partial class ResultWindow
     {
         _refs[idx] = _refs[idx] with { ViewPath = path };
         if (idx == _index) { TxtFile.Text = Path.GetFileName(path); TxtFile.ToolTip = path; }
-        if (idx < CmbPages.Items.Count) { CmbPages.Items[idx] = Path.GetFileName(path); if (idx == _index) CmbPages.SelectedIndex = idx; }
+        RefreshPageLabel(idx);
     }
 
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
