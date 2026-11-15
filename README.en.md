@@ -11,7 +11,7 @@ An all-in-one desktop app that works a little magic on black-and-white manga. Dr
   - After detection, use the review window to paint over missed areas or erase incorrect detections, then run restoration.
   - Choose from three restoration modes: **Basic** (fast restoration using Aletheia Lens’s DeepCreamPy), **Regeneration** (SDXL with a built-in workflow), or **Custom ComfyUI** (your own workflow).
   - Regeneration and Custom ComfyUI redraw **the entire area covered by each censorship mark**. The optional **Body Part Detection Model (부위 감지 모델)** (45 MB) identifies that area. If the model is unavailable or finds no match, the app expands the region by 0.6 times the size of the mark. You can adjust this under **Settings (설정) → Censorship Removal (검열 제거) → Advanced Options (고급 옵션)**.
-  - Regeneration takes a 1024-pixel crop around each region and runs SDXL in two passes. The first reconstructs the censored patch and the second refines the whole area. This mode runs without LaMa. When the body part detector classifies a region as male or female, the app uses the corresponding tag set. Each set can be edited separately in Settings.
+  - Regeneration takes a 1024-pixel crop around each region and runs SDXL in two passes. The first reconstructs the censored patch and the second refines the whole area. This mode runs without LaMa. The first pass erases only the black bars inside each patch, so outlines and hands visible between the bars are kept. Body part tags are chosen per censored patch: **a region that contains only one sex gets only that sex’s tags**, and a region where both appear or the sex could not be determined gets both tag sets (for example, penetration scenes where the other side may be hidden, or patches where no body part was found). The progress line shows which tags are used, and patches the app could not classify can be set by hand in the results window. You can change this under **Settings (설정) → Censorship Removal (검열 제거) → Advanced Options (고급 옵션)**, where an experimental option also applies each sex’s tags only to its own side of a mixed region.
   - Masks you correct in the review window are saved as training data. You can use **semi-automatic training** in the app to adapt the detection model to your artwork.
 - 🎨 **Automatic colorization** — Turn black-and-white pages into full-color artwork.
   - **Add a color cover as a reference** to match characters’ hair, eyes, and clothing to the cover.
@@ -45,13 +45,13 @@ Translation, censorship detection, and basic censorship removal automatically us
 
 ## Usage
 
-1. Drag manga images or a folder into the main window. The app sorts filenames in natural order (`1`, `2`, `10`).
+1. Drag manga images or a folder into the main window. The app sorts filenames in natural order (`1`, `2`, `10`). If you add a folder you have already processed, the app skips the `foldername_neko` output folder inside it.
 2. Turn on the features you want to use.
 3. Click **✦ Start! (시작!)**. If censorship removal is enabled, the app scans each page. Pages with no detected censorship continue straight to colorization and lettering when those features are enabled. Pages with detections are marked **Pending Review (검토 대기)**.
-   - Double-click a pending page to open the **Erase Censorship (검열 지우기)** tab. Red areas show what will be removed. Paint over missed marks, erase incorrect detections from the mask, and click **Run Censorship Removal (검열 제거 진행)**.
+   - Double-click a pending page to open the **Erase Censorship (검열 지우기)** tab. Red areas show what will be removed. Paint over missed marks, erase incorrect detections from the mask, and click **Start Censorship Removal (검열 제거 시작)**. All pending pages are then processed and the window closes.
    - Click **Process All Pending Pages (대기 중 전부 진행)** to process the whole queue using the current masks.
    - To review all pages in a single window after detection, select **Review Window (검토 창)** under **Settings (설정) → Censorship Removal (검열 제거)**.
-4. Find the output in `foldername_neko` next to the source folder. As each page finishes, its thumbnail and preview update to show the result.
+4. Find the output in `foldername_neko` inside the source folder. As each page finishes, its thumbnail and preview update to show the result.
 
 ### Translate manga into English
 
@@ -61,7 +61,10 @@ Open **Settings (설정) → Translation (번역)**. Under **Translation Languag
 
 Open **View and Edit Results (결과 보기·수정)** to make adjustments:
 
-- 🙈 **Erase Censorship (검열 지우기)** — Edit the red mask for the current page using the brush (`B`), eraser (`E`), or polygon tool (`L`). Choose Basic, Regeneration, or Custom mode, then click **Erase (지우기)** to rerun censorship removal and lettering **for that page only**. If the page is already colorized, the tool works directly on the colorized image.
+- 🙈 **Erase Censorship (검열 지우기)** — Edit the red mask for the current page using the brush (`B`), eraser (`E`), or polygon tool (`L`). Choose Basic, Regeneration, or Custom mode (the method from Settings is selected at first), then click **Erase (지우기)** to rerun censorship removal and lettering **for that page only**. If the page is already colorized, the tool works directly on the colorized image.
+  - To fix several pages, move through them and edit each mask (masks are saved automatically when you change pages), then click **Rerender All Edited Pages (고친 장 모두 다시 렌더링)**. Only the edited pages are processed again in one batch, using the censorship removal method from Settings. The window closes and progress appears in the main list. You can repeat this as often as you like, or start the batch from the main window with **Rerender N Edited Pages (고친 N장 다시 렌더링)**.
+  - Pages drawn with Regeneration record the **seed** that was used. If you like a result, expand **Regeneration Settings — This Page Only (재생성 설정 — 이 페이지만)** and check **Lock This Page’s Seed (이 장의 시드 고정)**. After that, **Erase (지우기)**, **Rerender All Edited Pages (고친 장 모두 다시 렌더링)**, and **✦ Start! (시작!)** all redraw that page with the same seed. With the same mask and regeneration settings, you get the same image. Seeds are recorded only for pages that were processed through review.
+  - In Regeneration mode, the mask view shows a **male/female badge (남·여)** on each censored patch. The badge tells you which sex’s tags will be used to draw that patch. `?` marks a patch where no body part was found, so both tag sets are used. Click a badge to cycle through male (남성) → female (여성) → both (남녀) → automatic (자동), or use **All Male (모두 남성)** or **All Female (모두 여성)** to set every patch at once. Your choices are saved with the page and used by **Erase (지우기)**, **Rerender All Edited Pages (고친 장 모두 다시 렌더링)**, and **✦ Start! (시작!)**.
   - Edited masks are saved in `.neko` within the output folder and reused when you process the same source pages again. You can turn this off in Settings.
   - Zoom with `Alt` + mouse wheel or `Ctrl` + `+` / `-`, pan with `Space` + drag, and resize the brush with `[` or `]`.
 - 💬 **Redo Lettering (식자 다시 하기)** — Edit text directly in its speech bubble. You can move it, resize it, or change its font and color.
