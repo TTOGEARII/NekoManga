@@ -101,18 +101,62 @@ public class RegenRegionTests
     }
 
 
-    // ── 종류별 태그 고르기 (재생성 v3) ──
+    // ── 태그 고르기 (재생성 v3) ──
 
+    // 기본(2026-11-15 사용자 "남자거에 계속 여자거가 그려지는데 … 남/여 구분을 확실하게"): 한쪽 성별로 **확정된** 영역에만 그쪽 태그를, 나머지는 남녀를 같이.
+    // '늘 같이'(2026-11-13)는 남성 부위만 있는 장에 여성 부위를 그렸고, '감지한 쪽만'(v1.9.1)은 삽입 장면의 가려진 쪽을 안 그렸다 — 확정 여부는 RegenRegion.BuildRegions가 정한다
     [Theory]
-    [InlineData(RegenKind.Male, "M", "F", "M")]
-    [InlineData(RegenKind.Female, "M", "F", "F")]
-    [InlineData(RegenKind.Both, "M", "F", "M, F")]
-    [InlineData(RegenKind.Unknown, "M", "F", "M, F")]     // 검출이 없으면(확장 경로) 둘 다
-    [InlineData(RegenKind.Both, "M", "", "M")]            // 빈 쪽은 뺀다
-    [InlineData(RegenKind.Female, "M", "  ", "")]
-    public void RegenTags_For_PicksByKind(RegenKind kind, string male, string female, string expected)
+    [InlineData(RegenKind.Male, true, "M", "F", "M")]
+    [InlineData(RegenKind.Female, true, "M", "F", "F")]
+    [InlineData(RegenKind.Male, false, "M", "F", "M, F")]      // 남성만 잡혔지만 확실하지 않다(삽입 장면의 가려진 쪽) — 같이
+    [InlineData(RegenKind.Female, false, "M", "F", "M, F")]
+    [InlineData(RegenKind.Both, false, "M", "F", "M, F")]
+    [InlineData(RegenKind.Unknown, false, "M", "F", "M, F")]   // 검출이 없으면(확장 경로) 둘 다
+    [InlineData(RegenKind.Both, true, "M", "F", "M, F")]       // 둘 다 잡힌 영역은 '확정' 표시가 와도 둘 다
+    [InlineData(RegenKind.Male, true, "M", " ", "M")]
+    [InlineData(RegenKind.Both, false, "M", "", "M")]          // 빈 쪽은 뺀다
+    [InlineData(RegenKind.Female, true, "M", "  ", "")]
+    public void RegenTags_For_Default_OneSexOnlyWhenSure(RegenKind kind, bool sure, string male, string female, string expected)
     {
         var s = new AppSettings { RegenBodyTagsMale = male, RegenBodyTagsFemale = female };
-        Assert.Equal(expected, RegenTags.For(kind, s));
+        Assert.Equal(expected, RegenTags.For(kind, sure, s));
+    }
+
+    // 설정에서 끄면 종류와 상관없이 남녀를 늘 같이 (2026-11-13의 기본)
+    [Theory]
+    [InlineData(RegenKind.Male, true)]
+    [InlineData(RegenKind.Female, true)]
+    [InlineData(RegenKind.Both, false)]
+    [InlineData(RegenKind.Unknown, false)]
+    public void RegenTags_For_SplitOff_BothSexesAlways(RegenKind kind, bool sure)
+    {
+        var s = new AppSettings { RegenBodyTagsMale = "M", RegenBodyTagsFemale = "F", RegenTagsBySex = false };
+        Assert.Equal("M, F", RegenTags.For(kind, sure, s));
+    }
+
+    // 진행 줄에 보이는 말 — 어느 태그로 그리는지 사용자가 볼 수 있게
+    [Theory]
+    [InlineData(RegenKind.Male, true, true, "남성 태그")]
+    [InlineData(RegenKind.Female, true, true, "여성 태그")]
+    [InlineData(RegenKind.Male, false, true, "남녀 태그")]
+    [InlineData(RegenKind.Unknown, false, true, "남녀 태그")]
+    [InlineData(RegenKind.Male, true, false, "남녀 태그")]
+    public void RegenTags_Note_SaysWhichTagsGoIn(RegenKind kind, bool sure, bool split, string expected)
+    {
+        var s = new AppSettings { RegenTagsBySex = split };
+        Assert.Equal(expected, RegenTags.Note(kind, sure, s));
+    }
+
+    // 태그 칸을 비워 둔 쪽은 들어가지 않는다 — 진행 줄도 실제로 들어간 것을 말한다(결과 창에서 이 장의 여성 칸을 비우고 [지우기] → "남성 태그")
+    [Theory]
+    [InlineData(RegenKind.Unknown, false, "M", "", "남성 태그")]
+    [InlineData(RegenKind.Both, false, "", "F", "여성 태그")]
+    [InlineData(RegenKind.Male, true, "", "F", "부위 태그 없음")]
+    [InlineData(RegenKind.Unknown, false, " ", "", "부위 태그 없음")]
+    public void RegenTags_Note_FollowsEmptyTagBoxes(RegenKind kind, bool sure, string male, string female, string expected)
+    {
+        var s = new AppSettings { RegenBodyTagsMale = male, RegenBodyTagsFemale = female };
+        Assert.Equal(expected, RegenTags.Note(kind, sure, s));
+        Assert.Equal(expected == "부위 태그 없음", RegenTags.For(kind, sure, s).Length == 0);
     }
 }

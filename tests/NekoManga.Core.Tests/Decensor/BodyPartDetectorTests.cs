@@ -78,6 +78,26 @@ public class BodyPartDetectorTests
     }
 
     [Fact]
+    public void Decode_LowerThreshold_DoesNotChangeWhichStrongBoxesSurvive()
+    {
+        // 재생성은 성별의 근거로 약한 상자(0.05)까지 받는다(RegenRegion.WeakConf) — 그래도 임계(0.12) 이상의 상자는 전과 똑같아야 한다(영역의 모양이 바뀌면 복원 결과가 바뀐다).
+        // 점수 내림차순 NMS라 낮은 상자는 높은 상자를 지우지 못한다: 뚜렷한 상자에 거의 겹친 약한 같은 클래스 상자, 겹친 약한 다른 클래스 상자를 넣어 본다
+        var t = Tensor(
+            (300, 300, 100, 100, 0f, 0.70f, 0f),    // penis 0.70
+            (302, 300, 100, 100, 0f, 0.08f, 0f),    // 거의 같은 자리의 penis 0.08 (IoU 0.96)
+            (300, 300, 100, 100, 0f, 0f, 0.07f),    // 같은 자리의 pussy 0.07
+            (500, 500, 80, 80, 0f, 0f, 0.30f),      // pussy 0.30
+            (100, 500, 60, 60, 0f, 0.06f, 0f));     // 떨어진 penis 0.06
+        var strong = BodyPartDetector.Decode(t, 5, 0.12f, 1, 0, 0, 640, 640);
+        var all = BodyPartDetector.Decode(t, 5, 0.05f, 1, 0, 0, 640, 640);
+
+        Assert.Equal(strong.OrderBy(d => d.Conf), all.Where(d => d.Conf >= 0.12f).OrderBy(d => d.Conf));
+        Assert.Equal(2, strong.Count);
+        Assert.Contains(all, d => d.Cls == BodyPartDetector.ClsPussy && d.Conf < 0.12f);    // 약한 상자도 돌아온다(근거로 쓴다)
+        Assert.Contains(all, d => d.Cls == BodyPartDetector.ClsPenis && Math.Abs(d.Conf - 0.06f) < 1e-6);
+    }
+
+    [Fact]
     public void Letterbox_PortraitPage_PadsLeftRight()
     {
         using var page = new Mat(800, 400, MatType.CV_8UC3, new Scalar(10, 20, 30));   // 400×800 (B,G,R)

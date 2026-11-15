@@ -357,7 +357,7 @@ public class PipelineRunnerRunTests
     [Fact]
     public async Task RunAsync_FixedOutputFolderMoved_LetterSidecarOfAnotherSourceStillProtectsSlot()
     {
-        // 식자 사이드카는 식자 전 원고의 절대 경로를 적는다 — 출력 폴더를 옮기면 그 경로가 옛 폴더를 가리켜 다시 식자할 사이드카로는 읽히지 않는다.
+        // 식자 사이드카는 식자 전 원고의 절대 경로를 적는다 — 출력 폴더를 옮기면 그 경로가 옛 폴더를 가리킨다(v1.9.1까지는 그래서 다시 식자할 사이드카로 읽히지 않았다).
         // 그 읽기로 주인을 가려, 식자 사이드카만 있는 자리(검토 흐름 없이 번역한 장)에서 B가 A의 결과를 덮거나 '다른 형태'로 지웠다 — 주인은 json의 원고 경로·길이로 가린다
         using var t = new TempDir();
         var (a, b, _, oldOut) = SharedSlot(t);
@@ -366,7 +366,7 @@ public class PipelineRunnerRunTests
         var s = EnginelessSettings(t, t.At("옮긴 결과"));
         var outPath = PipelineRunner.OutputPathFor(s, b);
         Assert.True(File.Exists(LetterSidecar.JsonPathFor(outPath)));
-        Assert.Null(LetterSidecar.Load(outPath));   // 전제: json은 있는데 식자 전 원고 경로가 옛 폴더다
+        Assert.False(File.Exists(LetterSidecar.LoadRecord(outPath)!.BasePath));   // 전제: json에 적힌 식자 전 원고 경로는 옛 폴더다(없는 곳)
         var outDir = Path.GetDirectoryName(outPath)!;
         var names = FilesUnder(outDir);
         var bytes = names.Select(n => File.ReadAllBytes(Path.Combine(outDir, n))).ToArray();

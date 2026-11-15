@@ -85,7 +85,7 @@ public class LetterSidecarTests
 
         var record = LetterSidecar.LoadRecord(outPath);
 
-        Assert.Equal(state == "complete", LetterSidecar.Load(outPath) != null);   // 다시 식자할 사이드카의 계약은 그대로다
+        Assert.Equal(state != "baseMissing", LetterSidecar.Load(outPath) != null);   // 폴더를 옮겨도 그 폴더의 base로 다시 식자할 수 있다(2026-11-13) — 없을 때만 null
         Assert.NotNull(record);
         Assert.Equal((src, 100L), (record.Source, record.SrcLen));
         Assert.Equal(Blocks, record.Blocks);
@@ -158,6 +158,62 @@ public class LetterSidecarTests
 
         Assert.Equal(expected, sc.BelongsTo(moved, dims));
     }
+
+    // ── 식자 전 원고(base)의 자리: json에 적힌 절대 경로보다 그 결과의 .neko 폴더가 먼저다 (2026-11-13) ──
+
+    [Fact]
+    public void Load_FolderMoved_FindsTheBaseNextToTheJson()
+    {
+        // 화 폴더를 옮기거나 드라이브 글자가 바뀌면 json의 BasePath(절대 경로)는 없는 곳을 가리킨다 — base는 json과 같은 .neko 폴더에 같이 옮겨져 있다.
+        // null을 돌려주면 다시 렌더링이 식자 블록 없이 돌아 번역 글이 빠진 결과물로 덮는다(2026-11-13 점검에서 재현)
+        using var t = new TempDir();
+        var src = t.At("vol1", "01.jpg");
+        var outPath = t.At("vol1", "vol1_neko", "01_jpg.png");
+        var baseBytes = File.ReadAllBytes(WriteImageFile(LetterSidecar.BasePathFor(outPath), seed: 3));
+        Stored(src, 100, LetterSidecar.BasePathFor(outPath)).Save(outPath);
+        Directory.Move(t.At("vol1"), t.At("옮긴 vol1"));
+        var movedOut = t.At("옮긴 vol1", "vol1_neko", "01_jpg.png");
+
+        var back = LetterSidecar.Load(movedOut);
+
+        Assert.NotNull(back);
+        Assert.Equal(LetterSidecar.BasePathFor(movedOut), back.BasePath);
+        Assert.Equal(baseBytes, File.ReadAllBytes(back.BasePath));
+        Assert.Equal(Blocks, back.Blocks);
+    }
+
+    [Fact]
+    public void Load_FolderCopied_UsesTheBaseInItsOwnFolder()
+    {
+        // 폴더를 복사해 왔으면 적힌 경로(원래 폴더)의 base도 아직 있다 — 그래도 이 결과의 base는 이 폴더의 것이다(원래 폴더에서 다시 렌더링하면 그쪽 base만 바뀐다)
+        using var t = new TempDir();
+        var outPath = t.At("원래", "vol1_neko", "01_jpg.png");
+        var originalBase = WriteImageFile(LetterSidecar.BasePathFor(outPath), seed: 3);
+        Stored(t.At("원래", "01.jpg"), 100, originalBase).Save(outPath);
+        var copiedOut = t.At("복사", "vol1_neko", "01_jpg.png");
+        Directory.CreateDirectory(Path.GetDirectoryName(LetterSidecar.JsonPathFor(copiedOut))!);
+        File.Copy(LetterSidecar.JsonPathFor(outPath), LetterSidecar.JsonPathFor(copiedOut));
+        WriteImageFile(LetterSidecar.BasePathFor(copiedOut), seed: 7);
+
+        var back = LetterSidecar.Load(copiedOut);
+
+        Assert.NotNull(back);
+        Assert.Equal(LetterSidecar.BasePathFor(copiedOut), back.BasePath);
+        Assert.Equal(originalBase, LetterSidecar.Load(outPath)!.BasePath);   // 원래 폴더는 그대로 제 base
+    }
+
+    [Fact]
+    public void Load_BaseOnlyAtTheRecordedPath_StillUsesIt()
+    {
+        // 이 폴더에 base가 없고 적힌 경로에만 있으면(옛 이름 자료·손으로 옮긴 json) 전처럼 그 경로
+        using var t = new TempDir();
+        var outPath = t.At("vol1_neko", "01_jpg.png");
+        var elsewhere = WriteImageFile(t.At("다른 곳", "01.base.png"), seed: 3);
+        Stored(t.At("vol1", "01.jpg"), 100, elsewhere).Save(outPath);
+
+        Assert.Equal(elsewhere, LetterSidecar.Load(outPath)!.BasePath);
+    }
+
 
     // ── 옛 이름(v1.5.5까지)에서 옮기기 ──
 

@@ -50,12 +50,13 @@ public partial class PipelineRunner
     /// mode: "Basic" | "ComfyRegen" | "ComfyCustom" (옛 "Strong"·"DeepCream"은 2026-10-19, "ComfyLama"는 2026-11-12 폐기 — 모르는 값은 ArgumentException).</summary>
     /// <param name="regenSettings">재생성(ComfyRegen)에서만 쓰는 설정 — 결과 창이 '이 페이지만' 프롬프트·수치를 바꾼 사본(null이면 전역 설정).</param>
     /// <param name="kinds">기본(Basic)에서만 쓰는 종류 지도 — 없으면 손으로 칠한 자리로 보고 전부 막대 모델로 지운다(Aletheia 수동 복원과 같다).</param>
+    /// <param name="sexMarks">재생성(ComfyRegen)에서만 — 사용자가 조각에 고른 성별(그림 좌표). 이 길은 사이드카가 없어 결과 창이 들고 있다가 넘긴다.</param>
     public async Task ManualDecensorAsync(Mat img, Mat mask, string mode,
-        IProgress<string>? status, CancellationToken ct, AppSettings? regenSettings = null, Mat? kinds = null)
+        IProgress<string>? status, CancellationToken ct, AppSettings? regenSettings = null, Mat? kinds = null, IReadOnlyList<SexMark>? sexMarks = null)
     {
         // 커스텀은 검열 조각이 덮은 부위 전체(합집합 마스크 하나)를, 재생성 v3는 영역 계획(영역마다 자르기·종류별 태그)을 쓴다 — 파이프라인 Stage2와 같은 규칙
         using var wideMask = mode == "ComfyCustom" ? RegenMaskFor(img, mask, new BodyPartDetector(_onnx), regenSettings) : null;
-        var plan = mode == "ComfyRegen" ? RegenPlanFor(img, mask, new BodyPartDetector(_onnx), regenSettings) : null;
+        var plan = mode == "ComfyRegen" ? RegenPlanFor(img, mask, new BodyPartDetector(_onnx), regenSettings, sexMarks) : null;
         if (wideMask != null) mask = wideMask;
         switch (mode)
         {
@@ -110,15 +111,25 @@ public partial class PipelineRunner
     }
 
     /// <summary>재생성 v3의 영역 계획 — 검열 조각마다 (넓힌 영역, 지우기 마스크, 부위 종류). 설정이 꺼져 있으면 영역 = 조각 그대로(Unknown).
-    /// 감지기가 없거나 모델이 없으면 확장 경로(Unknown). 창이 겹치는 영역은 RegenRegion.BuildRegions가 합친다. 호출자가 Dispose.</summary>
-    internal List<RegenRegionInfo> RegenPlanFor(Mat img, Mat censorMask, BodyPartDetector? detector, AppSettings? s = null)
+    /// 감지기가 없거나 모델이 없으면 확장 경로(Unknown). 창이 겹치는 영역은 RegenRegion.BuildRegions가 합친다. 호출자가 Dispose.
+    /// 부위 감지는 임계(RegenRegionConf)보다 낮은 약한 상자(RegenRegion.WeakConf)까지 받아 둔다 — 영역의 모양·종류는 임계 이상만 정하고(전과 같다: 점수순 NMS라
+    /// 낮은 상자가 높은 상자를 지우지 못한다), 약한 상자는 조각의 성별(어느 태그를 넣을지)을 가리는 근거로만 쓴다.
+    /// <paramref name="marks"/>: 사용자가 조각에 고른 성별(그림 좌표) — 근거보다 앞선다. 영역의 모양은 바꾸지 않는다.</summary>
+    internal List<RegenRegionInfo> RegenPlanFor(Mat img, Mat censorMask, BodyPartDetector? detector, AppSettings? s = null, IReadOnlyList<SexMark>? marks = null)
     {
         s ??= settings;
-        IReadOnlyList<BodyPart> parts = s.RegenWholeRegion && detector is { IsReady: true }
-            ? detector.Detect(img, (float)s.RegenRegionConf).Where(p => p.Cls is BodyPartDetector.ClsPenis or BodyPartDetector.ClsPussy).ToList()
-            : [];
-        return RegenRegion.BuildRegions(censorMask, parts, s.RegenRegionPad, s.RegenWholeRegion ? s.RegenRegionGrow : 0, img.Size(), s.RegenCropSize);
+        return RegenRegion.BuildRegions(censorMask, RegenPartsFor(img, detector, s), s.RegenRegionPad, s.RegenWholeRegion ? s.RegenRegionGrow : 0, img.Size(), s.RegenCropSize, s.RegenRegionConf, marks);
     }
+
+    /// <summary>재생성의 영역 계획이 보는 부위 상자(penis/pussy, 약한 것까지 — 임계와 <see cref="RegenRegion.WeakConf"/> 중 낮은 쪽 이상). '부위 통째 다시 그리기'가 꺼져 있거나 모델이 없으면 빈 목록.</summary>
+    private static IReadOnlyList<BodyPart> RegenPartsFor(Mat img, BodyPartDetector? detector, AppSettings s) =>
+        s.RegenWholeRegion && detector is { IsReady: true }
+            ? detector.Detect(img, (float)Math.Min(s.RegenRegionConf, RegenRegion.WeakConf)).Where(p => p.Cls is BodyPartDetector.ClsPenis or BodyPartDetector.ClsPussy).ToList()
+            : [];
+
+    /// <summary>결과 창의 **페이지별 검출 캐시**용 — 영역 계획(<see cref="RegenPlanFor"/>)이 보는 것과 같은 부위 상자. 창은 그림 사본으로 이것을 한 번 돌려 두고
+    /// 마스크를 칠할 때마다 순수 함수(RegenRegion.Build·BuildRegions)만 다시 한다: 점선(다시 그려질 부위)은 임계 이상의 상자로, 조각의 성별 표시는 약한 상자까지로.</summary>
+    public IReadOnlyList<BodyPart> DetectRegenParts(Mat img, AppSettings? s = null) => RegenPartsFor(img, new BodyPartDetector(_onnx), s ?? settings);
 
     /// <summary>부위 상자(penis/pussy, 그림 좌표)만 — 결과 창 미리보기의 **페이지별 검출 캐시**용. 모델이 없으면 빈 목록.
     /// 미리보기는 그림 사본으로 이것을 한 번 돌려 두고, 마스크를 칠할 때마다 <see cref="RegenRegion.Build"/>(순수 함수)만 다시 한다 —
@@ -135,14 +146,21 @@ public partial class PipelineRunner
         Mat img, Mat mask, int pageIdx, CancellationToken ct)
     {
         var maskedPng = MosaicDetector.ToMaskedPng(img, mask);
-        var up = await client.UploadImageAsync(maskedPng, $"nm_custom_{pageIdx}.png", ct);
-        var prepared = CustomWorkflow.Prepare(workflow, up, $"nm_customout_{pageIdx}");
-        var pid = await client.QueuePromptAsync(prepared.Prompt, ct);
-        var r = await client.WaitAsync(pid, comfyOutputDir, TimeSpan.FromMinutes(30), ct);
-        if (r.OutputFiles.Count == 0)
-            throw new InvalidOperationException("커스텀 워크플로 결과 파일이 없어요 — SaveImage 노드가 결과를 저장하는지 확인해 주세요.");
-
-        using var outImg = ImgIo.Read(r.OutputFiles[^1], ImreadModes.Color);
+        var up = await client.UploadImageAsync(maskedPng, $"nm_custom_{_tag}_{pageIdx}.png", ct);
+        ComfyClient.ComfyResult? r = null;
+        var outPrefix = NextOutputPrefix("customout");
+        Mat outImg;
+        try
+        {
+            var prepared = CustomWorkflow.Prepare(workflow, up, outPrefix);
+            var pid = await client.QueuePromptAsync(prepared.Prompt, ct);
+            r = await client.WaitAsync(pid, comfyOutputDir, TimeSpan.FromMinutes(30), ct);
+            if (r.OutputFiles.Count == 0)
+                throw new InvalidOperationException("커스텀 워크플로 결과 파일이 없어요 — SaveImage 노드가 결과를 저장하는지 확인해 주세요.");
+            outImg = ImgIo.Read(r.OutputFiles[^1], ImreadModes.Color);
+        }
+        finally { WorkFolders.RemoveComfyFiles(settings.ComfyRoot, r?.OutputFiles, outPrefix, up); }   // 읽었으니 ComfyUI 폴더에는 남기지 않는다(실패·멈춤이어도 올린 입력과 그사이 저장된 출력은 지운다)
+        using var outImgOwner = outImg;
         if (outImg.Empty()) throw new InvalidDataException("커스텀 워크플로 결과를 읽지 못했어요.");
         using var resized = outImg.Width == img.Width && outImg.Height == img.Height
             ? outImg.Clone()
@@ -178,28 +196,56 @@ public partial class PipelineRunner
 
     /// <summary>재생성 v3 검열제거(2026-11-12) — 영역(RegenPlanFor)마다 그 주변을 잘라(RegenCrop.WindowFor, 기본 1024) 두 PNG(알파=영역 / 알파=조각)를 올리고
     /// SDXL 두 단계 그래프(WorkflowBuilder.BuildRegenCrop, LaMa 없음)를 돌린 뒤, 결과를 창 크기로 되돌려 영역을 reach만큼 넓힌 범위 안쪽만 창 자리에 복사한다.
-    /// 종류별 태그(RegenTags.For)는 영역의 부위 종류(penis/pussy 검출)로 고른다. 영역은 순서대로 돈다(ComfyUI 큐 하나).</summary>
-    private async Task ComfyRegenDecensorAsync(ComfyClient client, string comfyOutputDir,
-        Mat img, IReadOnlyList<RegenRegionInfo> regions, int pageIdx, CancellationToken ct, AppSettings? regenSettings = null, IProgress<string>? status = null)
+    /// 1단계가 지우는 범위는 기본으로 조각 안의 검은 막대 픽셀만(RegenEraseTight), 태그(RegenTags.For)는 한쪽 성별로 정해진 영역에만 그쪽을, 나머지는 남녀를 같이 넣는다(RegenTagsBySex, 2026-11-15)
+    /// — 2026-11-13 사용자 판정. 조각의 성별이 섞인 영역은 설정(RegenTagsPerPiece)이 켜져 있으면 자리마다 그 성별의 태그를 따로 넣는다(RegenSexAreas — 자리 마스크 PNG를 하나 더 올린다).
+    /// 영역은 순서대로 돈다(ComfyUI 큐 하나).
+    /// 영역마다 쓴 시드를 순서대로 돌려준다(<see cref="RegenSeedFor"/>) — 2차가 사이드카에 적는다. <paramref name="lockedSeeds"/>: 이 장에 고정해 둔 시드.</summary>
+    internal async Task<List<long>> ComfyRegenDecensorAsync(ComfyClient client, string comfyOutputDir,
+        Mat img, IReadOnlyList<RegenRegionInfo> regions, int pageIdx, CancellationToken ct, AppSettings? regenSettings = null, IProgress<string>? status = null,
+        IReadOnlyList<long>? lockedSeeds = null)
     {
         var rs = regenSettings ?? settings;
         int reach = Math.Max(rs.RegenEdgeGrow + rs.RegenEdgeBlur, rs.RegenCoreGrow + rs.RegenCoreBlur) + 2;
+        var seeds = new List<long>();
         for (int k = 0; k < regions.Count; k++)
         {
             ct.ThrowIfCancellationRequested();
             var region = regions[k];
-            status?.Report($"재생성 중 ({k + 1}/{regions.Count})");
             var w = RegenCrop.WindowFor(region.Bounds, img.Size(), rs.RegenCropSize);
-            var (crop, cropRegion, cropErase) = RegenCrop.CropAndScale(img, region.Region, region.Erase, w);
+            // 자리별 태그(RegenTagsPerPiece): 남녀 조각이 이 그림에 같이 있으면 자리마다 그 성별의 태그만 — 나눌 것이 없으면 null(영역 하나에 한 줄)
+            var areas = RegenSexAreas.For(region, w, rs);
+            using var areasOwner = new Disposables(areas);
+            status?.Report($"재생성 중 ({k + 1}/{regions.Count}, {(areas != null ? RegenSexAreas.Note(areas, rs) : RegenTags.Note(region.Sex, region.Sure, rs))})");   // 어느 태그로 그리는지 보이게 — 남성 부위에 여성 태그가 들어갔는지 사용자가 알 수 있다
+            using var tight = rs.RegenEraseTight ? RegenRegion.TightenErase(img, region.Erase) : null;   // 막대 픽셀만 지우기(기본)
+            var (crop, cropRegion, cropErase) = RegenCrop.CropAndScale(img, region.Region, tight ?? region.Erase, w);
             using (crop) using (cropRegion) using (cropErase)
             {
-                var up = await client.UploadImageAsync(MosaicDetector.ToMaskedPng(crop, cropRegion), $"nm_regen_{pageIdx}_{k}.png", ct);
-                var eraseUp = await client.UploadImageAsync(MosaicDetector.ToMaskedPng(crop, cropErase), $"nm_regenmask_{pageIdx}_{k}.png", ct);
-                var graph = WorkflowBuilder.BuildRegenCrop(rs, up, eraseUp, $"nm_regenout_{pageIdx}_{k}", RegenTags.For(region.Kind, rs), w.SendW, w.SendH);
-                var pid = await client.QueuePromptAsync(graph, ct);
-                var r = await client.WaitAsync(pid, comfyOutputDir, TimeSpan.FromMinutes(20), ct);
-                if (r.OutputFiles.Count == 0) throw new InvalidOperationException("재생성 결과 파일이 없어요.");
-                using var outImg = ImgIo.Read(r.OutputFiles[^1], ImreadModes.Color);
+                string? up = null, eraseUp = null, areaUp = null;
+                ComfyClient.ComfyResult? r = null;
+                var outPrefix = NextOutputPrefix("regenout");
+                Mat outImg;
+                try
+                {
+                    up = await client.UploadImageAsync(MosaicDetector.ToMaskedPng(crop, cropRegion), $"nm_regen_{_tag}_{pageIdx}_{k}.png", ct);
+                    eraseUp = await client.UploadImageAsync(MosaicDetector.ToMaskedPng(crop, cropErase), $"nm_regenmask_{_tag}_{pageIdx}_{k}.png", ct);
+                    if (areas != null)
+                    {
+                        using var packed = RegenSexAreas.Pack(areas);
+                        Cv2.ImEncode(".png", packed, out var areaPng);
+                        areaUp = await client.UploadImageAsync(areaPng, $"nm_regenarea_{_tag}_{pageIdx}_{k}.png", ct);
+                    }
+                    long seed = RegenSeedFor(rs, lockedSeeds, k);
+                    seeds.Add(seed);
+                    var graph = WorkflowBuilder.BuildRegenCrop(rs, up, eraseUp, outPrefix, RegenTags.For(region.Sex, region.Sure, rs), w.SendW, w.SendH, seed,
+                        areaUp, areas?.Select(a => a.Tags).ToList());
+                    var pid = await client.QueuePromptAsync(graph, ct);
+                    r = await client.WaitAsync(pid, comfyOutputDir, TimeSpan.FromMinutes(20), ct);
+                    if (r.OutputFiles.Count == 0) throw new InvalidOperationException("재생성 결과 파일이 없어요.");
+                    outImg = ImgIo.Read(r.OutputFiles[^1], ImreadModes.Color);
+                }
+                // 읽었으니 ComfyUI 폴더에는 남기지 않는다 — 영역마다 입력 둘·출력 하나가 쌓였다(실측 2026-11-13: output\nm_* 566MB). 실패·멈춤이어도 올린 입력은 지운다
+                finally { WorkFolders.RemoveComfyFiles(settings.ComfyRoot, r?.OutputFiles, outPrefix, up, eraseUp, areaUp); }
+                using var outImgOwner = outImg;
                 if (outImg.Empty()) throw new InvalidDataException("재생성 결과를 읽지 못했어요.");
                 using var back = outImg.Size() == w.Window.Size ? outImg.Clone() : outImg.Resize(w.Window.Size, 0, 0, InterpolationFlags.Lanczos4);
                 // 영역(+엣지가 닿는 범위)만 창 자리에 — 나머지 픽셀은 원본 그대로
@@ -210,5 +256,17 @@ public partial class PipelineRunner
                 back.CopyTo(dst, take);
             }
         }
+        return seeds;
+    }
+
+    /// <summary>재생성 영역 k의 1단계 시드 — 이 장에 고정해 둔 시드가 있으면 그것(영역 순서대로), 없으면 설정의 시드, 그것도 -1이면 새로 뽑는다.
+    /// 고정한 것보다 영역이 늘었으면(마스크를 고쳐 조각이 더 생겼다) 남는 영역은 설정대로. 뽑는 범위는 전과 같다(2단계가 +1을 쓴다).</summary>
+    internal static long RegenSeedFor(AppSettings rs, IReadOnlyList<long>? locked, int k) =>
+        locked != null && k < locked.Count ? locked[k] : rs.RegenSeed >= 0 ? rs.RegenSeed : Random.Shared.NextInt64(0, uint.MaxValue);
+
+    /// <summary>using 한 줄로 목록째 해제 — 없으면(null) 아무것도 안 한다.</summary>
+    private readonly struct Disposables(IEnumerable<IDisposable>? items) : IDisposable
+    {
+        public void Dispose() { if (items != null) foreach (var d in items) d.Dispose(); }
     }
 }

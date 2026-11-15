@@ -261,6 +261,16 @@ public class WorkflowBuilderTests
     }
 
     [Fact]
+    public void BuildRegenCrop_GivenSeed_IsUsedInsteadOfTheSettingsSeed()
+    {
+        // 러너가 영역마다 시드를 정해 넘긴다(고정한 장의 시드, 아니면 뽑은 시드를 적어 두려고) — 2단계는 그 +1
+        var g = WorkflowBuilder.BuildRegenCrop(new AppSettings { RegenSeed = 7, RegenDenoise = 0.62 }, "a.png", "b.png", "out", "penis", 1024, 1024, seed: 2809107080);
+        var samplers = OfType(g, "KSampler");
+        Assert.Equal(2809107080, Num(Inputs(Assert.Single(samplers, k => Num(Inputs(k.Node)["denoise"]) == 1.0).Node)["seed"]));
+        Assert.Equal(2809107081, Num(Inputs(Assert.Single(samplers, k => Num(Inputs(k.Node)["denoise"]) == 0.62).Node)["seed"]));
+    }
+
+    [Fact]
     public void BuildRegenCrop_Stage1ControlImage_Lineart_BlacksOutThePiece()
     {
         // 기본(Lineart) — union이 아닌 ControlNet도 이 길이다
@@ -366,6 +376,78 @@ public class WorkflowBuilderTests
         Assert.All(OfType(g, "ControlNetApplyAdvanced"), a => Assert.Equal(expected, Str(Inputs(Source(g, Inputs(a.Node)["positive"]))["text"])));
     }
 
+    // ── 자리별 태그(2026-11-15): 남녀 조각이 한 그림에 같이 있으면 자리마다 프롬프트를 따로 — ConditioningSetMask로 자리에 묶어 ConditioningCombine으로 합친다 ──
+    private static JsonObject CropAreas(params string[] areaTags) =>
+        WorkflowBuilder.BuildRegenCrop(new AppSettings { RegenSeed = 1, RegenPrompt = "manga", RegenNegative = "bars" }, "in.png", "erase.png", "out", "penis, pussy", 1024, 1024,
+            areaUpload: "areas.png", areaTags: areaTags);
+
+    [Fact]
+    public void BuildRegenCrop_Areas_EachAreaHasItsOwnPrompt_MaskedToItsChannel()
+    {
+        var g = CropAreas("penis", "pussy");
+        var (areasId, _) = Assert.Single(OfType(g, "LoadImage"), l => Str(Inputs(l.Node)["image"]) == "areas.png");
+        Assert.Equal(3, OfType(g, "LoadImage").Count);
+        var masked = OfType(g, "ConditioningSetMask");
+        Assert.Equal(2, masked.Count);
+        var seen = new List<(string Text, string Channel)>();
+        foreach (var (_, node) in masked)
+        {
+            Assert.Equal(1.0, Num(Inputs(node)["strength"]));
+            Assert.Equal("default", Str(Inputs(node)["set_cond_area"]));   // 자리의 상자가 아니라 그림 전체를 보고 그린다
+            var text = Source(g, Inputs(node)["conditioning"]);
+            Assert.Equal("CLIPTextEncode", ClassType(text));
+            var toMask = Source(g, Inputs(node)["mask"]);
+            Assert.Equal("ImageToMask", ClassType(toMask));
+            Assert.Equal((areasId, 0), LinkOf(Inputs(toMask)["image"]));
+            seen.Add((Str(Inputs(text)["text"]), Str(Inputs(toMask)["channel"])));
+        }
+        // 첫 자리 = red, 둘째 = green (RegenSexAreas.Pack과 같은 순서). 영역 전체의 태그("penis, pussy")는 어디에도 들어가지 않는다
+        Assert.Equal([("manga, penis", "red"), ("manga, pussy", "green")], seen.OrderBy(x => x.Channel == "red" ? 0 : 1));
+        Assert.DoesNotContain(OfType(g, "CLIPTextEncode"), c => Str(Inputs(c.Node)["text"]).Contains("penis, pussy"));
+        // 두 단계 모두 합친 프롬프트를 받는다. 부정 프롬프트는 전처럼 그림 전체에 하나
+        var (combineId, combine) = Only(g, "ConditioningCombine");
+        Assert.Equal(masked.Select(m => m.Id).Order(), new[] { LinkOf(Inputs(combine)["conditioning_1"]).Id, LinkOf(Inputs(combine)["conditioning_2"]).Id }.Order());
+        var applies = OfType(g, "ControlNetApplyAdvanced");
+        Assert.Equal(2, applies.Count);
+        Assert.All(applies, a =>
+        {
+            Assert.Equal((combineId, 0), LinkOf(Inputs(a.Node)["positive"]));
+            Assert.Equal("bars", Str(Inputs(Source(g, Inputs(a.Node)["negative"]))["text"]));
+        });
+    }
+
+    [Fact]
+    public void BuildRegenCrop_ThreeAreas_UseBlueToo_AndChainTheCombines()
+    {
+        var g = CropAreas("penis", "pussy", "penis, pussy");
+        Assert.Equal(["blue", "green", "red"], OfType(g, "ImageToMask").Select(m => Str(Inputs(m.Node)["channel"])).Order());
+        Assert.Equal(3, OfType(g, "ConditioningSetMask").Count);
+        var combines = OfType(g, "ConditioningCombine");
+        Assert.Equal(2, combines.Count);
+        // 마지막 합침이 두 단계의 양성 프롬프트 — 그 안에 앞의 합침이 들어 있다
+        var last = Assert.Single(OfType(g, "ControlNetApplyAdvanced").Select(a => LinkOf(Inputs(a.Node)["positive"]).Id).Distinct());
+        var lastNode = combines.Single(c => c.Id == last).Node;
+        var first = combines.Single(c => c.Id != last).Id;
+        Assert.Contains(first, new[] { LinkOf(Inputs(lastNode)["conditioning_1"]).Id, LinkOf(Inputs(lastNode)["conditioning_2"]).Id });
+    }
+
+    [Fact]
+    public void BuildRegenCrop_NoAreas_IsExactlyThePlainGraph()
+    {
+        // 자리를 안 넘기거나 나눌 자리가 둘 미만이면 전과 한 글자도 다르지 않은 그래프 — 한쪽 성별뿐인 영역의 결과가 이 기능 때문에 달라지지 않는다
+        var s = new AppSettings { RegenSeed = 1 };
+        string plain = WorkflowBuilder.BuildRegenCrop(s, "in.png", "erase.png", "out", "penis", 1024, 1024).ToJsonString();
+        Assert.Equal(plain, WorkflowBuilder.BuildRegenCrop(s, "in.png", "erase.png", "out", "penis", 1024, 1024, areaUpload: null, areaTags: ["a", "b"]).ToJsonString());
+        Assert.Equal(plain, WorkflowBuilder.BuildRegenCrop(s, "in.png", "erase.png", "out", "penis", 1024, 1024, areaUpload: "areas.png", areaTags: ["a"]).ToJsonString());
+        Assert.Equal(plain, WorkflowBuilder.BuildRegenCrop(s, "in.png", "erase.png", "out", "penis", 1024, 1024, areaUpload: "areas.png", areaTags: null).ToJsonString());
+    }
+
+    [Fact]
+    public void BuildRegenCrop_MoreAreasThanChannels_IsRefused()
+    {
+        Assert.Throws<ArgumentException>(() => CropAreas("a", "b", "c", "d"));
+    }
+
     [Theory]
     [InlineData("controlnet-union-sdxl-promax.safetensors", true)]
     [InlineData("diffusion_pytorch_model_promax.safetensors", true)]
@@ -454,6 +536,8 @@ public class WorkflowBuilderTests
     [InlineData("autocolor-without-blend")]
     [InlineData("regen")]
     [InlineData("regen-plain-controlnet")]
+    [InlineData("regen-areas")]
+    [InlineData("regen-three-areas")]
     [InlineData("tag-extract")]
     public void Builders_EveryLinkHitsAnExistingNodeAndEveryNodeFeedsAnOutput(string variant)
     {
@@ -489,6 +573,8 @@ public class WorkflowBuilderTests
         "regen" => WorkflowBuilder.BuildRegenCrop(new AppSettings { RegenSeed = 1 }, "in.png", "erase.png", "nm_out", "penis, glans", 1024, 1024),
         "regen-plain-controlnet" => WorkflowBuilder.BuildRegenCrop(
             new AppSettings { RegenSeed = 1, RegenControlNet = "mistoLine_rank256.safetensors" }, "in.png", "erase.png", "nm_out", "penis, glans", 1024, 1024),
+        "regen-areas" => WorkflowBuilder.BuildRegenCrop(new AppSettings { RegenSeed = 1 }, "in.png", "erase.png", "nm_out", "penis, pussy", 1024, 1024, areaUpload: "areas.png", areaTags: ["penis", "pussy"]),
+        "regen-three-areas" => WorkflowBuilder.BuildRegenCrop(new AppSettings { RegenSeed = 1 }, "in.png", "erase.png", "nm_out", "penis, pussy", 1024, 1024, areaUpload: "areas.png", areaTags: ["penis", "pussy", "penis, pussy"]),
         "tag-extract" => WorkflowBuilder.BuildTagExtract(new AppSettings(), "in.png"),
         _ => throw new ArgumentOutOfRangeException(nameof(variant), variant, null),
     };

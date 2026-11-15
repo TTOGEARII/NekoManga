@@ -370,7 +370,7 @@ public static class Program
             {
                 ["autocolor"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildAutoColor(s, "IN.png", "OUT"),
                 ["autocolor_with_ref"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildAutoColor(s, "IN.png", "OUT", "REF.png"),
-                ["regen_decensor"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildRegenCrop(s, "IN.png", "ERASE.png", "OUT", NekoManga.Core.Decensor.RegenTags.For(NekoManga.Core.Decensor.RegenKind.Both, s), 1024, 1024),
+                ["regen_decensor"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildRegenCrop(s, "IN.png", "ERASE.png", "OUT", NekoManga.Core.Decensor.RegenTags.For(NekoManga.Core.Decensor.RegenKind.Both, false, s), 1024, 1024),
                 ["tag_extract"] = NekoManga.Core.Comfy.WorkflowBuilder.BuildTagExtract(s, "IN.png"),
             };
             File.WriteAllText(args[dumpIdx + 1], all.ToJsonString(

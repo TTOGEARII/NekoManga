@@ -126,12 +126,23 @@ public static class WorkflowBuilder
     /// 1단계: 조각을 노이즈 마스크(MaskGrow RegenInpaintGrow/2)로 디노이즈 1.0 인페인트 — 선화 ControlNet 입력은 원고 선화에서 조각 자리를 검게 비운 것(막대 테두리를 선으로 읽지 않게).
     /// 2단계: 1단계 합성 결과에서 선화를 다시 뽑고, 영역(MaskGrow 0/4)을 노이즈 마스크로 RegenDenoise로 다듬어 주변과 잇는다. 합성은 엣지·코어 마스크(사용자 레시피 값).
     /// LaMa로 메운 흐릿한 덩어리에서 출발하던 v2가 "주변과 무관한 그림"을 내던 것을 사용자 결정으로 바꿨다("SDXL 때는 LaMa를 안 쓰는 게 좋지 않아?").
-    /// 코어 노드 + 설치된 LayerStyle(MaskGrow)·controlnet_aux(AIO_Preprocessor)만 쓴다. w·h는 보내는 그림 크기(EmptyImage).</summary>
-    public static JsonObject BuildRegenCrop(AppSettings s, string imgUpload, string eraseUpload, string filenamePrefix, string bodyTags, int w, int h)
+    /// 코어 노드 + 설치된 LayerStyle(MaskGrow)·controlnet_aux(AIO_Preprocessor)만 쓴다. w·h는 보내는 그림 크기(EmptyImage).
+    /// <paramref name="seed"/>: 1단계 시드(2단계는 +1). 러너가 영역마다 정해 넘긴다 — 고정한 장의 시드이거나, 뽑은 시드를 사이드카에 적어 두려고(PipelineRunner.RegenSeedFor).
+    /// 안 넘기면 설정의 시드, 그것이 -1이면 여기서 뽑는다(그래프 덤프·시험).
+    /// <paramref name="areaUpload"/>·<paramref name="areaTags"/>: 자리별 태그(2026-11-15, RegenSexAreas) — 남녀 조각이 한 그림에 같이 있을 때 자리마다 다른 부위 태그를 넣는다.
+    /// areaUpload는 자리 마스크를 R·G·B 채널에 실은 PNG, areaTags는 그 순서의 태그(둘이나 셋). 자리마다 CLIPTextEncode(기본 프롬프트 + 그 태그) → ConditioningSetMask(자리)로 묶어
+    /// ConditioningCombine으로 합친 것이 두 단계의 양성 프롬프트가 된다(<paramref name="bodyTags"/>는 쓰지 않는다). 전부 ComfyUI 코어 노드다.
+    /// 자리를 안 넘기거나 둘 미만이면 전과 똑같은 그래프 — 한쪽 성별뿐인 영역의 결과는 이 기능과 상관없다.</summary>
+    public static JsonObject BuildRegenCrop(AppSettings s, string imgUpload, string eraseUpload, string filenamePrefix, string bodyTags, int w, int h, long? seed = null,
+        string? areaUpload = null, IReadOnlyList<string>? areaTags = null)
     {
-        long seed = s.RegenSeed >= 0 ? s.RegenSeed : Random.Shared.NextInt64(0, uint.MaxValue);
-        var positive = string.Join(", ", new[] { s.RegenPrompt, bodyTags }
+        long first = seed ?? (s.RegenSeed >= 0 ? s.RegenSeed : Random.Shared.NextInt64(0, uint.MaxValue));
+        static string Prompt(string basePrompt, string tags) => string.Join(", ", new[] { basePrompt, tags }
             .Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => t.Trim().TrimEnd(',')));
+        var positive = Prompt(s.RegenPrompt, bodyTags);
+        bool byArea = areaUpload != null && areaTags is { Count: >= 2 };
+        if (byArea && areaTags!.Count > NekoManga.Core.Decensor.RegenSexAreas.Channels.Length)
+            throw new ArgumentException("자리별 태그는 셋까지예요(마스크를 R·G·B 채널에 싣는다).", nameof(areaTags));
         var p = new JsonObject
         {
             ["1"] = Node("LoadImage", new() { ["image"] = imgUpload }),      // 그림 + 알파 = 영역
@@ -147,7 +158,28 @@ public static class WorkflowBuilder
         p["6"] = Node("LayerMask: MaskGrow", new() { ["mask"] = Link("1", 1), ["invert_mask"] = false, ["grow"] = s.RegenEdgeGrow, ["blur"] = s.RegenEdgeBlur });
         p["7"] = Node("LayerMask: MaskGrow", new() { ["mask"] = Link("1", 1), ["invert_mask"] = false, ["grow"] = s.RegenCoreGrow, ["blur"] = s.RegenCoreBlur });
         // 프롬프트·ControlNet
-        p["10"] = Node("CLIPTextEncode", new() { ["clip"] = Link("2", 1), ["text"] = positive });
+        string pos = "10";
+        if (!byArea) p["10"] = Node("CLIPTextEncode", new() { ["clip"] = Link("2", 1), ["text"] = positive });
+        else
+        {
+            // 자리별 태그: 자리 i의 프롬프트를 그 자리에만 — ComfyUI는 자리 프롬프트마다 모델을 돌려 결과를 마스크 가중 평균으로 섞는다(자리들이 그림을 다 덮어야 한다 — RegenSexAreas가 그렇게 나눈다).
+            // set_cond_area "default": 자리의 상자만 잘라 그리지 않고 그림 전체를 보고 그린 뒤 자리만 쓴다. 부정 프롬프트는 전처럼 그림 전체에 하나
+            p["40"] = Node("LoadImage", new() { ["image"] = areaUpload! });
+            p["40"]!["_meta"] = new JsonObject { ["title"] = "자리별 태그 마스크 (R·G·B = 태그가 다른 자리)" };
+            for (int i = 0; i < areaTags!.Count; i++)
+            {
+                p[$"{41 + i}"] = Node("ImageToMask", new() { ["image"] = Link("40", 0), ["channel"] = NekoManga.Core.Decensor.RegenSexAreas.Channels[i] });
+                p[$"{44 + i}"] = Node("CLIPTextEncode", new() { ["clip"] = Link("2", 1), ["text"] = Prompt(s.RegenPrompt, areaTags[i]) });
+                p[$"{47 + i}"] = Node("ConditioningSetMask", new() { ["conditioning"] = Link($"{44 + i}", 0), ["mask"] = Link($"{41 + i}", 0), ["strength"] = 1.0, ["set_cond_area"] = "default" });
+            }
+            p["50"] = Node("ConditioningCombine", new() { ["conditioning_1"] = Link("47", 0), ["conditioning_2"] = Link("48", 0) });
+            pos = "50";
+            if (areaTags.Count == 3)
+            {
+                p["51"] = Node("ConditioningCombine", new() { ["conditioning_1"] = Link("50", 0), ["conditioning_2"] = Link("49", 0) });
+                pos = "51";
+            }
+        }
         p["11"] = Node("CLIPTextEncode", new() { ["clip"] = Link("2", 1), ["text"] = s.RegenNegative });
         p["12"] = Node("ControlNetLoader", new() { ["control_net_name"] = s.RegenControlNet });
         string cn = "12";
@@ -159,7 +191,7 @@ public static class WorkflowBuilder
         }
         JsonObject CnApply(string imageNode, string cnNode, double strength) => Node("ControlNetApplyAdvanced", new()
         {
-            ["positive"] = Link("10", 0), ["negative"] = Link("11", 0),
+            ["positive"] = Link(pos, 0), ["negative"] = Link("11", 0),
             ["control_net"] = Link(cnNode, 0), ["image"] = Link(imageNode, 0),
             ["strength"] = strength, ["start_percent"] = 0.0, ["end_percent"] = s.RegenCnEnd, ["vae"] = Link("2", 2),
         });
@@ -189,7 +221,7 @@ public static class WorkflowBuilder
         }
         p["15"] = Node("VAEEncode", new() { ["pixels"] = Link("1", 0), ["vae"] = Link("2", 2) });
         p["26"] = Node("SetLatentNoiseMask", new() { ["samples"] = Link("15", 0), ["mask"] = Link("5", 0) });
-        p["16"] = Sampler("14", "26", seed, 1.0);
+        p["16"] = Sampler("14", "26", first, 1.0);
         p["17"] = Node("VAEDecode", new() { ["samples"] = Link("16", 0), ["vae"] = Link("2", 2) });
         p["27"] = Node("ImageCompositeMasked", new() { ["destination"] = Link("1", 0), ["source"] = Link("17", 0), ["mask"] = Link("5", 0), ["x"] = 0, ["y"] = 0, ["resize_source"] = false });
         // ── 2단계: 영역 다듬기 (디노이즈 설정값) ──
@@ -197,7 +229,7 @@ public static class WorkflowBuilder
         p["29"] = CnApply("28", cn, s.RegenCnStrength);
         p["30"] = Node("VAEEncode", new() { ["pixels"] = Link("27", 0), ["vae"] = Link("2", 2) });
         p["31"] = Node("SetLatentNoiseMask", new() { ["samples"] = Link("30", 0), ["mask"] = Link("23", 0) });
-        p["32"] = Sampler("29", "31", seed + 1, s.RegenDenoise);
+        p["32"] = Sampler("29", "31", first + 1, s.RegenDenoise);
         p["33"] = Node("VAEDecode", new() { ["samples"] = Link("32", 0), ["vae"] = Link("2", 2) });
         // 합성: 1단계 결과 위에 2단계 결과를 엣지(부드럽게) → 코어로
         p["18"] = Node("ImageCompositeMasked", new() { ["destination"] = Link("27", 0), ["source"] = Link("33", 0), ["mask"] = Link("6", 0), ["x"] = 0, ["y"] = 0, ["resize_source"] = false });

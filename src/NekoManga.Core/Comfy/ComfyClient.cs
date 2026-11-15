@@ -8,7 +8,12 @@ namespace NekoManga.Core.Comfy;
 /// <summary>ComfyUI HTTP API 클라이언트: 이미지 업로드 → 워크플로 실행 → 결과 수거.</summary>
 public class ComfyClient(string baseUrl)
 {
-    private static readonly HttpClient Http = new() { Timeout = Timeout.InfiniteTimeSpan };
+    private static readonly HttpClient SharedHttp = new() { Timeout = Timeout.InfiniteTimeSpan };
+    private readonly HttpClient Http = SharedHttp;
+
+    /// <summary>시험 이음새 — 서버 없이 가짜 응답기로 요청·응답을 본다.</summary>
+    internal ComfyClient(string baseUrl, HttpMessageHandler handler) : this(baseUrl) =>
+        Http = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
 
     /// <summary>input 폴더로 업로드하고 서버가 부여한 파일명을 돌려준다.</summary>
     /// <summary>서버가 해당 노드 클래스를 아는지 — 커스텀 노드 설치 후 서버를 안 껐으면 모를 수 있다.</summary>
@@ -46,22 +51,70 @@ public class ComfyClient(string baseUrl)
         return json["name"]!.GetValue<string>();
     }
 
-    /// <summary>API 포맷 워크플로를 큐에 넣고 prompt_id를 돌려준다.</summary>
+    /// <summary>API 포맷 워크플로를 큐에 넣고 prompt_id를 돌려준다. 넣는 요청이 가 있는 사이 사용자가 멈추면(<paramref name="ct"/>) 그 프롬프트를 거둔다.</summary>
     public async Task<string> QueuePromptAsync(JsonObject prompt, CancellationToken ct)
     {
-        var body = new JsonObject { ["prompt"] = prompt };
-        using var resp = await Http.PostAsync($"{baseUrl}/prompt",
-            new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"), ct);
-        var text = await resp.Content.ReadAsStringAsync(ct);
-        if (!resp.IsSuccessStatusCode)
-            throw new InvalidOperationException($"워크플로 검증 실패: {Truncate(text, 2000)}");
-        return JsonNode.Parse(text)!["prompt_id"]!.GetValue<string>();
+        // id를 지어 보낸다 — 요청 도중 멈추면 답(id)을 못 받는데, 서버는 이미 줄에 넣었을 수 있다(id를 모르면 끝까지 돈다).
+        // 새 ComfyUI는 소문자 하이픈 UUID만 받고(0.39 validate_job_id — 아니면 400), 옛 ComfyUI는 이 값을 안 보고 제 id를 준다. 그래서 돌려주는 것은 늘 서버가 답한 id
+        var id = Guid.NewGuid().ToString();
+        var body = new JsonObject { ["prompt"] = prompt, ["prompt_id"] = id };
+        try
+        {
+            using var resp = await Http.PostAsync($"{baseUrl}/prompt",
+                new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"), ct);
+            var text = await resp.Content.ReadAsStringAsync(ct);
+            if (!resp.IsSuccessStatusCode)
+                throw new InvalidOperationException($"워크플로 검증 실패: {Truncate(text, 2000)}");
+            return JsonNode.Parse(text)!["prompt_id"]!.GetValue<string>();
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            await CancelPromptAsync(id);
+            throw;
+        }
     }
 
     public record ComfyResult(IReadOnlyList<string> OutputFiles, IReadOnlyList<string> Texts);
 
-    /// <summary>완료까지 폴링하고 SaveImage 출력 파일 경로(서버 output 폴더 기준 절대경로)와 ShowText 내용을 돌려준다.</summary>
+    /// <summary>완료까지 폴링하고 SaveImage 출력 파일 경로(서버 output 폴더 기준 절대경로)와 ShowText 내용을 돌려준다.
+    /// 사용자가 멈추면(<paramref name="ct"/>) 서버에 남은 이 프롬프트를 거두고 취소 예외로 끝난다.</summary>
     public async Task<ComfyResult> WaitAsync(string promptId, string comfyOutputDir,
+        TimeSpan timeout, CancellationToken ct)
+    {
+        try { return await PollAsync(promptId, comfyOutputDir, timeout, ct); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // 폴링만 그만두면 생성은 서버에서 끝까지 돈다(실측 2026-11-13: [멈추기] 뒤 79초) — 그사이 다시 시작한 작업은 그 뒤에 줄을 선다
+            await CancelPromptAsync(promptId);
+            throw;
+        }
+    }
+
+    /// <summary>이 프롬프트만 거둔다 — 아직 줄에 있으면 빼고, 지금 돌고 있으면 끊는다. 다른 프롬프트(사용자가 ComfyUI 화면에서 직접 돌리는 것)는 건드리지 않는다.
+    /// 되는 데까지만: 서버가 꺼졌거나 답이 없어도 예외를 내지 않는다(멈추기를 막지 않게).</summary>
+    public async Task CancelPromptAsync(string promptId)
+    {
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            using (await PostJsonAsync("/queue", new JsonObject { ["delete"] = new JsonArray(promptId) }, cts.Token)) { }
+            // 끊기 전에 무엇이 도는지 본다 — 옛 ComfyUI의 /interrupt는 본문을 안 보고 지금 도는 것을 끊는다(새 ComfyUI는 prompt_id가 돌 때만).
+            // 항목의 짜임은 (번호, prompt_id, 프롬프트, …)
+            using var queue = await Http.GetAsync($"{baseUrl}/queue", cts.Token);
+            if (!queue.IsSuccessStatusCode) return;
+            var running = (JsonNode.Parse(await queue.Content.ReadAsStringAsync(cts.Token)) as JsonObject)?["queue_running"] as JsonArray;
+            bool ours = running != null && running.Any(item =>
+                item is JsonArray { Count: >= 2 } a && a[1] is JsonValue id && id.TryGetValue<string>(out var s) && s == promptId);
+            if (!ours) return;
+            using (await PostJsonAsync("/interrupt", new JsonObject { ["prompt_id"] = promptId }, cts.Token)) { }
+        }
+        catch { }
+    }
+
+    private Task<HttpResponseMessage> PostJsonAsync(string path, JsonObject body, CancellationToken ct) =>
+        Http.PostAsync($"{baseUrl}{path}", new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"), ct);
+
+    private async Task<ComfyResult> PollAsync(string promptId, string comfyOutputDir,
         TimeSpan timeout, CancellationToken ct)
     {
         var deadline = DateTime.UtcNow + timeout;

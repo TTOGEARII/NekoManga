@@ -362,6 +362,48 @@ public partial class PipelineRunner
         return Path.Combine(dir, Path.GetFileName(dir) + "_neko");
     }
 
+    /// <summary>폴더를 끌어다 놓았을 때 원고로 받을 파일 후보 — 하위 폴더까지 전부, 단 **앱이 만든 것**은 뺀다: 사이드카 폴더(<c>.neko</c>),
+    /// 그 폴더의 결과 폴더(<see cref="DefaultOutputDirFor"/> = <c>&lt;폴더 이름&gt;_neko</c>), 설정에서 고정한 출력 폴더 안의 **결과물**.
+    /// 고정한 출력 폴더는 폴더째 건너뛰지 않는다 — 원고 폴더 자신이거나 원고 폴더들의 상위일 수 있어(결과물과 원고가 한 폴더에 섞인다) 폴더째 빼면 원고까지 빠진다(2026-11-14 검수).
+    /// 그 폴더에서는 <c>.neko</c>에 그 이름의 기록(주인 기록·마스크·식자 json)이 있는 파일만 결과물로 보고 뺀다(끌어다 놓은 폴더가 그 폴더 자신이어도).
+    /// 결과 폴더는 원고 폴더 **안**에 생긴다 — 확장자만 보고 받던 때는 한 번 돌린 폴더를 다시 끌어다 놓으면 결과물과 마스크·검열 제거 전 원고 그림까지 원고 행이 됐고,
+    /// 그대로 [시작]하면 원래 원고는 '결과 파일 이름이 목록의 다른 원고와 같아요'로 실패하고 결과물이 원고로 돌았다(<c>vol1_neko\vol1_neko_neko</c>, 2026-11-13 점검 6번).
+    /// 끌어다 놓은 폴더 자신은 무엇이든 받는다(결과 폴더를 직접 올리는 것은 사용자의 선택) — 그 안의 <c>.neko</c>만 뺀다. 이름이 <c>_neko</c>로 끝나기만 하는 다른 폴더도 받는다.
+    /// 그림인지는 가리지 않는다 — 받는 쪽이 못 읽는 그림을 알려야 해서(<see cref="ImgIo.UnreadableNotice"/>). 못 여는 하위 폴더(권한)는 건너뛴다.
+    /// <paramref name="skippedDirs"/>에는 건너뛴 결과 폴더가 담긴다(상태 줄 안내용, <c>.neko</c>는 담지 않는다).</summary>
+    public static List<string> EnumerateSourceFiles(string dir, AppSettings s, List<string>? skippedDirs = null)
+    {
+        var files = new List<string>();
+        var fixedOut = string.IsNullOrWhiteSpace(s.OutputRoot) ? null : NormDirKey(s.OutputRoot);
+        static bool HasResultRecord(string file) =>
+            File.Exists(ResultOwner.PathFor(file)) || File.Exists(MaskSidecar.JsonPathFor(file)) || File.Exists(LetterSidecar.JsonPathFor(file));
+        void Walk(string cur, int depth)
+        {
+            List<string> here;
+            try { here = [.. Directory.EnumerateFiles(cur)]; }
+            catch { return; }   // 없는 폴더·권한 없음
+            if (fixedOut != null && NormDirKey(cur) == fixedOut)
+            {
+                int all = here.Count;
+                here.RemoveAll(HasResultRecord);
+                if (here.Count < all) skippedDirs?.Add(cur);
+            }
+            files.AddRange(here);
+            if (depth >= 64) return;   // 자기 자신을 가리키는 연결 폴더 대비
+            string[] subs;
+            try { subs = Directory.GetDirectories(cur); } catch { return; }
+            var ownResults = NormDirKey(DefaultOutputDirFor(Path.Combine(cur, "x")));
+            foreach (var sub in subs)
+            {
+                if (string.Equals(Path.GetFileName(sub), ".neko", StringComparison.OrdinalIgnoreCase)) continue;
+                if (NormDirKey(sub) == ownResults) { skippedDirs?.Add(sub); continue; }
+                Walk(sub, depth + 1);
+            }
+        }
+        Walk(dir, 0);
+        return files;
+    }
+
     /// <summary>결과 폴더·이름을 정할 때 보는 원고 경로 — 절대 경로는 받은 그대로(v1.8.2의 이름과 같게: 전체 경로로 풀면 <c>vol1.\</c> 같은 폴더의 끝 점이 떨어져 이름이 달라진다),
     /// 상대 경로만 전체 경로로. 전체 경로로 못 바꾸는 경로(잘못된 문자 등)는 받은 그대로.</summary>
     private static string NamingPathOf(string inputFile)
@@ -418,6 +460,13 @@ public partial class PipelineRunner
         if (hasOut && hasAsIs) return File.GetLastWriteTimeUtc(asIs) > File.GetLastWriteTimeUtc(outPath) ? asIs : outPath;
         return hasOut ? outPath : asIs;
     }
+
+    /// <summary>이 원고의 결과물이 그 자리에 있는가(결과물 png 또는 '원본 그대로' 복사본) — 2차가 한 번이라도 끝난 장인지의 근거.
+    /// 1차만 돌고 멈춘 장(검토 대기에서 멈춤·2차 실패)은 사이드카만 있고 결과물이 없다. 결과 창은 그런 장의 마스크 저장을 '고친 장'으로 세지 않는다 —
+    /// 그 장을 다시 렌더링하면 식자·채색 없는 결과물이 '완료'로 남는다(식자 블록은 2차가 남기는 사이드카에만 있다). [시작]이 처음부터 돌려야 하는 장이다(2026-11-13 검수).
+    /// 출력 폴더가 원고 폴더라 '원본 그대로'가 원본 자신인 장은 파일로는 근거가 없어 false다.</summary>
+    public static bool HasResultFor(string outPath, string source) =>
+        !string.Equals(ResolveResultPath(outPath, source), source, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>검열이 없어 원본을 확장자 그대로 내보낼 때의 경로 — 결과물과 같은 이름에 원본 확장자. 출력 폴더가 원고 폴더면 원본 자신(복사하지 않는다).</summary>
     public static string AsIsPathFor(string outPath, string inputFile)

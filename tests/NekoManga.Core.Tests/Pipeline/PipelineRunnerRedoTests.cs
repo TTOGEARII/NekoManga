@@ -9,39 +9,95 @@ namespace NekoManga.Core.Tests;
 /// 채색은 돌리지 않으므로, 채색된 장은 base(채색 뒤·식자 전)에서, 아니면 pre(검열 제거 전 원고)에서 지운다.</summary>
 public class PipelineRunnerRedoTests
 {
-    // ── LooksColorized: base가 pre에서 (마스크 바깥이) 달라졌으면 채색된 장 ──
+    // ── LooksColorized: 흑백 원고에 색이 입혀졌으면(마스크 밖 채도가 늘었으면) 채색된 장 ──
+    // 2026-11-13까지는 마스크 밖의 평균 절대차로 봤다 — 부위 통째 재생성은 마스크 밖도 바꿔서 실제 재생성 결과 4쪽 중 3쪽이 '채색'으로 읽혔다(절대차 1.1~3.9, 한계 2.0).
+    // 채도(max−min)는 재생성에서 0.03~0.21, 채색 결과에서 12.1 이상(실측) — 한계 3.0
+
+    /// <summary>흑백 원고 대역 — 세 채널 값이 같은 그림.</summary>
+    private static Mat GrayPage(int width = 60, int height = 40)
+    {
+        var img = new Mat(height, width, MatType.CV_8UC3, new Scalar(235, 235, 235));
+        img.Rectangle(new Rect(width / 6, height / 5, width / 3, height / 4), new Scalar(20, 20, 20), -1);
+        img.Line(0, height - 1, width - 1, 0, new Scalar(90, 90, 90), 2);
+        return img;
+    }
+
+    /// <summary>채색 결과 대역 — 같은 그림에 색을 입힌 것(밝은 바탕의 채도 90).</summary>
+    private static Mat Tinted(Mat gray)
+    {
+        var c = new Mat();
+        Cv2.Subtract(gray, new Scalar(90, 40, 0), c);
+        return c;
+    }
+
+    /// <summary>재생성 결과 대역 — 마스크 밖 한 덩어리의 밝기가 바뀌었지만 여전히 흑백인 그림.</summary>
+    private static Mat Regenerated(Mat gray, Rect around)
+    {
+        var r = gray.Clone();
+        r.Rectangle(around, new Scalar(128, 128, 128), -1);
+        return r;
+    }
 
     [Fact]
     public void LooksColorized_SameImage_False()
     {
-        using var a = ColorImage(60, 40, 1); using var b = a.Clone();
+        using var a = GrayPage(); using var b = a.Clone();
         Assert.False(PipelineRunner.LooksColorized(a, b, null));
+        using var c = ColorImage(60, 40, 1); using var d = c.Clone();   // 원래 컬러인 원고도 그대로면 채색된 것이 아니다
+        Assert.False(PipelineRunner.LooksColorized(c, d, null));
     }
 
     [Fact]
     public void LooksColorized_DifferentSize_True()
     {
-        using var a = ColorImage(60, 40, 1); using var b = ColorImage(90, 60, 1);
+        using var a = GrayPage(60, 40); using var b = GrayPage(90, 60);
         Assert.True(PipelineRunner.LooksColorized(a, b, null));
     }
 
     [Fact]
-    public void LooksColorized_DiffersOnlyInsideMask_False()
+    public void LooksColorized_GrayPageTurnedColor_True()
     {
-        // 검열 제거가 마스크 안만 바꾼 base는 채색된 것이 아니다
-        using var a = ColorImage(60, 40, 1); using var b = a.Clone();
-        var r = new Rect(5, 5, 10, 10); b.Rectangle(r, new Scalar(0, 255, 0), -1);
-        using var m = RectMask(60, 40, r);
-        Assert.False(PipelineRunner.LooksColorized(a, b, m));
-        Assert.True(PipelineRunner.LooksColorized(a, b, null));
-    }
-
-    [Fact]
-    public void LooksColorized_ShiftedOutsideMask_True()
-    {
-        using var a = ColorImage(60, 40, 1); using var b = ColorImage(60, 40, 2);
+        using var pre = GrayPage(); using var colored = Tinted(pre);
         using var m = RectMask(60, 40, new Rect(5, 5, 10, 10));
-        Assert.True(PipelineRunner.LooksColorized(a, b, m));
+        Assert.True(PipelineRunner.LooksColorized(pre, colored, m));
+        Assert.True(PipelineRunner.LooksColorized(pre, colored, null));
+    }
+
+    [Fact]
+    public void LooksColorized_RegeneratedBeyondTheMask_False()
+    {
+        // 부위 통째 재생성은 마스크보다 넓게 다시 그린다 — 마스크 밖이 달라졌어도 색이 입혀진 것은 아니다
+        using var pre = GrayPage();
+        using var regen = Regenerated(pre, new Rect(20, 10, 30, 25));
+        using var m = RectMask(60, 40, new Rect(30, 15, 10, 10));
+        using var diff = new Mat(); Cv2.Absdiff(pre, regen, diff);
+        Assert.True(Cv2.Mean(diff).Val0 > 2.0, "전제: 옛 기준(평균 절대차 2.0)으로는 채색으로 읽히는 그림이다");
+        Assert.False(PipelineRunner.LooksColorized(pre, regen, m));
+    }
+
+    [Fact]
+    public void LooksColorized_ColorOnlyInsideMask_False()
+    {
+        // 마스크 안은 검열 제거가 바꾼 자리다 — 거기에 색이 들어가도 장이 채색된 것은 아니다
+        using var pre = GrayPage(); using var b = pre.Clone();
+        var r = new Rect(5, 5, 20, 20); b.Rectangle(r, new Scalar(0, 255, 0), -1);
+        using var m = RectMask(60, 40, r);
+        Assert.False(PipelineRunner.LooksColorized(pre, b, m));
+        Assert.True(PipelineRunner.LooksColorized(pre, b, null));
+    }
+
+    [Fact]
+    public void IsColorized_RecordedFlagWinsOverThePixels()
+    {
+        using var t = new TempDir();
+        using var pre = GrayPage(); using var colored = Tinted(pre);
+        using var m = RectMask(60, 40, new Rect(5, 5, 10, 10));
+        var unknown = MaskSidecar.Write(t.At("o", "01.png"), t.At("01.jpg"), m, null, null, "감지", skip: false, edited: false, confirmed: true);
+        Assert.Null(unknown.Colorized);
+        Assert.True(PipelineRunner.IsColorized(unknown, pre, colored, m));     // 모르면 그림으로
+        Assert.False(PipelineRunner.IsColorized(unknown, pre, pre, m));
+        Assert.False(PipelineRunner.IsColorized(unknown with { Colorized = false }, pre, colored, m));
+        Assert.True(PipelineRunner.IsColorized(unknown with { Colorized = true }, pre, pre, m));
     }
 
     // ── Grown: 여유(px)만큼 부풀린 사본 ──
@@ -62,15 +118,16 @@ public class PipelineRunnerRedoTests
 
     // ── RedoPageAsync + DecensorAndLetterOnly: 엔진 없는 설정(제거·채색이 안 돈다)이라 입력 선택과 식자만 본다 ──
 
-    /// <summary>저장 마스크·pre·base·식자 블록이 다 있는 결과 자리. baseSeed가 pre(seed 4)와 같으면 채색 안 한 장, 다르면 채색된 장.</summary>
-    private static (string src, string outPath, Mat pre, Mat baseImg) Page(TempDir t, AppSettings s, int baseSeed)
+    /// <summary>저장 마스크·pre·base·식자 블록이 다 있는 결과 자리. pre는 흑백 원고, base는 baseSeed가 4면 pre 그대로(채색 안 한 장), 아니면 색을 입힌 그림(채색된 장).
+    /// 사이드카에 채색 여부는 적혀 있지 않다(v1.9.1까지의 결과) — <paramref name="colorized"/>를 주면 적는다.</summary>
+    private static (string src, string outPath, Mat pre, Mat baseImg) Page(TempDir t, AppSettings s, int baseSeed, bool? colorized = null)
     {
         var src = WriteImageFile(t.At("vol1", "01.jpg"), seed: 1);
         var outPath = PipelineRunner.OutputPathFor(s, src);
         using var mask = RectMask(60, 40, new Rect(5, 5, 10, 10));
-        var pre = ColorImage(60, 40, seed: 4);
-        MaskSidecar.Write(outPath, src, mask, null, pre, "감지", skip: false, edited: true, confirmed: false);
-        var baseImg = ColorImage(60, 40, seed: baseSeed);
+        var pre = GrayPage();
+        MaskSidecar.Write(outPath, src, mask, null, pre, "감지", skip: false, edited: true, confirmed: false, colorized: colorized);
+        var baseImg = baseSeed == 4 ? pre.Clone() : Tinted(pre);
         ImgIo.Write(LetterSidecar.BasePathFor(outPath), baseImg);
         new LetterSidecar(src, 60, 40, LetterSidecar.BasePathFor(outPath),
             [new TextBlockInfo(5, 5, 50, 30, "あ", "아", 12, false, "#000000")], MaskSidecar.LengthOf(src)).Save(outPath);
@@ -128,6 +185,303 @@ public class PipelineRunnerRedoTests
         using var outImg = ImgIo.Read(outPath);
         Assert.Equal(pre.At<Vec3b>(38, 58), outImg.At<Vec3b>(38, 58));
         pre.Dispose(); baseImg.Dispose();
+    }
+
+
+    // ── 채색 없이 다시 렌더링할 때의 시작 그림 (2026-11-13 점검 1·3번) ──
+
+    [Fact]
+    public async Task RedoPageAsync_SkipColor_RegeneratedLetteredPage_RendersFromPre()
+    {
+        // 재생성으로 끝난 장의 base는 마스크 밖도 pre와 다르다 — 그것을 '채색'으로 읽으면 이미 재생성된 그림 위에서 또 지우고, 마스크에서 뺀 자리가 원래 그림으로 돌아오지 않는다
+        using var t = new TempDir(); var s = EnginelessSettings(t);
+        var (src, outPath, pre, baseImg) = Page(t, s, baseSeed: 4);
+        using (var regen = Regenerated(pre, new Rect(20, 28, 38, 10))) ImgIo.Write(LetterSidecar.BasePathFor(outPath), regen);   // 글 아래쪽, 마스크 밖
+
+        using (var runner = new PipelineRunner(s))
+            await runner.RedoPageAsync(src, new ProgressLog(), CancellationToken.None, options: DecensorOnly);
+
+        using var outImg = ImgIo.Read(outPath);
+        Assert.Equal(pre.At<Vec3b>(35, 56), outImg.At<Vec3b>(35, 56));   // 재생성이 바꿨던 자리가 검열 제거 전 원고로 돌아왔다
+        Assert.False(MaskSidecar.Load(outPath)!.Colorized);
+        pre.Dispose(); baseImg.Dispose();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task RedoPageAsync_SkipColor_RecordedFlagDecidesTheStartImage(bool colorized)
+    {
+        // 그때 채색을 돌렸는지 사이드카에 적혀 있으면 그림으로 추측하지 않는다 — base가 어떻게 보이든 적힌 대로
+        using var t = new TempDir(); var s = EnginelessSettings(t);
+        var (src, outPath, pre, baseImg) = Page(t, s, baseSeed: colorized ? 4 : 5, colorized);   // 일부러 그림과 반대로 적었다
+        using (var regen = Regenerated(pre, new Rect(20, 28, 38, 10)))
+            if (colorized) { ImgIo.Write(LetterSidecar.BasePathFor(outPath), regen); regen.CopyTo(baseImg); }   // 색 없는 base인데 '채색됨'으로 적힌 장
+
+        using (var runner = new PipelineRunner(s))
+            await runner.RedoPageAsync(src, new ProgressLog(), CancellationToken.None, options: DecensorOnly);
+
+        using var outImg = ImgIo.Read(outPath);
+        Assert.Equal((colorized ? baseImg : pre).At<Vec3b>(35, 56), outImg.At<Vec3b>(35, 56));
+        Assert.Equal(colorized, MaskSidecar.Load(outPath)!.Colorized);   // 적힌 값은 다시 렌더링 뒤에도 그대로
+        pre.Dispose(); baseImg.Dispose();
+    }
+
+    /// <summary>글자가 없어 식자 사이드카·base 없이 끝난 장 — 저장 마스크와 pre, 그리고 결과물만 있다.</summary>
+    private static (string src, string outPath, Mat pre) TextlessPage(TempDir t, AppSettings s, Func<Mat, Mat> result, bool? colorized)
+    {
+        var src = WriteImageFile(t.At("vol1", "01.jpg"), seed: 1);
+        var outPath = PipelineRunner.OutputPathFor(s, src);
+        using var mask = RectMask(60, 40, new Rect(5, 5, 10, 10));
+        var pre = GrayPage();
+        MaskSidecar.Write(outPath, src, mask, null, pre, "감지", skip: false, edited: true, confirmed: true, colorized: colorized);
+        using var res = result(pre);
+        ImgIo.Write(outPath, res);
+        return (src, outPath, pre);
+    }
+
+    [Theory]
+    [InlineData(true)]    // 2차가 '채색했다'고 적어 둔 장
+    [InlineData(null)]    // 옛 결과(적힌 것 없음) — 결과물의 색으로 안다
+    public async Task RedoPageAsync_SkipColor_ColorizedPageWithoutText_KeepsItsColor(bool? recorded)
+    {
+        // 글자 없는 장(번역을 끄고 채색만 쓴 장도)은 식자 사이드카·base가 없다 — pre에서 시작하면 채색을 끄고 도는 다시 렌더링이 결과물을 흑백으로 덮는다(재현 2026-11-13)
+        using var t = new TempDir(); var s = EnginelessSettings(t);
+        var (src, outPath, pre) = TextlessPage(t, s, Tinted, recorded);
+        using var colored = ImgIo.Read(outPath);
+
+        using (var runner = new PipelineRunner(s))
+            await runner.RedoPageAsync(src, new ProgressLog(), CancellationToken.None, options: DecensorOnly);
+
+        using var outImg = ImgIo.Read(outPath);
+        AssertSamePixels(colored, outImg);   // 엔진 없는 설정이라 검열 제거는 안 돈다 — 결과물이 그대로여야 한다(흑백 pre로 바뀌지 않았다)
+        Assert.True(MaskSidecar.Load(outPath)!.Colorized);
+        Assert.Null(LetterSidecar.LoadRecord(outPath));   // 없던 식자 사이드카를 만들지 않는다
+        pre.Dispose();
+    }
+
+    [Fact]
+    public async Task RedoPageAsync_SkipColor_RegeneratedPageWithoutText_RendersFromPre()
+    {
+        // 지금 사용자의 설정(재생성, 번역·채색 끔)으로 만든 결과 — 결과물이 마스크 밖까지 pre와 달라도 채색된 것이 아니다. 결과물에서 시작하면 재생성 위에 또 재생성한다
+        using var t = new TempDir(); var s = EnginelessSettings(t);
+        var (src, outPath, pre) = TextlessPage(t, s, p => Regenerated(p, new Rect(20, 20, 38, 18)), colorized: null);
+
+        using (var runner = new PipelineRunner(s))
+            await runner.RedoPageAsync(src, new ProgressLog(), CancellationToken.None, options: DecensorOnly);
+
+        using var outImg = ImgIo.Read(outPath);
+        AssertSamePixels(pre, outImg);
+        Assert.False(MaskSidecar.Load(outPath)!.Colorized);
+        pre.Dispose();
+    }
+
+    [Fact]
+    public async Task RedoPageAsync_SkipColor_RecordedColorizedButResultIsGone_RendersFromPre()
+    {
+        // 적힌 것은 '채색됨'인데 채색된 그림(결과물)이 지워졌다 — 시작할 그림이 pre뿐이다. 끝난 뒤의 기록은 실제 결과물대로
+        using var t = new TempDir(); var s = EnginelessSettings(t);
+        var (src, outPath, pre) = TextlessPage(t, s, Tinted, colorized: true);
+        File.Delete(outPath);
+
+        using (var runner = new PipelineRunner(s))
+            await runner.RedoPageAsync(src, new ProgressLog(), CancellationToken.None, options: DecensorOnly);
+
+        using var outImg = ImgIo.Read(outPath);
+        AssertSamePixels(pre, outImg);
+        Assert.False(MaskSidecar.Load(outPath)!.Colorized);
+        pre.Dispose();
+    }
+
+
+    // ── 식자 전 원고(base)를 못 찾을 때: 글이 빠진 결과물로 덮지 않는다 (2026-11-13 점검 2번) ──
+
+    /// <summary>두 그림이 사각형 안에서 다른 픽셀 수 — 글이 그려졌는지 볼 때.</summary>
+    private static int DiffIn(Mat a, Mat b, Rect r)
+    {
+        using var ra = new Mat(a, r); using var rb = new Mat(b, r);
+        using var d = new Mat(); Cv2.Absdiff(ra, rb, d);
+        using var flat = d.Reshape(1);
+        return Cv2.CountNonZero(flat);
+    }
+
+    [Fact]
+    public async Task RedoPageAsync_FolderMovedAfterTheRun_StillLettersThePage()
+    {
+        using var t = new TempDir(); var s = EnginelessSettings(t);
+        var (src, outPath, pre, baseImg) = Page(t, s, baseSeed: 4);
+        Directory.Move(t.At("vol1"), t.At("옮긴 곳"));   // 원고·결과 폴더가 통째로 — 식자 json의 BasePath는 옛 경로 그대로다
+        var movedSrc = t.At("옮긴 곳", "01.jpg");
+        var movedOut = Path.Combine(t.At("옮긴 곳"), Path.GetRelativePath(t.At("vol1"), outPath));
+
+        using (var runner = new PipelineRunner(s))
+            await runner.RedoPageAsync(movedSrc, new ProgressLog(), CancellationToken.None, movedOut, DecensorOnly);
+
+        using var outImg = ImgIo.Read(movedOut);
+        Assert.True(DiffIn(pre, outImg, new Rect(5, 5, 45, 25)) > 0, "번역 글이 그려지지 않았다 — 식자 블록 없이 돌았다");
+        Assert.Equal(LetterSidecar.BasePathFor(movedOut), LetterSidecar.Load(movedOut)!.BasePath);   // 다시 쓴 사이드카는 새 자리를 가리킨다
+        pre.Dispose(); baseImg.Dispose();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task RedoPageAsync_LetteredPageWhoseBaseIsGone_StopsWithoutTouchingTheResult(bool decensorOnly)
+    {
+        using var t = new TempDir(); var s = EnginelessSettings(t);
+        var (src, outPath, pre, baseImg) = Page(t, s, baseSeed: 4);
+        WriteImageFile(outPath, seed: 9);   // 지난 결과물(글이 들어 있다고 치자)
+        var before = File.ReadAllBytes(outPath);
+        File.Delete(LetterSidecar.BasePathFor(outPath));
+
+        using (var runner = new PipelineRunner(s))
+        {
+            var ex = await Assert.ThrowsAsync<FileNotFoundException>(() =>
+                runner.RedoPageAsync(src, new ProgressLog(), CancellationToken.None, options: decensorOnly ? DecensorOnly : null));
+            Assert.Contains("식자 전 원고", ex.Message);
+        }
+
+        Assert.Equal(before, File.ReadAllBytes(outPath));
+        Assert.NotNull(LetterSidecar.LoadRecord(outPath));   // 고쳐 둔 번역 글은 남는다
+        pre.Dispose(); baseImg.Dispose();
+    }
+
+    [Fact]
+    public async Task RedoPageAsync_BaseGoneButEveryBlockHidden_RendersWithoutText()
+    {
+        // 보일 글이 하나도 없으면 base가 없어도 잃을 것이 없다 — 막지 않는다
+        using var t = new TempDir(); var s = EnginelessSettings(t);
+        var (src, outPath, pre, baseImg) = Page(t, s, baseSeed: 4);
+        var rec = LetterSidecar.LoadRecord(outPath)!;
+        (rec with { Blocks = [.. rec.Blocks.Select(b => b with { Hidden = true })] }).Save(outPath);
+        File.Delete(LetterSidecar.BasePathFor(outPath));
+
+        using (var runner = new PipelineRunner(s))
+            await runner.RedoPageAsync(src, new ProgressLog(), CancellationToken.None, options: DecensorOnly);
+
+        using var outImg = ImgIo.Read(outPath);
+        AssertSamePixels(pre, outImg);
+        pre.Dispose(); baseImg.Dispose();
+    }
+
+
+    // ── 식자 json이 있는데 못 읽을 때: '없음'으로 치지 않는다 (2026-11-14 검수) ──
+    // 결과 창은 [지우기] 직전에 식자 json을 새로 쓴다 — 그 파일을 백신·동기화가 잠깐 쥐면 읽기가 null이고, 그것을 '식자 없는 장'으로 치면
+    // 번역 글도 색도 없는 pre 기반 그림으로 결과물을 덮은 뒤 '채색 안 함'까지 적는다(다음부터는 그 기록을 따라 흑백에서 시작한다)
+
+    [Theory]
+    [InlineData("cut")]
+    [InlineData("empty")]
+    public async Task RedoPageAsync_LetterJsonBroken_StopsWithoutTouchingTheResult(string how)
+    {
+        using var t = new TempDir(); var s = EnginelessSettings(t);
+        var (src, outPath, pre, baseImg) = Page(t, s, baseSeed: 5, colorized: true);
+        WriteImageFile(outPath, seed: 9);
+        var before = File.ReadAllBytes(outPath);
+        var json = LetterSidecar.JsonPathFor(outPath);
+        var text = File.ReadAllText(json);
+        File.WriteAllText(json, how == "cut" ? text[..(text.Length / 2)] : "");
+
+        using (var runner = new PipelineRunner(s))
+        {
+            var ex = await Assert.ThrowsAsync<InvalidDataException>(() => runner.RedoPageAsync(src, new ProgressLog(), CancellationToken.None, options: DecensorOnly));
+            Assert.Contains("식자 정보", ex.Message);
+        }
+
+        Assert.Equal(before, File.ReadAllBytes(outPath));
+        Assert.True(MaskSidecar.Load(outPath)!.Colorized);   // '채색 안 함'으로 바뀌지 않았다
+        pre.Dispose(); baseImg.Dispose();
+    }
+
+    [Fact]
+    public async Task RedoPageAsync_LetterJsonBrieflyLocked_WaitsAndLettersThePage()
+    {
+        using var t = new TempDir(); var s = EnginelessSettings(t);
+        var (src, outPath, pre, baseImg) = Page(t, s, baseSeed: 4);
+        // 다른 프로그램처럼 쥐었다가 0.15초 뒤에 놓는다 — 전용 스레드로(스레드풀로 놓으면 느린 CI에서 다시 읽기보다 늦는다)
+        var held = new FileStream(LetterSidecar.JsonPathFor(outPath), FileMode.Open, FileAccess.Read, FileShare.None);
+        var release = new Thread(() => { Thread.Sleep(150); held.Dispose(); }) { IsBackground = true };
+        release.Start();
+
+        using (var runner = new PipelineRunner(s))
+            await runner.RedoPageAsync(src, new ProgressLog(), CancellationToken.None, options: DecensorOnly);
+        release.Join();
+
+        using var outImg = ImgIo.Read(outPath);
+        Assert.True(DiffIn(pre, outImg, new Rect(5, 5, 45, 25)) > 0, "번역 글이 그려지지 않았다 — 잠긴 식자 json을 '없음'으로 쳤다");
+        pre.Dispose(); baseImg.Dispose();
+    }
+
+    [Fact]
+    public async Task RedoPageAsync_LetterJsonStaysLocked_StopsAndSaysToTryAgain()
+    {
+        using var t = new TempDir(); var s = EnginelessSettings(t);
+        var (src, outPath, pre, baseImg) = Page(t, s, baseSeed: 4);
+        WriteImageFile(outPath, seed: 9);
+        var before = File.ReadAllBytes(outPath);
+
+        using (new FileStream(LetterSidecar.JsonPathFor(outPath), FileMode.Open, FileAccess.Read, FileShare.None))
+        using (var runner = new PipelineRunner(s))
+        {
+            var ex = await Assert.ThrowsAsync<IOException>(() => runner.RedoPageAsync(src, new ProgressLog(), CancellationToken.None, options: DecensorOnly));
+            Assert.Contains("잠시 뒤", ex.Message);
+        }
+
+        Assert.Equal(before, File.ReadAllBytes(outPath));
+        pre.Dispose(); baseImg.Dispose();
+    }
+
+    [Fact]
+    public async Task RedoPageAsync_SkipColor_RecordedColorizedButLetterDataCannotBeUsed_StopsInsteadOfGoingMonochrome()
+    {
+        // 적힌 것은 '채색됨'인데 식자 자료가 있으면서 못 쓴다(글이 전부 숨김이고 base가 지워짐) — 결과물에는 글이 구워져 있을 수 있어 거기서 시작하지도 못한다.
+        // pre에서 시작하면 채색본을 흑백으로 덮는다: 멈춘다
+        using var t = new TempDir(); var s = EnginelessSettings(t);
+        var (src, outPath, pre, baseImg) = Page(t, s, baseSeed: 5, colorized: true);
+        WriteImageFile(outPath, seed: 9);
+        var before = File.ReadAllBytes(outPath);
+        var rec = LetterSidecar.LoadRecord(outPath)!;
+        (rec with { Blocks = [.. rec.Blocks.Select(b => b with { Hidden = true })] }).Save(outPath);
+        File.Delete(LetterSidecar.BasePathFor(outPath));
+
+        using (var runner = new PipelineRunner(s))
+        {
+            var ex = await Assert.ThrowsAsync<FileNotFoundException>(() => runner.RedoPageAsync(src, new ProgressLog(), CancellationToken.None, options: DecensorOnly));
+            Assert.Contains("채색", ex.Message);
+        }
+
+        Assert.Equal(before, File.ReadAllBytes(outPath));
+        Assert.True(MaskSidecar.Load(outPath)!.Colorized);
+        pre.Dispose(); baseImg.Dispose();
+    }
+
+    [Fact]
+    public async Task RedoPageAsync_ResultCannotBeWritten_DoesNotLeaveTheOldColorizedRecordBehind()
+    {
+        // 적힌 채색 여부가 이번 결과와 다르면 결과물을 쓰기 전에 '모름'으로 내려 둔다 — 쓰다 실패하거나 그 직후에 앱이 꺼져도 옛 값이 남아 다음 다시 렌더링을 속이지 않게
+        using var t = new TempDir(); var s = EnginelessSettings(t);
+        var (src, outPath, pre) = TextlessPage(t, s, Tinted, colorized: true);
+        File.Delete(outPath);                  // 채색된 결과물이 지워졌다 → pre에서 시작한다(이번 결과는 채색본이 아니다)
+        Directory.CreateDirectory(outPath);    // 결과물 자리에 쓸 수 없게
+
+        using (var runner = new PipelineRunner(s))
+            await Assert.ThrowsAnyAsync<Exception>(() => runner.RedoPageAsync(src, new ProgressLog(), CancellationToken.None, options: DecensorOnly));
+
+        Assert.Null(MaskSidecar.Load(outPath)!.Colorized);
+        pre.Dispose();
+    }
+
+    [Fact]
+    public void NextOutputPrefix_IsDifferentForEveryPrompt()
+    {
+        // ComfyUI는 직전과 똑같은 그래프면 아무 노드도 다시 돌리지 않고 지난번 SaveImage 결과(파일 이름)를 그대로 답한다(실측 2026-11-14) — 그 파일은 우리가 이미 지웠다.
+        // 접두사가 프롬프트마다 다르면 SaveImage만 다시 돌아 새 파일이 생긴다. 러너끼리도 겹치지 않아야 한다(다른 창의 출력을 지우지 않게)
+        using var t = new TempDir(); var s = EnginelessSettings(t);
+        using var a = new PipelineRunner(s); using var b = new PipelineRunner(s);
+        var names = new[] { a.NextOutputPrefix("regenout"), a.NextOutputPrefix("regenout"), a.NextOutputPrefix("color"), b.NextOutputPrefix("regenout") };
+        Assert.Equal(4, names.Distinct().Count());
+        Assert.All(names, n => Assert.Matches("^nm_(regenout|color)_[0-9a-f]{4}_[0-9]+$", n));
+        Assert.DoesNotContain(names.Skip(1), n => n.StartsWith(names[0] + "_"));   // 한 접두사가 다른 접두사의 앞머리가 되면 그것으로 훑어 지울 때 남의 파일이 걸린다
     }
 
 

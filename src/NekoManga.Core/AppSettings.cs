@@ -143,9 +143,19 @@ public class AppSettings
     /// <summary>(옛 칸, v1.8.3까지) 한 줄 신체부위 태그 — Load 때 MigrateLegacy가 남성/여성으로 나눠 옮기고 비운다. 코드는 더 읽지 않는다.</summary>
     public string RegenBodyTags { get; set; } = "";
     /// <summary>부위 종류별 태그(재생성 v3, 2026-11-12 사용자: "여자는 잘 나오는데 남자는 이상하다" — 한 줄 태그에 여성 태그가 늘 섞였다).
-    /// 부위 감지(penis/pussy)로 영역의 종류를 정해 고른다(RegenTags.For). 기본값은 옛 한 줄을 나눈 것(glains→glans 오타 수정).</summary>
+    /// 한쪽 성별로 확정된 영역에는 그쪽 줄만, 나머지는 두 줄을 같이 넣는다(RegenTags.For, RegenTagsBySex). 기본값은 옛 한 줄을 나눈 것(glains→glans 오타 수정).</summary>
     public string RegenBodyTagsMale { get; set; } = "penis, glans";
     public string RegenBodyTagsFemale { get; set; } = "clitoris, pussy, vulva, cum in pussy";
+    /// <summary>한쪽 성별로 **확정된** 영역에는 그쪽 태그만 넣는다(기본 켬, 2026-11-15 사용자 "남자거에 계속 여자거가 그려지는데 검열부분을 보고 남/여 구분을 확실하게").
+    /// 확정은 검열 조각마다 성별을 가려서 정한다(RegenRegion.PieceSex — 부위 감지의 근거, 약한 상자도; 결과 창에서 사용자가 고른 것이 있으면 그것) — 티끌 아닌 조각이 전부 같은 한쪽일 때.
+    /// 확정이 아닌 영역(삽입처럼 가려진 다른 쪽이 있을 수 있는 곳, 근거 없는 조각이 낀 곳)은 남녀 태그를 같이 넣는다 — 그런 영역을 조각 쪽마다 나눠 넣는 것은 RegenTagsPerPiece.
+    /// 끄면 남녀 태그를 늘 같이 넣는다(2026-11-13의 기본). 경위: v1.9.1은 감지한 쪽만 넣어 삽입 장면의 가려진 쪽이 안 그려졌고(시험 4쪽 — 2·4번 남성만, 3번 여성만 잡힘),
+    /// 그래서 늘 같이 넣자 남성 부위만 있는 장에 여성 부위가 그려졌다. 2026-11-13~14 빌드의 옛 칸 RegenBodyTagsByKind(감지한 쪽만의 켬/끔)는 더 읽지 않는다.</summary>
+    public bool RegenTagsBySex { get; set; } = true;
+    /// <summary>자리별 태그(2026-11-15) — 남성 조각과 여성 조각이 한 영역에 같이 있으면 그림을 조각의 성별로 나눠 자리마다 그 성별의 태그만 넣는다(RegenSexAreas, RegenTagsBySex가 켜져 있을 때).
+    /// 꺼 두면 그런 영역에는 남녀 태그를 같이 넣는다(전과 같다). 섞인 영역만 자리 수만큼 프롬프트 추론이 늘어 느려진다(두 자리 1.5배쯤).
+    /// **기본은 끔** — 그리는 방식이 바뀌는 것이라 사용자가 전/후를 보고 정한 뒤에 켠다.</summary>
+    public bool RegenTagsPerPiece { get; set; }
     public string RegenNegative { get; set; } = "text, letters, sound effects, symbols, watermark, speech bubble text, black bar censor, bar censor, mosaic censoring, censorship, broken lines, extra limbs, blurry lineart, colorized, oversmoothed, residual artifacts";
     public int RegenSteps { get; set; } = 24;
     public double RegenCfg { get; set; } = 5.0;
@@ -178,6 +188,10 @@ public class AppSettings
     // 저장 마스크·감지 결과는 안 바뀐다 — 재생성 때만 계산. 라벨 원고 144쪽 평가(scratchpad censor_model/eval_detector.py): 임계 0.12에서 부위 상자가
     // 검은 막대 94%·모자이크 79%·흰선 36%를 덮고 상자는 조각의 중앙값 4.5배. 가슴(nipple_f)은 쓰지 않는다(사용자 결정).
     public bool RegenWholeRegion { get; set; } = true;
+    /// <summary>재생성 1단계가 감지 마스크 통째가 아니라 그 안의 검은 막대 픽셀만 지운다(RegenRegion.TightenErase) — 막대 사이로 보이는 윤곽·손을 남겨 모양을 잇게.
+    /// 기본 켬(2026-11-13 사용자 판정): 원고 4쪽 × 후보 4개(지금 / 막대만 / 막대만+남녀 태그 / 남녀 태그만, 시드 고정)를 나란히 보고 "막대만+남녀 태그가 제일 잘 나왔다".
+    /// 조각 안 선 밀도가 빈 면으로 메워지던 조각 0.029→0.235, 손으로 쥔 장면 0.046→0.139. 끄면 v1.9.1까지처럼 마스크 통째를 지운다. 짝이 되는 태그 쪽은 RegenTagsBySex.</summary>
+    public bool RegenEraseTight { get; set; } = true;
     public double RegenRegionConf { get; set; } = 0.12;   // 부위 검출 임계 — 검열 조각과 겹치는 검출만 쓰므로 낮아도 오탐 비용이 없다
     public double RegenRegionPad { get; set; } = 0.10;    // 검출 상자를 사방으로 넓히는 비율(상자 크기 기준)
     public double RegenRegionGrow { get; set; } = 0.6;    // 검출이 없는 조각을 넓히는 배율(조각 크기 기준, 사방)
@@ -270,19 +284,72 @@ public class AppSettings
     /// <summary>얕은 복사 — 결과 창이 '이 페이지만' 재생성 프롬프트·수치를 바꿔 쓸 때 전역 설정을 건드리지 않게 (2026-10-21). 문자열·숫자뿐이라 얕은 복사면 충분.</summary>
     public AppSettings ShallowClone() => (AppSettings)MemberwiseClone();
 
+    /// <summary>마지막 <see cref="Load"/>가 설정 파일을 읽지 못했을 때 무엇을 했는지(백업에서 되살림 / 기본값으로 시작, 못 읽은 파일을 어디에 남겼는지) — 문제가 없었으면 null.
+    /// 앱이 시작하면서 한 번 알린다(App.OnStartup).</summary>
+    public static string? LoadProblem { get; private set; }
+
+    /// <summary>설정을 읽는다. 파일이 없으면(첫 실행) 기본값.
+    /// 읽히면 그 파일의 사본을 <c>settings.json.bak</c>으로 남긴다. 파일이 있는데 못 읽으면(쓰다 끊김·0바이트·깨진 JSON) 그 파일을 <c>settings.json.broken-&lt;시각&gt;</c>으로 남겨 두고
+    /// 백업에서, 백업도 없으면 기본값으로 시작한다 — 무슨 일이 있었는지는 <see cref="LoadProblem"/>.
+    /// 전에는 못 읽은 설정을 말없이 기본값으로 쳤고, 앱이 시작하면서 그 기본값을 저장해 API 키·프롬프트·연결한 ComfyUI 경로가 백업 없이 사라졌다(2026-11-13 점검 11번).</summary>
     public static AppSettings Load()
     {
-        try
+        LoadProblem = null;
+        _saveBlocked = false;
+        var path = SettingsPath;
+        if (!File.Exists(path)) return new AppSettings();
+        if (TryRead(path, out bool locked) is { } s)
         {
-            if (File.Exists(SettingsPath))
+            try { File.Copy(path, path + ".bak", overwrite: true); } catch { }   // 사본을 못 남겨도 설정은 읽혔다
+            return s;
+        }
+        if (locked)
+        {
+            // 다른 프로그램이 끝내 쥐고 있어 못 읽었다 — 깨진 것이 아니다. 백업(없으면 기본값)으로 이번 실행만 돌고 **저장하지 않는다**:
+            // 저장하면 잠금이 풀린 멀쩡한 원본을 지난 세션을 시작할 때의 값으로 덮는다(2026-11-14 검수)
+            _saveBlocked = true;
+            var fromBackup = TryRead(path + ".bak", out _);
+            LoadProblem = "설정 파일을 다른 프로그램이 쥐고 있어(백신 검사·동기화 등) 읽지 못했어요 — 이번 실행은 " + (fromBackup != null ? "지난번에 읽힌 설정(백업)" : "기본값") +
+                          "으로 돌아가요. 설정 파일은 건드리지 않으니(이번 실행에서 바꾼 설정은 저장되지 않아요) 앱을 다시 켜 주세요.";
+            return fromBackup ?? new AppSettings();
+        }
+        string? kept = $"{path}.broken-{DateTime.Now:yyyyMMdd-HHmmss}";
+        try { File.Copy(path, kept, overwrite: true); } catch { kept = null; }
+        var where = kept != null ? $"\n읽지 못한 파일은 {Path.GetFileName(kept)} 이름으로 같은 폴더({Path.GetDirectoryName(Path.GetFullPath(kept))})에 남겨 두었어요." : "";
+        if (TryRead(path + ".bak", out _) is { } restored)
+        {
+            LoadProblem = "설정 파일을 읽지 못해, 지난번에 읽힌 설정(백업)으로 되살렸어요 — 마지막 실행에서 바꾼 설정은 빠져 있을 수 있어요." + where;
+            return restored;
+        }
+        LoadProblem = "설정 파일을 읽지 못해 기본값으로 시작해요 — API 키·프롬프트·ComfyUI 연결을 다시 넣어 주세요." + where;
+        return new AppSettings();
+    }
+
+    /// <summary>설정 파일을 잠겨서 못 읽은 실행 — <see cref="Save"/>가 아무것도 쓰지 않는다(<see cref="Load"/>가 켜고 끈다).</summary>
+    private static bool _saveBlocked;
+
+    /// <summary>설정 파일 하나를 읽는다 — 없거나 못 읽으면 null. 다른 프로그램이 잠깐 쥐고 있으면(백신 검사·동기화) 두 번까지 기다렸다 다시 읽고,
+    /// 그래도 잠겨 있으면 <paramref name="locked"/>(깨진 것과 가른다).</summary>
+    private static AppSettings? TryRead(string path, out bool locked)
+    {
+        locked = false;
+        for (int attempt = 0; ; attempt++)
+        {
+            try
             {
-                var s = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsPath), JsonOpts) ?? new();
+                if (!File.Exists(path)) return null;
+                var s = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path), JsonOpts);
+                if (s == null) return null;   // 내용이 null 한 낱말 — 설정이 아니다
                 s.MigrateLegacy();
                 return s;
             }
+            catch (IOException ex) when ((ex.HResult & 0xFFFF) is 32 or 33)
+            {
+                if (attempt >= 2) { locked = true; return null; }
+                Thread.Sleep(300);
+            }
+            catch { return null; }
         }
-        catch { /* 손상된 설정은 기본값으로 */ }
-        return new AppSettings();
     }
 
     /// <summary>v0.1.x(BallonsTranslator 연동 시절) 설정값을 내장 엔진 형식으로 변환한다.</summary>
@@ -299,7 +366,9 @@ public class AppSettings
         if (DecensorAssistRepair is not ("Lama" or "Aletheia")) DecensorAssistRepair = "Aletheia";
         if (OnnxGpu is not ("Auto" or "On" or "Off")) OnnxGpu = "Auto";
         // 손으로 고친 settings.json에 "…": null 이 들어오면 문자열 속성이 null이 돼 .Contains/.Trim에서 앱이 죽는다 — 전부 ""로
-        foreach (var p in GetType().GetProperties().Where(p => p.PropertyType == typeof(string) && p.CanWrite && p.GetIndexParameters().Length == 0))
+        // (인스턴스 속성만 — 플래그 없이 훑으면 정적 속성 LoadProblem까지 ""로 바꾼다)
+        foreach (var p in GetType().GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+                     .Where(p => p.PropertyType == typeof(string) && p.CanWrite && p.GetIndexParameters().Length == 0))
             if (p.GetValue(this) == null) p.SetValue(this, "");
         if (GpuVendor is not ("auto" or "nvidia" or "nvidia-old" or "amd")) GpuVendor = "auto";
         if (DecensorReviewMode is not ("PerPage" or "Window")) DecensorReviewMode = "PerPage";
@@ -352,12 +421,13 @@ public class AppSettings
         LetterWordSpacing = LetterWordSpacing <= 0 ? 0.75 : Math.Clamp(LetterWordSpacing, 0.3, 2.0);
     }
 
+    /// <summary>설정을 저장한다 — 임시 파일에 다 쓴 뒤 바꿔치기한다(<see cref="ImgIo.WriteAllTextAtomic"/>). 제자리 쓰기는 파일을 비운 뒤 채워서,
+    /// 그 사이에 앱이 꺼지면 잘린 설정이 남았다(다음 실행이 그것을 못 읽는다).</summary>
     public void Save()
     {
-        // NEKO_SETTINGS가 디렉터리 없는 상대 파일명이면 GetDirectoryName이 ""를 돌려줘 CreateDirectory("")가 던진다 → 전체 경로로 푼 뒤 만든다
-        var dir = Path.GetDirectoryName(Path.GetFullPath(SettingsPath));
-        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-        File.WriteAllText(SettingsPath, JsonSerializer.Serialize(this, JsonOpts));
+        if (_saveBlocked) return;   // 설정 파일을 잠겨서 못 읽은 실행 — 지금 쓰면 읽지 못한 멀쩡한 원본을 덮는다(Load가 알렸다)
+        // NEKO_SETTINGS가 디렉터리 없는 상대 파일명이면 폴더 부분이 ""다 → 전체 경로로 푼 뒤 쓴다(폴더는 쓰는 쪽이 만든다)
+        ImgIo.WriteAllTextAtomic(Path.GetFullPath(SettingsPath), JsonSerializer.Serialize(this, JsonOpts));
     }
 
     private static string DefaultRuntimeRoot()

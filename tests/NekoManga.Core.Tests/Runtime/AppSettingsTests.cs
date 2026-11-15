@@ -234,6 +234,34 @@ public class AppSettingsTests
         Assert.Equal("", s.RegenBodyTags);   // 옛 칸 — 이관 뒤 비어 있다
     }
 
+    // ── 재생성 모양 (2026-11-13 사용자 판정): 원고 4쪽 × 후보 4개(지금 / 막대만 지우기 / 막대만+남녀 태그 / 남녀 태그만)를 나란히 보고 "막대만+남녀 태그가 제일 잘 나왔다" ──
+
+    [Fact]
+    public void Defaults_RegenShape_BarOnlyErase_TagsSplitBySexWhenSure()
+    {
+        var s = new AppSettings();
+        Assert.True(s.RegenEraseTight);          // 1단계는 검은 막대 픽셀만 지운다
+        Assert.True(s.RegenTagsBySex);           // 한쪽 성별로 확정된 영역에는 그쪽 태그만(2026-11-15) — 나머지는 남녀를 같이
+        Assert.False(s.RegenTagsPerPiece);       // 자리별 태그는 그리는 방식이 바뀐다 — 사용자가 전/후를 보고 정하기 전까지 끔
+    }
+
+    [Fact]
+    public void Load_RegenShape_MissingKeysTakeNewDefaults_ExplicitChoiceKept()
+    {
+        using var t = new TempDir();
+        // v1.9.1까지의 settings.json에는 이 키들이 없다 → 새 기본으로 읽힌다
+        var old = LoadJson(t, """{"RegenWholeRegion": true}""");
+        Assert.True(old.RegenEraseTight);
+        Assert.True(old.RegenTagsBySex);
+        // 옛 동작으로 돌려 둔 값은 그대로 남는다
+        var chosen = LoadJson(t, """{"RegenEraseTight": false, "RegenTagsBySex": false}""");
+        Assert.False(chosen.RegenEraseTight);
+        Assert.False(chosen.RegenTagsBySex);
+        // 2026-11-13~14 빌드가 남긴 옛 칸(RegenBodyTagsByKind — '감지한 쪽만'의 켬/끔)은 읽지 않는다: 그 빌드의 기본(끔 = 늘 같이)이 새 규칙을 끄지 않게
+        Assert.True(LoadJson(t, """{"RegenBodyTagsByKind": false}""").RegenTagsBySex);
+        Assert.True(LoadJson(t, """{"RegenBodyTagsByKind": true}""").RegenTagsBySex);
+    }
+
     [Fact]
     public void Load_RemovedEngineAndComfyLamaKeys_AreIgnored()
     {
@@ -318,6 +346,132 @@ public class AppSettingsTests
 
         Assert.Equal(31, s.ColorSteps);
         Assert.Equal("en", s.TranslateTarget);
+    }
+
+    // ── 설정을 못 읽을 때: 기본값으로 덮지 않는다 (2026-11-13 점검 11번) ──
+    // 전에는 못 읽은 설정을 기본값으로 치고, 앱이 시작하면서 그 기본값을 저장해 API 키·프롬프트·ComfyUI 연결이 백업 없이 사라졌다. 저장도 제자리 쓰기라 쓰다 꺼지면 잘린 파일이 남았다
+
+    private static string[] Leftovers(TempDir t) => [.. Directory.GetFiles(t.Root).Select(Path.GetFileName).Order(StringComparer.Ordinal)!];
+
+    [Fact]
+    public void Load_ReadableFile_KeepsACopyAsBackup_AndReportsNoProblem()
+    {
+        using var t = new TempDir();
+        var path = t.At("settings.json");
+        SaveTo(new AppSettings { ColorSteps = 33, DeepLApiKey = "키-1" }, path);
+
+        var s = LoadFrom(path);
+
+        Assert.Equal(33, s.ColorSteps);
+        Assert.Null(AppSettings.LoadProblem);
+        Assert.Equal(File.ReadAllBytes(path), File.ReadAllBytes(path + ".bak"));
+    }
+
+    [Theory]
+    [InlineData("cut")]      // 쓰다 끊긴 파일
+    [InlineData("empty")]    // 0바이트
+    [InlineData("null")]     // 내용이 null 한 낱말
+    public void Load_UnreadableFile_ComesBackFromTheBackup_AndTheBrokenFileIsKept(string how)
+    {
+        using var t = new TempDir();
+        var path = t.At("settings.json");
+        SaveTo(new AppSettings { ColorSteps = 33, DeepLApiKey = "키-1", RegenPrompt = "내 프롬프트" }, path);
+        LoadFrom(path);   // 읽힌 설정의 사본이 남는다
+        var good = File.ReadAllText(path);
+        var broken = how == "cut" ? good[..(good.Length / 2)] : how == "empty" ? "" : "null";
+        File.WriteAllText(path, broken);
+
+        var s = LoadFrom(path);
+
+        Assert.Equal((33, "키-1", "내 프롬프트"), (s.ColorSteps, s.DeepLApiKey, s.RegenPrompt));
+        Assert.NotNull(AppSettings.LoadProblem);
+        Assert.Contains("백업", AppSettings.LoadProblem);
+        var kept = Assert.Single(Directory.GetFiles(t.Root, "settings.json.broken-*"));
+        Assert.Equal(broken, File.ReadAllText(kept));
+        Assert.Contains(Path.GetFileName(kept), AppSettings.LoadProblem);   // 어디에 남겼는지 알려 준다
+        Assert.Equal(good, File.ReadAllText(path + ".bak"));                // 못 읽은 파일이 백업을 덮지 않았다
+
+        // 앱은 시작하면서 읽은 설정을 다시 저장한다 — 그 뒤에는 멀쩡한 파일이고, 다시 읽으면 문제가 없다
+        SaveTo(s, path);
+        Assert.Equal(33, LoadFrom(path).ColorSteps);
+        Assert.Null(AppSettings.LoadProblem);
+    }
+
+    [Fact]
+    public void Load_UnreadableFileWithoutBackup_StartsFromDefaults_ButKeepsTheBrokenFile()
+    {
+        using var t = new TempDir();
+        var path = t.At("settings.json");
+        File.WriteAllText(path, "{ \"ColorSteps\": 33, \"DeepLApiKey\": \"키-");   // 백업이 생기기 전에 깨진 파일 — 손으로 고치면 되살릴 수 있는 내용이 들어 있다
+
+        var s = LoadFrom(path);
+
+        Assert.Equal(new AppSettings().ColorSteps, s.ColorSteps);
+        Assert.NotNull(AppSettings.LoadProblem);
+        Assert.Contains("기본값", AppSettings.LoadProblem);
+        var kept = Assert.Single(Directory.GetFiles(t.Root, "settings.json.broken-*"));
+        Assert.Contains("키-", File.ReadAllText(kept));
+        Assert.False(File.Exists(path + ".bak"));   // 깨진 파일을 백업으로 삼지 않는다
+    }
+
+    [Fact]
+    public void Load_FileHeldByAnotherProgram_IsNotTreatedAsBroken_AndIsNeverOverwrittenInThatRun()
+    {
+        // 잠깐 못 읽은 것은 깨진 것이 아니다 — '깨짐'으로 다루면 백업(지난 세션을 시작할 때의 값)으로 되살린 뒤 앱이 시작하면서 저장해, 잠금이 풀린 멀쩡한 원본을 옛 값으로 덮는다(2026-11-14 검수).
+        // 그 실행에서는 저장하지 않는다
+        using var t = new TempDir();
+        var path = t.At("settings.json");
+        SaveTo(new AppSettings { ColorSteps = 33 }, path);
+        LoadFrom(path);                                         // 백업 = ColorSteps 33
+        SaveTo(new AppSettings { ColorSteps = 44 }, path);      // 그 뒤에 바꾼 설정(백업에는 없다)
+        var current = File.ReadAllBytes(path);
+
+        AppSettings s;
+        using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
+            s = LoadFrom(path);
+
+        Assert.Equal(33, s.ColorSteps);                          // 이번 실행은 백업으로 돈다
+        Assert.NotNull(AppSettings.LoadProblem);
+        Assert.Contains("쥐고", AppSettings.LoadProblem);
+        Assert.Empty(Directory.GetFiles(t.Root, "settings.json.broken-*"));
+        SaveTo(s, path);                                         // 앱이 시작하면서 하는 저장
+        Assert.Equal(current, File.ReadAllBytes(path));          // 원본은 그대로다
+
+        Assert.Equal(44, LoadFrom(path).ColorSteps);             // 다음 실행(잠금이 풀림)은 원본을 읽고
+        Assert.Null(AppSettings.LoadProblem);
+        SaveTo(new AppSettings { ColorSteps = 55 }, path);       // 저장도 다시 된다
+        Assert.Equal(55, LoadFrom(path).ColorSteps);
+    }
+
+    [Fact]
+    public void Load_MissingFile_IsNotAProblem()
+    {
+        using var t = new TempDir();
+        LoadFrom(t.At("settings.json"));
+        Assert.Null(AppSettings.LoadProblem);
+        Assert.Empty(Leftovers(t));
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern bool CreateHardLink(string newFileName, string existingFileName, IntPtr securityAttributes);
+
+    [Fact]
+    public void Save_ReplacesTheFileInsteadOfRewritingItInPlace()
+    {
+        // 제자리 쓰기는 파일을 비운 뒤 채운다 — 그 사이에 앱이 꺼지면 잘린 설정이 남는다. 임시 파일에 다 쓴 뒤 바꿔치기하면 옛 파일은 끝까지 온전하다.
+        // 바꿔치기인지는 하드 링크로 본다: 저장 전의 파일에 이름을 하나 더 걸어 두면, 제자리 쓰기는 그 이름으로도 새 내용이 읽히고 바꿔치기는 옛 내용이 그대로 읽힌다
+        using var t = new TempDir();
+        var path = t.At("settings.json");
+        SaveTo(new AppSettings { ColorManualTags = "옛 값" }, path);
+        var before = File.ReadAllText(path);
+        var oldFile = t.At("저장 전의 파일");
+        Assert.True(CreateHardLink(oldFile, path, IntPtr.Zero), "전제: 임시 폴더가 하드 링크를 지원한다(NTFS)");
+
+        SaveTo(new AppSettings { ColorManualTags = "새 값" }, path);
+
+        Assert.Equal(before, File.ReadAllText(oldFile));
+        Assert.Equal("새 값", LoadFrom(path).ColorManualTags);
+        Assert.DoesNotContain(Leftovers(t), f => f.EndsWith(".part", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

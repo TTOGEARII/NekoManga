@@ -206,12 +206,12 @@ public class PipelineRunnerUnreadableTests
 
     /// <summary>원고 두 장(검은 막대가 하나씩)을 페이지별 검토로 돌려 둘 다 '검토 대기'에 들어갈 때까지 기다린다.
     /// 둘째 장은 사용자가 결과 창에서 마스크를 다 지운 것(오탐이었다)으로 해 둔다 — 확인하면 지울 곳이 없어 복원기 없이 '원본 그대로'로 끝난다.</summary>
-    private static async Task<Task> StartTwoWaitingPagesAsync(PipelineRunner runner, AppSettings s, string a, string b, ProgressLog log)
+    private static async Task<Task> StartTwoWaitingPagesAsync(PipelineRunner runner, AppSettings s, string a, string b, IProgress<PageProgress> log, CancellationToken ct = default)
     {
         var waiting = new List<string>();
         var both = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         runner.PageWaiting += pg => { lock (waiting) { waiting.Add(pg.File); if (waiting.Count == 2) both.TrySetResult(); } };
-        var run = runner.RunAsync([a, b], log, CancellationToken.None);
+        var run = runner.RunAsync([a, b], log, ct);
         await Task.WhenAny(both.Task, run).WaitAsync(TimeSpan.FromSeconds(60));
         Assert.True(both.Task.IsCompleted, "두 장 모두 검토 대기에 들어가야 한다");   // 전제: 규칙 감지기가 두 막대를 찾았다
         ClearMask(s, b);
@@ -334,6 +334,379 @@ public class PipelineRunnerUnreadableTests
         Assert.Equal(Untouched, log.FinalOf(a).Stage);   // 다 지운 저장 마스크를 받았다 — 자동 감지 마스크였다면 복원기로 갔다
         Assert.True(MaskSidecar.Load(outA)!.Confirmed);
         Assert.Null(log.FinalOf(b).Error);
+    }
+
+    // ── 페이지별 검토: 확인한 장의 상태 글과 2차로 가는 순서 ──
+
+    private const string Queued = "검열 제거 차례 대기";
+
+    /// <summary>파일을 다른 프로그램처럼 쥐었다가 0.15초 뒤에 놓는다 — 다시 읽기(0.7초 뒤)보다 먼저 풀린다. 놓는 스레드를 돌려준다(Join으로 기다린다).
+    /// 전용 스레드로 놓는다: Task.Delay(스레드풀)로 놓으면 테스트가 병렬로 도는 느린 CI에서 풀이 밀려 다시 읽기를 넘긴다(v1.9.1 Build Run 77).</summary>
+    private static Thread HoldBriefly(string path)
+    {
+        var held = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
+        var release = new Thread(() => { Thread.Sleep(150); held.Dispose(); }) { IsBackground = true };
+        release.Start();
+        return release;
+    }
+
+    /// <summary>보고가 들어온 자리(보고한 스레드)에서 끼어드는 수집기 — 적은 뒤에 hook을 부른다(before면 적기 전에).</summary>
+    private sealed class HookedLog(Action<PageProgress> hook, bool before = false) : IProgress<PageProgress>
+    {
+        public ProgressLog Log { get; } = new();
+
+        public void Report(PageProgress value)
+        {
+            if (before) hook(value);
+            Log.Report(value);
+            if (!before) hook(value);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_PerPage_MaskSavedWhileQueuedForStage2_IsTheOneUsed()
+    {
+        // [검열 제거 시작] 뒤 차례를 기다리는 장을 결과 창에서 고쳐 저장하면 '저장했어요'라 하고 옛 마스크로 돌았다(2026-11-13 점검 4번) —
+        // 러너는 확인 때 한 번만 사이드카를 다시 읽었다. 재생성은 장마다 몇 분이라 기다리는 동안 다음 장을 손보는 것은 흔한 일이다. 2차를 시작할 때 다시 본다
+        using var t = new TempDir();
+        var s = DecensorSettings(t);
+        var a = WriteBarPage(t.At("vol1", "01.png"), x: 120);
+        var b = WriteBarPage(t.At("vol1", "02.png"), x: 60);
+        var outA = PipelineRunner.OutputPathFor(s, a);
+        var edited = false;
+        // 앞 장(b)이 끝난 자리 = 2차를 도는 스레드. 여기서 붙잡고 있는 동안 뒤 장(a)은 2차 큐에서 차례를 기다린다
+        var log = new HookedLog(p =>
+        {
+            if (!(p.Done && p.File == b)) return;
+            var until = DateTime.UtcNow.AddSeconds(30);
+            while (MaskSidecar.Load(outA) is not { Confirmed: true } && DateTime.UtcNow < until) Thread.Sleep(10);   // a의 확인 뒤 일(마스크 다시 읽기·확인 표시)이 끝난 뒤에
+            var sc = MaskSidecar.Load(outA)!;
+            while (DateTime.Now == sc.SavedAt) Thread.Sleep(1);
+            using var cleared = new Mat(H, W, MatType.CV_8UC1, Scalar.Black);   // 결과 창에서 오탐이라 전부 지우고 저장한 것처럼
+            MaskSidecar.Write(outA, a, cleared, null, null, sc.Summary, skip: false, edited: true, confirmed: sc.Confirmed);
+            edited = true;
+        });
+        using var runner = RuleRunner(s);
+        var run = await StartTwoWaitingPagesAsync(runner, s, a, b, log);
+
+        Assert.True(runner.ConfirmPage(b));   // b는 빈 마스크라 복원기 없이 바로 끝난다
+        Assert.True(runner.ConfirmPage(a));
+        await run.WaitAsync(TimeSpan.FromSeconds(60));
+
+        Assert.True(edited);
+        Assert.Null(log.Log.FinalOf(a).Error);
+        Assert.Equal(Untouched, log.Log.FinalOf(a).Stage);   // 고친(빈) 마스크로 돌았다 — 옛 마스크였으면 복원기로 가 가짜 모델에서 실패한다
+        Assert.DoesNotContain(log.Log.Items, p => p.File == a && p.Stage.StartsWith("검열 지우는 중"));
+        Assert.False(MaskSidecar.Load(outA)!.Pending);        // 반영됐으니 '고친 장'으로 남지 않는다
+    }
+
+    [Fact]
+    public async Task RunAsync_PerPage_MaskPaintedOnAPageWithNothingDetected_BeforeItsTurn_IsUsed()
+    {
+        // 감지가 없어 검토를 기다리지 않고 바로 2차 큐로 간 장 — 자동 감지가 놓친 검열을 결과 창에서 칠해 저장하면, 그 장의 차례가 오기 전이었으면 그 마스크로 돌아야 한다.
+        // 러너가 막 써 둔 사이드카의 저장 시각을 기억하지 않으면(새로 감지한 장) 그 뒤의 저장을 알아채지 못한다
+        using var t = new TempDir();
+        var s = DecensorSettings(t);
+        var clean = t.At("vol1", "01.png");
+        using (var blank = new Mat(H, W, MatType.CV_8UC3, new Scalar(235, 235, 235))) Assert.True(ImgIo.Write(clean, blank));
+        var outPath = PipelineRunner.OutputPathFor(s, clean);
+        var painted = false;
+        // '검열 없음 — 바로 진행'은 1차를 도는 쪽이 2차 큐에 넣기 직전에 보고한다 — 그 자리에서 칠해 저장한다
+        var log = new HookedLog(p =>
+        {
+            if (p.File != clean || !p.Stage.StartsWith("검열 없음 — 바로 진행")) return;
+            var sc = MaskSidecar.Load(outPath)!;
+            while (DateTime.Now == sc.SavedAt) Thread.Sleep(1);
+            using var mask = RectMask(W, H, Bar);
+            MaskSidecar.Write(outPath, clean, mask, null, null, sc.Summary, skip: false, edited: true, confirmed: sc.Confirmed);
+            painted = true;
+        }, before: true);
+        using var runner = RuleRunner(s);
+        runner.PageWaiting += _ => { };
+
+        await runner.RunAsync([clean], log, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(60));
+
+        Assert.True(painted);
+        Assert.Contains(log.Log.Items, p => p.File == clean && p.Stage.StartsWith("검열 지우는 중"));   // 칠한 마스크로 복원기까지 갔다(시험의 가짜 모델이라 거기서 실패한다)
+        Assert.NotNull(log.Log.FinalOf(clean).Error);
+    }
+
+    [Fact]
+    public async Task RunAsync_PerPage_FreshlyDetectedPages_AreNotLeftMarkedAsEdited()
+    {
+        // 러너가 막 써 둔 사이드카의 저장 시각과 끝날 때 다시 읽은 시각이 어긋나면 손대지 않은 장이 전부 '고친 장'(✎)이 된다 — 확인을 거친 장도, 감지가 없어 바로 넘어간 장도
+        using var t = new TempDir();
+        var s = DecensorSettings(t);
+        var a = WriteBarPage(t.At("vol1", "01.png"), x: 120);
+        var b = WriteBarPage(t.At("vol1", "02.png"), x: 60);
+        var clean = t.At("vol1", "03.png");
+        using (var blank = new Mat(H, W, MatType.CV_8UC3, new Scalar(235, 235, 235))) Assert.True(ImgIo.Write(clean, blank));   // 막대 없는 장 — 감지 없음
+        var log = new ProgressLog();
+        using var runner = RuleRunner(s);
+        var waiting = new List<string>();
+        var both = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        runner.PageWaiting += pg => { lock (waiting) { waiting.Add(pg.File); if (waiting.Count == 2) both.TrySetResult(); } };
+        var run = runner.RunAsync([a, b, clean], log, CancellationToken.None);
+        await Task.WhenAny(both.Task, run).WaitAsync(TimeSpan.FromSeconds(60));
+        Assert.True(both.Task.IsCompleted, "막대가 있는 두 장은 검토 대기에 들어가야 한다");
+        foreach (var f in new[] { a, b }) MarkNoCensor(PipelineRunner.OutputPathFor(s, f));   // json만 고쳐 쓴다(저장 시각 그대로) — 복원기 없이 끝나게
+
+        Assert.Equal(2, runner.ConfirmAll());
+        await run.WaitAsync(TimeSpan.FromSeconds(60));
+
+        foreach (var f in new[] { a, b, clean })
+        {
+            Assert.Null(log.FinalOf(f).Error);
+            var sc = MaskSidecar.Load(PipelineRunner.OutputPathFor(s, f));
+            Assert.NotNull(sc);
+            Assert.False(sc.Pending, Path.GetFileName(f));
+            Assert.False(sc.Colorized);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_PerPageConfirmAll_ReportsEveryPageAsQueuedBeforeItReturns()
+    {
+        // [검열 제거 시작] 뒤에도 차례를 기다리는 장이 목록에 '검토 대기 (더블클릭해 수정)'로 남았다(실측 2026-11-13: 마지막 장은 6분 반) — 확인을 받은 자리에서 상태 글을 바꾼다.
+        // 앞 장의 확인 뒤 일이 오래 걸려도(여기서는 마스크가 잠깐 잠김) 뒤 장의 글은 그것을 기다리지 않는다
+        using var t = new TempDir();
+        var s = DecensorSettings(t);
+        var a = WriteBarPage(t.At("vol1", "01.png"), x: 120);
+        var b = WriteBarPage(t.At("vol1", "02.png"), x: 60);
+        var outA = PipelineRunner.OutputPathFor(s, a);
+        var log = new ProgressLog();
+        using var runner = RuleRunner(s);
+        var run = await StartTwoWaitingPagesAsync(runner, s, a, b, log);
+
+        ClearMask(s, a);
+        var release = HoldBriefly(MaskSidecar.MaskPathFor(outA));
+        Assert.Equal(2, runner.ConfirmAll());
+        var now = log.Items;
+        Assert.Contains(now, p => p.File == a && p.Stage == Queued);
+        Assert.Contains(now, p => p.File == b && p.Stage == Queued);
+        Assert.Empty(runner.WaitingFiles);   // 메인 창의 [대기 중 N장 전부 진행]은 누른 자리에서 바로 사라진다
+        release.Join();
+        await run.WaitAsync(TimeSpan.FromSeconds(60));
+
+        foreach (var f in new[] { a, b })
+        {
+            var lines = log.Items.Where(p => p.File == f).ToList();
+            int waiting = lines.FindIndex(p => p.Stage.StartsWith("검토 대기")), queued = lines.FindIndex(p => p.Stage == Queued), done = lines.FindIndex(p => p.Done);
+            Assert.True(0 <= waiting && waiting < queued && queued < done, $"{Path.GetFileName(f)}: 검토 대기 {waiting} → 차례 대기 {queued} → 끝 {done}");
+            Assert.Null(log.FinalOf(f).Error);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_PerPageConfirmAll_RunsPagesInPageOrderEvenWhenAnEarlierOneIsSlowToPickUp()
+    {
+        // [전부 진행]을 누르면 2차가 쪽 순서로 돌지 않았다(실측 2026-11-13: 4장이 5→4→2→3쪽 순) — 확인 뒤 일(마스크 다시 읽기·확인 표시)이 장마다 따로 돌아
+        // 먼저 끝난 장이 먼저 2차 큐에 들어갔다. 앞 장의 마스크가 잠깐 잠겨 있으면 뒤 장이 늘 앞지른다
+        using var t = new TempDir();
+        var s = DecensorSettings(t);
+        var a = WriteBarPage(t.At("vol1", "01.png"), x: 120);
+        var b = WriteBarPage(t.At("vol1", "02.png"), x: 60);
+        var outA = PipelineRunner.OutputPathFor(s, a);
+        var log = new ProgressLog();
+        using var runner = RuleRunner(s);
+        var run = await StartTwoWaitingPagesAsync(runner, s, a, b, log);
+
+        ClearMask(s, a);
+        var release = HoldBriefly(MaskSidecar.MaskPathFor(outA));
+        Assert.Equal(2, runner.ConfirmAll());
+        release.Join();
+        await run.WaitAsync(TimeSpan.FromSeconds(60));
+
+        Assert.Null(log.FinalOf(a).Error);
+        Assert.Null(log.FinalOf(b).Error);
+        Assert.Equal([a, b], log.Items.Where(p => p.Done).Select(p => p.File));
+    }
+
+    [Fact]
+    public async Task RunAsync_PerPageConfirmPage_RunsPagesInTheOrderTheyWereConfirmed()
+    {
+        // 하나씩 진행시키면 누른 순서대로 돈다 — 쪽 순서로 다시 줄 세우지 않고, 먼저 누른 장의 확인 뒤 일이 느려도 뒤에 누른 장이 앞지르지 않는다
+        using var t = new TempDir();
+        var s = DecensorSettings(t);
+        var a = WriteBarPage(t.At("vol1", "01.png"), x: 120);
+        var b = WriteBarPage(t.At("vol1", "02.png"), x: 60);
+        var log = new ProgressLog();
+        using var runner = RuleRunner(s);
+        var run = await StartTwoWaitingPagesAsync(runner, s, a, b, log);
+
+        ClearMask(s, a);
+        var release = HoldBriefly(MaskSidecar.MaskPathFor(PipelineRunner.OutputPathFor(s, b)));
+        Assert.True(runner.ConfirmPage(b));
+        Assert.True(runner.ConfirmPage(a));
+        release.Join();
+        await run.WaitAsync(TimeSpan.FromSeconds(60));
+
+        Assert.Null(log.FinalOf(a).Error);
+        Assert.Null(log.FinalOf(b).Error);
+        Assert.Equal([b, a], log.Items.Where(p => p.Done).Select(p => p.File));
+    }
+
+    [Fact]
+    public async Task RunAsync_PerPageConfirm_QueuedLineIsReportedBeforeThePageCanStart()
+    {
+        // '차례 대기' 보고가 확인 줄에 넣은 뒤에 나가면, 곧바로 돌기 시작한 장의 진행·끝 줄보다 늦게 닿아 도는(끝난) 장의 행이 '차례 대기'로 남는다
+        using var t = new TempDir();
+        var s = DecensorSettings(t);
+        var a = WriteBarPage(t.At("vol1", "01.png"), x: 120);
+        var b = WriteBarPage(t.At("vol1", "02.png"), x: 60);
+        var log = new HookedLog(p => { if (p.Stage == Queued) Thread.Sleep(200); }, before: true);   // 보고를 받는 쪽이 느리다
+        using var runner = RuleRunner(s);
+        var run = await StartTwoWaitingPagesAsync(runner, s, a, b, log);
+
+        ClearMask(s, a);
+        Assert.True(runner.ConfirmPage(a));
+        Assert.True(runner.ConfirmPage(b));
+        await run.WaitAsync(TimeSpan.FromSeconds(60));
+
+        foreach (var f in new[] { a, b })
+        {
+            var lines = log.Log.Items.Where(p => p.File == f).ToList();
+            int queued = lines.FindIndex(p => p.Stage == Queued), done = lines.FindIndex(p => p.Done);
+            Assert.True(0 <= queued && queued < done, $"{Path.GetFileName(f)}: 차례 대기 {queued} → 끝 {done}");
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_PerPageConfirmAll_QueuedReportThrowing_StillSendsEveryPage()
+    {
+        // 상태 글 보고가 터져도 대기 목록에서 이미 뺀 장은 확인 줄에 넣는다 — 못 넣으면 그 장을 다시 확인할 길이 없어 작업이 끝나지 않는다
+        using var t = new TempDir();
+        var s = DecensorSettings(t);
+        var a = WriteBarPage(t.At("vol1", "01.png"), x: 120);
+        var b = WriteBarPage(t.At("vol1", "02.png"), x: 60);
+        var log = new HookedLog(p => { if (p.Stage == Queued) throw new InvalidOperationException("화면이 닫혔다"); }, before: true);
+        using var runner = RuleRunner(s);
+        var run = await StartTwoWaitingPagesAsync(runner, s, a, b, log);
+
+        ClearMask(s, a);
+        Assert.Equal(2, runner.ConfirmAll());
+        await run.WaitAsync(TimeSpan.FromSeconds(60));
+
+        Assert.Null(log.Log.FinalOf(a).Error);
+        Assert.Null(log.Log.FinalOf(b).Error);
+    }
+
+    // ── 페이지별 검토: 검토 대기·확인 줄에서 [멈추기] ──
+
+    [Fact]
+    public async Task RunAsync_PerPageStoppedWhilePagesWait_EndsAsCancellationAndConfirmsNothing()
+    {
+        // 검토 대기 중에 [멈추기]: 작업은 취소로 끝나고, 기다리던 장은 확인 표시도 끝 줄도 없이 남는다(다시 [시작]하면 또 검토를 기다린다)
+        using var t = new TempDir();
+        var s = DecensorSettings(t);
+        var a = WriteBarPage(t.At("vol1", "01.png"), x: 120);
+        var b = WriteBarPage(t.At("vol1", "02.png"), x: 60);
+        var log = new ProgressLog();
+        using var cts = new CancellationTokenSource();
+        using var runner = RuleRunner(s);
+        var run = await StartTwoWaitingPagesAsync(runner, s, a, b, log, cts.Token);
+
+        cts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.WaitAsync(TimeSpan.FromSeconds(60)));
+
+        Assert.Empty(runner.WaitingFiles);
+        Assert.False(runner.ConfirmPage(a));
+        Assert.Equal(0, runner.ConfirmAll());
+        Assert.DoesNotContain(log.Items, p => p.Done || p.Stage == Queued);
+        Assert.False(MaskSidecar.Load(PipelineRunner.OutputPathFor(s, a))!.Confirmed);
+        Assert.False(MaskSidecar.Load(PipelineRunner.OutputPathFor(s, b))!.Confirmed);
+    }
+
+    [Fact]
+    public async Task RunAsync_PerPageStoppedBetweenConfirmedPages_DoesNotMarkTheNextOneConfirmed()
+    {
+        // 확인 줄에 쌓여 있던 장은 멈춘 뒤에 확인 표시를 남기지 않는다 — 남기면 결과물도 없이 '확인됨'이라, 다시 [시작]했을 때 검토 없이 곧장 지우러 간다
+        using var t = new TempDir();
+        var s = DecensorSettings(t);
+        var a = WriteBarPage(t.At("vol1", "01.png"), x: 120);
+        var b = WriteBarPage(t.At("vol1", "02.png"), x: 60);
+        var outA = PipelineRunner.OutputPathFor(s, a);
+        using var cts = new CancellationTokenSource();
+        var log = new HookedLog(p => { if (p.File == a && p.Error != null) cts.Cancel(); });   // 첫 장의 확인 뒤 일이 실패한 자리(확인 줄을 도는 스레드)에서 [멈추기]
+        using var runner = RuleRunner(s);
+        var run = await StartTwoWaitingPagesAsync(runner, s, a, b, log, cts.Token);
+
+        BreakMaskPng(outA, "zero");
+        Assert.InRange(runner.ConfirmAll(), 1, 2);   // 둘째 장을 넣기 전에 멈춤이 먼저 닿으면 1
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.WaitAsync(TimeSpan.FromSeconds(60)));
+
+        Assert.NotNull(log.Log.FinalOf(a).Error);   // 전제: 첫 장은 확인 뒤 일에서 실패했다
+        Assert.False(MaskSidecar.Load(PipelineRunner.OutputPathFor(s, b))!.Confirmed);
+        Assert.DoesNotContain(log.Log.Items, p => p.File == b && p.Done);
+    }
+
+    [Fact]
+    public async Task RunAsync_PerPageConfirmAfterStopWasPressed_IsRefused()
+    {
+        // [멈추기]를 누른 뒤에는 확인을 받지 않는다 — 1차가 돌던 감지를 마치고 취소를 알아챌 때까지 확인 줄이 열려 있어,
+        // 받으면 '보냈어요'라 하고 결과 창을 닫고 행을 '차례 대기'로 바꾼 채 아무 일도 하지 않는다
+        using var t = new TempDir();
+        var s = DecensorSettings(t);
+        var a = WriteBarPage(t.At("vol1", "01.png"), x: 120);
+        var b = WriteBarPage(t.At("vol1", "02.png"), x: 60);
+        var log = new ProgressLog();
+        using var cts = new CancellationTokenSource();
+        using var inSecond = new ManualResetEventSlim();
+        using var letGo = new ManualResetEventSlim();
+        int detections = 0;
+        using var runner = new PipelineRunner(s)
+        {
+            DetectorOverride = (img, exclude) =>
+            {
+                if (Interlocked.Increment(ref detections) == 2) { inSecond.Set(); letGo.Wait(TimeSpan.FromSeconds(30)); }   // 둘째 장의 감지가 도는 중
+                return MosaicDetector.BuildMaskForTarget(s, img, exclude, out _);
+            },
+        };
+        runner.PageWaiting += _ => { };
+        var run = Task.Run(() => runner.RunAsync([a, b], log, cts.Token));   // 1차는 부른 스레드에서 이어 돈다 — 감지를 붙잡아 두려면 다른 스레드에서
+        Assert.True(inSecond.Wait(TimeSpan.FromSeconds(60)), "둘째 장의 감지까지 가야 한다");
+        Assert.Equal([a], runner.WaitingFiles);   // 전제: 첫 장은 검토 대기
+
+        cts.Cancel();
+        bool one = runner.ConfirmPage(a);
+        int all = runner.ConfirmAll();
+        letGo.Set();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.WaitAsync(TimeSpan.FromSeconds(60)));
+
+        Assert.False(one);
+        Assert.Equal(0, all);
+        Assert.DoesNotContain(log.Items, p => p.Stage == Queued);
+        Assert.False(MaskSidecar.Load(PipelineRunner.OutputPathFor(s, a))!.Confirmed);
+    }
+
+    [Fact]
+    public async Task RunAsync_PerPageConfirmAll_AfterOnePageWentAhead_StillSendsTheRestInPageOrder()
+    {
+        // 한 장을 먼저 진행시킨 뒤 새로 대기에 들어온 장이 있으면 대기 목록(Dictionary)의 나열 순서가 넣은 순서와 달라진다(뺀 자리를 다시 쓴다) — 쪽 순서로 골라 보낸다
+        using var t = new TempDir();
+        var s = DecensorSettings(t);
+        var files = Enumerable.Range(1, 4).Select(i => WriteBarPage(t.At("vol1", $"0{i}.png"), x: 40 + i * 20)).ToList();
+        var log = new ProgressLog();
+        using var runner = RuleRunner(s);
+        int seen = 0; bool firstWentAhead = false;
+        var all = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        runner.PageWaiting += _ =>
+        {
+            seen++;   // 1차는 한 스레드가 차례로 돈다
+            if (seen == 3) { ClearMask(s, files[0]); firstWentAhead = runner.ConfirmPage(files[0]); }   // 셋째 장이 대기에 들어온 순간 첫 장만 진행 — 넷째 장은 그 뒤에 들어온다
+            if (seen == 4) all.TrySetResult();
+        };
+        var run = runner.RunAsync(files, log, CancellationToken.None);
+        await Task.WhenAny(all.Task, run).WaitAsync(TimeSpan.FromSeconds(60));
+        Assert.True(all.Task.IsCompleted, "네 장 모두 검토 대기에 들어가야 한다");
+        Assert.True(firstWentAhead);
+        foreach (var f in files.Skip(1)) ClearMask(s, f);
+
+        Assert.Equal(3, runner.ConfirmAll());
+        await run.WaitAsync(TimeSpan.FromSeconds(60));
+
+        Assert.All(files, f => Assert.Null(log.FinalOf(f).Error));
+        Assert.Equal(files, log.Items.Where(p => p.Done).Select(p => p.File));
     }
 
     // ── 페이지별 검토: 확인한 순간 사이드카 json을 못 읽을 때 ──

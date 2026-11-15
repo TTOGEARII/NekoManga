@@ -57,13 +57,19 @@ public record LetterSidecar(
         try { File.Delete(JsonPathFor(fromOut)); } catch { }
     }
 
-    /// <summary>json과 식자 전 원고(base)가 모두 있을 때만 돌려준다 — 다시 식자하려면 둘 다 필요하다.</summary>
+    /// <summary>json과 식자 전 원고(base)가 모두 있을 때만 돌려준다 — 다시 식자하려면 둘 다 필요하다.
+    /// base는 **이 결과의 .neko 폴더**(<see cref="BasePathFor"/>)에서 먼저 찾고, 없으면 json에 적힌 경로에서 찾는다. 돌려주는 BasePath는 찾은 자리다.
+    /// json의 BasePath는 절대 경로라 화 폴더를 옮기거나 드라이브 글자가 바뀌면 없는 곳을 가리킨다 — 적힌 경로만 보던 때는 그런 장을 다시 렌더링하면
+    /// 식자 블록 없이 돌아 번역 글이 빠진 결과물로 덮었다(2026-11-13 점검에서 재현). 폴더를 복사해 온 경우에도 이 폴더의 것이 이 결과의 base다.</summary>
     public static LetterSidecar? Load(string outPath)
     {
         try
         {
             var sc = LoadRecord(outPath);
-            return sc != null && File.Exists(sc.BasePath) ? sc : null;
+            if (sc == null) return null;
+            var own = BasePathFor(outPath);
+            if (File.Exists(own)) return string.Equals(sc.BasePath, own, StringComparison.OrdinalIgnoreCase) ? sc : sc with { BasePath = own };
+            return File.Exists(sc.BasePath) ? sc : null;
         }
         catch { return null; }
     }

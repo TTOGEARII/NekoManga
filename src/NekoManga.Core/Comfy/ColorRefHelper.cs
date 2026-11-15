@@ -117,9 +117,14 @@ public static class ColorRefHelper
         status?.Report("표지에서 색 태그 뽑는 중...");
         var bytes = await File.ReadAllBytesAsync(imagePath, ct);
         var up = await client.UploadImageAsync(bytes, $"nm_ref_{Guid.NewGuid():N}.png", ct);
-        var pid = await client.QueuePromptAsync(WorkflowBuilder.BuildTagExtract(settings, up), ct);
-        var outDir = Path.Combine(settings.ComfyRoot, "ComfyUI", "output");
-        var r = await client.WaitAsync(pid, outDir, TimeSpan.FromMinutes(5), ct);
+        ComfyClient.ComfyResult? r = null;
+        try
+        {
+            var pid = await client.QueuePromptAsync(WorkflowBuilder.BuildTagExtract(settings, up), ct);
+            var outDir = Path.Combine(settings.ComfyRoot, "ComfyUI", "output");
+            r = await client.WaitAsync(pid, outDir, TimeSpan.FromMinutes(5), ct);
+        }
+        finally { NekoManga.Core.Pipeline.WorkFolders.RemoveComfyFiles(settings.ComfyRoot, r?.OutputFiles, null, up); }   // 뽑을 때마다 새 이름으로 올린다 — 안 지우면 input에 쌓인다
 
         var raw = r.Texts.FirstOrDefault() ?? "";
         return FilterColorTags(raw);
