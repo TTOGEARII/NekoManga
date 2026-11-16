@@ -107,10 +107,10 @@ public class CensorNet(OnnxEnv env)
 
             int pw = white ? Cv2.CountNonZero(w) : 0, pb = black ? Cv2.CountNonZero(b) : 0, pm = mosaic ? Cv2.CountNonZero(m) : 0;
             if (white && black && mosaic)
-                summary = $"AI(흰 {dets.Count(d => d.Cls == 0)}·검 {dets.Count(d => d.Cls == 1)}·모자이크 {dets.Count(d => d.Cls == 2)} → {pw + pb + pm}px)";
+                summary = Loc.F($"AI(흰 {dets.Count(d => d.Cls == 0)}·검 {dets.Count(d => d.Cls == 1)}·모자이크 {dets.Count(d => d.Cls == 2)} → {pw + pb + pm}px)");
             else
-                summary = string.Join("·", new[] { white ? $"흰 {dets.Count(d => d.Cls == 0)}" : null, black ? $"검 {dets.Count(d => d.Cls == 1)}" : null,
-                    mosaic ? $"모자이크 {dets.Count(d => d.Cls == 2)}" : null }.Where(s => s != null)) + $" → {pw + pb + pm}px";
+                summary = string.Join("·", new[] { white ? Loc.F($"흰 {dets.Count(d => d.Cls == 0)}") : null, black ? Loc.F($"검 {dets.Count(d => d.Cls == 1)}") : null,
+                    mosaic ? Loc.F($"모자이크 {dets.Count(d => d.Cls == 2)}") : null }.Where(s => s != null)) + $" → {pw + pb + pm}px";
             if (pw + pb + pm < 300) return null;
             var mask = new Mat(imgBgr.Rows, imgBgr.Cols, MatType.CV_8UC1, Scalar.Black);
             if (white) Cv2.BitwiseOr(mask, w, mask);
@@ -242,7 +242,7 @@ public class CensorNet(OnnxEnv env)
                 if (thick <= maxRefThick && fill >= 0.45) { refs.Add((i, center, thick, ang, aspect, fill)); continue; }
                 // 기준에서 빠져도 후보로는 남긴다 — 맞닿은/교차한 막대 쌍(X)은 짧은 변이 팔 길이라 여기서 빠지는데,
                 // 다른 기준의 구역 안에 있으면 획 두께 기준으로 아래에서 받을 수 있다.
-                Dbg($"   ref-reject thick={thick:F1} (max {maxRefThick:F0}) fill={fill:F2} → 후보");
+                Dbg($"   ref-reject thick={thick:F1} (max {maxRefThick:F0}) fill={fill:F2} → 후보");   // loc:none
             }
             if (exclude != null && exclude.Any(e => (e & br).Width > 0 && (e & br).Height > 0)) continue;
             cands.Add((i, center, thick, ang, aspect, fill, ov, br, area, stroke));

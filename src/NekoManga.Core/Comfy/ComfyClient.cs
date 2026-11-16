@@ -35,7 +35,7 @@ public class ComfyClient(string baseUrl)
         using var r = await Http.GetAsync($"{baseUrl}/object_info", ct);
         r.EnsureSuccessStatusCode();
         return JsonNode.Parse(await r.Content.ReadAsStringAsync(ct)) as JsonObject
-               ?? throw new InvalidDataException("ComfyUI의 노드 정보(/object_info)를 읽지 못했어요.");
+               ?? throw new InvalidDataException(Loc.T("ComfyUI의 노드 정보(/object_info)를 읽지 못했어요."));
     }
 
     public async Task<string> UploadImageAsync(byte[] png, string fileName, CancellationToken ct)
@@ -64,7 +64,7 @@ public class ComfyClient(string baseUrl)
                 new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"), ct);
             var text = await resp.Content.ReadAsStringAsync(ct);
             if (!resp.IsSuccessStatusCode)
-                throw new InvalidOperationException($"워크플로 검증 실패: {Truncate(text, 2000)}");
+                throw new InvalidOperationException(Loc.F($"워크플로 검증 실패: {Truncate(text, 2000)}"));
             return JsonNode.Parse(text)!["prompt_id"]!.GetValue<string>();
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -134,7 +134,7 @@ public class ComfyClient(string baseUrl)
             if (statusStr == "error")
             {
                 var msg = ExtractError(status);
-                throw new InvalidOperationException($"채색 엔진 실행 오류: {msg}");
+                throw new InvalidOperationException(Loc.F($"채색 엔진 실행 오류: {msg}"));
             }
             if (!completed) continue;
 
@@ -156,7 +156,7 @@ public class ComfyClient(string baseUrl)
                 }
             return new ComfyResult(files, texts);
         }
-        throw new TimeoutException("채색 작업이 제한 시간을 넘겼어요.");
+        throw new TimeoutException(Loc.T("채색 작업이 제한 시간을 넘겼어요."));
     }
 
     private static string ExtractError(JsonNode? status)
@@ -174,12 +174,12 @@ public class ComfyClient(string baseUrl)
                             ? string.Join(" | ", tb.TakeLast(3).Select(t => t?.GetValue<string>()?.Trim()).Where(t => !string.IsNullOrEmpty(t)))
                             : "";
                         var msg = $"{info?["node_type"]} — {Truncate(info?["exception_message"]?.GetValue<string>() ?? "", 500)}";
-                        if (tail.Length > 0) msg += $"\n위치: {Truncate(tail, 600)}";
-                        return $"{msg}\n자세한 로그: {ComfyServer.LogPath}";
+                        if (tail.Length > 0) msg += Loc.F($"\n위치: {Truncate(tail, 600)}");
+                        return Loc.F($"{msg}\n자세한 로그: {ComfyServer.LogPath}");
                     }
         }
         catch { }
-        return $"원인 미상 (로그 확인: {ComfyServer.LogPath})";
+        return Loc.F($"원인 미상 (로그 확인: {ComfyServer.LogPath})");
     }
 
     private static string Truncate(string s, int n) => s.Length <= n ? s : s[..n] + "…";

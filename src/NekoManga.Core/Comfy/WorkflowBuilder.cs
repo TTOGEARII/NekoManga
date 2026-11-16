@@ -142,7 +142,7 @@ public static class WorkflowBuilder
         var positive = Prompt(s.RegenPrompt, bodyTags);
         bool byArea = areaUpload != null && areaTags is { Count: >= 2 };
         if (byArea && areaTags!.Count > NekoManga.Core.Decensor.RegenSexAreas.Channels.Length)
-            throw new ArgumentException("자리별 태그는 셋까지예요(마스크를 R·G·B 채널에 싣는다).", nameof(areaTags));
+            throw new ArgumentException(Loc.T("자리별 태그는 셋까지예요(마스크를 R·G·B 채널에 싣는다)."), nameof(areaTags));
         var p = new JsonObject
         {
             ["1"] = Node("LoadImage", new() { ["image"] = imgUpload }),      // 그림 + 알파 = 영역
@@ -150,8 +150,8 @@ public static class WorkflowBuilder
             ["21"] = Node("LoadImage", new() { ["image"] = eraseUpload }),   // 알파 = 검열 조각
         };
         // 제목(_meta.title): API JSON으로 내보내 커스텀 워크플로로 쓸 때 규약(CustomWorkflow.PickNode)이 그림 노드를 앱 입력으로 고르게
-        p["1"]!["_meta"] = new JsonObject { ["title"] = "NekoManga 입력 (알파 = 다시 그릴 영역)" };
-        p["21"]!["_meta"] = new JsonObject { ["title"] = "지우기 마스크 (알파 = 검열 조각)" };
+        p["1"]!["_meta"] = new JsonObject { ["title"] = "NekoManga 입력 (알파 = 다시 그릴 영역)" };   // loc:none
+        p["21"]!["_meta"] = new JsonObject { ["title"] = "지우기 마스크 (알파 = 검열 조각)" };   // loc:none
         // 마스크: 지우기(1단계 노이즈), 영역 부드럽게(2단계 노이즈), 엣지·코어(합성)
         p["5"] = Node("LayerMask: MaskGrow", new() { ["mask"] = Link("21", 1), ["invert_mask"] = false, ["grow"] = s.RegenInpaintGrow, ["blur"] = 2 });
         p["23"] = Node("LayerMask: MaskGrow", new() { ["mask"] = Link("1", 1), ["invert_mask"] = false, ["grow"] = 0, ["blur"] = 4 });
@@ -165,7 +165,7 @@ public static class WorkflowBuilder
             // 자리별 태그: 자리 i의 프롬프트를 그 자리에만 — ComfyUI는 자리 프롬프트마다 모델을 돌려 결과를 마스크 가중 평균으로 섞는다(자리들이 그림을 다 덮어야 한다 — RegenSexAreas가 그렇게 나눈다).
             // set_cond_area "default": 자리의 상자만 잘라 그리지 않고 그림 전체를 보고 그린 뒤 자리만 쓴다. 부정 프롬프트는 전처럼 그림 전체에 하나
             p["40"] = Node("LoadImage", new() { ["image"] = areaUpload! });
-            p["40"]!["_meta"] = new JsonObject { ["title"] = "자리별 태그 마스크 (R·G·B = 태그가 다른 자리)" };
+            p["40"]!["_meta"] = new JsonObject { ["title"] = "자리별 태그 마스크 (R·G·B = 태그가 다른 자리)" };   // loc:none
             for (int i = 0; i < areaTags!.Count; i++)
             {
                 p[$"{41 + i}"] = Node("ImageToMask", new() { ["image"] = Link("40", 0), ["channel"] = NekoManga.Core.Decensor.RegenSexAreas.Channels[i] });

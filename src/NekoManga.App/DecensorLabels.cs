@@ -1,3 +1,4 @@
+using NekoManga.Core;
 namespace NekoManga.App;
 
 /// <summary>검열 감지·복원 조합을 사람이 읽는 한 줄로 풀어 주는 문구 모음 (2026-11-09) — 설정 창의 '지금 설정' 요약, 메인 창 카드가 같이 쓴다.
@@ -13,32 +14,33 @@ internal static class DecensorLabels
     /// <summary>① 찾기 — 누가 무엇을 찾는지.</summary>
     public static string Find(string target, string assist, bool censorNetInstalled) => target switch
     {
-        "Auto" => "Aletheia Lens가 막대·모자이크를 찾" + (assist switch
+        // 경우마다 온 문장으로 적는다 — "찾" + "아요."처럼 낱말 중간에서 이어 붙이면 다른 언어로 옮길 수 없다(Loc)
+        "Auto" => assist switch
         {
-            "None" => "아요.",
-            _ when !censorNetInstalled => "아요. (전용 AI가 설치돼 있지 않아 보완은 쉬어요)",
-            "WhiteMosaic" => "고, 전용 AI가 놓친 흰 막대선·모자이크를 보완해요.",
-            "All" => "고, 전용 AI가 찾은 것(흰·검·모자이크)도 전부 합쳐요.",
-            _ => "고, 전용 AI가 놓친 가는 흰 막대선을 보완해요.",
-        }),
-        "BlackBar" => "Aletheia Lens가 찾은 막대 중 검은 것만 써요.",
-        "WhiteBar" => censorNetInstalled ? "Aletheia Lens가 찾은 막대 중 흰 것에, 전용 AI가 찾은 가는 흰 막대선을 더해요."
-            : "Aletheia Lens가 찾은 막대 중 흰 것에, 흰 막대 규칙 감지를 더해요. (전용 AI를 설치하면 잘못 잡는 곳이 줄어요)",
-        "Mosaic" => "Aletheia Lens가 찾은 모자이크만 써요.",
-        _ => "Aletheia Lens가 찾은 막대 중 색 있는 것에, 색 검열 규칙 감지를 더해요.",
+            "None" => Loc.T("Aletheia Lens가 막대·모자이크를 찾아요."),
+            _ when !censorNetInstalled => Loc.T("Aletheia Lens가 막대·모자이크를 찾아요. (전용 AI가 설치돼 있지 않아 보완은 쉬어요)"),
+            "WhiteMosaic" => Loc.T("Aletheia Lens가 막대·모자이크를 찾고, 전용 AI가 놓친 흰 막대선·모자이크를 보완해요."),
+            "All" => Loc.T("Aletheia Lens가 막대·모자이크를 찾고, 전용 AI가 찾은 것(흰·검·모자이크)도 전부 합쳐요."),
+            _ => Loc.T("Aletheia Lens가 막대·모자이크를 찾고, 전용 AI가 놓친 가는 흰 막대선을 보완해요."),
+        },
+        "BlackBar" => Loc.T("Aletheia Lens가 찾은 막대 중 검은 것만 써요."),
+        "WhiteBar" => censorNetInstalled ? Loc.T("Aletheia Lens가 찾은 막대 중 흰 것에, 전용 AI가 찾은 가는 흰 막대선을 더해요.")
+            : Loc.T("Aletheia Lens가 찾은 막대 중 흰 것에, 흰 막대 규칙 감지를 더해요. (전용 AI를 설치하면 잘못 잡는 곳이 줄어요)"),
+        "Mosaic" => Loc.T("Aletheia Lens가 찾은 모자이크만 써요."),
+        _ => Loc.T("Aletheia Lens가 찾은 막대 중 색 있는 것에, 색 검열 규칙 감지를 더해요."),
     };
 
     /// <summary>② 지우기 — 무엇으로 복원하는지. GPU 방식을 골랐으면 Aletheia 복원이 안 쓰인다는 점을 덧붙인다.</summary>
     public static string Fix(string mode, string target, string assist, string assistRepair)
     {
-        const string tail = " Aletheia 복원을 쓰려면 '기본'을 고르세요.";
+        string tail = Loc.T(" Aletheia 복원을 쓰려면 '기본'을 고르세요.");
         return mode switch
         {
-            "ComfyRegen" => "SDXL 재생성(ComfyUI·GPU)으로 다시 그려요." + tail,
-            "ComfyCustom" => "내 ComfyUI 워크플로(GPU)로 지워요." + tail,
-            _ => "Aletheia Lens 복원 — 막대는 막대 모델, 모자이크는 모자이크 모델로 지워요." +
+            "ComfyRegen" => Loc.T("SDXL 재생성(ComfyUI·GPU)으로 다시 그려요.") + tail,
+            "ComfyCustom" => Loc.T("내 ComfyUI 워크플로(GPU)로 지워요.") + tail,
+            _ => Loc.T("Aletheia Lens 복원 — 막대는 막대 모델, 모자이크는 모자이크 모델로 지워요.") +
                  (HasAssist(target, assist)
-                     ? (assistRepair == "Aletheia" ? " 보완으로 찾은 자리도 Aletheia 막대 모델로 지워요." : " 보완으로 찾은 자리만 LaMa로 지워요.")
+                     ? (assistRepair == "Aletheia" ? Loc.T(" 보완으로 찾은 자리도 Aletheia 막대 모델로 지워요.") : Loc.T(" 보완으로 찾은 자리만 LaMa로 지워요."))
                      : ""),
         };
     }
@@ -46,8 +48,8 @@ internal static class DecensorLabels
     /// <summary>메인 창 검열 제거 카드의 한 줄.</summary>
     public static string Card(NekoManga.Core.AppSettings s) => s.DecensorMode switch
     {
-        "ComfyRegen" => "Aletheia AI가 검열을 찾아 SDXL로 재생성 (GPU·내장 레시피)",
-        "ComfyCustom" => "Aletheia AI가 검열을 찾아 커스텀 ComfyUI 워크플로로 복원 (GPU)",
-        _ => "Aletheia AI가 검열을 찾아 Aletheia로 복원 (기본)",
+        "ComfyRegen" => Loc.T("Aletheia AI가 검열을 찾아 SDXL로 재생성 (GPU·내장 레시피)"),
+        "ComfyCustom" => Loc.T("Aletheia AI가 검열을 찾아 커스텀 ComfyUI 워크플로로 복원 (GPU)"),
+        _ => Loc.T("Aletheia AI가 검열을 찾아 Aletheia로 복원 (기본)"),
     };
 }

@@ -31,8 +31,8 @@ public static class ImgIo
     {
         var exts = skipped.Select(f => Path.GetExtension(f).ToLowerInvariant()).ToList();
         var parts = UnreadableImageExts.Select(e => (Name: e[1..].ToUpperInvariant(), Count: exts.Count(x => x == e)))
-                                       .Where(p => p.Count > 0).Select(p => $"{p.Name} {p.Count}장").ToList();
-        return parts.Count == 0 ? null : string.Join("·", parts) + "은 읽을 수 없어 뺐어요";
+                                       .Where(p => p.Count > 0).Select(p => Loc.F($"{p.Name} {p.Count}장")).ToList();
+        return parts.Count == 0 ? null : Loc.F($"{string.Join("·", parts)}은 읽을 수 없어 뺐어요");
     }
 
     /// <summary>경로의 이미지를 읽는다. 디코드하지 못하면(0바이트·깨진 파일·코덱 없는 형식) 빈 Mat을 돌려준다(Cv2.ImRead와 동일 계약).

@@ -77,7 +77,7 @@ public sealed class OnnxEnv(AppSettings settings) : IDisposable
                     }
                 }
                 if (Environment.GetEnvironmentVariable("NEKO_ONNX_DBG") == "1")
-                    Console.Error.WriteLine($"[onnx] GPU 실행 실패 — CPU로 다시 돌려요 ({string.Join(", ", files)}): {ex.Message.Split('\n')[0]}");
+                    Console.Error.WriteLine($"[onnx] GPU 실행 실패 — CPU로 다시 돌려요 ({string.Join(", ", files)}): {ex.Message.Split('\n')[0]}");   // loc:none
                 return body();   // Get이 _demoted를 보고 CPU 세션을 준다. 먼저 내려간 뒤에 들어온 스레드도 같은 길로 CPU에서 돈다
             }
         }
@@ -92,7 +92,7 @@ public sealed class OnnxEnv(AppSettings settings) : IDisposable
             if (_sessions.TryGetValue(Key(fileName, cpuOnly), out var s)) return s;
             var path = ModelPath(fileName);
             if (!File.Exists(path))
-                throw new FileNotFoundException($"엔진 모델이 없어요: {fileName} — 설정 → 구성요소에서 설치해 주세요.", path);
+                throw new FileNotFoundException(Loc.F($"엔진 모델이 없어요: {fileName} — 설정 → 구성요소에서 설치해 주세요."), path);
 
             InferenceSession session;
             string ep;
@@ -110,7 +110,7 @@ public sealed class OnnxEnv(AppSettings settings) : IDisposable
             else if (!GpuAllowed || _demoted.Contains(fileName))
             {
                 session = new InferenceSession(path);
-                ep = _demoted.Contains(fileName) ? "CPU(GPU 실행 실패 뒤)" : "CPU(설정 — ComfyUI와 VRAM을 다투지 않게)";
+                ep = _demoted.Contains(fileName) ? "CPU(GPU 실행 실패 뒤)" : "CPU(설정 — ComfyUI와 VRAM을 다투지 않게)";   // loc:none
             }
             else
             {

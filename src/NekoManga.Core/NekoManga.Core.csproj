@@ -21,6 +21,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- 화면 글의 번역표(Loc) — 소스의 한국어 글이 열쇠인 {"한국어": "번역"} 꼴. 리소스 이름은 NekoManga.Core.Lang.<언어>.json.
+         파일마다 따로 적는다: 와일드카드(Lang\*.json)는 파일이 없어도 조용히 지나가, 번역표 없이(모든 언어가 한국어로 나오는) 빌드가 나갈 수 있다 — 릴리스 워크플로는 테스트를 돌리지 않는다 -->
+    <EmbeddedResource Include="Lang\en.json" />
+    <EmbeddedResource Include="Lang\ja.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- 테스트 프로젝트(tests\NekoManga.Core.Tests)가 internal 구현(PilResample·PolishTranslation 등)을 직접 검증할 수 있게 한다 -->
     <InternalsVisibleTo Include="NekoManga.Core.Tests" />
   </ItemGroup>

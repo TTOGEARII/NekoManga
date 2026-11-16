@@ -29,12 +29,13 @@ public static class RegenSexAreas
         using var crop = new Mat();
         // 값이 섞이지 않게 Nearest(지도의 값은 성별 번호다) — 마스크를 자를 때와 같다(RegenCrop.CropAndScale)
         Cv2.Resize(roi, crop, new Size(w.SendW, w.SendH), 0, 0, InterpolationFlags.Nearest);
-        return Split(crop, s);
+        return Split(crop, s, region.Cum);
     }
 
     /// <summary>성별 지도(0 = 조각 아님, 그 밖은 RegenRegion의 MaleCode·FemaleCode·BothCode)를 자리로 나눈다. 태그가 같은 자리는 합친다
-    /// (이 장의 여성 칸을 비웠으면 남성 자리와 남녀 자리가 같은 글이다). 태그가 다른 자리가 둘 미만이면 null.</summary>
-    public static List<RegenTagArea>? Split(Mat sexMap, AppSettings s)
+    /// (이 장의 여성 칸을 비웠으면 남성 자리와 남녀 자리가 같은 글이다). 태그가 다른 자리가 둘 미만이면 null.
+    /// <paramref name="cum"/>: 이 영역에 질내사정인 조각이 있다 — 여성 자리·남녀 자리에 사정 태그를 더한다(남성 자리에는 넣지 않는다).</summary>
+    public static List<RegenTagArea>? Split(Mat sexMap, AppSettings s, bool cum = false)
     {
         (byte Code, RegenKind Sex)[] kinds = [(RegenRegion.MaleCode, RegenKind.Male), (RegenRegion.FemaleCode, RegenKind.Female), (RegenRegion.BothCode, RegenKind.Both)];
         // 값마다 '그 값의 조각까지의 거리'를 재고, 픽셀마다 가장 가까운 값을 고른다
@@ -62,7 +63,7 @@ public static class RegenSexAreas
             var mask = new Mat();
             Cv2.Compare(owner, new Scalar(code), mask, CmpTypes.EQ);
             if (Cv2.CountNonZero(mask) == 0) { mask.Dispose(); continue; }
-            string tags = RegenTags.For(sex, sex != RegenKind.Both, s);
+            string tags = RegenTags.For(sex, sex != RegenKind.Both, s, cum);
             if (areas.FirstOrDefault(a => a.Tags == tags) is { } same) { Cv2.BitwiseOr(same.Mask, mask, same.Mask); mask.Dispose(); }
             else areas.Add(new RegenTagArea(sex, tags, mask));
         }
@@ -74,7 +75,7 @@ public static class RegenSexAreas
     /// <summary>자리 마스크들을 그림 한 장의 채널로 — 첫 자리 = red, 둘째 = green, 셋째 = blue(<see cref="Channels"/>). 올릴 PNG의 재료(호출자가 해제).</summary>
     public static Mat Pack(IReadOnlyList<RegenTagArea> areas)
     {
-        if (areas.Count is < 1 or > 3) throw new ArgumentException("자리는 하나에서 셋까지예요.", nameof(areas));
+        if (areas.Count is < 1 or > 3) throw new ArgumentException(Loc.T("자리는 하나에서 셋까지예요."), nameof(areas));
         using var none = new Mat(areas[0].Mask.Size(), MatType.CV_8UC1, Scalar.Black);
         Mat At(int i) => i < areas.Count ? areas[i].Mask : none;
         var packed = new Mat();
@@ -85,7 +86,6 @@ public static class RegenSexAreas
     /// <summary>진행 줄에 보이는 말 — "자리별 태그(남성·여성)". 자리마다 실제로 들어가는 태그를 말한다(RegenTags.Note와 같은 낱말).</summary>
     public static string Note(IReadOnlyList<RegenTagArea> areas, AppSettings s)
     {
-        static string Short(string note) => note.EndsWith(" 태그") ? note[..^3] : note;
-        return "자리별 태그(" + string.Join("·", areas.Select(a => Short(RegenTags.Note(a.Sex, a.Sex != RegenKind.Both, s)))) + ")";
+        return Loc.F($"자리별 태그({string.Join("·", areas.Select(a => RegenTags.ShortNote(a.Sex, a.Sex != RegenKind.Both, s)))})");
     }
 }

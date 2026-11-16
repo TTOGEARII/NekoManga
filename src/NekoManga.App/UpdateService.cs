@@ -29,9 +29,9 @@ public class UpdateService
 
     public async Task DownloadAndApplyAsync(UpdateInfo info, Action<int>? progress = null, Action? beforeRestart = null)
     {
-        Log("DownloadUpdatesAsync 시작");
+        Log("DownloadUpdatesAsync 시작");   // loc:none
         await _manager.DownloadUpdatesAsync(info, progress);
-        Log("다운로드 완료");
+        Log("다운로드 완료");   // loc:none
 
         beforeRestart?.Invoke();
         var version = info.TargetFullRelease.Version.ToString();
@@ -42,9 +42,9 @@ public class UpdateService
         // 현재 프로세스를 종료·재시작한다 (내부에서 Environment.Exit 처리).
         // WaitExitThenApplyUpdates + 수동 Exit 조합은 1.x에서 적용이 시작되지 않는 문제가 있었다.
         // 대용량 nupkg(ONNX 포함)를 통째로 푸는 백신 선적재는 지연·실패 소지가 커서 제거했다.
-        Log("ApplyUpdatesAndRestart 호출");
+        Log("ApplyUpdatesAndRestart 호출");   // loc:none
         _manager.ApplyUpdatesAndRestart(info.TargetFullRelease);
-        Log("ApplyUpdatesAndRestart 반환(비정상 — 보통 여기 도달 전 종료)");
+        Log("ApplyUpdatesAndRestart 반환(비정상 — 보통 여기 도달 전 종료)");   // loc:none
     }
 
     private static void Log(string msg)
@@ -93,6 +93,7 @@ public class UpdateService
             var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".."));
             var sqVersion = Path.Combine(root, "current", "sq.version");
             var script = Path.Combine(tmp, "splash.ps1");
+            // loc:none
             File.WriteAllText(script, $$"""
                 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
                 [System.Windows.Forms.Application]::EnableVisualStyles()
@@ -156,6 +157,7 @@ public class UpdateService
             // timeout은 콘솔 없는 환경에서 실패할 수 있어 ping으로 1초씩 대기한다.
             // find/findstr는 PATH에 GNU find가 앞서는 환경(Git Bash 등)이 있어 절대경로로 고정.
             var script = Path.Combine(Path.GetTempPath(), "NekoManga-restart.cmd");
+            // loc:none
             File.WriteAllText(script, $"""
                 @echo off
                 set "sys=%SystemRoot%\System32"

@@ -11,8 +11,10 @@ public enum RegenKind { Unknown, Male, Female, Both }
 public static class RegenTags
 {
     /// <summary>확정된 남성 영역 → 남성 태그, 확정된 여성 영역 → 여성 태그, 그 밖(확정 아님·둘 다·검출 없음·설정 끔) → "남성, 여성".
-    /// 비어 있는 쪽은 뺀다. 결과는 기본 프롬프트 뒤에 ", "로 붙는다.</summary>
-    public static string For(RegenKind kind, bool sure, AppSettings s)
+    /// 비어 있는 쪽은 뺀다. 결과는 기본 프롬프트 뒤에 ", "로 붙는다.
+    /// <paramref name="cum"/>: 이 영역에 질내사정인 조각이 있다(RegenRegionInfo.Cum) — 여성 태그가 들어가는 자리면 사정 태그(AppSettings.CumTags)를 뒤에 더한다.
+    /// 2026-11-16 사용자 "여자거에서 구멍에 전부다 질내사정으로 나오는데 실제 이미지에서 질내사정한 부분만": 전에는 여성 태그 줄에 'cum in pussy'가 늘 들어 있었다.</summary>
+    public static string For(RegenKind kind, bool sure, AppSettings s, bool cum = false)
     {
         string male = s.RegenBodyTagsMale.Trim(), female = s.RegenBodyTagsFemale.Trim();
         var parts = Chosen(kind, sure, s) switch
@@ -21,17 +23,36 @@ public static class RegenTags
             RegenKind.Female => new[] { female },
             _ => new[] { male, female },
         };
+        if (CumUsed(kind, sure, s, cum)) parts = [.. parts, s.CumTags];
         return string.Join(", ", parts.Where(p => p.Length > 0));
     }
 
+    /// <summary>사정 태그가 실제로 들어가는가 — 사정인 조각이 있고, 여성 태그가 들어가는 자리(확정된 남성 영역이 아님)이고, 사정 태그 칸이 비어 있지 않을 때.</summary>
+    public static bool CumUsed(RegenKind kind, bool sure, AppSettings s, bool cum) =>
+        cum && Chosen(kind, sure, s) != RegenKind.Male && s.CumTags.Length > 0;
+
     /// <summary>진행 줄에 보이는 말 — 이 영역에 실제로 들어가는 태그("남성 태그"·"여성 태그"·"남녀 태그", 들어갈 것이 없으면 "부위 태그 없음").
     /// 비워 둔 칸은 치지 않는다: 결과 창에서 이 장의 여성 칸을 비우고 [지우기] 하면 "남성 태그"로 보인다.</summary>
-    public static string Note(RegenKind kind, bool sure, AppSettings s)
+    public static string Note(RegenKind kind, bool sure, AppSettings s, bool cum = false)
+    {
+        var (male, female) = Used(kind, sure, s);
+        return (male && female ? Loc.T("남녀 태그") : male ? Loc.T("남성 태그") : female ? Loc.T("여성 태그") : Loc.T("부위 태그 없음"))
+            + (CumUsed(kind, sure, s, cum) ? Loc.T(" + 사정") : "");
+    }
+
+    /// <summary><see cref="Note"/>의 짧은 꼴("남성"·"여성"·"남녀", 들어갈 것이 없으면 "부위 태그 없음") — 자리별 태그의 진행 줄이 쓴다(RegenSexAreas.Note).
+    /// 전에는 Note의 글에서 " 태그"를 잘라 썼다 — 번역된 글은 그렇게 자를 수 없어(Loc) 낱말을 따로 둔다.</summary>
+    public static string ShortNote(RegenKind kind, bool sure, AppSettings s)
+    {
+        var (male, female) = Used(kind, sure, s);
+        return male && female ? Loc.T("남녀") : male ? Loc.T("남성") : female ? Loc.T("여성") : Loc.T("부위 태그 없음");
+    }
+
+    /// <summary>이 영역에 실제로 들어가는 쪽 — 고른 쪽이면서 그 칸이 비어 있지 않은 것.</summary>
+    private static (bool Male, bool Female) Used(RegenKind kind, bool sure, AppSettings s)
     {
         var chosen = Chosen(kind, sure, s);
-        bool male = chosen != RegenKind.Female && s.RegenBodyTagsMale.Trim().Length > 0;
-        bool female = chosen != RegenKind.Male && s.RegenBodyTagsFemale.Trim().Length > 0;
-        return male && female ? "남녀 태그" : male ? "남성 태그" : female ? "여성 태그" : "부위 태그 없음";
+        return (chosen != RegenKind.Female && s.RegenBodyTagsMale.Trim().Length > 0, chosen != RegenKind.Male && s.RegenBodyTagsFemale.Trim().Length > 0);
     }
 
     private static RegenKind Chosen(RegenKind kind, bool sure, AppSettings s) =>

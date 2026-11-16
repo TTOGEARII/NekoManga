@@ -46,7 +46,7 @@ public partial class ResultWindow
         for (int i = 0; i < _letterBlocks.Count; i++)
         {
             var t = _letterBlocks[i].Translation;
-            CmbBlocks.Items.Add($"{i + 1}. {(_letterBlocks[i].Hidden ? "(숨김) " : "")}{(t.Length > 22 ? t[..22] + "…" : t)}");
+            CmbBlocks.Items.Add($"{i + 1}. {(_letterBlocks[i].Hidden ? Loc.T("(숨김) ") : "")}{(t.Length > 22 ? t[..22] + "…" : t)}");
         }
         if (_letterBlocks.Count > 0) CmbBlocks.SelectedIndex = 0;
         TxtBlockText.Text = _letterBlocks.Count > 0 ? _letterBlocks[0].Translation : "";
@@ -61,7 +61,7 @@ public partial class ResultWindow
         var b = _letterBlocks[CmbBlocks.SelectedIndex];
         TxtBlockText.Text = b.Translation;
         LoadBlockStyleUi(b);
-        BtnBlockHide.Content = b.Hidden ? "숨김 해제" : "이 블록 숨기기";
+        BtnBlockHide.Content = b.Hidden ? Loc.T("숨김 해제") : Loc.T("이 블록 숨기기");
         _syncingBlockUi = false;
         DrawShapes();
     }
@@ -103,7 +103,7 @@ public partial class ResultWindow
             RotationDeg = D(TxtBRot.Text, b.RotationDeg, -45, 45),
         });
         if (LetterMode && !_letterPreview) RebuildLetterBoxes();
-        TxtStatus.Text = "풍선 스타일을 바꿨어요 — [다시 식자]가 최종 화질로 반영해요";
+        TxtStatus.Text = Loc.T("풍선 스타일을 바꿨어요 — [다시 식자]가 최종 화질로 반영해요");
     }
 
     private void TxtBlockText_Changed(object sender, TextChangedEventArgs e)
@@ -129,7 +129,7 @@ public partial class ResultWindow
         RefreshBlockCombo();
         CmbBlocks.SelectedIndex = i;
         if (LetterMode && !_letterPreview) RebuildLetterBoxes();
-        TxtStatus.Text = hide ? "블록을 숨겼어요 — [숨김 해제]로 되살릴 수 있어요 (다시 식자·지우기 때 저장돼요)" : "블록을 다시 보여요";
+        TxtStatus.Text = hide ? Loc.T("블록을 숨겼어요 — [숨김 해제]로 되살릴 수 있어요 (다시 식자·지우기 때 저장돼요)") : Loc.T("블록을 다시 보여요");
     }
 
     /// <summary>블록 하나를 바꾼다 — 실제로 달라졌을 때만 '고친 것'으로 표시한다(<see cref="_letterDirty"/>). 화면을 맞추느라 같은 값을 다시 넣는 경우(텍스트박스 ↔ 글 칸 동기화)는 세지 않는다.</summary>
@@ -154,7 +154,7 @@ public partial class ResultWindow
             _letterDirty = false;
             return true;
         }
-        catch (Exception ex) { TxtStatus.Text = "식자 편집 저장 실패: " + ex.Message; return false; }
+        catch (Exception ex) { TxtStatus.Text = Loc.T("식자 편집 저장 실패: ") + ex.Message; return false; }
     }
 
     /// <summary>식자 탭의 스타일 값들로 재식자 전용 설정을 만든다 (전역 설정은 건드리지 않는다).</summary>
@@ -194,7 +194,7 @@ public partial class ResultWindow
             // 사이드카에 박제한 원본 크기로 환산한다 — 원고를 옮겼거나 지웠어도 편집 미리보기(RebuildLetterBoxes)처럼 제자리에 그린다
             TextRenderer.RenderBlocks(_sidecar.BasePath, _sidecar.Source, _sidecar.SrcW, _sidecar.SrcH, _letterBlocks, tmp, LetterStyle());
             var rendered = ImgIo.Read(tmp);
-            if (rendered.Empty()) { rendered.Dispose(); TxtStatus.Text = "다시 식자에 실패했어요"; return false; }
+            if (rendered.Empty()) { rendered.Dispose(); TxtStatus.Text = Loc.T("다시 식자에 실패했어요"); return false; }
             _undo.Push(_img);
             _img = rendered;
             BtnUndo.IsEnabled = true;
@@ -205,11 +205,11 @@ public partial class ResultWindow
             _letterDirty = false;    // 고친 글은 이제 결과 그림(_img)에 들어 있다 — 결과물로 쓰는 것은 [저장]의 몫(_dirty)
             RefreshManualMaskBase(); // 저장 마스크 없는 장의 마스크 보기 바닥도 새 결과물로
             Redraw();
-            TxtStatus.Text = $"최종 렌더링 미리보기 (블록 {_letterBlocks.Count}개) — [저장] 또는 그림 클릭으로 다시 편집"
-                           + (blocksSaved ? "" : " · ⚠ 고친 글을 사이드카에 저장하지 못했어요(다시 렌더링하면 옛 글로 돌아가요)");
+            TxtStatus.Text = Loc.F($"최종 렌더링 미리보기 (블록 {_letterBlocks.Count}개) — [저장] 또는 그림 클릭으로 다시 편집")
+                           + (blocksSaved ? "" : Loc.T(" · ⚠ 고친 글을 사이드카에 저장하지 못했어요(다시 렌더링하면 옛 글로 돌아가요)"));
             return true;
         }
-        catch (Exception ex) { TxtStatus.Text = "다시 식자 실패: " + ex.Message; return false; }
+        catch (Exception ex) { TxtStatus.Text = Loc.T("다시 식자 실패: ") + ex.Message; return false; }
         finally { try { File.Delete(tmp); } catch { } }
     }
 
@@ -316,7 +316,7 @@ public partial class ResultWindow
                     _syncingBlockUi = true;
                     CmbBlocks.SelectedIndex = idx; TxtBlockText.Text = box.Text;
                     LoadBlockStyleUi(_letterBlocks[idx]);
-                    BtnBlockHide.Content = _letterBlocks[idx].Hidden ? "숨김 해제" : "이 블록 숨기기";
+                    BtnBlockHide.Content = _letterBlocks[idx].Hidden ? Loc.T("숨김 해제") : Loc.T("이 블록 숨기기");
                     _syncingBlockUi = false;
                 }
             };
@@ -347,7 +347,7 @@ public partial class ResultWindow
         if (host.Tag is not int i || i >= _letterBlocks.Count) return now;
         if (shownWith.CommitBox(placed, now) is not { } r) return placed;
         SetBlock(i, _letterBlocks[i] with { X1 = r.X1, Y1 = r.Y1, X2 = r.X2, Y2 = r.Y2, ManualRect = true });
-        TxtStatus.Text = "블록 위치·크기를 조정했어요 — [다시 식자]로 반영하세요";
+        TxtStatus.Text = Loc.T("블록 위치·크기를 조정했어요 — [다시 식자]로 반영하세요");
         return now;
     }
 

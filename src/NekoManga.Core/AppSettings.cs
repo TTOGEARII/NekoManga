@@ -145,7 +145,20 @@ public class AppSettings
     /// <summary>부위 종류별 태그(재생성 v3, 2026-11-12 사용자: "여자는 잘 나오는데 남자는 이상하다" — 한 줄 태그에 여성 태그가 늘 섞였다).
     /// 한쪽 성별로 확정된 영역에는 그쪽 줄만, 나머지는 두 줄을 같이 넣는다(RegenTags.For, RegenTagsBySex). 기본값은 옛 한 줄을 나눈 것(glains→glans 오타 수정).</summary>
     public string RegenBodyTagsMale { get; set; } = "penis, glans";
-    public string RegenBodyTagsFemale { get; set; } = "clitoris, pussy, vulva, cum in pussy";
+    public string RegenBodyTagsFemale { get; set; } = "clitoris, pussy, vulva";
+    /// <summary>질내사정 태그(2026-11-16 사용자 "여자거에서 구멍에 전부다 질내사정으로 나오는데 실제 이미지에서 질내사정한 부분만 그렇게 나왔으면 좋겠어").
+    /// v1.10.0까지는 여성 태그 줄에 'cum in pussy'가 들어 있어 여성 부위마다 늘 들어갔다 — 떼어 내 **질내사정인 조각이 있는 영역에만** 여성 태그 뒤에 더한다(RegenTags.For).
+    /// 질내사정인지는 조각마다: 결과 창에서 직접 고른 것(SexMark.Cum)이 먼저, 없으면 자동 판단(RegenCumAuto). 비우면 어디에도 넣지 않는다.
+    /// 이 칸이 없는 settings.json(v1.10.0까지)을 읽으면 MigrateLegacy가 여성 태그 줄에서 'cum in pussy'를 뗀다(한 번만 — 저장하면 칸이 생긴다). 코드는 <see cref="CumTags"/>로 읽는다.</summary>
+    public string RegenBodyTagsCum { get; set; } = DefaultCumTags;
+    public const string DefaultCumTags = "cum in pussy";
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string CumTags => (RegenBodyTagsCum ?? "").Trim();
+    /// <summary>질내사정의 자동 판단(기본 켬) — 사용자가 표시하지 않은 조각은 그 둘레를 WD 태거(Engine.CumDetector)에 물어 정한다. 모델이 없으면 자동 판단 없이 표시한 조각만.
+    /// 끄면 표시한 조각만 사정으로 친다.</summary>
+    public bool RegenCumAuto { get; set; } = true;
+    /// <summary>자동 판단의 임계 — 태거의 점수(cum_in_pussy·cumdrip·overflow·after_vaginal·internal_cumshot 중 가장 높은 것)가 이 값 이상이면 사정. 0.35는 WD 태거의 통상 임계(settings.json 전용).</summary>
+    public double RegenCumThreshold { get; set; } = 0.35;
     /// <summary>한쪽 성별로 **확정된** 영역에는 그쪽 태그만 넣는다(기본 켬, 2026-11-15 사용자 "남자거에 계속 여자거가 그려지는데 검열부분을 보고 남/여 구분을 확실하게").
     /// 확정은 검열 조각마다 성별을 가려서 정한다(RegenRegion.PieceSex — 부위 감지의 근거, 약한 상자도; 결과 창에서 사용자가 고른 것이 있으면 그것) — 티끌 아닌 조각이 전부 같은 한쪽일 때.
     /// 확정이 아닌 영역(삽입처럼 가려진 다른 쪽이 있을 수 있는 곳, 근거 없는 조각이 낀 곳)은 남녀 태그를 같이 넣는다 — 그런 영역을 조각 쪽마다 나눠 넣는 것은 RegenTagsPerPiece.
@@ -156,6 +169,11 @@ public class AppSettings
     /// 꺼 두면 그런 영역에는 남녀 태그를 같이 넣는다(전과 같다). 섞인 영역만 자리 수만큼 프롬프트 추론이 늘어 느려진다(두 자리 1.5배쯤).
     /// **기본은 끔** — 그리는 방식이 바뀌는 것이라 사용자가 전/후를 보고 정한 뒤에 켠다.</summary>
     public bool RegenTagsPerPiece { get; set; }
+    /// <summary>떨어진 검열 자리는 따로 다시 그린다(2026-11-16 사용자 "남자거 여자거 말고 인체 부위도 제대로 안나오는게 있는데").
+    /// 꺼 두면 전과 같다 — 한쪽 영역이 상대 창(최소 RegenCropSize) 안에 보이면 합치는데, 1813px 쪽에서는 떨어진 자리끼리 줄줄이 합쳐져 쪽 전체를 0.4배로 줄여 보내고 검열 밖의 몸이 뭉개졌다.
+    /// 켜면 붙이는 범위가 겹칠 때만 합친다(RegenRegion.SplitReachFor) — 영역이 늘어 생성 횟수가 는다(사용자 원고 18쪽에서 28 → 46번).
+    /// **기본은 끔** — 그리는 결과가 바뀌는 것이라 사용자가 전/후를 보고 정한 뒤에 켠다.</summary>
+    public bool RegenSplitRegions { get; set; }
     public string RegenNegative { get; set; } = "text, letters, sound effects, symbols, watermark, speech bubble text, black bar censor, bar censor, mosaic censoring, censorship, broken lines, extra limbs, blurry lineart, colorized, oversmoothed, residual artifacts";
     public int RegenSteps { get; set; } = 24;
     public double RegenCfg { get; set; } = 5.0;
@@ -257,6 +275,9 @@ public class AppSettings
 
     /// <summary>UI 테마 — "Light"(기본, 만화 원고풍 흑백) / "Dark"(반전).</summary>
     public string Theme { get; set; } = "Light";
+    /// <summary>화면 언어 — "" = 아직 안 고름(Windows의 화면 언어를 따른다: 한국어·일본어가 아니면 영어 — Loc.Resolve) / "ko" / "en" / "ja".
+    /// 만화를 옮기는 언어(TranslateTarget)와는 따로다. 2026-11-16 사용자 요청(이슈 #2 — 한국어를 못 읽는 사람도 쓸 수 있게).</summary>
+    public string UiLanguage { get; set; } = "";
 
     // ── 기타 ──────────────────────────────────────────────────
     /// <summary>civitai 모델(채색 체크포인트) 다운로드용 API 키. 로그인 필요 모델 대비 (선택).</summary>
@@ -309,19 +330,21 @@ public class AppSettings
             // 저장하면 잠금이 풀린 멀쩡한 원본을 지난 세션을 시작할 때의 값으로 덮는다(2026-11-14 검수)
             _saveBlocked = true;
             var fromBackup = TryRead(path + ".bak", out _);
-            LoadProblem = "설정 파일을 다른 프로그램이 쥐고 있어(백신 검사·동기화 등) 읽지 못했어요 — 이번 실행은 " + (fromBackup != null ? "지난번에 읽힌 설정(백업)" : "기본값") +
-                          "으로 돌아가요. 설정 파일은 건드리지 않으니(이번 실행에서 바꾼 설정은 저장되지 않아요) 앱을 다시 켜 주세요.";
+            // 경우마다 온 문장으로 적는다 — 가운데 낱말만 갈아 끼우면 다른 언어로 옮길 수 없다(Loc)
+            LoadProblem = fromBackup != null
+                ? Loc.T("설정 파일을 다른 프로그램이 쥐고 있어(백신 검사·동기화 등) 읽지 못했어요 — 이번 실행은 지난번에 읽힌 설정(백업)으로 돌아가요. 설정 파일은 건드리지 않으니(이번 실행에서 바꾼 설정은 저장되지 않아요) 앱을 다시 켜 주세요.")
+                : Loc.T("설정 파일을 다른 프로그램이 쥐고 있어(백신 검사·동기화 등) 읽지 못했어요 — 이번 실행은 기본값으로 돌아가요. 설정 파일은 건드리지 않으니(이번 실행에서 바꾼 설정은 저장되지 않아요) 앱을 다시 켜 주세요.");
             return fromBackup ?? new AppSettings();
         }
         string? kept = $"{path}.broken-{DateTime.Now:yyyyMMdd-HHmmss}";
         try { File.Copy(path, kept, overwrite: true); } catch { kept = null; }
-        var where = kept != null ? $"\n읽지 못한 파일은 {Path.GetFileName(kept)} 이름으로 같은 폴더({Path.GetDirectoryName(Path.GetFullPath(kept))})에 남겨 두었어요." : "";
+        var where = kept != null ? Loc.F($"\n읽지 못한 파일은 {Path.GetFileName(kept)} 이름으로 같은 폴더({Path.GetDirectoryName(Path.GetFullPath(kept))})에 남겨 두었어요.") : "";
         if (TryRead(path + ".bak", out _) is { } restored)
         {
-            LoadProblem = "설정 파일을 읽지 못해, 지난번에 읽힌 설정(백업)으로 되살렸어요 — 마지막 실행에서 바꾼 설정은 빠져 있을 수 있어요." + where;
+            LoadProblem = Loc.T("설정 파일을 읽지 못해, 지난번에 읽힌 설정(백업)으로 되살렸어요 — 마지막 실행에서 바꾼 설정은 빠져 있을 수 있어요.") + where;
             return restored;
         }
-        LoadProblem = "설정 파일을 읽지 못해 기본값으로 시작해요 — API 키·프롬프트·ComfyUI 연결을 다시 넣어 주세요." + where;
+        LoadProblem = Loc.T("설정 파일을 읽지 못해 기본값으로 시작해요 — API 키·프롬프트·ComfyUI 연결을 다시 넣어 주세요.") + where;
         return new AppSettings();
     }
 
@@ -338,9 +361,11 @@ public class AppSettings
             try
             {
                 if (!File.Exists(path)) return null;
-                var s = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path), JsonOpts);
+                var text = File.ReadAllText(path);
+                var s = JsonSerializer.Deserialize<AppSettings>(text, JsonOpts);
                 if (s == null) return null;   // 내용이 null 한 낱말 — 설정이 아니다
-                s.MigrateLegacy();
+                s.MigrateLegacy(hadCumTags: text.Contains("\"" + nameof(RegenBodyTagsCum) + "\"", StringComparison.Ordinal),
+                    hadFemaleTags: text.Contains("\"" + nameof(RegenBodyTagsFemale) + "\"", StringComparison.Ordinal));
                 return s;
             }
             catch (IOException ex) when ((ex.HResult & 0xFFFF) is 32 or 33)
@@ -353,10 +378,12 @@ public class AppSettings
     }
 
     /// <summary>v0.1.x(BallonsTranslator 연동 시절) 설정값을 내장 엔진 형식으로 변환한다.</summary>
-    private void MigrateLegacy()
+    /// <param name="hadCumTags">읽은 json에 사정 태그 칸(RegenBodyTagsCum)이 있었는가 — 없었으면 그 칸이 생기기 전의 설정이다.</param>
+    /// <param name="hadFemaleTags">읽은 json에 여성 태그 칸이 있었는가(없으면 기본값이 들어와 있다 — 사용자가 뺀 것이 아니다).</param>
+    private void MigrateLegacy(bool hadCumTags = true, bool hadFemaleTags = true)
     {
         TranslateSource = TranslateSource switch { "日本語" => "ja", "English" => "en", "简体中文" => "zh", _ => TranslateSource };
-        TranslateTarget = TranslateTarget switch { "한국어" => "ko", "English" => "en", _ => TranslateTarget };
+        TranslateTarget = TranslateTarget switch { "한국어" => "ko", "English" => "en", _ => TranslateTarget };   // loc:none
         // Papago 등 구 BT 엔진만 Google로 되돌린다 (DeepSeek·Grok은 유효).
         if (TranslateEngine is not ("Google" or "DeepL" or "DeepSeek" or "Grok")) TranslateEngine = "Google";
         // 옛 '강력'(SDXL+LoRA)·DeepCream 모드는 2026-10-19 폐기 — 둘 다 기본(내장 LaMa)으로 돌린다
@@ -365,12 +392,14 @@ public class AppSettings
         if (DecensorLegacyAssist is not ("White" or "WhiteMosaic" or "All" or "None")) DecensorLegacyAssist = "White";
         if (DecensorAssistRepair is not ("Lama" or "Aletheia")) DecensorAssistRepair = "Aletheia";
         if (OnnxGpu is not ("Auto" or "On" or "Off")) OnnxGpu = "Auto";
+        RegenCumThreshold = Math.Clamp(RegenCumThreshold, 0.05, 0.95);
         // 손으로 고친 settings.json에 "…": null 이 들어오면 문자열 속성이 null이 돼 .Contains/.Trim에서 앱이 죽는다 — 전부 ""로
         // (인스턴스 속성만 — 플래그 없이 훑으면 정적 속성 LoadProblem까지 ""로 바꾼다)
         foreach (var p in GetType().GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
                      .Where(p => p.PropertyType == typeof(string) && p.CanWrite && p.GetIndexParameters().Length == 0))
             if (p.GetValue(this) == null) p.SetValue(this, "");
         if (GpuVendor is not ("auto" or "nvidia" or "nvidia-old" or "amd")) GpuVendor = "auto";
+        if (UiLanguage is not ("ko" or "en" or "ja")) UiLanguage = "";   // 모르는 값 = 안 고름(Windows 언어를 따른다)
         if (DecensorReviewMode is not ("PerPage" or "Window")) DecensorReviewMode = "PerPage";
         CustomDecensorReach = Math.Clamp(CustomDecensorReach, 0, 512);
         SelfTrainEpochs = Math.Clamp(SelfTrainEpochs, 1, 50); SelfTrainLr = Math.Clamp(SelfTrainLr, 0.00001, 0.01);
@@ -390,8 +419,10 @@ public class AppSettings
         // 옛 한 줄 신체부위 태그(v1.8.3까지) → 남성/여성 두 칸(재생성 v3). penis/glans(glains 오타)는 남성, 나머지는 여성. 한 번 옮기면 비워 다시 안 옮긴다.
         // 새 칸이 이미 기본값이 아니면(사용자가 나눈 뒤 저장한 json) 옛 칸은 그대로 둔다 — 저장·읽기 왕복에서 값이 변하지 않게
         var fresh = new AppSettings();
+        bool splitLegacyLine = false;
         if (!string.IsNullOrWhiteSpace(RegenBodyTags) && RegenBodyTagsMale == fresh.RegenBodyTagsMale && RegenBodyTagsFemale == fresh.RegenBodyTagsFemale)
         {
+            splitLegacyLine = true;
             var male = new List<string>(); var female = new List<string>();
             foreach (var raw in RegenBodyTags.Split(','))
             {
@@ -404,6 +435,16 @@ public class AppSettings
             if (male.Count > 0) RegenBodyTagsMale = string.Join(", ", male);
             if (female.Count > 0) RegenBodyTagsFemale = string.Join(", ", female);
             RegenBodyTags = "";
+        }
+        // 질내사정 태그 떼기(2026-11-16, 한 번만 — 그 칸이 아직 없던 json): 여성 태그 줄의 'cum in pussy'는 이제 사정 태그 칸의 몫이다(칸은 기본값으로 시작한다).
+        // 옛 한 줄 태그를 나눈 **뒤에** 뗀다 — 먼저 떼면 v1.8.3까지의 json은 나누면서 여성 줄에 다시 들어가 늘 들어가고, 사정인 영역에는 두 번 들어간다(검수).
+        // 여성 줄을 갖고 있었는데 그 태그가 없었다면 사용자가 이미 빼 둔 것이다 — 사정 칸을 비워 자동 판단으로 다시 넣지 않는다(설정에서 적으면 켜진다)
+        if (!hadCumTags)
+        {
+            var kept = RegenBodyTagsFemale.Split(',').Select(t => t.Trim()).Where(t => t.Length > 0).ToList();
+            int removed = kept.RemoveAll(t => t.Replace('_', ' ').Equals(DefaultCumTags, StringComparison.OrdinalIgnoreCase));
+            if (removed > 0) RegenBodyTagsFemale = string.Join(", ", kept);
+            else if (hadFemaleTags || splitLegacyLine) RegenBodyTagsCum = "";
         }
         if (RegenInpaintControl is not ("Repaint" or "Lineart")) RegenInpaintControl = "Lineart";
         RegenInpaintCnStrength = Math.Clamp(RegenInpaintCnStrength, 0, 2);

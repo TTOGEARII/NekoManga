@@ -39,7 +39,7 @@ public static class ComponentCatalog
 
     // ── 내장 엔진 모델 (번역·검열 감지·기본 검열제거 — 필수, 총 ~780MB) ──
     public static readonly Component ModelCtd = new(
-        "model-ctd", "텍스트 감지 모델 (comictextdetector)", ComponentKind.File,
+        "model-ctd", Loc.Key("텍스트 감지 모델 (comictextdetector)"), ComponentKind.File,
         "https://huggingface.co/dreMaz/mit_models/resolve/main/comictextdetector.pt.onnx",
         "models/ctd.onnx", "models/ctd.onnx", 94_670_000);
 
@@ -56,23 +56,23 @@ public static class ComponentCatalog
     /// 확인: `curl -sI https://github.com/TTOGEARII/NekoManga/releases/download/models/lama_manga.onnx` 가 302(objects.githubusercontent.com)면 OK.
     /// 옛 Carve `lama_fp32.onnx`(208MB)는 설치 후 Obsolete로 지운다(업그레이드 설치에 남는 죽은 파일).</summary>
     public static readonly Component ModelLama = new(
-        "model-lama", "배경 복원 모델 (LaMa 만화판)", ComponentKind.File,
+        "model-lama", Loc.Key("배경 복원 모델 (LaMa 만화판)"), ComponentKind.File,
         "https://github.com/TTOGEARII/NekoManga/releases/download/models/lama_manga.onnx",
         "models/lama_manga.onnx", "models/lama_manga.onnx", 210_935_000,
         Obsolete: new[] { "models/lama_fp32.onnx" });
 
     public static readonly Component ModelOcrEncoder = new(
-        "model-ocr-enc", "글자 인식 모델 1/2 (manga-ocr)", ComponentKind.File,
+        "model-ocr-enc", Loc.Key("글자 인식 모델 1/2 (manga-ocr)"), ComponentKind.File,
         "https://huggingface.co/mayocream/manga-ocr-onnx/resolve/main/encoder_model.onnx",
         "models/ocr_encoder.onnx", "models/ocr_encoder.onnx", 343_455_000);
 
     public static readonly Component ModelOcrDecoder = new(
-        "model-ocr-dec", "글자 인식 모델 2/2 (manga-ocr)", ComponentKind.File,
+        "model-ocr-dec", Loc.Key("글자 인식 모델 2/2 (manga-ocr)"), ComponentKind.File,
         "https://huggingface.co/mayocream/manga-ocr-onnx/resolve/main/decoder_model.onnx",
         "models/ocr_decoder.onnx", "models/ocr_decoder.onnx", 117_481_000);
 
     public static readonly Component ModelOcrVocab = new(
-        "model-ocr-vocab", "글자 인식 사전", ComponentKind.File,
+        "model-ocr-vocab", Loc.Key("글자 인식 사전"), ComponentKind.File,
         "https://huggingface.co/mayocream/manga-ocr-onnx/resolve/main/vocab.txt",
         "models/ocr_vocab.txt", "models/ocr_vocab.txt", 31_000);
 
@@ -80,7 +80,7 @@ public static class ComponentCatalog
     /// 무검열 원고에 검열을 합성 + 검열/무검열 쌍 diff 실라벨로 학습해, 흰 막대·흰 박스·
     /// 단색 밀기·검은 막대·모자이크를 한 번에 찾는다 (CensorNet 주석 참조).</summary>
     public static readonly Component ModelCensor = new(
-        "model-censor", "검열 감지 AI 모델 (NekoManga 전용)", ComponentKind.File,
+        "model-censor", Loc.Key("검열 감지 AI 모델 (NekoManga 전용)"), ComponentKind.File,
         "https://github.com/TTOGEARII/NekoManga/releases/latest/download/censor_seg.onnx",
         "models/censor_seg.onnx", "models/censor_seg.onnx", 14_060_000);
 
@@ -95,26 +95,26 @@ public static class ComponentCatalog
     private const string ModelAssets = "https://github.com/TTOGEARII/NekoManga/releases/download/models";
 
     public static readonly Component ModelAletheiaDetector = new(
-        "model-aletheia-mrcnn", "검열 감지 모델 (Aletheia Lens · Mask R-CNN)", ComponentKind.File,
+        "model-aletheia-mrcnn", Loc.Key("검열 감지 모델 (Aletheia Lens · Mask R-CNN)"), ComponentKind.File,
         ModelAssets + "/aletheia_mrcnn.onnx",
         "models/aletheia_mrcnn.onnx", "models/aletheia_mrcnn.onnx", 254_400_000,
         Sha256: "94E49F37B2454C1964385673E80C2F6664AD5D5153F4D2C9DB85661AC5EFC87B");
 
     public static readonly Component ModelAletheiaBar = new(
-        "model-aletheia-bar", "검열 복원 모델 1/2 — 막대 (Aletheia Lens · DeepCreamPy)", ComponentKind.File,
+        "model-aletheia-bar", Loc.Key("검열 복원 모델 1/2 — 막대 (Aletheia Lens · DeepCreamPy)"), ComponentKind.File,
         ModelAssets + "/aletheia_bar.onnx",
         "models/aletheia_bar.onnx", "models/aletheia_bar.onnx", 14_647_000,
         Sha256: "BA32B5ABE0303CD452C466516C2F88F3CBF0337B34867470DBDF4FFA6EC55B2A");
 
     public static readonly Component ModelAletheiaMosaic = new(
-        "model-aletheia-mosaic", "검열 복원 모델 2/2 — 모자이크 (Aletheia Lens · DeepCreamPy)", ComponentKind.File,
+        "model-aletheia-mosaic", Loc.Key("검열 복원 모델 2/2 — 모자이크 (Aletheia Lens · DeepCreamPy)"), ComponentKind.File,
         ModelAssets + "/aletheia_mosaic.onnx",
         "models/aletheia_mosaic.onnx", "models/aletheia_mosaic.onnx", 14_647_000,
         Sha256: "339503F625AD0AEA902B5ACD4ADC491741E53235E47B6C4DDD77AA3CC1D351F2");
 
     /// <summary>검열 감지 모델의 PyTorch 가중치 — 자가 학습(SelfTrainer)의 시작점. ComfyUI의 python_embeded로만 학습하므로 ComfyUI 묶음에 넣는다 (7MB).</summary>
     public static readonly Component ModelCensorPt = new(
-        "model-censor-pt", "검열 감지 AI 학습용 가중치 (자가 학습)", ComponentKind.File,
+        "model-censor-pt", Loc.Key("검열 감지 AI 학습용 가중치 (자가 학습)"), ComponentKind.File,
         "https://github.com/TTOGEARII/NekoManga/releases/latest/download/censor_seg.pt",
         "models/censor_seg.pt", "models/censor_seg.pt", 7_120_000, ForComfy: true);
 
@@ -123,19 +123,28 @@ public static class ComponentCatalog
     /// 없으면 조각을 배율로만 넓힌다. ModelCtd처럼 Hugging Face에서 직접 받는다(파일 44.6MB, 그쪽 LFS 주소가 안정적). SHA-256은 2026-11-11에 받아 잰 값.
     /// 라벨 원고 144쪽 평가: 임계 0.12에서 검은 막대 94%·모자이크 79%·흰선 36%의 조각이 부위 상자로 덮였다(scratchpad censor_model/eval_detector.py).</summary>
     public static readonly Component ModelBodyParts = new(
-        "model-bodyparts", "부위 감지 모델 (anime_censor_detection, MIT) — 재생성·커스텀용", ComponentKind.File,
+        "model-bodyparts", Loc.Key("부위 감지 모델 (anime_censor_detection, MIT) — 재생성·커스텀용"), ComponentKind.File,
         "https://huggingface.co/deepghs/anime_censor_detection/resolve/main/censor_detect_v1.0_s/model.onnx",
         "models/bodyparts.onnx", "models/bodyparts.onnx", 44_586_353, ForComfy: true,
         Sha256: "2c2524824d7d320c5619a0a73702a2e2186f619067c823d211e94f7cfe489cba");
 
+    /// <summary>질내사정 판단 모델 — SmilingWolf/wd-v1-4-moat-tagger-v2(Apache-2.0, WD 태거). 재생성이 검열 조각 둘레에 질내사정의 흔적이 있는지 가리는 데 쓴다
+    /// (Engine.CumDetector, 2026-11-16 사용자 요청). 선택 구성요소 — 없으면 자동 판단 없이 결과 창에서 직접 고른 조각에만 사정 태그를 넣는다.
+    /// 연결된 ComfyUI의 WD14 노드가 같은 파일을 받아 뒀으면 그것을 쓴다(다시 받지 않는다). SHA-256은 2026-11-16에 Hugging Face의 X-Linked-ETag와 이 PC의 파일을 견준 값.</summary>
+    public static readonly Component ModelWdTagger = new(
+        "model-wdtagger", Loc.Key("질내사정 판단 모델 (WD 태거 moat v2, Apache-2.0) — 재생성용"), ComponentKind.File,
+        "https://huggingface.co/SmilingWolf/wd-v1-4-moat-tagger-v2/resolve/main/model.onnx",
+        "models/wdtagger.onnx", "models/wdtagger.onnx", 326_197_340, ForComfy: true,
+        Sha256: "b8cef913be4c9e8d93f9f903e74271416502ce0b4b04df0ff1e2f00df488aa03");
+
     // ── ComfyUI (채색·재생성·커스텀 검열제거 전용 — 선택 설치) ──
     public static readonly Component SevenZip = new(
-        "7zr", "7-Zip 압축해제기", ComponentKind.File,
+        "7zr", Loc.Key("7-Zip 압축해제기"), ComponentKind.File,
         "https://www.7-zip.org/a/7zr.exe",
         "tools/7zr.exe", "tools/7zr.exe", 600_000, ForComfy: true);
 
     public static readonly Component ComfyPortable = new(
-        "comfyui", "ComfyUI (포터블, 내장 Python 포함)", ComponentKind.Archive7z,
+        "comfyui", Loc.Key("ComfyUI (포터블, 내장 Python 포함)"), ComponentKind.Archive7z,
         "https://github.com/comfyanonymous/ComfyUI/releases/latest/download/ComfyUI_windows_portable_nvidia.7z",
         ".", $"{ComfyDirName}/ComfyUI/main.py", 1_800_000_000, ForComfy: true);
 
@@ -151,35 +160,35 @@ public static class ComponentCatalog
     public const string ComfyAmdDirName = "ComfyUI_windows_portable_amd";
 
     public static readonly Component NodeWd14 = new(
-        "node-wd14", "WD14 Tagger 노드 (자동 태그)", ComponentKind.ArchiveZip,
+        "node-wd14", Loc.Key("WD14 Tagger 노드 (자동 태그)"), ComponentKind.ArchiveZip,
         "https://github.com/pythongosssss/ComfyUI-WD14-Tagger/archive/refs/heads/main.zip",
         $"{ComfyDirName}/ComfyUI/custom_nodes/ComfyUI-WD14-Tagger",
         $"{ComfyDirName}/ComfyUI/custom_nodes/ComfyUI-WD14-Tagger/wd14tagger.py", 1_000_000,
         StripRootFolder: true, ForComfy: true);
 
     public static readonly Component NodeCustomScripts = new(
-        "node-pysssss", "Custom-Scripts 노드 (문자열 결합)", ComponentKind.ArchiveZip,
+        "node-pysssss", Loc.Key("Custom-Scripts 노드 (문자열 결합)"), ComponentKind.ArchiveZip,
         "https://github.com/pythongosssss/ComfyUI-Custom-Scripts/archive/refs/heads/main.zip",
         $"{ComfyDirName}/ComfyUI/custom_nodes/ComfyUI-Custom-Scripts",
         $"{ComfyDirName}/ComfyUI/custom_nodes/ComfyUI-Custom-Scripts/pysssss.py", 2_000_000,
         StripRootFolder: true, ForComfy: true);
 
     public static readonly Component NodeLayerStyle = new(
-        "node-layerstyle", "LayerStyle 노드 (이미지 합성)", ComponentKind.ArchiveZip,
+        "node-layerstyle", Loc.Key("LayerStyle 노드 (이미지 합성)"), ComponentKind.ArchiveZip,
         "https://github.com/chflame163/ComfyUI_LayerStyle/archive/refs/heads/main.zip",
         $"{ComfyDirName}/ComfyUI/custom_nodes/ComfyUI_LayerStyle",
         $"{ComfyDirName}/ComfyUI/custom_nodes/ComfyUI_LayerStyle/__init__.py", 40_000_000,
         StripRootFolder: true, ForComfy: true);
 
     public static readonly Component NodeControlnetAux = new(
-        "node-cnaux", "ControlNet 전처리기 노드 (LineArt·XDoG)", ComponentKind.ArchiveZip,
+        "node-cnaux", Loc.Key("ControlNet 전처리기 노드 (LineArt·XDoG)"), ComponentKind.ArchiveZip,
         "https://github.com/Fannovel16/comfyui_controlnet_aux/archive/refs/heads/main.zip",
         $"{ComfyDirName}/ComfyUI/custom_nodes/comfyui_controlnet_aux",
         $"{ComfyDirName}/ComfyUI/custom_nodes/comfyui_controlnet_aux/__init__.py", 2_000_000,
         StripRootFolder: true, ForComfy: true);
 
     public static readonly Component ModelCheckpoint = new(
-        "model-wai", "채색 체크포인트 WAI-illustrious v17 (6.5GB)", ComponentKind.File,
+        "model-wai", Loc.Key("채색 체크포인트 WAI-illustrious v17 (6.5GB)"), ComponentKind.File,
         "https://civitai.com/api/download/models/2883731?fileId=2763986",
         $"{ComfyDirName}/ComfyUI/models/checkpoints/waiIllustriousSDXL_v170.safetensors",
         $"{ComfyDirName}/ComfyUI/models/checkpoints/waiIllustriousSDXL_v170.safetensors",
@@ -194,21 +203,21 @@ public static class ComponentCatalog
 
     // ── 표지 정밀 매칭 (IPAdapter — 선택이지만 기본 설치) ──
     public static readonly Component NodeIpAdapter = new(
-        "node-ipadapter", "IPAdapter 노드 (표지 색 매칭)", ComponentKind.ArchiveZip,
+        "node-ipadapter", Loc.Key("IPAdapter 노드 (표지 색 매칭)"), ComponentKind.ArchiveZip,
         "https://github.com/cubiq/ComfyUI_IPAdapter_plus/archive/refs/heads/main.zip",
         $"{ComfyDirName}/ComfyUI/custom_nodes/ComfyUI_IPAdapter_plus",
         $"{ComfyDirName}/ComfyUI/custom_nodes/ComfyUI_IPAdapter_plus/IPAdapterPlus.py", 400_000,
         StripRootFolder: true, ForComfy: true);
 
     public static readonly Component ModelIpAdapter = new(
-        "model-ipadapter", "IPAdapter SDXL 모델 (0.85GB)", ComponentKind.File,
+        "model-ipadapter", Loc.Key("IPAdapter SDXL 모델 (0.85GB)"), ComponentKind.File,
         "https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-plus_sdxl_vit-h.safetensors",
         $"{ComfyDirName}/ComfyUI/models/ipadapter/ip-adapter-plus_sdxl_vit-h.safetensors",
         $"{ComfyDirName}/ComfyUI/models/ipadapter/ip-adapter-plus_sdxl_vit-h.safetensors",
         847_517_000, ForComfy: true);
 
     public static readonly Component ModelClipVision = new(
-        "model-clipvision", "CLIP 비전 모델 ViT-H (2.5GB)", ComponentKind.File,
+        "model-clipvision", Loc.Key("CLIP 비전 모델 ViT-H (2.5GB)"), ComponentKind.File,
         "https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors",
         $"{ComfyDirName}/ComfyUI/models/clip_vision/CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors",
         $"{ComfyDirName}/ComfyUI/models/clip_vision/CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors",
@@ -221,12 +230,12 @@ public static class ComponentCatalog
         ModelAletheiaDetector, ModelAletheiaBar, ModelAletheiaMosaic,
         SevenZip, ComfyPortable,
         NodeWd14, NodeCustomScripts, NodeLayerStyle, NodeControlnetAux, NodeIpAdapter,
-        ModelCheckpoint, ModelControlnet, ModelIpAdapter, ModelClipVision, ModelCensorPt, ModelBodyParts,
+        ModelCheckpoint, ModelControlnet, ModelIpAdapter, ModelClipVision, ModelCensorPt, ModelBodyParts, ModelWdTagger,
     };
 
     public static IEnumerable<Component> EngineComponents => All.Where(c => !c.ForComfy);
     public static IEnumerable<Component> ComfyComponents => All.Where(c => c.ForComfy);
 
-    public const string FirstRunNote =
-        "번역·검열 감지·검열 복원은 작은 모델(1.1GB)만 있으면 돼요. 채색까지 쓰려면 채색 엔진(약 20GB)을 함께 설치해 주세요.";
+    public static string FirstRunNote =>
+        Loc.T("번역·검열 감지·검열 복원은 작은 모델(1.1GB)만 있으면 돼요. 채색까지 쓰려면 채색 엔진(약 20GB)을 함께 설치해 주세요.");
 }

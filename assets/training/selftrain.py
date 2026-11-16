@@ -6,7 +6,8 @@
 import os, sys, json, glob, random, hashlib, argparse, shutil, time
 import numpy as np, cv2
 
-def log(stage, msg): print(f"PROGRESS {stage} {msg}", flush=True)
+# 진행 줄 = "PROGRESS <단계> <값 …> | <설명>" — 앱은 단계와 값으로 화면 글을 제 언어로 짓고(SelfTrainer.ProgressText), 설명은 train.log에 남는다
+def log(stage, msg, *vals): print(f"PROGRESS {stage}{''.join(' ' + str(v) for v in vals)} | {msg}", flush=True)
 def rd(p, flag=cv2.IMREAD_COLOR): return cv2.imdecode(np.fromfile(p, dtype=np.uint8), flag)
 def wr(p, img, ext=".png"): cv2.imencode(ext, img)[1].tofile(p)
 
@@ -129,7 +130,7 @@ def evaluate(model_path, ents, imgsz=1024, conf=0.40):
                     if mm.shape != (H, W): mm = cv2.resize(mm.astype(np.uint8), (W, H), interpolation=cv2.INTER_NEAREST) > 0
                     pred |= mm
         except Exception as ex:
-            log("eval", f"predict failed {os.path.basename(e['page_path'])}: {ex}")
+            log("warn", f"predict failed {os.path.basename(e['page_path'])}: {ex}")   # 값 없는 줄 — 앱이 모르는 단계라 이 글을 그대로 보인다("eval"로 적으면 '보류 ?쪽 전/후 비교'로 읽힌다)
         if not mask.any():
             clean_n += 1; clean_fired += int(pred.any()); continue
         nc, lab, st, _ = cv2.connectedComponentsWithStats(mask.astype(np.uint8), 8)
@@ -151,25 +152,25 @@ def main():
     a = ap.parse_args()
     t0 = time.time()
     ents = load_entries(a.corrections)
-    log("scan", f"재료 {len(ents)}쪽")
+    log("scan", f"재료 {len(ents)}쪽", len(ents))
     if len(ents) < a.min_pages:
-        json.dump(dict(ok=False, error=f"재료가 {len(ents)}쪽이라 아직 부족해요 (최소 {a.min_pages}쪽)"), open(os.path.join(a.work, "result.json"), "w", encoding="utf-8"), ensure_ascii=False)
+        json.dump(dict(ok=False, error=f"재료가 {len(ents)}쪽이라 아직 부족해요 (최소 {a.min_pages}쪽)", code="few_pages", args=[len(ents), a.min_pages]), open(os.path.join(a.work, "result.json"), "w", encoding="utf-8"), ensure_ascii=False)
         return 2
     # 보류 페이지: 원본 경로 해시로 고정 분할 (같은 페이지가 늘 같은 쪽에)
     hold = [e for e in ents if int(hashlib.md5(e.get("source", e["stem"]).encode()).hexdigest(), 16) % 100 < a.holdout * 100]
     if len(hold) == 0 and len(ents) >= 5: hold = ents[:max(1, len(ents) // 5)]
     hold_keys = {id(e) for e in hold}
     train = [e for e in ents if id(e) not in hold_keys]
-    log("split", f"학습 {len(train)}쪽 · 보류 {len(hold)}쪽")
+    log("split", f"학습 {len(train)}쪽 · 보류 {len(hold)}쪽", len(train), len(hold))
     ds = os.path.join(a.work, "dataset")
     if os.path.exists(ds): shutil.rmtree(ds)
     n_crops, n_inst = build_dataset(train, ds)
-    log("data", f"크롭 {n_crops}장 · 라벨 {n_inst}개")
+    log("data", f"크롭 {n_crops}장 · 라벨 {n_inst}개", n_crops, n_inst)
     if n_crops < 10:
-        json.dump(dict(ok=False, error="학습 크롭이 너무 적어요 (마스크가 있는 페이지가 더 필요)"), open(os.path.join(a.work, "result.json"), "w", encoding="utf-8"), ensure_ascii=False)
+        json.dump(dict(ok=False, error="학습 크롭이 너무 적어요 (마스크가 있는 페이지가 더 필요)", code="few_crops", args=[]), open(os.path.join(a.work, "result.json"), "w", encoding="utf-8"), ensure_ascii=False)
         return 2
     from ultralytics import YOLO
-    log("train", f"미세조정 시작 ({a.epochs}에폭, lr {a.lr0}, freeze {a.freeze})")
+    log("train", f"미세조정 시작 ({a.epochs}에폭, lr {a.lr0}, freeze {a.freeze})", a.epochs, a.lr0, a.freeze)
     model = YOLO(a.init)
     model.train(data=os.path.join(ds, "data.yaml"), imgsz=CROP, epochs=a.epochs, batch=a.batch, device=0, workers=2,
                 project=a.work, name="run", exist_ok=True, patience=a.epochs, lr0=a.lr0, optimizer="AdamW",
@@ -177,20 +178,20 @@ def main():
                 fliplr=0.5, mosaic=0.3, close_mosaic=2, copy_paste=0.0, erasing=0.0, plots=False, verbose=False)
     best = os.path.join(a.work, "run", "weights", "best.pt")
     if not os.path.exists(best):
-        json.dump(dict(ok=False, error="학습 결과 가중치가 없어요 (로그 확인)"), open(os.path.join(a.work, "result.json"), "w", encoding="utf-8"), ensure_ascii=False)
+        json.dump(dict(ok=False, error="학습 결과 가중치가 없어요 (로그 확인)", code="no_weights", args=[]), open(os.path.join(a.work, "result.json"), "w", encoding="utf-8"), ensure_ascii=False)
         return 1
     log("export", "ONNX로 내보내는 중")
     onnx = YOLO(best).export(format="onnx", imgsz=CROP, opset=12, simplify=True, nms=False, dynamic=False)
     shutil.copy2(onnx, a.out_onnx)
     shutil.copy2(best, os.path.splitext(a.out_onnx)[0] + ".pt")
-    log("eval", f"보류 {len(hold)}쪽 전/후 비교")
+    log("eval", f"보류 {len(hold)}쪽 전/후 비교", len(hold))
     before = evaluate(a.init, hold) if hold else None
     after = evaluate(best, hold) if hold else None
     res = dict(ok=True, pages=len(ents), train_pages=len(train), holdout_pages=len(hold), crops=n_crops, instances=n_inst,
                before=before, after=after, out_onnx=a.out_onnx, out_pt=os.path.splitext(a.out_onnx)[0] + ".pt",
                minutes=round((time.time() - t0) / 60, 1))
     json.dump(res, open(os.path.join(a.work, "result.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    log("done", f"완료 {res['minutes']}분")
+    log("done", f"완료 {res['minutes']}분", res['minutes'])
     return 0
 
 if __name__ == "__main__":

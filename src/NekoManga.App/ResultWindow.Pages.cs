@@ -181,9 +181,9 @@ public partial class ResultWindow
         }
         // 묻지 않고 저장했으니 저장했다는 것은 알린다(넘어간 장의 상태 줄에 한 번)
         if (maskEdited && Math.Clamp(idx, 0, _refs.Count - 1) != leaving)
-            statusAfter ??= _pendingPages.Contains(leaving) ? "앞 장의 고친 마스크를 저장했어요 (✎) — [고친 장 모두 다시 렌더링]으로 한꺼번에 반영할 수 있어요"
-                          : leavingUnfinished ? "앞 장의 고친 마스크를 저장했어요 — 그 장의 검열 제거가 아직이면 이 마스크로 돌고, 이미 도는 중이었으면 끝난 뒤 고친 장(✎)으로 표시돼요"
-                                              : "앞 장의 고친 마스크를 저장했어요";
+            statusAfter ??= _pendingPages.Contains(leaving) ? Loc.T("앞 장의 고친 마스크를 저장했어요 (✎) — [고친 장 모두 다시 렌더링]으로 한꺼번에 반영할 수 있어요")
+                          : leavingUnfinished ? Loc.T("앞 장의 고친 마스크를 저장했어요 — 그 장의 검열 제거가 아직이면 이 마스크로 돌고, 이미 도는 중이었으면 끝난 뒤 고친 장(✎)으로 표시돼요")
+                                              : Loc.T("앞 장의 고친 마스크를 저장했어요");
         StashRegenFields();                // 떠나는 페이지의 재생성 값을 기억
         int gen = ++_loadGen;
 
@@ -197,7 +197,7 @@ public partial class ResultWindow
         if (CmbPages.SelectedIndex != idx) CmbPages.SelectedIndex = idx;
 
         var task = FetchPage(idx, out bool cached);
-        if (!task.IsCompleted) TxtStatus.Text = "읽는 중...";
+        if (!task.IsCompleted) TxtStatus.Text = Loc.T("읽는 중...");
         PageData data; string? readError = null;
         try { data = await task; }
         catch (Exception ex) { data = new PageData(new Mat(), null, null); readError = ex.Message; }
@@ -228,7 +228,7 @@ public partial class ResultWindow
             // 창을 연 뒤 결과물이 생긴 장 — 보여 주는 파일과 저장 대상을 결과물로 바꾼다
             bool previousSession = _isDone?.Invoke(SourceOf(_refs[idx])) != true;   // 메인 창은 아직 원본('대기'·'검토 대기')인데 지난 작업의 결과물을 보여 주는 경우
             SetViewPath(idx, data.ViewPath);
-            if (previousSession) statusAfter ??= "지난 작업의 결과물을 보여 주고 있어요 — 이 장을 다시 돌리면 새 결과물로 바뀝니다";
+            if (previousSession) statusAfter ??= Loc.T("지난 작업의 결과물을 보여 주고 있어요 — 이 장을 다시 돌리면 새 결과물로 바뀝니다");
         }
 
         _img.Dispose();
@@ -255,7 +255,7 @@ public partial class ResultWindow
             EditLayer.Children.Clear();
             RefreshBlockCombo();
             RefreshSeedLockUi(); UpdateRegenHeader(_regenPerPage.ContainsKey(_index));   // 시드 고정 칸·머리글의 🔒도 앞 장의 것이 남지 않게(이 가지는 LoadRegenFields까지 가지 않는다)
-            TxtStatus.Text = "이미지를 읽지 못했어요: " + Path.GetFileName(_refs[_index].ViewPath) + (readError != null ? " — " + readError : "");
+            TxtStatus.Text = Loc.T("이미지를 읽지 못했어요: ") + Path.GetFileName(_refs[_index].ViewPath) + (readError != null ? " — " + readError : "");
             ImgView.Source = null;
             Overlay.Children.Clear();
             return;
@@ -281,9 +281,9 @@ public partial class ResultWindow
         if (fit) FitToWindow();
         Redraw();
         if (RegenMode) LoadRegenFields();   // 새 페이지의 재생성 값(기억된 것 또는 설정값)
-        TxtStatus.Text = statusAfter ?? (IsWaitingPage ? "검토 대기 중 — 빨간 마스크를 고친 뒤 [검열 제거 시작]을 누르세요"
-                       : MaskMode ? (HasStoredMask ? "빨간 마스크를 고친 뒤 [지우기] — 이 장만 검열 제거·식자를 다시 해요" : "지울 곳을 칠한 뒤 [지우기] — 결과물에 바로 지워요")
-                       : "결과 보기 — 지울 곳을 칠하려면 [🎭 마스크 보기]");
+        TxtStatus.Text = statusAfter ?? (IsWaitingPage ? Loc.T("검토 대기 중 — 빨간 마스크를 고친 뒤 [검열 제거 시작]을 누르세요")
+                       : MaskMode ? (HasStoredMask ? Loc.T("빨간 마스크를 고친 뒤 [지우기] — 이 장만 검열 제거·식자를 다시 해요") : Loc.T("지울 곳을 칠한 뒤 [지우기] — 결과물에 바로 지워요"))
+                       : Loc.T("결과 보기 — 지울 곳을 칠하려면 [🎭 마스크 보기]"));
     }
 
     /// <summary>LoadPage가 끝난 뒤 상태 줄에 둘 안내 — 중간에 두면 LoadPage 끝의 기본 문구가 덮어쓴다 (다시 돌리기 완료·지난 결과물 표시).</summary>

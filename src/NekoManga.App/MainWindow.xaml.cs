@@ -11,6 +11,7 @@ using System.Windows.Media.Imaging;
 using DragEventArgs = System.Windows.DragEventArgs;
 using MouseButtonEventArgs = System.Windows.Input.MouseButtonEventArgs;
 using SelectionChangedEventArgs = System.Windows.Controls.SelectionChangedEventArgs;
+using NekoManga.Core;
 
 namespace NekoManga.App;
 
@@ -24,8 +25,13 @@ public class FileRow : INotifyPropertyChanged
     public bool Edited { get => _edited; set { if (_edited == value) return; _edited = value; Notify(nameof(Edited)); Notify(nameof(Label)); } }
     public string Label => (Edited ? "✎ " : "") + Name;
 
-    private string _stage = "대기";
+    private string _stage = Loc.T("대기");
     public string Stage { get => _stage; set { _stage = value; Notify(nameof(Stage)); } }
+    /// <summary>진행 보고를 한 번이라도 받은 행 — 멈췄을 때 '멈춤'으로 바꿀 행을 가린다. 전에는 상태 글이 "대기"인지로 가렸다:
+    /// 상태 글은 화면 언어를 따라 바뀌므로(Loc) 견주는 데 쓰지 않는다. 전부 다시 돌릴 때 false로 되돌린다.</summary>
+    public bool Started { get; set; }
+    /// <summary>이번 작업에서 실패한 행(러너가 오류를 보고) — 끝 집계가 세고 '멈춤' 표시가 건너뛴다. 전에는 상태 글이 "실패"로 시작하는지를 봤다.</summary>
+    public bool Failed { get; set; }
 
     private double _percent;
     public double Percent { get => _percent; set { _percent = value; Notify(nameof(Percent)); } }
@@ -64,6 +70,8 @@ public partial class MainWindow
     public MainWindow()
     {
         InitializeComponent();
+        UiText.Apply(this);   // XAML에 적힌 글을 지금 화면 언어로 — 뜨기 전에
+        Loc.Changed += OnLanguageChanged;
         FileList.ItemsSource = _rows;
 
         var s = App.Settings;
@@ -111,10 +119,9 @@ public partial class MainWindow
         // 전용 AI 유무·복원 방식에 맞춰 설명을 바꾼다 — 문구는 설정 창 요약과 같은 곳(DecensorLabels)에서
         bool censorNet = File.Exists(Path.Combine(App.Settings.RuntimeRoot, "models", NekoManga.Core.Engine.CensorNet.ModelFile));
         HintDecensor.Text = DecensorLabels.Card(App.Settings);
-        HintDecensor.ToolTip = "① 찾기: " + DecensorLabels.Find(App.Settings.DecensorTarget, App.Settings.DecensorLegacyAssist, censorNet)
-            + "\n② 지우기: " + DecensorLabels.Fix(App.Settings.DecensorMode, App.Settings.DecensorTarget,
-                                                App.Settings.DecensorLegacyAssist, App.Settings.DecensorAssistRepair)
-            + "\n(⚙ 설정 → 검열 제거에서 바꿀 수 있어요)";
+        var find = DecensorLabels.Find(App.Settings.DecensorTarget, App.Settings.DecensorLegacyAssist, censorNet);
+        var fix = DecensorLabels.Fix(App.Settings.DecensorMode, App.Settings.DecensorTarget, App.Settings.DecensorLegacyAssist, App.Settings.DecensorAssistRepair);
+        HintDecensor.ToolTip = Loc.F($"① 찾기: {find}\n② 지우기: {fix}\n(⚙ 설정 → 검열 제거에서 바꿀 수 있어요)");
     }
 
     // ── 파일 추가 ──────────────────────────────────────────────
@@ -129,7 +136,7 @@ public partial class MainWindow
     private bool RefuseWhileRunning()
     {
         if (_cts == null) return false;
-        TxtStatus.Text = "작업이 도는 중이에요 — 원고는 작업이 끝난 뒤에 더 올려 주세요";
+        TxtStatus.Text = Loc.T("작업이 도는 중이에요 — 원고는 작업이 끝난 뒤에 더 올려 주세요");
         return true;
     }
 
@@ -144,7 +151,7 @@ public partial class MainWindow
         var dlg = new Microsoft.Win32.OpenFileDialog
         {
             Multiselect = true,
-            Filter = "만화 이미지|" + string.Join(";", ImageExts.Select(e => "*" + e)) + "|모든 파일|*.*",
+            Filter = Loc.T("만화 이미지") + "|" + string.Join(";", ImageExts.Select(e => "*" + e)) + "|" + Loc.T("모든 파일") + "|*.*",
         };
         if (dlg.ShowDialog() == true) AddPaths(dlg.FileNames);
     }
@@ -177,8 +184,8 @@ public partial class MainWindow
             TxtStatus.Text = _rows.Count > 0 ? $"{TxtStatus.Text} — {notice}" : notice;
         if (skippedDirs.Count > 0)
         {
-            var which = skippedDirs.Count == 1 ? Path.GetFileName(skippedDirs[0]) : $"{Path.GetFileName(skippedDirs[0])} 등 {skippedDirs.Count}개";
-            TxtStatus.Text += $" — 결과 폴더({which})의 결과물은 건너뛰었어요";
+            var which = skippedDirs.Count == 1 ? Path.GetFileName(skippedDirs[0]) : Loc.F($"{Path.GetFileName(skippedDirs[0])} 등 {skippedDirs.Count}개");
+            TxtStatus.Text += Loc.F($" — 결과 폴더({which})의 결과물은 건너뛰었어요");
         }
     }
 
@@ -213,9 +220,33 @@ public partial class MainWindow
         var has = _rows.Count > 0;
         DropHint.Visibility = has ? Visibility.Collapsed : Visibility.Visible;
         ListPane.Visibility = has ? Visibility.Visible : Visibility.Collapsed;
-        TxtStatus.Text = has ? $"{_rows.Count}장 준비됨 ♪" : "준비 완료 ♪";
+        TxtStatus.Text = _idleStatus = IdleStatus();
         if (has && FileList.SelectedIndex < 0) FileList.SelectedIndex = 0;
         RefreshEditedUi();   // 목록이 바뀌었다 — 지난번에 마스크만 고쳐 둔 장이 들어왔을 수 있다
+    }
+
+    private string IdleStatus() => _rows.Count > 0 ? Loc.F($"{_rows.Count}장 준비됨 ♪") : Loc.T("준비 완료 ♪");
+    /// <summary>상태 줄에 마지막으로 넣은 '준비됨' 글 — 언어가 바뀌었을 때 상태 줄이 아직 이 글이면 새 언어로 바꾼다(작업 결과·오류 같은 다른 글이면 건드리지 않는다).</summary>
+    private string? _idleStatus;
+
+    /// <summary>화면 언어가 바뀌었다 — XAML의 글과 Bind로 넣은 글은 UiText가 바꾸고, 여기서는 그 밖에 코드가 채운 글을 새 언어로 다시 채운다.
+    /// 살아 있는 정보는 덮지 않는다: 도는 작업의 진행 글(다음 보고부터 새 언어로 온다)과 상태 줄의 작업 결과·오류는 그대로 둔다.</summary>
+    private void OnLanguageChanged()
+    {
+        if (!Dispatcher.CheckAccess()) { Dispatcher.InvokeAsync(OnLanguageChanged); return; }
+        foreach (var r in _rows)
+            if (!r.Started && !r.Done) r.Stage = Loc.T("대기");
+        RefreshComfyBadges();
+        RefreshWaitingUi();
+        RefreshEditedUi();
+        if (TxtStatus.Text == _idleStatus) TxtStatus.Text = _idleStatus = IdleStatus();
+        if (FileList.SelectedItem == null) TxtPreviewName.Text = Loc.T("미리보기");
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        Loc.Changed -= OnLanguageChanged;   // 정적 이벤트 — 떼지 않으면 닫힌 창이 남는다
+        base.OnClosed(e);
     }
 
     /// <summary>목록 썸네일을 백그라운드에서 만든다. DecodePixelHeight로 축소 디코딩해
@@ -299,7 +330,7 @@ public partial class MainWindow
     private async void ShowPreview(FileRow? row)
     {
         int gen = ++_previewGen;
-        if (row == null) { ImgPreview.Source = null; TxtPreviewName.Text = "미리보기"; return; }
+        if (row == null) { ImgPreview.Source = null; TxtPreviewName.Text = Loc.T("미리보기"); return; }
         var path = row.ViewPath;
         TxtPreviewName.Text = Path.GetFileName(path);
         // 패널 실제 높이 × DPI × 1.5 (확대 여유), 600~1600 사이
@@ -325,7 +356,7 @@ public partial class MainWindow
     {
         if (_cts != null || _rows.Count < 2) return;
         SortRowsByName();
-        TxtStatus.Text = "이름순으로 정렬했어요";
+        TxtStatus.Text = Loc.T("이름순으로 정렬했어요");
     }
 
     /// <summary>선택한 항목을 목록에서 뺀다 (디스크의 파일은 건드리지 않는다). Delete 키와 공용.</summary>
@@ -355,24 +386,24 @@ public partial class MainWindow
         s.EnableDecensor = SwDecensor.IsChecked == true;
         s.EnableTranslate = SwTranslate.IsChecked == true;
         try { s.Save(); }
-        catch (Exception ex) { TxtStatus.Text = "설정 저장 실패: " + ex.Message; return; }   // 디스크 가득·잠김 — 스위치는 바뀐 채로 두고 알린다(다음에 저장될 때 같이 적힌다)
+        catch (Exception ex) { TxtStatus.Text = Loc.F($"설정 저장 실패: {ex.Message}"); return; }   // 디스크 가득·잠김 — 스위치는 바뀐 채로 두고 알린다(다음에 저장될 때 같이 적힌다)
         NoteSettingsApplyNextJob();
     }
 
     /// <summary>작업은 시작할 때의 설정 사본으로 돈다 — 도는 중에 스위치·설정 창에서 바꾼 것은 다음 작업부터다. 말없이 두면 왜 안 바뀌는지 모른다.</summary>
     private void NoteSettingsApplyNextJob()
     {
-        if (_cts != null) TxtStatus.Text = "바꾼 설정은 다음 작업부터 적용돼요 — 지금 도는 작업은 시작할 때의 설정 그대로예요";
+        if (_cts != null) TxtStatus.Text = Loc.T("바꾼 설정은 다음 작업부터 적용돼요 — 지금 도는 작업은 시작할 때의 설정 그대로예요");
     }
 
     private async void BtnRun_Click(object sender, RoutedEventArgs e)
     {
         if (_rows.Count == 0)
         {
-            TxtStatus.Text = "먼저 이미지를 올려주세요 (・ω・`)";
+            TxtStatus.Text = Loc.T("먼저 이미지를 올려주세요 (・ω・`)");
             return;
         }
-        if (_updating) { TxtStatus.Text = "업데이트를 받는 중이에요 — 곧 앱이 다시 시작돼요"; return; }
+        if (_updating) { TxtStatus.Text = Loc.T("업데이트를 받는 중이에요 — 곧 앱이 다시 시작돼요"); return; }
         // 작업은 **지금** 설정의 사본으로 돈다 — 전에는 러너가 살아 있는 설정을 장마다 읽어서, 도는 중에 스위치를 건드리면 남은 장에 바로 먹었다
         // (검열 제거를 끄면 확인까지 한 장이 검열을 남긴 채 '완료', 켜면 검토 없이 지움 — 검토·방식은 시작 때 굳었는데도. 2026-11-13 점검 7번).
         // 표지 색 태그 캐시는 러너가 콜백으로 알려 주면 살아 있는 설정에 적는다(아래 ColorRefTagsCached)
@@ -380,7 +411,7 @@ public partial class MainWindow
         var pathSnapshot = s;   // 결과 경로도 같은 사본으로 — 작업 중 설정 창에서 출력 폴더를 바꿔도 이 작업의 결과물은 시작 때 폴더에 쓰인다
         if (!s.EnableAutoColor && !s.EnableDecensor && !s.EnableTranslate)
         {
-            TxtStatus.Text = "켜진 기능이 없어요 — 위 토글을 하나 이상 켜주세요";
+            TxtStatus.Text = Loc.T("켜진 기능이 없어요 — 위 토글을 하나 이상 켜주세요");
             return;
         }
 
@@ -389,7 +420,7 @@ public partial class MainWindow
             || (s.EnableDecensor && s.DecensorMode is "ComfyRegen" or "ComfyCustom");
         if (needComfy && !s.ComfyAvailable)
         {
-            TxtStatus.Text = "채색·재생성·커스텀 검열 제거는 ComfyUI가 필요해요 — 설정 → 구성요소에서 설치해 주세요";
+            TxtStatus.Text = Loc.T("채색·재생성·커스텀 검열 제거는 ComfyUI가 필요해요 — 설정 → 구성요소에서 설치해 주세요");
             return;
         }
 
@@ -399,15 +430,15 @@ public partial class MainWindow
         if (pending.Count == 0)
         {
             // 전부 끝난 목록에서 다시 [작업 시작] = 전부 다시 돌리라는 뜻(설정을 바꿔 다시 돌리는 흔한 흐름) — 결과물을 덮어쓰니 한 번 묻는다
-            if (System.Windows.MessageBox.Show($"모든 장({_rows.Count}장)이 이미 완료됐어요. 전부 다시 돌릴까요?\n결과물과 저장된 마스크가 새 결과로 바뀝니다.", "다시 돌리기",
+            if (System.Windows.MessageBox.Show(Loc.F($"모든 장({_rows.Count}장)이 이미 완료됐어요. 전부 다시 돌릴까요?\n결과물과 저장된 마스크가 새 결과로 바뀝니다."), Loc.T("다시 돌리기"),
                     System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question) != System.Windows.MessageBoxResult.Yes)
             {
-                TxtStatus.Text = "그대로 두었어요";
+                TxtStatus.Text = Loc.T("그대로 두었어요");
                 return;
             }
             foreach (var r in _rows)
             {
-                r.Done = false; r.OutPath = null; r.Stage = "대기"; r.Percent = 0;
+                r.Done = false; r.OutPath = null; r.Stage = Loc.T("대기"); r.Started = r.Failed = false; r.Percent = 0;
                 if (r.ViewPath != r.Path) { r.ViewPath = r.Path; _ = LoadThumbAsync(r); }   // 이번에 실패·멈춘 장이 지난 결과를 이번 것인 양 보이지 않게
             }
             pending = _rows.ToList(); skipped = 0;
@@ -417,7 +448,7 @@ public partial class MainWindow
         BtnRun.IsEnabled = false;
         BtnStop.IsEnabled = true;
         RefreshEditedUi();   // 작업이 도는 동안에는 [고친 장 다시 렌더링]을 숨긴다
-        TxtStatus.Text = skipped > 0 ? $"완료된 {skipped}장은 건너뛰고 {pending.Count}장 작업 중..." : "작업 중... (ฅ'ω'ฅ)";
+        TxtStatus.Text = skipped > 0 ? Loc.F($"완료된 {skipped}장은 건너뛰고 {pending.Count}장 작업 중...") : Loc.T("작업 중... (ฅ'ω'ฅ)");
 
         using var runner = new PipelineRunner(s);
         _runner = runner;
@@ -438,8 +469,9 @@ public partial class MainWindow
             // 전체 경로로 찾는다 — 이름만 보면 vol1\01.jpg·vol2\01.jpg가 한 행에 겹친다
             var row = _rows.FirstOrDefault(r => string.Equals(r.Path, p.File, StringComparison.OrdinalIgnoreCase));
             if (row == null) return;
-            row.Stage = p.Error != null ? $"실패 — {p.Error}"
-                      : p.Stage.StartsWith("검토 대기 · ") ? "검토 대기 (더블클릭해 수정) · " + p.Stage["검토 대기 · ".Length..]
+            row.Started = true; row.Failed = p.Error != null;
+            row.Stage = p.Error != null ? Loc.F($"실패 — {p.Error}")
+                      : p.ReviewSummary != null ? Loc.F($"검토 대기 (더블클릭해 수정) · {p.ReviewSummary}")
                       : p.Stage;
             if (p.Percent >= 0) row.Percent = p.Percent;   // 경고 보고(-1)는 진행률을 건드리지 않는다
             if (p.Done && p.Error == null) { row.Done = true; row.OutPath = PipelineRunner.OutputPathFor(pathSnapshot, row.Path); ShowResultFor(row); }   // 끝난 장은 바로 결과물로 (경로는 이 작업의 폴더로 박제)
@@ -450,13 +482,13 @@ public partial class MainWindow
         runner.PageWaiting += pg => Dispatcher.BeginInvoke(() =>
         {
             RefreshWaitingUi();   // 행 상태 글은 진행 보고(progress)가 쓴다 — 두 경로가 순서 없이 겹치지 않게
-            TxtStatus.Text = "검열이 감지된 장은 '검토 대기'예요 — 더블클릭해 마스크를 확인·수정하고 진행하세요 (나머지 장은 계속 처리 중)";
+            TxtStatus.Text = Loc.T("검열이 감지된 장은 '검토 대기'예요 — 더블클릭해 마스크를 확인·수정하고 진행하세요 (나머지 장은 계속 처리 중)");
         });
 
         // 검토 흐름(설정 DecensorReview): 러너가 1차(번역+감지)를 끝내면 UI 스레드에서 검토 창을 띄워 마스크를 고치게 한다
         runner.ReviewMasks = (pages, token) => Dispatcher.InvokeAsync(() =>
         {
-            TxtStatus.Text = "검열 마스크 검토 중 — 창에서 확인·수정 후 [검열 제거 시작]을 누르세요";
+            TxtStatus.Text = Loc.T("검열 마스크 검토 중 — 창에서 확인·수정 후 [검열 제거 시작]을 누르세요");
             var w = new MaskReviewWindow(pages) { Owner = this };
             return w.ShowDialog() == true;
         }).Task;
@@ -465,26 +497,26 @@ public partial class MainWindow
         {
             await Task.Run(() => runner.RunAsync(files, progress, _cts.Token));
             RefreshResultViews();         // 목록 썸네일·미리보기를 결과물로 바꿔 바로 확인할 수 있게
-            var failed = _rows.Count(r => r.Stage.StartsWith("실패"));
+            var failed = _rows.Count(r => r.Failed);
             TxtStatus.Text = failed == 0
-                ? $"전부 완료! 총 {_rows.Count}장 (ﾉ´ヮ`)ﾉ*:･ﾟ✧"
-                : $"완료 — 성공 {_rows.Count - failed}장 / 실패 {failed}장";
+                ? Loc.F($"전부 완료! 총 {_rows.Count}장 (ﾉ´ヮ`)ﾉ*:･ﾟ✧")
+                : Loc.F($"완료 — 성공 {_rows.Count - failed}장 / 실패 {failed}장");
         }
         catch (OperationCanceledException)
         {
-            TxtStatus.Text = "멈췄어요";
+            TxtStatus.Text = Loc.T("멈췄어요");
             // 진행 중이던 장이 '번역 중' 같은 상태로 남지 않게 — 끝난(완료/실패) 장만 그대로 둔다
             foreach (var r in _rows)
-                if (!r.Done && !r.Stage.StartsWith("실패") && r.Stage != "대기")
-                    r.Stage = "멈춤";
+                if (!r.Done && !r.Failed && r.Started)
+                    r.Stage = Loc.T("멈춤");
         }
         catch (Exception ex)
         {
-            TxtStatus.Text = "오류: " + ex.Message;
+            TxtStatus.Text = Loc.F($"오류: {ex.Message}");
             // 작업 전체가 오류로 끝났다(엔진이 안 뜸·모델 없음 등) — 도는 중이던 행이 '엔진 깨우는 중 10%'로 남지 않게(멈췄을 때와 같다). 까닭은 상태 줄에 있다
             foreach (var r in _rows)
-                if (!r.Done && !r.Stage.StartsWith("실패") && r.Stage != "대기")
-                { r.Stage = "멈춤 — 오류로 작업이 끝났어요"; r.Percent = 0; }
+                if (!r.Done && !r.Failed && r.Started)
+                { r.Stage = Loc.T("멈춤 — 오류로 작업이 끝났어요"); r.Percent = 0; }
         }
         finally
         {
@@ -516,7 +548,7 @@ public partial class MainWindow
         _closeAsking = true;
         try
         {
-            var answer = System.Windows.MessageBox.Show(this, "작업이 도는 중이에요. 멈추고 닫을까요?\n\n끝난 장은 그대로 남고, 남은 장은 다음에 [작업 시작]으로 이어서 할 수 있어요.", "NekoManga",
+            var answer = System.Windows.MessageBox.Show(this, Loc.T("작업이 도는 중이에요. 멈추고 닫을까요?\n\n끝난 장은 그대로 남고, 남은 장은 다음에 [작업 시작]으로 이어서 할 수 있어요."), "NekoManga",
                 System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question);
             if (_cts == null)
             {
@@ -528,7 +560,7 @@ public partial class MainWindow
             if (answer != System.Windows.MessageBoxResult.Yes) return;
             var done = _jobDone?.Task;
             _cts.Cancel();
-            TxtStatus.Text = "멈추는 중이에요 — 곧 닫혀요";
+            TxtStatus.Text = Loc.T("멈추는 중이에요 — 곧 닫혀요");
             IsEnabled = false;
             // 멈춤은 단계 경계에서 걸린다(돌기 시작한 기본 모델 추론은 끝까지 간다) — 서버의 프롬프트를 거두는 데는 1초 안쪽(실측 0.6~0.8초). 오래 걸리면 기다리지 않고 닫는다.
             // 작업은 아직 돌고 있으니(위에서 확인) 이 기다림은 반드시 한 번 물러났다 돌아온다 — 아래 Close()는 처음의 닫기 요청 밖에서 불린다
@@ -547,13 +579,13 @@ public partial class MainWindow
     {
         int n = _runner?.WaitingFiles.Count ?? 0;
         BtnProceedAll.Visibility = n > 0 ? Visibility.Visible : Visibility.Collapsed;
-        if (n > 0) BtnProceedAll.Content = $"대기 중 {n}장 전부 진행";
+        if (n > 0) BtnProceedAll.Content = Loc.F($"대기 중 {n}장 전부 진행");
     }
 
     private void BtnProceedAll_Click(object sender, RoutedEventArgs e)
     {
         int n = _runner?.ConfirmAll() ?? 0;
-        TxtStatus.Text = n > 0 ? $"검토 대기 {n}장을 지금 마스크 그대로 검열 제거로 보냈어요" : "검토 대기 중인 장이 없어요";
+        TxtStatus.Text = n > 0 ? Loc.F($"검토 대기 {n}장을 지금 마스크 그대로 검열 제거로 보냈어요") : Loc.T("검토 대기 중인 장이 없어요");
         RefreshWaitingUi();
     }
 
@@ -584,7 +616,7 @@ public partial class MainWindow
         if (gen != _editedGen) return;   // 그사이 목록·작업 상태가 또 바뀌었다 — 그쪽 요청이 다시 센다
         foreach (var r in _rows) r.Edited = edited.Contains(r);
         BtnRerenderEdited.Visibility = edited.Count > 0 && _cts == null ? Visibility.Visible : Visibility.Collapsed;
-        if (edited.Count > 0) BtnRerenderEdited.Content = $"고친 {edited.Count}장 다시 렌더링";
+        if (edited.Count > 0) BtnRerenderEdited.Content = Loc.F($"고친 {edited.Count}장 다시 렌더링");
     }
 
     private void BtnRerenderEdited_Click(object sender, RoutedEventArgs e) => _ = RerenderEditedAsync();
@@ -593,13 +625,13 @@ public partial class MainWindow
     private async Task RerenderEditedAsync(IReadOnlyList<(string Source, string OutPath)>? handed = null)
     {
         if (_cts != null) return;   // 작업이나 다른 묶음이 도는 중
-        if (_updating) { TxtStatus.Text = "업데이트를 받는 중이에요 — 곧 앱이 다시 시작돼요"; return; }
+        if (_updating) { TxtStatus.Text = Loc.T("업데이트를 받는 중이에요 — 곧 앱이 다시 시작돼요"); return; }
         var s = App.Settings.ShallowClone();   // 러너는 만들 때의 설정을 박제한다 — 전역 설정은 건드리지 않는다
         s.EnableAutoColor = false;             // 채색은 다시 하지 않는다 — 채색된 장은 Core가 base(채색 뒤·식자 전)에서 지운다(DecensorAndLetterOnly)
         s.EnableDecensor = true;
         if (s.DecensorMode is "ComfyRegen" or "ComfyCustom" && !s.ComfyAvailable)
         {
-            TxtStatus.Text = "재생성·커스텀 검열 제거는 ComfyUI가 필요해요 — 설정 → 구성요소에서 설치해 주세요";
+            TxtStatus.Text = Loc.T("재생성·커스텀 검열 제거는 ComfyUI가 필요해요 — 설정 → 구성요소에서 설치해 주세요");
             RefreshEditedUi();   // 결과 창에서 방금 고친 장이 버튼·✎에 보이게
             return;
         }
@@ -610,14 +642,15 @@ public partial class MainWindow
         BtnRun.IsEnabled = false;
         BtnStop.IsEnabled = true;
         BtnRerenderEdited.Visibility = Visibility.Collapsed;
-        var before = new Dictionary<FileRow, (string Stage, double Percent)>();
+        // 상태 글과 함께 플래그도 들었다 돌려놓는다 — 전에는 글로 가렸으니(Stage != "대기"·"실패"로 시작) 글이 바뀌면 판정도 같이 바뀌었다
+        var before = new Dictionary<FileRow, (string Stage, double Percent, bool Started, bool Failed)>();
         var finished = new HashSet<FileRow>();
         // 끝나지 않은 장은 지난 결과물·상태 그대로 — 고친 마스크 표시가 남아 다시 누르면 이어서 한다
         int RestoreUnfinished()
         {
             int left = 0;
             foreach (var (row, was) in before)
-                if (!finished.Contains(row)) { row.Stage = was.Stage; row.Percent = was.Percent; left++; }
+                if (!finished.Contains(row)) { row.Stage = was.Stage; row.Percent = was.Percent; row.Started = was.Started; row.Failed = was.Failed; left++; }
             return left;
         }
         try
@@ -634,10 +667,15 @@ public partial class MainWindow
                         edited.Add((row, h.OutPath));
                 edited = [.. edited.OrderBy(x => _rows.IndexOf(x.Row))];
             }
-            if (edited.Count == 0) { TxtStatus.Text = "마스크를 고쳐 저장한 장이 없어요"; return; }
+            if (edited.Count == 0) { TxtStatus.Text = Loc.T("마스크를 고쳐 저장한 장이 없어요"); return; }
             // ✎는 여기서도 붙인다 — 결과 창 버튼으로 바로 온 장은 목록을 훑은 적이 없어 표시 없이 '다시 렌더링 대기'로 돌았다(2026-11-13 실제 흐름에서 봄)
-            foreach (var (row, _) in edited) { before[row] = (row.Stage, row.Percent); row.Stage = "다시 렌더링 대기"; row.Percent = 0; row.Edited = true; }
-            TxtStatus.Text = $"고친 {edited.Count}장 다시 렌더링 중... (검열 제거 + 식자)";   // 상태 줄은 기본 폭에서 앞 20자쯤만 보인다 — 중요한 말을 앞에
+            foreach (var (row, _) in edited)
+            {
+                before[row] = (row.Stage, row.Percent, row.Started, row.Failed);
+                row.Stage = Loc.T("다시 렌더링 대기"); row.Started = true; row.Failed = false;   // 이제 '대기'도 '실패 — …'도 아닌 글이다
+                row.Percent = 0; row.Edited = true;
+            }
+            TxtStatus.Text = Loc.F($"고친 {edited.Count}장 다시 렌더링 중... (검열 제거 + 식자)");   // 상태 줄은 기본 폭에서 앞 20자쯤만 보인다 — 중요한 말을 앞에
 
             var progress = new Progress<PageProgress>(p =>
             {
@@ -645,7 +683,7 @@ public partial class MainWindow
                 if (hit.Row is not { } row) return;
                 if (p.Error != null)
                 {
-                    row.Stage = $"다시 렌더링 실패 — {p.Error} (지난 결과물은 그대로예요)";
+                    row.Stage = Loc.F($"다시 렌더링 실패 — {p.Error} (지난 결과물은 그대로예요)");
                     row.Percent = before[row].Percent;
                     finished.Add(row);
                     return;
@@ -666,18 +704,18 @@ public partial class MainWindow
             var options = new PipelineRunner.RedoPageOptions(DecensorAndLetterOnly: true);
             var (done, failed) = await Task.Run(() => runner.RedoPagesAsync(pages, progress, cts.Token, options));
             TxtStatus.Text = failed == 0
-                ? $"고친 {done}장 다시 렌더링 완료 — 더블클릭해 확인하고, 더 고치면 또 돌릴 수 있어요"
-                : $"다시 렌더링 — 성공 {done}장 / 실패 {failed}장 (실패한 장은 지난 결과물 그대로예요)";
+                ? Loc.F($"고친 {done}장 다시 렌더링 완료 — 더블클릭해 확인하고, 더 고치면 또 돌릴 수 있어요")
+                : Loc.F($"다시 렌더링 — 성공 {done}장 / 실패 {failed}장 (실패한 장은 지난 결과물 그대로예요)");
         }
         catch (OperationCanceledException)
         {
             int left = RestoreUnfinished();
-            TxtStatus.Text = $"멈췄어요 — 남은 {left}장은 그대로예요 ([고친 장 다시 렌더링]을 누르면 이어서 해요)";
+            TxtStatus.Text = Loc.F($"멈췄어요 — 남은 {left}장은 그대로예요 ([고친 장 다시 렌더링]을 누르면 이어서 해요)");
         }
         catch (Exception ex)
         {
             RestoreUnfinished();
-            TxtStatus.Text = "오류: " + ex.Message;
+            TxtStatus.Text = Loc.F($"오류: {ex.Message}");
         }
         finally
         {
@@ -697,7 +735,7 @@ public partial class MainWindow
         if (dir != null && Directory.Exists(dir))
             Process.Start(new ProcessStartInfo("explorer.exe", $"\"{dir}\"") { UseShellExecute = true });
         else
-            TxtStatus.Text = "아직 결과물이 없어요";
+            TxtStatus.Text = Loc.T("아직 결과물이 없어요");
     }
 
     /// <summary>목록에서 고른 원고의 결과물을 띄운다. 자동 감지가 놓친 검열을 거기서 직접 지울 수 있다.
@@ -707,11 +745,11 @@ public partial class MainWindow
         row ??= _rows.FirstOrDefault();
         if (row == null)
         {
-            TxtStatus.Text = "먼저 이미지를 올려주세요";
+            TxtStatus.Text = Loc.T("먼저 이미지를 올려주세요");
             return;
         }
         // 업데이트를 다 받으면 앱이 곧장 다시 시작된다 — 그사이 수정 창에서 [지우기]를 돌리거나 고치던 것이 말없이 끊기지 않게
-        if (_updating) { TxtStatus.Text = "업데이트를 받는 중이에요 — 곧 앱이 다시 시작돼요"; return; }
+        if (_updating) { TxtStatus.Text = Loc.T("업데이트를 받는 중이에요 — 곧 앱이 다시 시작돼요"); return; }
 
         // 창 안에서 ◀ ▶로 넘겨볼 수 있게 목록 전체를 넘긴다 (결과물 경로도 함께 — .neko 사이드카 위치)
         var pages = _rows.Select(r => new ResultWindow.PageRef(r.ViewPath, OutPathOf(r), r.Path)).ToList();
@@ -724,7 +762,7 @@ public partial class MainWindow
             {
                 int n = _runner?.ConfirmAll() ?? 0;
                 RefreshWaitingUi();
-                if (n > 0) TxtStatus.Text = $"검열 제거를 시작했어요 — {n}장 진행 중 (목록에서 진행을 볼 수 있어요)";
+                if (n > 0) TxtStatus.Text = Loc.F($"검열 제거를 시작했어요 — {n}장 진행 중 (목록에서 진행을 볼 수 있어요)");
                 return n;
             },
             isJobRunning: () => _cts != null,
@@ -774,7 +812,8 @@ public partial class MainWindow
             if (_pendingUpdate != null)
             {
                 BtnUpdate.Visibility = Visibility.Visible;
-                BtnUpdate.Content = $"🎀 v{_pendingUpdate.TargetFullRelease.Version} 업데이트!";
+                var version = _pendingUpdate.TargetFullRelease.Version;
+                UiText.Bind(BtnUpdate, System.Windows.Controls.ContentControl.ContentProperty, () => Loc.F($"🎀 v{version} 업데이트!"));
             }
         }
         catch { /* 오프라인 등 — 조용히 넘어간다 */ }
@@ -784,17 +823,17 @@ public partial class MainWindow
     {
         if (_pendingUpdate == null) return;
         // 적용하면 앱이 곧장 꺼졌다 다시 켜진다 — 도는 작업이 말없이 끊기고 엔진의 생성은 끝까지 돈다(창 닫기와 같은 길, 2026-11-13 점검 8번)
-        if (_cts != null) { TxtStatus.Text = "작업이 도는 중이에요 — 업데이트는 작업이 끝난 뒤에 해 주세요 (적용하면 앱이 다시 시작돼요)"; return; }
+        if (_cts != null) { TxtStatus.Text = Loc.T("작업이 도는 중이에요 — 업데이트는 작업이 끝난 뒤에 해 주세요 (적용하면 앱이 다시 시작돼요)"); return; }
         BtnUpdate.IsEnabled = false;
         _updating = true;
         try
         {
             await _update.DownloadAndApplyAsync(_pendingUpdate,
-                p => Dispatcher.Invoke(() => TxtStatus.Text = $"업데이트 다운로드 {p}%"));
+                p => Dispatcher.Invoke(() => TxtStatus.Text = Loc.F($"업데이트 다운로드 {p}%")));
         }
         catch (Exception ex)
         {
-            TxtStatus.Text = "업데이트 실패: " + ex.Message;
+            TxtStatus.Text = Loc.F($"업데이트 실패: {ex.Message}");
             BtnUpdate.IsEnabled = true;
         }
         finally { _updating = false; }

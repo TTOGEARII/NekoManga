@@ -223,12 +223,50 @@ public class AppSettingsTests
 
     // ── 재생성 v3 (2026-11-12): 종류별 태그·자를 크기·인페인트 확장, 옛 한 줄 태그 이관 ──
 
+    [Theory]
+    [InlineData("clitoris, pussy, vulva, cum in pussy", "clitoris, pussy, vulva", "cum in pussy")]   // v1.10.0까지의 기본값
+    [InlineData("cum_in_pussy,  Cum In Pussy , labia", "labia", "cum in pussy")]
+    [InlineData("pussy,vulva", "pussy,vulva", "")]   // 사용자가 그 태그를 이미 빼 두었다 — 사정 칸을 비워 자동 판단으로 다시 넣지 않는다(여성 줄은 손대지 않는다)
+    [InlineData("", "", "")]
+    public void Load_JsonFromBeforeTheCumBox_TakesCumInPussyOutOfTheFemaleTags(string female, string expected, string cumBox)
+    {
+        using var t = new TempDir();
+        var s = LoadJson(t, "{\"RegenBodyTagsFemale\": \"" + female + "\"}");
+        Assert.Equal(expected, s.RegenBodyTagsFemale);
+        Assert.Equal(cumBox, s.RegenBodyTagsCum);
+    }
+
+    [Fact]
+    public void Load_JsonWithoutAnyTagBoxes_KeepsTheNewDefaults()
+    {
+        // 여성 칸도 없던 json(기본값이 들어온다) — 사용자가 뺀 것이 아니다
+        using var t = new TempDir();
+        var s = LoadJson(t, "{\"RegenSteps\": 20}");
+        Assert.Equal("clitoris, pussy, vulva", s.RegenBodyTagsFemale);
+        Assert.Equal("cum in pussy", s.RegenBodyTagsCum);
+    }
+
+    [Fact]
+    public void Load_JsonWithTheCumBox_LeavesTheFemaleTagsAlone()
+    {
+        // 칸이 생긴 뒤에 사용자가 여성 태그에 다시 적어 넣은 것은 사용자의 값이다 — 읽을 때마다 떼지 않는다. 비워 둔 사정 칸도 그대로(어디에도 넣지 않는다)
+        using var t = new TempDir();
+        var s = LoadJson(t, "{\"RegenBodyTagsFemale\": \"pussy, cum in pussy\", \"RegenBodyTagsCum\": \"\", \"RegenCumThreshold\": 7}");
+        Assert.Equal("pussy, cum in pussy", s.RegenBodyTagsFemale);
+        Assert.Equal("", s.CumTags);
+        Assert.Equal(0.95, s.RegenCumThreshold);   // 손으로 고친 값은 범위 안으로
+    }
+
     [Fact]
     public void Defaults_RegenV3()
     {
         var s = new AppSettings();
         Assert.Equal("penis, glans", s.RegenBodyTagsMale);
-        Assert.Equal("clitoris, pussy, vulva, cum in pussy", s.RegenBodyTagsFemale);
+        Assert.Equal("clitoris, pussy, vulva", s.RegenBodyTagsFemale);   // 'cum in pussy'는 사정 태그 칸으로 떼었다(2026-11-16) — 여성 부위마다 늘 들어가지 않게
+        Assert.Equal("cum in pussy", s.RegenBodyTagsCum);
+        Assert.Equal("cum in pussy", s.CumTags);
+        Assert.True(s.RegenCumAuto);
+        Assert.Equal(0.35, s.RegenCumThreshold);
         Assert.Equal(1024, s.RegenCropSize);
         Assert.Equal(8, s.RegenInpaintGrow);
         Assert.Equal("", s.RegenBodyTags);   // 옛 칸 — 이관 뒤 비어 있다
@@ -243,6 +281,7 @@ public class AppSettingsTests
         Assert.True(s.RegenEraseTight);          // 1단계는 검은 막대 픽셀만 지운다
         Assert.True(s.RegenTagsBySex);           // 한쪽 성별로 확정된 영역에는 그쪽 태그만(2026-11-15) — 나머지는 남녀를 같이
         Assert.False(s.RegenTagsPerPiece);       // 자리별 태그는 그리는 방식이 바뀐다 — 사용자가 전/후를 보고 정하기 전까지 끔
+        Assert.False(s.RegenSplitRegions);       // 떨어진 자리를 따로 그리기도 결과가 바뀐다 — 사용자가 전/후를 보고 정하기 전까지 끔(2026-11-16)
     }
 
     [Fact]
@@ -281,8 +320,17 @@ public class AppSettingsTests
         using var t = new TempDir();
         var s = LoadJson(t, "{\"RegenBodyTags\": \"penis, glains, clitoris, pussy, vulva, cum in pussy\"}");
         Assert.Equal("penis, glans", s.RegenBodyTagsMale);
-        Assert.Equal("clitoris, pussy, vulva, cum in pussy", s.RegenBodyTagsFemale);
+        Assert.Equal("clitoris, pussy, vulva", s.RegenBodyTagsFemale);   // 나눈 뒤에 'cum in pussy'를 뗀다(2026-11-16) — 먼저 떼면 나누면서 다시 들어간다(검수)
+        Assert.Equal("cum in pussy", s.RegenBodyTagsCum);
         Assert.Equal("", s.RegenBodyTags);
+    }
+
+    [Fact]
+    public void Load_LegacyBodyTags_WithoutCumInPussy_LeavesTheCumBoxEmpty()
+    {
+        using var t = new TempDir();
+        var s = LoadJson(t, "{\"RegenBodyTags\": \"penis, pussy\"}");
+        Assert.Equal(("penis", "pussy", ""), (s.RegenBodyTagsMale, s.RegenBodyTagsFemale, s.RegenBodyTagsCum));
     }
 
     [Fact]
@@ -291,7 +339,8 @@ public class AppSettingsTests
         using var t = new TempDir();
         var s = LoadJson(t, "{\"RegenBodyTags\": \"cum in pussy, vulva\"}");
         Assert.Equal("penis, glans", s.RegenBodyTagsMale);
-        Assert.Equal("cum in pussy, vulva", s.RegenBodyTagsFemale);
+        Assert.Equal("vulva", s.RegenBodyTagsFemale);
+        Assert.Equal("cum in pussy", s.RegenBodyTagsCum);
     }
 
     [Fact]
@@ -537,5 +586,30 @@ public class AppSettingsTests
         clone.EnableDecensor = !clone.EnableDecensor;
         clone.OutputRoot = "다른 출력 폴더";
         Assert.Empty(RuntimeTestHelpers.Differences(snapshot, original));
+    }
+
+    // ── 화면 언어 ──
+
+    [Fact]
+    public void Defaults_UiLanguage_NotChosenYet()
+    {
+        // "" = 아직 안 고름 — 앱이 Windows의 화면 언어를 따른다(Loc.Resolve)
+        Assert.Equal("", new AppSettings().UiLanguage);
+    }
+
+    [Theory]
+    [InlineData("\"ko\"", "ko")]
+    [InlineData("\"en\"", "en")]
+    [InlineData("\"ja\"", "ja")]
+    [InlineData("\"fr\"", "")]
+    [InlineData("\"English\"", "")]
+    [InlineData("null", "")]
+    public void Load_UiLanguage_KeepsTheThreeCodes_ClearsAnythingElse(string json, string expected)
+    {
+        using var t = new TempDir();
+
+        var s = LoadJson(t, "{\"UiLanguage\": " + json + "}");
+
+        Assert.Equal(expected, s.UiLanguage);
     }
 }

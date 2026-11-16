@@ -9,6 +9,7 @@ using ComboBox = System.Windows.Controls.ComboBox;
 using ComboBoxItem = System.Windows.Controls.ComboBoxItem;
 using MessageBox = System.Windows.MessageBox;
 using Application = System.Windows.Application;
+using NekoManga.Core;
 
 namespace NekoManga.App;
 
@@ -47,9 +48,9 @@ public partial class SettingsWindow
         // 고른 제거 방식 하나만 짧게 설명한다 (사용자 요청 10-20: 전부 늘어놓으면 가독성이 떨어짐)
         TxtDecensorModeHint.Text = mode switch
         {
-            "Basic" => "Aletheia Lens의 복원 모델이 찾은 자리를 주변 그림에 맞춰 채워요. 막대는 가려진 곳을 비우고 새로 그리고, 모자이크는 흐려진 그림을 힌트 삼아 다듬어요. 빠르고 추가 설치가 없어요.",
-            "ComfyRegen" => "내장 레시피: 영역마다 주변을 1024로 잘라 SDXL 두 단계로 검열 조각을 새로 그리고 부위를 다듬어요(LaMa 없음). 엔진·GPU 필요. 프롬프트 등은 아래 고급 옵션.",
-            "ComfyCustom" => "ComfyUI 화면에서 직접 짠 워크플로 파일을 그대로 실행해요. 엔진·GPU 필요. 파일은 엔진 탭에서 만들고 Export (API)로 저장.",
+            "Basic" => Loc.T("Aletheia Lens의 복원 모델이 찾은 자리를 주변 그림에 맞춰 채워요. 막대는 가려진 곳을 비우고 새로 그리고, 모자이크는 흐려진 그림을 힌트 삼아 다듬어요. 빠르고 추가 설치가 없어요."),
+            "ComfyRegen" => Loc.T("내장 레시피: 영역마다 주변을 1024로 잘라 SDXL 두 단계로 검열 조각을 새로 그리고 부위를 다듬어요(LaMa 없음). 엔진·GPU 필요. 프롬프트 등은 아래 고급 옵션."),
+            "ComfyCustom" => Loc.T("ComfyUI 화면에서 직접 짠 워크플로 파일을 그대로 실행해요. 엔진·GPU 필요. 파일은 엔진 탭에서 만들고 Export (API)로 저장."),
             _ => "",
         };
 
@@ -59,18 +60,18 @@ public partial class SettingsWindow
         bool needRepair = mode == "Basic";
         bool aleOk = aleDetect && (aleRepair || !needRepair);
         DotCensorAi.Fill = aleOk ? ok : missing;
-        TxtCensorAi.Text = !aleDetect ? "Aletheia Lens 감지 모델이 설치되어 있지 않아요 — 검열 제거를 시작할 수 없어요"
-            : needRepair && !aleRepair ? "Aletheia Lens 복원 모델이 설치되어 있지 않아요 — '기본' 방식으로 지울 수 없어요"
-            : "Aletheia Lens 준비됨 — 막대·모자이크 감지" + (needRepair ? " + 복원" : "");
+        TxtCensorAi.Text = !aleDetect ? Loc.T("Aletheia Lens 감지 모델이 설치되어 있지 않아요 — 검열 제거를 시작할 수 없어요")
+            : needRepair && !aleRepair ? Loc.T("Aletheia Lens 복원 모델이 설치되어 있지 않아요 — '기본' 방식으로 지울 수 없어요")
+            : Loc.T("Aletheia Lens 준비됨 — 막대·모자이크 감지") + (needRepair ? Loc.T(" + 복원") : "");
         bool whiteOnly = target == "WhiteBar";   // '흰색 막대만'은 보완 설정과 상관없이 전용 AI의 흰 검출을 더한다(없으면 규칙 감지)
         bool assistWanted = whiteOnly || (target == "Auto" && assist != "None");
         RowAssistAi.Visibility = Visibility.Visible;
         DotAssistAi.Fill = !censorNet ? (assistWanted ? missing : idle) : assistWanted ? ok : idle;
-        TxtAssistAi.Text = !censorNet ? (whiteOnly ? "전용 AI가 설치되어 있지 않아요 — 흰 막대는 규칙 감지로 보완해요 (잘못 잡는 곳이 많아요)"
-                : assistWanted ? "전용 AI가 설치되어 있지 않아요 — 보완 없이 Aletheia Lens만 찾아요" : "전용 AI 미설치 (지금 설정에서는 쓰이지 않아요)")
-            : assistWanted ? "전용 AI 준비됨 — " + (whiteOnly ? "White" : assist) switch { "WhiteMosaic" => "흰 막대선·모자이크 보완", "All" => "흰·검·모자이크 전부 합치기", _ => "가는 흰 막대선 보완" }
-            : "전용 AI 준비됨 — 지금 설정에서는 쉬어요";
-        TxtCensorAiHint.Text = "Aletheia Lens는 컬러·흑백 그림의 막대와 모자이크를 찾는 공개 모델이고, 전용 AI는 이 앱용으로 직접 학습한 모델이에요. 잘못 잡힌 곳은 ③의 검토에서 지우면 돼요.";
+        TxtAssistAi.Text = !censorNet ? (whiteOnly ? Loc.T("전용 AI가 설치되어 있지 않아요 — 흰 막대는 규칙 감지로 보완해요 (잘못 잡는 곳이 많아요)")
+                : assistWanted ? Loc.T("전용 AI가 설치되어 있지 않아요 — 보완 없이 Aletheia Lens만 찾아요") : Loc.T("전용 AI 미설치 (지금 설정에서는 쓰이지 않아요)"))
+            : assistWanted ? Loc.T("전용 AI 준비됨 — ") + (whiteOnly ? "White" : assist) switch { "WhiteMosaic" => Loc.T("흰 막대선·모자이크 보완"), "All" => Loc.T("흰·검·모자이크 전부 합치기"), _ => Loc.T("가는 흰 막대선 보완") }
+            : Loc.T("전용 AI 준비됨 — 지금 설정에서는 쉬어요");
+        TxtCensorAiHint.Text = Loc.T("Aletheia Lens는 컬러·흑백 그림의 막대와 모자이크를 찾는 공개 모델이고, 전용 AI는 이 앱용으로 직접 학습한 모델이에요. 잘못 잡힌 곳은 ③의 검토에서 지우면 돼요.");
         needInstall = !aleOk || (assistWanted && !censorNet);
         BtnInstallCensorAi.Visibility = needInstall ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -88,7 +89,7 @@ public partial class SettingsWindow
         RefreshDecensorUi();   // 방식 설명·요약·상태 카드는 엔진 조합에 따라 달라져 한곳에서 맞춘다
     }
 
-    private void BtnRegenCkptPick_Click(object sender, RoutedEventArgs e) => PickModelFile(TxtRegenCkpt, "checkpoints", "SDXL 체크포인트");
+    private void BtnRegenCkptPick_Click(object sender, RoutedEventArgs e) => PickModelFile(TxtRegenCkpt, "checkpoints", Loc.T("SDXL 체크포인트"));
     private void BtnRegenCnPick_Click(object sender, RoutedEventArgs e) => PickModelFile(TxtRegenCn, "controlnet", "ControlNet");
 
     /// <summary>재생성 레시피의 모델 파일을 파일 대화상자로 고른다 (사용자 요청 10-20: 이름 직접 입력 대신 불러오기, 확장자 제한).
@@ -98,8 +99,8 @@ public partial class SettingsWindow
         var modelsDir = System.IO.Path.Combine(App.Settings.ComfyRoot, "ComfyUI", "models", subdir);
         var dlg = new Microsoft.Win32.OpenFileDialog
         {
-            Title = $"{label} 파일 고르기",
-            Filter = "모델 파일 (*.safetensors;*.ckpt;*.pt)|*.safetensors;*.ckpt;*.pt",
+            Title = Loc.F($"{label} 파일 고르기"),
+            Filter = Loc.T("모델 파일 (*.safetensors;*.ckpt;*.pt)") + "|*.safetensors;*.ckpt;*.pt",
             InitialDirectory = Directory.Exists(modelsDir) ? modelsDir : App.Settings.ComfyRoot,
         };
         if (dlg.ShowDialog(this) != true) return;
@@ -114,7 +115,7 @@ public partial class SettingsWindow
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, ex.Message, $"{label} 파일", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, ex.Message, Loc.F($"{label} 파일"), MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
@@ -134,8 +135,11 @@ public partial class SettingsWindow
         TxtRegenPrompt.Text = s.RegenPrompt;
         TxtRegenBodyM.Text = s.RegenBodyTagsMale;
         TxtRegenBodyF.Text = s.RegenBodyTagsFemale;
+        TxtRegenBodyCum.Text = s.CumTags;
+        ChkRegenCumAuto.IsChecked = s.RegenCumAuto;
         ChkRegenTagsBySex.IsChecked = s.RegenTagsBySex;
         ChkRegenTagsPerPiece.IsChecked = s.RegenTagsPerPiece;
+        ChkRegenSplitRegions.IsChecked = s.RegenSplitRegions;
         TxtRegenNeg.Text = s.RegenNegative;
         TxtRegenDenoise.Text = s.RegenDenoise.ToString(CultureInfo.InvariantCulture);
         TxtRegenSteps.Text = s.RegenSteps.ToString();

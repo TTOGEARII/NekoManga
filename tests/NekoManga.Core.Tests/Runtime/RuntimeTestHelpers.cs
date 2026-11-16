@@ -43,6 +43,7 @@ internal static class RuntimeTestHelpers
         [nameof(AppSettings.DecensorReviewMode)] = "Window",
         [nameof(AppSettings.LetterAlign)] = "Right",
         [nameof(AppSettings.RegenInpaintControl)] = "Repaint",
+        [nameof(AppSettings.UiLanguage)] = "ja",
     };
 
     /// <summary>모든 저장 속성이 기본값과 다른 설정. 값은 Load의 이관 규칙(허용 목록·범위)을 통과하는 것만 쓴다 —

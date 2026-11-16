@@ -46,20 +46,20 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         string imagePath, string workDir, IProgress<string>? status, CancellationToken ct, string? stem = null)
     {
         if (!IsReady)
-            throw new FileNotFoundException("내장 엔진 모델이 없어요. 설정 → 구성요소에서 설치해 주세요.");
+            throw new FileNotFoundException(Loc.T("내장 엔진 모델이 없어요. 설정 → 구성요소에서 설치해 주세요."));
 
         using var img = ImgIo.Read(imagePath, ImreadModes.Color);
         if (img.Empty())
-            throw new InvalidDataException($"이미지를 읽지 못했어요: {Path.GetFileName(imagePath)}");
+            throw new InvalidDataException(Loc.F($"이미지를 읽지 못했어요: {Path.GetFileName(imagePath)}"));
 
         // 진단: NEKO_TIMING=<파일>이면 단계별로 걸린 시간을 적는다 (어디가 느린지 볼 때)
         var clock = System.Diagnostics.Stopwatch.StartNew();
         var laps = new List<string>();
         void Lap(string name) { laps.Add($"{name}={clock.ElapsedMilliseconds}ms"); clock.Restart(); }
 
-        status?.Report("말풍선 찾는 중");
+        status?.Report(Loc.T("말풍선 찾는 중"));
         var det = await Task.Run(() => _detector.Detect(img), ct);
-        Lap("감지");
+        Lap("감지");   // loc:none
         using var textMask = det.TextMask;
 
         // 맞닿은 말풍선 묶음이 한 블록으로 잡히면 풍선별로 나눈다 — 안 나누면
@@ -72,7 +72,7 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         // 반대로 한 풍선의 글 기둥이 기둥마다 따로 잡힌 것은 다시 하나로 — 따로 두면 반 토막 번역이
         // 좁은 띠에 억지로 들어가 옆 기둥의 번역과 겹친다 (실측 401ちゃん 05·11·12·22p).
         detBlocks = await Task.Run(() => BubbleSplitter.MergeSiblings(img, textMask, detBlocks), ct);
-        Lap("풍선 나누기·합치기");
+        Lap("풍선 나누기·합치기");   // loc:none
 
         // ── OCR ──
         // 한 쪽의 블록을 한 묶음으로 읽는다 — 블록마다 따로 읽으면 디코더 실행 횟수가 블록 수만큼 곱해진다 (MangaOcr 주석).
@@ -94,7 +94,7 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
             ct.ThrowIfCancellationRequested();
             if (crops.Count > 0)
             {
-                status?.Report($"글자 읽는 중 ({crops.Count}개 말풍선)");
+                status?.Report(Loc.F($"글자 읽는 중 ({crops.Count}개 말풍선)"));
                 var texts = await Task.Run(() => _ocr.RecognizeBatch(crops), ct);
                 for (int i = 0; i < texts.Length; i++)
                 {
@@ -109,14 +109,14 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         {
             foreach (var crop in crops) crop.Dispose();
         }
-        Lap($"글자 읽기({detBlocks.Count}블록)");
+        Lap($"글자 읽기({detBlocks.Count}블록)");   // loc:none
 
         // ── 번역 (배치) ──
         IReadOnlyList<string> translations = Array.Empty<string>();
         if (blocks.Count > 0)
         {
             var engine = TranslatorFactory.EngineLabel(settings);
-            status?.Report($"번역 중 ({blocks.Count}개 말풍선 · {engine})");
+            status?.Report(Loc.F($"번역 중 ({blocks.Count}개 말풍선 · {engine})"));
             var translator = TranslatorFactory.Create(settings);
             // 느린 LLM 엔진은 한 페이지에 1~2분씩 걸린다 — 멈춘 게 아니라는 걸 알 수 있게 경과 초를 띄운다
             using var tick = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -129,7 +129,7 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
                     {
                         await Task.Delay(5000, tick.Token);
                         var sec = (int)(DateTime.UtcNow - started).TotalSeconds;
-                        status?.Report($"번역 중 ({blocks.Count}개 말풍선 · {engine} {sec}초)");
+                        status?.Report(Loc.F($"번역 중 ({blocks.Count}개 말풍선 · {engine} {sec}초)"));
                     }
                 }
                 catch (OperationCanceledException) { }
@@ -143,10 +143,10 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
             finally { tick.Cancel(); await ticker; }
         }
 
-        Lap($"번역({blocks.Count}개·{TranslatorFactory.EngineLabel(settings)})");
+        Lap($"번역({blocks.Count}개·{TranslatorFactory.EngineLabel(settings)})");   // loc:none
 
         // ── 글자 색 추출 + 글자 지우기 ──
-        status?.Report("글자 지우는 중");
+        status?.Report(Loc.T("글자 지우는 중"));
         var result = new List<TextBlockInfo>();
         using var lamaMask = new Mat(img.Rows, img.Cols, MatType.CV_8UC1, Scalar.Black);
         bool needLama = false;
@@ -178,18 +178,18 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
                 color));
         }
 
-        Lap("글자 지우기(단색)");
+        Lap("글자 지우기(단색)");   // loc:none
         if (needLama)
         {
-            status?.Report("배경 복원 중 (LaMa)");
+            status?.Report(Loc.T("배경 복원 중 (LaMa)"));
             await Task.Run(() => _lama.Inpaint(img, lamaMask), ct);
-            Lap("배경 복원(LaMa)");
+            Lap("배경 복원(LaMa)");   // loc:none
         }
 
         Directory.CreateDirectory(workDir);
         var outPath = Path.Combine(workDir, (stem ?? Path.GetFileNameWithoutExtension(imagePath)) + ".inpainted.png");
         ImgIo.Write(outPath, img);
-        Lap("저장");
+        Lap("저장");   // loc:none
         if (Environment.GetEnvironmentVariable("NEKO_TIMING") is { Length: > 0 } timing)
             try { File.AppendAllText(timing, Path.GetFileName(imagePath) + ": " + string.Join(", ", laps) + Environment.NewLine); } catch { }
         return new PageTranslation(outPath, result);

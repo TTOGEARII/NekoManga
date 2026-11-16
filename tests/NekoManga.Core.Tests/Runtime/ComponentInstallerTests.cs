@@ -32,6 +32,19 @@ public class ComponentInstallerTests
         Assert.Equal(ComponentCatalog.ComfyComponents, installer.Missing());
     }
 
+    [Fact]
+    public void IsInstalled_WdTagger_CountsTheCopyTheComfyNodeAlreadyHas()
+    {
+        // 연결된 ComfyUI의 WD14 노드가 같은 모델을 받아 뒀으면 설치된 것이다 — 326MB를 다시 받으라고 하지 않는다(Engine.CumDetector가 그 파일을 쓴다)
+        using var t = new TempDir();
+        var s = new AppSettings { RuntimeRoot = t.At("rt"), LinkedComfyRoot = t.At("comfy") };
+        var installer = new ComponentInstaller(s);
+        Assert.False(installer.IsInstalled(ComponentCatalog.ModelWdTagger));
+        RuntimeTestHelpers.Touch(Path.Combine(s.LinkedComfyRoot, "ComfyUI", "custom_nodes", "ComfyUI-WD14-Tagger", "models", NekoManga.Core.Engine.CumDetector.ComfyNodeModel));
+        Assert.True(installer.IsInstalled(ComponentCatalog.ModelWdTagger));
+        Assert.False(installer.IsInstalled(ComponentCatalog.ModelBodyParts));   // 다른 구성요소의 판정은 그대로
+    }
+
     [Theory]
     [InlineData(null)]                    // 연결 안 함 → RuntimeRoot 아래 포터블
     [InlineData("   ")]                   // 공백뿐인 값도 연결 안 함

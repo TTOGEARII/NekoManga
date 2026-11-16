@@ -31,8 +31,8 @@ public class AletheiaInpainter(OnnxEnv env)
     public int Repair(Mat img, Mat mask, bool mosaic)
     {
         // 아래는 포인터로 직접 읽고 쓴다 — 형식·크기가 어긋나면 메모리를 망가뜨리므로 먼저 막는다
-        if (img.Type() != MatType.CV_8UC3) throw new ArgumentException("복원할 그림은 BGR 8비트(CV_8UC3)여야 해요.", nameof(img));
-        if (mask.Type() != MatType.CV_8UC1 || mask.Size() != img.Size()) throw new ArgumentException("마스크는 그림과 같은 크기의 8비트 한 채널이어야 해요.", nameof(mask));
+        if (img.Type() != MatType.CV_8UC3) throw new ArgumentException(Loc.T("복원할 그림은 BGR 8비트(CV_8UC3)여야 해요."), nameof(img));
+        if (mask.Type() != MatType.CV_8UC1 || mask.Size() != img.Size()) throw new ArgumentException(Loc.T("마스크는 그림과 같은 크기의 8비트 한 채널이어야 해요."), nameof(mask));
         int W = img.Cols, H = img.Rows;
         using var bin = new Mat();
         Cv2.Threshold(mask, bin, 0, 255, ThresholdTypes.Binary);
@@ -102,7 +102,7 @@ public class AletheiaInpainter(OnnxEnv env)
             {
                 float v = output[k];
                 if (!float.IsFinite(v))
-                    throw new InvalidOperationException("복원 모델이 잘못된 값을 돌려줬어요 (non-finite) — 다시 시도해 주세요.");
+                    throw new InvalidOperationException(Loc.T("복원 모델이 잘못된 값을 돌려줬어요 (non-finite) — 다시 시도해 주세요."));
                 // 원본: (255.0 * ((pred + 1.0) / 2.0)).astype(uint8) — float32 계산 후 버림. 범위를 벗어난 값은 원본에선 래핑되지만 여기서는 자른다
                 float f = 255.0f * ((v + 1.0f) / 2.0f);
                 pred[k] = f <= 0f ? (byte)0 : f >= 255f ? (byte)255 : (byte)f;

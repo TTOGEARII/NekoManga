@@ -667,4 +667,95 @@ public class RegenCropTests
         }
         finally { foreach (var x in regions) x.Dispose(); }
     }
+
+    // ── 떨어진 자리는 따로(splitReach ≥ 0, 설정 RegenSplitRegions) — 사용자 보고 2026-11-16 "인체 부위도 제대로 안나오는게 있는데":
+    // 상대 창 안에 보이기만 해도 합치던 규칙이 1813px 쪽에서 줄줄이 합쳐 창이 쪽 전체(0.40배)가 됐다. 붙이는 범위(상자 + reach)가 겹칠 때만 합친다.
+    // 조각 200x40, 부위 상자 없음 → 영역 상자는 조각에서 좌우 120·위아래 80 넓다(타원 0.6배)
+
+    [Fact]
+    public void BuildRegions_Split_VisibleInTheOtherWindowButApart_Separate()
+    {
+        // 300px 떨어진 두 조각: 옛 규칙은 합친다(BuildRegions_OverlappingWindows_Merged) — 영역 상자 사이가 60px라 붙이는 범위(22px씩)는 안 겹친다
+        using var mask = MaskWith(new Size(3000, 4000), new Rect(1000, 2000, 200, 40), new Rect(1500, 2000, 200, 40));
+        var regions = RegenRegion.BuildRegions(mask, [], 0.1, 0.6, mask.Size(), 1024, 0.12, splitReach: 22);
+        try
+        {
+            Assert.Equal(2, regions.Count);
+            Assert.All(regions, r => Assert.Equal(200 * 40, Cv2.CountNonZero(r.Erase)));   // 조각은 제 영역에만
+            Assert.All(regions, r => Assert.Equal(1.0, RegenCrop.WindowFor(r.Bounds, mask.Size(), 1024).Scale));
+        }
+        finally { foreach (var x in regions) x.Dispose(); }
+    }
+
+    [Theory]
+    [InlineData(1270, 1)]   // 영역 상자가 겹친다
+    [InlineData(1470, 1)]   // 사이 29px < 붙이는 범위 둘(44px) — 나중 것이 먼저 것의 결과를 덮는다 → 하나로
+    [InlineData(1484, 1)]   // 사이 43px (타원은 880~1320을 칠해 상자의 오른쪽 끝이 1321이다)
+    [InlineData(1485, 2)]   // 사이 44px — 붙이는 범위가 맞닿을 뿐 겹치지 않는다
+    [InlineData(1490, 2)]
+    public void BuildRegions_Split_MergesOnlyWhenThePasteRangesOverlap(int secondX, int expected)
+    {
+        using var mask = MaskWith(new Size(3000, 4000), new Rect(1000, 2000, 200, 40), new Rect(secondX, 2000, 200, 40));
+        var regions = RegenRegion.BuildRegions(mask, [], 0.1, 0.6, mask.Size(), 1024, 0.12, splitReach: 22);
+        try { Assert.Equal(expected, regions.Count); }
+        finally { foreach (var x in regions) x.Dispose(); }
+    }
+
+    [Fact]
+    public void BuildRegions_Split_ChainOfTouchingRegions_StillMergesIntoOne()
+    {
+        // 셋이 차례로 붙어 있으면 하나 — 가운데가 양쪽과 겹친다
+        using var mask = MaskWith(new Size(3000, 4000), new Rect(1000, 2000, 200, 40), new Rect(1400, 2000, 200, 40), new Rect(1800, 2000, 200, 40));
+        var regions = RegenRegion.BuildRegions(mask, [], 0.1, 0.6, mask.Size(), 1024, 0.12, splitReach: 22);
+        try { Assert.Equal(3 * 200 * 40, Cv2.CountNonZero(Assert.Single(regions).Erase)); }
+        finally { foreach (var x in regions) x.Dispose(); }
+    }
+
+    [Fact]
+    public void BuildRegions_Split_PageOfScatteredPieces_KeepsEveryWindowAtFullScale()
+    {
+        // 1813x2560 쪽에 흩어진 조각 넷(사용자 원고 19쪽의 꼴 — 다시 그리는 자리는 쪽의 몇 %뿐): 옛 규칙은 줄줄이 합쳐 창이 쪽 전체가 된다
+        var pieces = new[] { new Rect(300, 400, 160, 40), new Rect(1100, 900, 160, 40), new Rect(500, 1500, 160, 40), new Rect(1300, 2100, 160, 40) };
+        using var mask = MaskWith(new Size(1813, 2560), pieces);
+        var old = RegenRegion.BuildRegions(mask, [], 0.1, 0.6, mask.Size(), 1024, 0.12);
+        var split = RegenRegion.BuildRegions(mask, [], 0.1, 0.6, mask.Size(), 1024, 0.12, splitReach: 22);
+        try
+        {
+            Assert.True(RegenCrop.WindowFor(Assert.Single(old).Bounds, mask.Size(), 1024).Scale < 0.5);
+            Assert.Equal(4, split.Count);
+            Assert.All(split, r => Assert.Equal(1.0, RegenCrop.WindowFor(r.Bounds, mask.Size(), 1024).Scale));
+        }
+        finally { foreach (var x in old.Concat(split)) x.Dispose(); }
+    }
+
+    [Fact]
+    public void BuildRegions_Split_EachRegionIsJudgedByItsOwnPieces()
+    {
+        // 옛 규칙이면 한 영역(남성 + 여성 → 섞임)인 두 조각이 따로가 되면 저마다 제 근거로 확정된다
+        using var mask = MaskWith(new Size(3000, 4000), new Rect(1000, 2000, 200, 40), new Rect(1500, 2000, 200, 40));
+        BodyPart[] parts = [new(BodyPartDetector.ClsPenis, 0.7f, new Rect(950, 1900, 300, 240)), new(BodyPartDetector.ClsPussy, 0.7f, new Rect(1450, 1900, 300, 240))];
+        var old = RegenRegion.BuildRegions(mask, parts, 0.1, 0.6, mask.Size(), 1024, 0.12);
+        var split = RegenRegion.BuildRegions(mask, parts, 0.1, 0.6, mask.Size(), 1024, 0.12, splitReach: 22);
+        try
+        {
+            Assert.False(Assert.Single(old).Sure);
+            Assert.Equal(2, split.Count);
+            Assert.Equal((RegenKind.Male, true), (split.Single(r => r.Bounds.X < 1400).Sex, split.Single(r => r.Bounds.X < 1400).Sure));
+            Assert.Equal((RegenKind.Female, true), (split.Single(r => r.Bounds.X > 1400).Sex, split.Single(r => r.Bounds.X > 1400).Sure));
+            Assert.All(split, r => Assert.Null(r.SexMap));
+        }
+        finally { foreach (var x in old.Concat(split)) x.Dispose(); }
+    }
+
+    [Fact]
+    public void SplitReachFor_IsThePasteReach_OnlyWhenTheSettingIsOn()
+    {
+        var s = new AppSettings { RegenEdgeGrow = 4, RegenEdgeBlur = 9, RegenCoreGrow = 6, RegenCoreBlur = 14 };
+        Assert.Equal(22, RegenRegion.PasteReach(s));            // 넓은 쪽(6 + 14) + 2
+        Assert.Equal(-1, RegenRegion.SplitReachFor(s));         // 꺼져 있으면 옛 규칙
+        s.RegenSplitRegions = true;
+        Assert.Equal(22, RegenRegion.SplitReachFor(s));
+        s.RegenEdgeGrow = 30;
+        Assert.Equal(41, RegenRegion.SplitReachFor(s));         // 30 + 9 + 2
+    }
 }

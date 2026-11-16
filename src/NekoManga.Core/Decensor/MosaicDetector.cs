@@ -311,7 +311,7 @@ public static class MosaicDetector
         if (whiteM != null && BarLike(whiteM)) { kindUsed = "WhiteBar"; return whiteM; }
         whiteM?.Dispose();
 
-        kindUsed = "없음";
+        kindUsed = Loc.T("없음");
         return null;
     }
 
@@ -684,8 +684,8 @@ public static class MosaicDetector
     public static byte[] ToMaskedPng(Mat img, Mat mask)
     {
         // 아래는 포인터로 직접 읽고 쓴다 — 형식·크기가 어긋나면(그림보다 작은 마스크면 버퍼 밖을 읽는다) 메모리를 망가뜨리므로 먼저 막는다
-        if (img.Type() != MatType.CV_8UC3) throw new ArgumentException("그림은 BGR 8비트(CV_8UC3)여야 해요.", nameof(img));
-        if (mask.Type() != MatType.CV_8UC1 || mask.Size() != img.Size()) throw new ArgumentException("마스크는 그림과 같은 크기의 8비트 한 채널이어야 해요.", nameof(mask));
+        if (img.Type() != MatType.CV_8UC3) throw new ArgumentException(Loc.T("그림은 BGR 8비트(CV_8UC3)여야 해요."), nameof(img));
+        if (mask.Type() != MatType.CV_8UC1 || mask.Size() != img.Size()) throw new ArgumentException(Loc.T("마스크는 그림과 같은 크기의 8비트 한 채널이어야 해요."), nameof(mask));
         using var rgba = new Mat();
         Cv2.CvtColor(img, rgba, ColorConversionCodes.BGR2BGRA);
         unsafe

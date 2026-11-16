@@ -12,6 +12,7 @@ using Pen = System.Windows.Media.Pen;
 using Point = System.Windows.Point;
 using Size = System.Windows.Size;
 using FontFamily = System.Windows.Media.FontFamily;
+using NekoManga.Core;
 
 namespace NekoManga.App;
 
@@ -78,8 +79,9 @@ public static class SplashArt
             dc.Pop(); dc.Pop(); dc.Pop();
 
             // 글귀
-            string title = setup ? "NekoManga 설치하는 중이에요..." : "새 버전으로 갈아입는 중...";
-            string sub = setup ? "☆ 만화에 마법을 부릴 준비 ☆" : "☆ 금방 끝나요, 잠시만 기다려 주세요 ☆";
+            // 번역하지 않는다 — 이 그림은 개발할 때 --gen-splash로 한 번 만들어 assets에 넣는 파일이고(설치·업데이트 때 그 gif가 뜬다), 실행 중에는 그려지지 않는다
+            string title = setup ? "NekoManga 설치하는 중이에요..." : "새 버전으로 갈아입는 중...";   // loc:none
+            string sub = setup ? "☆ 만화에 마법을 부릴 준비 ☆" : "☆ 금방 끝나요, 잠시만 기다려 주세요 ☆";   // loc:none
             DrawText(dc, title, 17, FontWeights.Bold, Ink, W / 2.0, 138);
             DrawText(dc, sub, 12, FontWeights.Normal, Hint, W / 2.0, 166);
 

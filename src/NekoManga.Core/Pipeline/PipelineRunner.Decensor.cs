@@ -41,7 +41,7 @@ public partial class PipelineRunner
                 catch { /* 글자 감지 실패는 치명적이지 않다 — 필터 없이 진행 */ }
             }
         }
-        if (DetectorOverride != null) { kindUsed = "시험용 감지기"; return DetectorOverride(img, exclude); }
+        if (DetectorOverride != null) { kindUsed = "시험용 감지기"; return DetectorOverride(img, exclude); }   // loc:none
         return Aletheia.Detect(img, exclude, out kindUsed, out kinds);
     }
 
@@ -67,7 +67,7 @@ public partial class PipelineRunner
                 var client = new ComfyClient(_server.BaseUrl);
                 wf = CustomWorkflow.Resolve(wf, await client.GetObjectInfoAsync(ct));   // 화면 포맷 변환 + 없는 노드·파일 점검
                 var outDir = Path.Combine(settings.ComfyRoot, "ComfyUI", "output");
-                status?.Report("커스텀 워크플로로 복원 중...");
+                status?.Report(Loc.T("커스텀 워크플로로 복원 중..."));
                 await ComfyCustomDecensorAsync(client, outDir, wf, img, mask, 902, ct);
                 return;
             }
@@ -77,7 +77,7 @@ public partial class PipelineRunner
                 await _server.EnsureRunningAsync(status, ct);
                 var client = new ComfyClient(_server.BaseUrl);
                 var outDir = Path.Combine(settings.ComfyRoot, "ComfyUI", "output");
-                status?.Report("검열 자리 재생성 중 (SDXL)...");
+                status?.Report(Loc.T("검열 자리 재생성 중 (SDXL)..."));
                 try { await ComfyRegenDecensorAsync(client, outDir, img, plan!, 901, ct, regenSettings, status); }
                 finally { foreach (var rg in plan!) rg.Dispose(); }
                 return;
@@ -86,12 +86,12 @@ public partial class PipelineRunner
             {
                 var lama = new LamaInpainter(_onnx);   // 보완으로 찾은 자리(CensorKind.Legacy)만 LaMa로
                 if (!Aletheia.InpainterReady) throw new InvalidOperationException(AletheiaDecensor.InpainterMissing);
-                status?.Report("복원 중...");
+                status?.Report(Loc.T("복원 중..."));
                 Aletheia.Repair(img, mask, kinds, lama);
                 return;
             }
             default:
-                throw new ArgumentException($"알 수 없는 복원 방식: {mode} (Basic | ComfyRegen | ComfyCustom)", nameof(mode));
+                throw new ArgumentException(Loc.F($"알 수 없는 복원 방식: {mode} (Basic | ComfyRegen | ComfyCustom)"), nameof(mode));
         }
     }
 
@@ -111,14 +111,67 @@ public partial class PipelineRunner
     }
 
     /// <summary>재생성 v3의 영역 계획 — 검열 조각마다 (넓힌 영역, 지우기 마스크, 부위 종류). 설정이 꺼져 있으면 영역 = 조각 그대로(Unknown).
-    /// 감지기가 없거나 모델이 없으면 확장 경로(Unknown). 창이 겹치는 영역은 RegenRegion.BuildRegions가 합친다. 호출자가 Dispose.
+    /// 감지기가 없거나 모델이 없으면 확장 경로(Unknown). 창이 겹치는 영역은 RegenRegion.BuildRegions가 합친다(RegenSplitRegions가 켜져 있으면 붙이는 범위가 겹칠 때만). 호출자가 Dispose.
     /// 부위 감지는 임계(RegenRegionConf)보다 낮은 약한 상자(RegenRegion.WeakConf)까지 받아 둔다 — 영역의 모양·종류는 임계 이상만 정하고(전과 같다: 점수순 NMS라
     /// 낮은 상자가 높은 상자를 지우지 못한다), 약한 상자는 조각의 성별(어느 태그를 넣을지)을 가리는 근거로만 쓴다.
     /// <paramref name="marks"/>: 사용자가 조각에 고른 성별(그림 좌표) — 근거보다 앞선다. 영역의 모양은 바꾸지 않는다.</summary>
-    internal List<RegenRegionInfo> RegenPlanFor(Mat img, Mat censorMask, BodyPartDetector? detector, AppSettings? s = null, IReadOnlyList<SexMark>? marks = null)
+    /// <param name="cumSource">질내사정의 자동 판단이 볼 그림 — 넘기지 않으면 <paramref name="img"/>. 채색된 장의 다시 렌더링은 img가 이미 한 번 다시 그려진 그림이라
+    /// (지난번에 사정을 그렸으면 계속 사정, 안 그렸으면 계속 아님) 검열 제거 전 원고(.pre.png)를 넘긴다. 크기가 달라도 된다(상자를 옮긴다).</param>
+    internal List<RegenRegionInfo> RegenPlanFor(Mat img, Mat censorMask, BodyPartDetector? detector, AppSettings? s = null, IReadOnlyList<SexMark>? marks = null, Mat? cumSource = null)
     {
         s ??= settings;
-        return RegenRegion.BuildRegions(censorMask, RegenPartsFor(img, detector, s), s.RegenRegionPad, s.RegenWholeRegion ? s.RegenRegionGrow : 0, img.Size(), s.RegenCropSize, s.RegenRegionConf, marks);
+        return RegenRegion.BuildRegions(censorMask, RegenPartsFor(img, detector, s), s.RegenRegionPad, s.RegenWholeRegion ? s.RegenRegionGrow : 0, img.Size(), s.RegenCropSize, s.RegenRegionConf, marks, RegenRegion.SplitReachFor(s),
+            cumSource != null ? CumRuleFor(cumSource, s, img.Size()) : CumRuleFor(img, s));
+    }
+
+    /// <summary>시험용 이음새 — 질내사정의 자동 판단을 모델 없이 갈아 끼운다(<see cref="DetectorOverride"/>와 같은 쓰임).</summary>
+    internal Func<Mat, AppSettings, CumRule?>? CumRuleOverride { get; set; }
+
+    /// <summary>질내사정의 자동 판단(<see cref="CumRule"/>) — 설정이 꺼져 있거나(RegenCumAuto), 사정 태그 칸이 비었거나, 모델이 없으면 null(사용자가 표시한 조각만 사정으로 친다).
+    /// 점수는 <paramref name="img"/>에서 조각마다 잰다 — 실패해도 그 장을 실패로 두지 않는다(자동 판단 하나 때문에).
+    /// 결과 창도 같은 것을 쓴다(조각의 사정 표시가 2차와 같게) — 돌려받은 규칙은 img를 붙들고 있으니 img를 해제하기 전에만 부른다.
+    /// <paramref name="planSize">: 상자가 img가 아닌 다른 크기의 그림(영역 계획을 세운 그림) 좌표일 때 그 크기 — 상자를 img의 좌표로 옮겨서 잰다.
+    /// 잴 수 없으면 점수는 -1이다(임계 밑이라 '아님'으로 간다 — 결과 창은 음수를 적어 두지 않는다). 한 번 실패하면 이 러너는 자동 판단을 더 하지 않는다:
+    /// 깨진 모델 파일(ComfyUI 노드가 받다 만 것은 해시를 확인한 적이 없다)이면 조각마다 326MB를 다시 읽다 실패하는 일을 되풀이한다(검수).</summary>
+    public CumRule? CumRuleFor(Mat img, AppSettings? s = null, Size? planSize = null)
+    {
+        s ??= settings;
+        if (!CumAutoReady(s)) return null;
+        CumRule? inner;
+        if (CumRuleOverride != null) inner = CumRuleOverride(img, s);
+        else
+        {
+            var detector = new CumDetector(_onnx, s.ComfyRoot);
+            inner = new CumRule(box => detector.Score(img, box), s.RegenCumThreshold);
+        }
+        if (inner == null) return null;
+        double fx = planSize is { Width: > 0, Height: > 0 } p ? (double)img.Width / p.Width : 1, fy = planSize is { Width: > 0, Height: > 0 } q ? (double)img.Height / q.Height : 1;
+        var whole = new Rect(0, 0, img.Width, img.Height);
+        return new CumRule(box =>
+        {
+            if (_cumBroken) return -1f;
+            try
+            {
+                var at = fx == 1 && fy == 1 ? box : new Rect((int)Math.Round(box.X * fx), (int)Math.Round(box.Y * fy), Math.Max(1, (int)Math.Round(box.Width * fx)), Math.Max(1, (int)Math.Round(box.Height * fy)));
+                at &= whole;
+                return at.Width > 0 && at.Height > 0 ? inner.Score(at) : 0f;
+            }
+            catch (Exception ex)
+            {
+                _cumBroken = true;
+                Console.Error.WriteLine($"[cum] 자동 판단을 끕니다 — {ex.GetType().Name}: {ex.Message.Split('\n')[0]}");   // loc:none
+                return -1f;
+            }
+        }, inner.Threshold);
+    }
+
+    private volatile bool _cumBroken;
+
+    /// <summary>질내사정의 자동 판단을 쓸 수 있는가 — 설정이 켜져 있고(RegenCumAuto), 사정 태그 칸이 비지 않았고, 모델이 있고, 이 러너에서 실패한 적이 없다.</summary>
+    public bool CumAutoReady(AppSettings? s = null)
+    {
+        s ??= settings;
+        return s.RegenCumAuto && s.CumTags.Length > 0 && !_cumBroken && (CumRuleOverride != null || new CumDetector(_onnx, s.ComfyRoot).IsReady);
     }
 
     /// <summary>재생성의 영역 계획이 보는 부위 상자(penis/pussy, 약한 것까지 — 임계와 <see cref="RegenRegion.WeakConf"/> 중 낮은 쪽 이상). '부위 통째 다시 그리기'가 꺼져 있거나 모델이 없으면 빈 목록.</summary>
@@ -156,12 +209,12 @@ public partial class PipelineRunner
             var pid = await client.QueuePromptAsync(prepared.Prompt, ct);
             r = await client.WaitAsync(pid, comfyOutputDir, TimeSpan.FromMinutes(30), ct);
             if (r.OutputFiles.Count == 0)
-                throw new InvalidOperationException("커스텀 워크플로 결과 파일이 없어요 — SaveImage 노드가 결과를 저장하는지 확인해 주세요.");
+                throw new InvalidOperationException(Loc.T("커스텀 워크플로 결과 파일이 없어요 — SaveImage 노드가 결과를 저장하는지 확인해 주세요."));
             outImg = ImgIo.Read(r.OutputFiles[^1], ImreadModes.Color);
         }
         finally { WorkFolders.RemoveComfyFiles(settings.ComfyRoot, r?.OutputFiles, outPrefix, up); }   // 읽었으니 ComfyUI 폴더에는 남기지 않는다(실패·멈춤이어도 올린 입력과 그사이 저장된 출력은 지운다)
         using var outImgOwner = outImg;
-        if (outImg.Empty()) throw new InvalidDataException("커스텀 워크플로 결과를 읽지 못했어요.");
+        if (outImg.Empty()) throw new InvalidDataException(Loc.T("커스텀 워크플로 결과를 읽지 못했어요."));
         using var resized = outImg.Width == img.Width && outImg.Height == img.Height
             ? outImg.Clone()
             : outImg.Resize(new OpenCvSharp.Size(img.Width, img.Height), 0, 0, InterpolationFlags.Lanczos4);
@@ -189,9 +242,9 @@ public partial class PipelineRunner
             cn = Path.Combine(cnDir, settings.RegenControlNet);
         }
         if (!File.Exists(ck))
-            throw new FileNotFoundException($"재생성 체크포인트가 없어요: {ck}\n설정 → 검열 제거 → 고급 옵션의 '재생성 체크포인트'를 ComfyUI models\\checkpoints 안의 파일 이름으로 맞춰 주세요.");
+            throw new FileNotFoundException(Loc.F($"재생성 체크포인트가 없어요: {ck}\n설정 → 검열 제거 → 고급 옵션의 '재생성 체크포인트'를 ComfyUI models\\checkpoints 안의 파일 이름으로 맞춰 주세요."));
         if (!File.Exists(cn))
-            throw new FileNotFoundException($"재생성 ControlNet이 없어요: {cn}\n설정 → 검열 제거 → 고급 옵션의 '재생성 ControlNet'을 ComfyUI models\\controlnet 안의 파일 이름으로 맞춰 주세요.");
+            throw new FileNotFoundException(Loc.F($"재생성 ControlNet이 없어요: {cn}\n설정 → 검열 제거 → 고급 옵션의 '재생성 ControlNet'을 ComfyUI models\\controlnet 안의 파일 이름으로 맞춰 주세요."));
     }
 
     /// <summary>재생성 v3 검열제거(2026-11-12) — 영역(RegenPlanFor)마다 그 주변을 잘라(RegenCrop.WindowFor, 기본 1024) 두 PNG(알파=영역 / 알파=조각)를 올리고
@@ -205,7 +258,7 @@ public partial class PipelineRunner
         IReadOnlyList<long>? lockedSeeds = null)
     {
         var rs = regenSettings ?? settings;
-        int reach = Math.Max(rs.RegenEdgeGrow + rs.RegenEdgeBlur, rs.RegenCoreGrow + rs.RegenCoreBlur) + 2;
+        int reach = RegenRegion.PasteReach(rs);
         var seeds = new List<long>();
         for (int k = 0; k < regions.Count; k++)
         {
@@ -215,7 +268,7 @@ public partial class PipelineRunner
             // 자리별 태그(RegenTagsPerPiece): 남녀 조각이 이 그림에 같이 있으면 자리마다 그 성별의 태그만 — 나눌 것이 없으면 null(영역 하나에 한 줄)
             var areas = RegenSexAreas.For(region, w, rs);
             using var areasOwner = new Disposables(areas);
-            status?.Report($"재생성 중 ({k + 1}/{regions.Count}, {(areas != null ? RegenSexAreas.Note(areas, rs) : RegenTags.Note(region.Sex, region.Sure, rs))})");   // 어느 태그로 그리는지 보이게 — 남성 부위에 여성 태그가 들어갔는지 사용자가 알 수 있다
+            status?.Report(Loc.F($"재생성 중 ({k + 1}/{regions.Count}, {(areas != null ? RegenSexAreas.Note(areas, rs) + (RegenTags.CumUsed(RegenKind.Both, false, rs, region.Cum) ? Loc.T(" + 사정") : "") : RegenTags.Note(region.Sex, region.Sure, rs, region.Cum))})"));   // 어느 태그로 그리는지 보이게 — 남성 부위에 여성 태그가 들어갔는지 사용자가 알 수 있다
             using var tight = rs.RegenEraseTight ? RegenRegion.TightenErase(img, region.Erase) : null;   // 막대 픽셀만 지우기(기본)
             var (crop, cropRegion, cropErase) = RegenCrop.CropAndScale(img, region.Region, tight ?? region.Erase, w);
             using (crop) using (cropRegion) using (cropErase)
@@ -236,17 +289,17 @@ public partial class PipelineRunner
                     }
                     long seed = RegenSeedFor(rs, lockedSeeds, k);
                     seeds.Add(seed);
-                    var graph = WorkflowBuilder.BuildRegenCrop(rs, up, eraseUp, outPrefix, RegenTags.For(region.Sex, region.Sure, rs), w.SendW, w.SendH, seed,
+                    var graph = WorkflowBuilder.BuildRegenCrop(rs, up, eraseUp, outPrefix, RegenTags.For(region.Sex, region.Sure, rs, region.Cum), w.SendW, w.SendH, seed,
                         areaUp, areas?.Select(a => a.Tags).ToList());
                     var pid = await client.QueuePromptAsync(graph, ct);
                     r = await client.WaitAsync(pid, comfyOutputDir, TimeSpan.FromMinutes(20), ct);
-                    if (r.OutputFiles.Count == 0) throw new InvalidOperationException("재생성 결과 파일이 없어요.");
+                    if (r.OutputFiles.Count == 0) throw new InvalidOperationException(Loc.T("재생성 결과 파일이 없어요."));
                     outImg = ImgIo.Read(r.OutputFiles[^1], ImreadModes.Color);
                 }
                 // 읽었으니 ComfyUI 폴더에는 남기지 않는다 — 영역마다 입력 둘·출력 하나가 쌓였다(실측 2026-11-13: output\nm_* 566MB). 실패·멈춤이어도 올린 입력은 지운다
                 finally { WorkFolders.RemoveComfyFiles(settings.ComfyRoot, r?.OutputFiles, outPrefix, up, eraseUp, areaUp); }
                 using var outImgOwner = outImg;
-                if (outImg.Empty()) throw new InvalidDataException("재생성 결과를 읽지 못했어요.");
+                if (outImg.Empty()) throw new InvalidDataException(Loc.T("재생성 결과를 읽지 못했어요."));
                 using var back = outImg.Size() == w.Window.Size ? outImg.Clone() : outImg.Resize(w.Window.Size, 0, 0, InterpolationFlags.Lanczos4);
                 // 영역(+엣지가 닿는 범위)만 창 자리에 — 나머지 픽셀은 원본 그대로
                 using var regionRoi = new Mat(region.Region, w.Window);

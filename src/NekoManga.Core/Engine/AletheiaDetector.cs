@@ -219,14 +219,14 @@ public class AletheiaDetector(OnnxEnv env)
                 foreach (var nd in g.Nodes.Where(nd => nd.OpType == "Loop" && nd.Name.Contains("/CropAndResize")))
                 {
                     bool mask = nd.Name.Contains("roi_align_mask");
-                    if (!mask && !nd.Name.Contains("roi_align_classifier")) throw new InvalidDataException("알 수 없는 ROI 정렬 Loop: " + nd.Name);
+                    if (!mask && !nd.Name.Contains("roi_align_classifier")) throw new InvalidDataException(Loc.T("알 수 없는 ROI 정렬 Loop: ") + nd.Name);
                     found.Add(new RoiLoop(mask,
                         nd.Implicit.Single(t => t.Contains("/fpn_p") && t.EndsWith("/BiasAdd:0")),
                         nd.Implicit.Single(t => t.Contains("/GatherNd")),
                         nd.Outputs.Single()));
                 }
                 if (found.Count(l => !l.Mask) != 4 || found.Count(l => l.Mask) != 4)
-                    throw new InvalidDataException($"ROI 정렬 Loop 수가 예상(분류 4·마스크 4)과 달라요: {found.Count}");
+                    throw new InvalidDataException(Loc.F($"ROI 정렬 Loop 수가 예상(분류 4·마스크 4)과 달라요: {found.Count}"));
                 var features = found.Select(l => l.Feature).Distinct().ToArray();
                 var cls = found.Where(l => !l.Mask).ToArray(); var msk = found.Where(l => l.Mask).ToArray();
 
@@ -247,7 +247,7 @@ public class AletheiaDetector(OnnxEnv env)
             {
                 _splitFailed = true;
                 if (Environment.GetEnvironmentVariable("NEKO_ONNX_DBG") == "1")
-                    Console.Error.WriteLine($"[aletheia] 단계 모델 준비 실패 — 통짜 모델로 돌아가요: {ex.GetType().Name}: {ex.Message}");
+                    Console.Error.WriteLine($"[aletheia] 단계 모델 준비 실패 — 통짜 모델로 돌아가요: {ex.GetType().Name}: {ex.Message}");   // loc:none
                 return null;
             }
         }
@@ -274,7 +274,7 @@ public class AletheiaDetector(OnnxEnv env)
             _plan = null; _splitFailed = true;
             try { File.Delete(Path.Combine(env.ModelPath(SplitDir), "manifest.tsv")); } catch { }
         }
-        Dbg("단계 실행 실패 — 통짜 모델로 돌아가요: " + ex.GetType().Name + ": " + ex.Message.Split('\n')[0]);
+        Dbg("단계 실행 실패 — 통짜 모델로 돌아가요: " + ex.GetType().Name + ": " + ex.Message.Split('\n')[0]);   // loc:none
     }
 
     /// <summary>GPU를 못 쓰게 됐을 때 DirectML 세션을 닫는다 (백본 180MB 등이 VRAM에 남지 않게). 감지기만 쓰는 세션이라 바로 닫아도 된다.</summary>
@@ -296,7 +296,7 @@ public class AletheiaDetector(OnnxEnv env)
                 catch (OnnxRuntimeException ex)
                 {
                     _gpuVerified = false;   // 실행 중 GPU 오류(드라이버 재시작·VRAM 부족 등) — 이후 CPU로
-                    Dbg("GPU 실행 실패 — CPU로 돌아가요: " + ex.Message.Split('\n')[0]);
+                    Dbg("GPU 실행 실패 — CPU로 돌아가요: " + ex.Message.Split('\n')[0]);   // loc:none
                     DropGpuSessions();
                     continue;
                 }
@@ -304,19 +304,19 @@ public class AletheiaDetector(OnnxEnv env)
             lock (GpuLock)
             {
                 if (_gpuVerified != null) continue;
-                if (!GpuStages.All(s => env.UsesGpu($"{SplitDir}/{s}.onnx"))) { _gpuVerified = false; Dbg("DirectML 세션을 만들 수 없어 CPU로 실행해요"); continue; }
+                if (!GpuStages.All(s => env.UsesGpu($"{SplitDir}/{s}.onnx"))) { _gpuVerified = false; Dbg("DirectML 세션을 만들 수 없어 CPU로 실행해요"); continue; }   // loc:none
                 // 첫 장: CPU와 GPU로 한 번씩 돌려 대조한다. 이 장의 결과는 CPU 것을 쓴다.
                 var cpu = RunStagedOn(plan, image, meta, gpu: false);
                 try
                 {
                     var gpu = RunStagedOn(plan, image, meta, gpu: true);
                     _gpuVerified = Agree(cpu, gpu, out string why);
-                    Dbg(_gpuVerified == true ? "GPU 결과가 CPU와 일치 — 이후 GPU로 실행해요 (" + why + ")" : "GPU 결과가 CPU와 달라 CPU로 실행해요 (" + why + ")");
+                    Dbg(_gpuVerified == true ? "GPU 결과가 CPU와 일치 — 이후 GPU로 실행해요 (" + why + ")" : "GPU 결과가 CPU와 달라 CPU로 실행해요 (" + why + ")");   // loc:none
                 }
                 catch (Exception ex) when (ex is OnnxRuntimeException or InvalidOperationException)
                 {
                     _gpuVerified = false;
-                    Dbg("GPU 실행 실패 — CPU로 실행해요: " + ex.Message.Split('\n')[0]);
+                    Dbg("GPU 실행 실패 — CPU로 실행해요: " + ex.Message.Split('\n')[0]);   // loc:none
                 }
                 if (_gpuVerified == true)
                     foreach (var s in GpuStages) env.Release($"{SplitDir}/{s}.onnx", cpuOnly: true);   // 대조에만 쓴 CPU 세션(백본 180MB 등)을 닫는다
@@ -332,24 +332,24 @@ public class AletheiaDetector(OnnxEnv env)
     private static bool Agree(StageResult cpu, StageResult gpu, out string why)
     {
         double maxProb = 0;
-        if (cpu.ClassProbs.Length != gpu.ClassProbs.Length) { why = "분류 출력 크기가 다름"; return false; }
+        if (cpu.ClassProbs.Length != gpu.ClassProbs.Length) { why = "분류 출력 크기가 다름"; return false; }   // loc:none
         for (int i = 0; i < cpu.ClassProbs.Length; i++) maxProb = Math.Max(maxProb, Math.Abs(cpu.ClassProbs[i] - gpu.ClassProbs[i]));
-        if (!(maxProb <= 0.02)) { why = $"분류 확률 최대 차 {maxProb:G3}"; return false; }
+        if (!(maxProb <= 0.02)) { why = $"분류 확률 최대 차 {maxProb:G3}"; return false; }   // loc:none
 
         static int Count(float[] d) { int n = 0; while (n < MaxInstances && d[n * 6 + 4] != 0) n++; return n; }
         int nc = Count(cpu.Det), ng = Count(gpu.Det);
-        if (nc != ng) { why = $"검출 수 {nc} vs {ng}"; return false; }
+        if (nc != ng) { why = $"검출 수 {nc} vs {ng}"; return false; }   // loc:none
         double maxBox = 0, maxScore = 0, maskSum = 0;
         for (int i = 0; i < nc; i++)
         {
-            if (cpu.Det[i * 6 + 4] != gpu.Det[i * 6 + 4]) { why = $"검출 {i}의 클래스가 다름"; return false; }
+            if (cpu.Det[i * 6 + 4] != gpu.Det[i * 6 + 4]) { why = $"검출 {i}의 클래스가 다름"; return false; }   // loc:none
             for (int k = 0; k < 4; k++) maxBox = Math.Max(maxBox, Math.Abs(cpu.Det[i * 6 + k] - gpu.Det[i * 6 + k]));
             maxScore = Math.Max(maxScore, Math.Abs(cpu.Det[i * 6 + 5] - gpu.Det[i * 6 + 5]));
             int o = i * MaskSize * MaskSize * NumClasses, len = MaskSize * MaskSize * NumClasses;
             for (int k = 0; k < len; k++) maskSum += Math.Abs(cpu.Masks[o + k] - gpu.Masks[o + k]);
         }
         double maskMean = nc > 0 ? maskSum / ((double)nc * MaskSize * MaskSize * NumClasses) : 0;
-        why = $"검출 {nc}, 분류 확률 차 {maxProb:G3}, 상자 차 {maxBox:G3}, 점수 차 {maxScore:G3}, 마스크 평균 차 {maskMean:G3}";
+        why = $"검출 {nc}, 분류 확률 차 {maxProb:G3}, 상자 차 {maxBox:G3}, 점수 차 {maxScore:G3}, 마스크 평균 차 {maskMean:G3}";   // loc:none
         return maxBox <= 2.0 / MaxDim && maxScore <= 0.02 && maskMean <= 0.01;
     }
 

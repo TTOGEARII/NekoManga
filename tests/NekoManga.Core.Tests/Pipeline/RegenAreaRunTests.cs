@@ -101,6 +101,96 @@ public class RegenAreaRunTests
         finally { foreach (var r in plan) r.Dispose(); }
     }
 
+    [Theory]
+    [InlineData(0.9f, true, true)]     // 자동 판단이 사정으로 본 조각
+    [InlineData(0.1f, true, false)]
+    [InlineData(0.9f, false, false)]   // 자동 판단을 꺼 두면 묻지 않는다
+    public async Task ComfyRegenDecensorAsync_CumTags_GoInOnlyWhenAPieceIsJudgedCum(float score, bool auto, bool expected)
+    {
+        using var t = new TempDir();
+        var s = EnginelessSettings(t);
+        s.LinkedComfyRoot = t.At("comfy");
+        s.RegenTagsBySex = true; s.RegenSeed = 7; s.RegenEraseTight = false; s.RegenCumAuto = auto;
+        s.RegenPrompt = "manga"; s.RegenBodyTagsMale = "penis"; s.RegenBodyTagsFemale = "pussy"; s.RegenBodyTagsCum = "cum in pussy";
+        var fake = new FakeComfy(s.ComfyRoot);
+        var client = new ComfyClient("http://127.0.0.1:1", fake);
+        using var runner = new PipelineRunner(s);
+        runner.CumRuleOverride = (_, st) => new CumRule(_ => score, st.RegenCumThreshold);
+        using var img = new Mat(600, 800, MatType.CV_8UC3, Scalar.White);
+        using var mask = RectMask(800, 600, new Rect(200, 200, 120, 30));
+        var plan = runner.RegenPlanFor(img, mask, null, marks: [new SexMark(new Point(260, 215), RegenKind.Female)]);
+        try
+        {
+            Assert.Equal(expected, Assert.Single(plan).Cum);
+            var notes = new List<string>();
+            await runner.ComfyRegenDecensorAsync(client, Path.Combine(s.ComfyRoot, "ComfyUI", "output"), img, plan, 3, CancellationToken.None, status: new SyncProgress(notes.Add));
+            var prompts = OfType(fake.Graph!, "CLIPTextEncode").Select(n => Str(Inputs(n.Node)["text"])).ToList();
+            Assert.Contains(expected ? "manga, pussy, cum in pussy" : "manga, pussy", prompts);
+            Assert.DoesNotContain(expected ? "manga, pussy" : "manga, pussy, cum in pussy", prompts);
+            Assert.Equal(expected, notes.Any(n => n.Contains("사정")));
+        }
+        finally { foreach (var r in plan) r.Dispose(); }
+    }
+
+    [Fact]
+    public void CumRuleFor_NoModel_OrEmptyTagBox_IsNull()
+    {
+        using var t = new TempDir();
+        var s = EnginelessSettings(t);
+        using var runner = new PipelineRunner(s);
+        using var img = new Mat(60, 80, MatType.CV_8UC3, Scalar.White);
+        Assert.Null(runner.CumRuleFor(img));   // 모델이 없다 — 표시한 조각만 사정으로 친다
+        runner.CumRuleOverride = (_, _) => new CumRule(_ => 1f, 0.35);
+        Assert.NotNull(runner.CumRuleFor(img));
+        var empty = s.ShallowClone(); empty.RegenBodyTagsCum = " ";
+        Assert.Null(runner.CumRuleFor(img, empty));   // 넣을 태그가 없으면 잴 것도 없다
+    }
+
+    [Fact]
+    public void RegenPlanFor_CumSource_IsTheImageJudged_AndBoxesAreMovedToItsSize()
+    {
+        // 채색된 장의 다시 렌더링: 그리는 그림은 이미 한 번 다시 그려졌다 — 판단은 넘겨받은 검열 제거 전 원고에서, 상자는 그 크기로 옮겨서
+        using var t = new TempDir();
+        var s = EnginelessSettings(t);
+        using var runner = new PipelineRunner(s);
+        Mat? judged = null; var boxes = new List<Rect>();
+        runner.CumRuleOverride = (img, st) => { judged = img; return new CumRule(b => { boxes.Add(b); return 0.9f; }, st.RegenCumThreshold); };
+        using var drawn = new Mat(600, 800, MatType.CV_8UC3, Scalar.White);
+        using var pre = new Mat(1200, 1600, MatType.CV_8UC3, Scalar.White);   // 두 배 크기
+        using var mask = RectMask(800, 600, new Rect(200, 200, 120, 30));
+
+        var plain = runner.RegenPlanFor(drawn, mask, null);
+        Assert.Same(drawn, judged); Assert.Equal([new Rect(200, 200, 120, 30)], boxes);
+        boxes.Clear();
+        var fromPre = runner.RegenPlanFor(drawn, mask, null, cumSource: pre);
+        try
+        {
+            Assert.Same(pre, judged);
+            Assert.Equal([new Rect(400, 400, 240, 60)], boxes);
+            Assert.True(Assert.Single(fromPre).Cum);
+        }
+        finally { foreach (var r in plain.Concat(fromPre)) r.Dispose(); }
+    }
+
+    [Fact]
+    public void CumRule_AfterOneFailure_GivesMinusOne_AndTheRunnerStopsJudging()
+    {
+        // 깨진 모델 파일이면 조각마다 다시 읽다 실패한다 — 한 번 실패하면 이 러너는 자동 판단을 끈다. 점수 -1은 임계 밑이라 '아님'이고, 결과 창은 적어 두지 않는다
+        using var t = new TempDir();
+        var s = EnginelessSettings(t);
+        using var runner = new PipelineRunner(s);
+        int calls = 0;
+        runner.CumRuleOverride = (_, st) => new CumRule(_ => { calls++; throw new InvalidDataException("broken"); }, st.RegenCumThreshold);
+        using var img = new Mat(600, 800, MatType.CV_8UC3, Scalar.White);
+        var rule = runner.CumRuleFor(img)!;
+        Assert.True(runner.CumAutoReady());
+        Assert.Equal(-1f, rule.Score(new Rect(10, 10, 50, 50)));
+        Assert.Equal(-1f, rule.Score(new Rect(10, 10, 50, 50)));
+        Assert.Equal(1, calls);                     // 두 번째는 묻지도 않는다
+        Assert.False(runner.CumAutoReady());
+        Assert.Null(runner.CumRuleFor(img));
+    }
+
     /// <summary>부른 스레드에서 바로 적는 IProgress — Progress&lt;T&gt;는 동기화 컨텍스트로 미뤄 시험이 끝난 뒤에 올 수 있다.</summary>
     private sealed class SyncProgress(Action<string> report) : IProgress<string>
     {

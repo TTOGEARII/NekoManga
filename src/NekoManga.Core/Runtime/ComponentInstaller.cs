@@ -29,6 +29,8 @@ public class ComponentInstaller(AppSettings settings)
             c.Probe.StartsWith(ComponentCatalog.ComfyDirName, StringComparison.Ordinal))
             return File.Exists(Path.Combine(settings.LinkedComfyRoot,
                 c.Probe[(ComponentCatalog.ComfyDirName.Length + 1)..].Replace('/', Path.DirectorySeparatorChar)));
+        // 질내사정 판단 모델은 ComfyUI의 WD14 노드가 같은 파일을 받아 뒀으면 그것을 쓴다(Engine.CumDetector) — 326MB를 다시 받으라고 하지 않는다
+        if (c.Id == ComponentCatalog.ModelWdTagger.Id && Engine.CumDetector.ComfyNodeCopy(settings.ComfyRoot) != null) return true;
         return File.Exists(Resolve(c.Probe));
     }
 
@@ -62,7 +64,7 @@ public class ComponentInstaller(AppSettings settings)
             {
                 var tmp = Resolve($"tmp/{c.Id}.zip");
                 await DownloadAsync(c, tmp, progress, ct);
-                progress.Report(new(c.Id, "압축 푸는 중...", 99, 0, 0));
+                progress.Report(new(c.Id, Loc.T("압축 푸는 중..."), 99, 0, 0));
                 ExtractZip(tmp, Resolve(c.Target), c.StripRootFolder);
                 File.Delete(tmp);
                 break;
@@ -86,7 +88,7 @@ public class ComponentInstaller(AppSettings settings)
                     // 임시 파일 이름에 벤더를 넣는다 — 받다 만 NVIDIA .part에 AMD 묶음을 이어 붙이면 깨진 7z가 된다
                     var tmp = Resolve(isComfy ? $"tmp/{c.Id}-{vendor}.7z" : $"tmp/{c.Id}.7z");
                     await DownloadAsync(c, tmp, progress, ct);
-                    progress.Report(new(c.Id, "압축 푸는 중... (수 분 걸려요)", 99, 0, 0));
+                    progress.Report(new(c.Id, Loc.T("압축 푸는 중... (수 분 걸려요)"), 99, 0, 0));
                     await Extract7zAsync(tmp, Resolve(c.Target), ct);
                     File.Delete(tmp);
                 }
@@ -105,7 +107,7 @@ public class ComponentInstaller(AppSettings settings)
             }
         }
         RemoveObsolete(c);
-        progress.Report(new(c.Id, "완료", 100, c.ApproxBytes, c.ApproxBytes));
+        progress.Report(new(c.Id, Loc.T("완료"), 100, c.ApproxBytes, c.ApproxBytes));
     }
 
     /// <summary>이 구성요소가 대체한 옛 파일을 지운다 (예: 만화판 LaMa 설치 뒤 Carve lama_fp32.onnx 208MB — 업그레이드 설치에 죽은 파일로 남는다).
@@ -152,7 +154,7 @@ public class ComponentInstaller(AppSettings settings)
             }
             if (code is not (502 or 503 or 504) || attempt >= 3) break;
             resp.Dispose();
-            progress.Report(new(c.Id, $"서버가 잠깐 응답하지 않아요 (HTTP {code}) — 다시 시도 {attempt + 1}/3", 0, 0, 0));
+            progress.Report(new(c.Id, Loc.F($"서버가 잠깐 응답하지 않아요 (HTTP {code}) — 다시 시도 {attempt + 1}/3"), 0, 0, 0));
             await Task.Delay(TimeSpan.FromSeconds(4 * (attempt + 1)), ct);
         }
         using var respDispose = resp;
@@ -163,9 +165,9 @@ public class ComponentInstaller(AppSettings settings)
         if (!resp.IsSuccessStatusCode)
         {
             var hint = c.UseCivitaiKey && (int)resp.StatusCode is 401 or 403
-                ? " — civitai 로그인 필요 모델일 수 있어요. 설정에서 civitai API 키를 넣어주세요."
+                ? Loc.T(" — civitai 로그인 필요 모델일 수 있어요. 설정에서 civitai API 키를 넣어주세요.")
                 : "";
-            throw new HttpRequestException($"{c.DisplayName} 다운로드 실패 (HTTP {(int)resp.StatusCode}){hint}");
+            throw new HttpRequestException(Loc.F($"{Loc.T(c.DisplayName)} 다운로드 실패 (HTTP {(int)resp.StatusCode}){hint}"));
         }
 
         long total = (resp.Content.Headers.ContentLength ?? 0) + existing;
@@ -194,14 +196,14 @@ public class ComponentInstaller(AppSettings settings)
         // 해시가 적힌 구성요소는 받은 파일을 확인한다 — 남의 저장소에서 받는 모델은 주소가 그대로여도 내용이 바뀌거나 중간에 깨질 수 있다
         if (c.Sha256 is { Length: > 0 } expected)
         {
-            progress.Report(new(c.Id, "받은 파일 확인 중...", 99, 0, 0));
+            progress.Report(new(c.Id, Loc.T("받은 파일 확인 중..."), 99, 0, 0));
             string actual;
             await using (var fs = new FileStream(part, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20))
                 actual = Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(fs, ct));
             if (!string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
             {
                 File.Delete(part);
-                throw new InvalidDataException($"{c.DisplayName} 파일이 깨졌거나 배포본이 바뀌었어요 (해시 불일치) — 다시 시도해 주세요.");
+                throw new InvalidDataException(Loc.F($"{Loc.T(c.DisplayName)} 파일이 깨졌거나 배포본이 바뀌었어요 (해시 불일치) — 다시 시도해 주세요."));
             }
         }
         File.Move(part, dest, overwrite: true);
@@ -243,7 +245,7 @@ public class ComponentInstaller(AppSettings settings)
     {
         var sevenZip = Resolve(ComponentCatalog.SevenZip.Target);
         if (!File.Exists(sevenZip))
-            throw new FileNotFoundException("7zr.exe가 없습니다. 구성요소 설치 순서를 확인하세요.", sevenZip);
+            throw new FileNotFoundException(Loc.T("7zr.exe가 없습니다. 구성요소 설치 순서를 확인하세요."), sevenZip);
         Directory.CreateDirectory(destDir);
         var psi = new ProcessStartInfo
         {
@@ -257,6 +259,6 @@ public class ComponentInstaller(AppSettings settings)
         using var p = Process.Start(psi)!;
         await p.WaitForExitAsync(ct);
         if (p.ExitCode != 0)
-            throw new InvalidOperationException($"7z 압축 해제 실패 (exit {p.ExitCode}): {await p.StandardError.ReadToEndAsync(ct)}");
+            throw new InvalidOperationException(Loc.F($"7z 압축 해제 실패 (exit {p.ExitCode}): {await p.StandardError.ReadToEndAsync(ct)}"));
     }
 }

@@ -73,7 +73,9 @@
                 <Setter Property="Foreground" Value="{DynamicResource NekoPinkSoft}"/>
                 <Setter Property="Margin" Value="0,16,0,8"/>
             </Style>
+            <!-- 칸 이름은 폭이 정해져 있다 — 넘치면 잘리지 않고 줄을 바꾼다(영어·일본어 이름이 한국어보다 길다. 한국어에서도 몇 개가 끝이 잘려 있었다) -->
             <Style TargetType="TextBlock" x:Key="FieldLabel">
+                <Setter Property="TextWrapping" Value="Wrap"/>
                 <Setter Property="VerticalAlignment" Value="Center"/>
                 <Setter Property="Margin" Value="0,0,10,0"/>
                 <Setter Property="Foreground" Value="{DynamicResource NekoText}"/>

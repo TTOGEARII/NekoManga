@@ -9,6 +9,7 @@ using ComboBox = System.Windows.Controls.ComboBox;
 using ComboBoxItem = System.Windows.Controls.ComboBoxItem;
 using MessageBox = System.Windows.MessageBox;
 using Application = System.Windows.Application;
+using NekoManga.Core;
 
 namespace NekoManga.App;
 
@@ -59,8 +60,8 @@ public partial class SettingsWindow
     {
         var dlg = new System.Windows.Forms.OpenFileDialog
         {
-            Title = "컬러 표지/참고 일러스트 고르기",
-            Filter = "이미지|*.png;*.jpg;*.jpeg;*.webp;*.bmp|모든 파일|*.*",
+            Title = Loc.T("컬러 표지/참고 일러스트 고르기"),
+            Filter = Loc.T("이미지") + "|*.png;*.jpg;*.jpeg;*.webp;*.bmp|" + Loc.T("모든 파일") + "|*.*",
         };
         if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
         {
@@ -75,12 +76,12 @@ public partial class SettingsWindow
         if (!File.Exists(path))
         {
             TxtColorRefTags.Text = "";
-            System.Windows.MessageBox.Show("먼저 표지 이미지를 골라주세요.", "색 뽑기");
+            System.Windows.MessageBox.Show(Loc.T("먼저 표지 이미지를 골라주세요."), Loc.T("색 뽑기"));
             return;
         }
         BtnRefExtract.IsEnabled = false;
         var old = BtnRefExtract.Content;
-        BtnRefExtract.Content = "뽑는 중...";
+        BtnRefExtract.Content = Loc.T("뽑는 중...");
         try
         {
             // 현재 입력값으로 뽑는다 (창을 닫기 전이라 settings엔 아직 저장 전일 수 있음)
@@ -89,11 +90,11 @@ public partial class SettingsWindow
                 s, path, new Progress<string>(m => BtnRefExtract.Content = m));
             TxtColorRefTags.Text = tags.Length > 0 ? tags : "";
             if (tags.Length == 0)
-                System.Windows.MessageBox.Show("색 태그를 찾지 못했어요 — 컬러 이미지가 맞는지 확인해 주세요.", "색 뽑기");
+                System.Windows.MessageBox.Show(Loc.T("색 태그를 찾지 못했어요 — 컬러 이미지가 맞는지 확인해 주세요."), Loc.T("색 뽑기"));
         }
         catch (Exception ex)
         {
-            System.Windows.MessageBox.Show("색 뽑기 실패: " + ex.Message, "색 뽑기");
+            System.Windows.MessageBox.Show(Loc.T("색 뽑기 실패: ") + ex.Message, Loc.T("색 뽑기"));
         }
         finally
         {

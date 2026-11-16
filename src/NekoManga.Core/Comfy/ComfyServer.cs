@@ -36,7 +36,7 @@ public class ComfyServer(AppSettings settings) : IAsyncDisposable
     /// <summary>프로세스 사이의 기동 기록(StartFile) — 로그 옆에 둔다. 로그가 포트와 상관없이 하나라 기록도 하나다.</summary>
     internal static string StartRecordPath => Path.Combine(Path.GetDirectoryName(LogPath)!, "comfy.start");
 
-    private const string WakingText = "채색 엔진 깨우는 중... (첫 시작은 1~2분)";
+    private static string WakingText => Loc.T("채색 엔진 깨우는 중... (첫 시작은 1~2분)");
 
     public Task<bool> IsAliveAsync() => _ledger.IsAliveAsync(BaseUrl);
 
@@ -53,7 +53,7 @@ public class ComfyServer(AppSettings settings) : IAsyncDisposable
         var python = Path.Combine(root, "python_embeded", "python.exe");
         var main = Path.Combine(root, "ComfyUI", "main.py");
         if (!File.Exists(python) || !File.Exists(main))
-            throw new FileNotFoundException("ComfyUI가 설치되어 있지 않아요. 설정 → 구성요소에서 설치해 주세요.", main);
+            throw new FileNotFoundException(Loc.T("ComfyUI가 설치되어 있지 않아요. 설정 → 구성요소에서 설치해 주세요."), main);
 
         status?.Report(WakingText);
 
@@ -99,8 +99,8 @@ public class ComfyServer(AppSettings settings) : IAsyncDisposable
                     // 살아 있는 서버가 다른 포트의 것이면 기다려도 이 포트로는 오지 않고, 하나 더 띄워도 그 서버가 쥔 comfy.log 때문에 곧바로 죽는다 — 까닭을 바로 알린다
                     if (claim.Port != port)
                         throw new InvalidOperationException(
-                            $"NekoManga가 포트 {claim.Port}에 띄운 ComfyUI가 돌고 있어서(또는 깨어나는 중이라) 포트 {port}로는 하나 더 띄울 수 없어요 — 앱이 띄우는 ComfyUI는 한 번에 하나예요. " +
-                            $"설정 → 엔진 → 고급 옵션의 포트를 {claim.Port}로 맞춰 주세요. 포트를 바꿔 쓰려면 포트가 {claim.Port}인 채로 엔진을 끈 다음에 바꾸면 돼요.");
+                            Loc.F($"NekoManga가 포트 {claim.Port}에 띄운 ComfyUI가 돌고 있어서(또는 깨어나는 중이라) 포트 {port}로는 하나 더 띄울 수 없어요 — 앱이 띄우는 ComfyUI는 한 번에 하나예요. ") +
+                            Loc.F($"설정 → 엔진 → 고급 옵션의 포트를 {claim.Port}로 맞춰 주세요. 포트를 바꿔 쓰려면 포트가 {claim.Port}인 채로 엔진을 끈 다음에 바꾸면 돼요."));
                     proc = claim.Proc;
                     ours = claim.Ours;
                     if (ours)
@@ -113,18 +113,18 @@ public class ComfyServer(AppSettings settings) : IAsyncDisposable
                     }
                     else
                     {
-                        status?.Report("다른 NekoManga가 깨우는 중인 채색 엔진을 기다리는 중...");   // 한도는 그대로(처음 물은 때부터) — 남의 서버라고 더 오래 기다리지 않는다
+                        status?.Report(Loc.T("다른 NekoManga가 깨우는 중인 채색 엔진을 기다리는 중..."));   // 한도는 그대로(처음 물은 때부터) — 남의 서버라고 더 오래 기다리지 않는다
                         toldWaitingForOther = true;
                     }
                 }
                 if (DateTime.UtcNow >= deadline)
                     throw new TimeoutException(ours
-                        ? "ComfyUI 서버가 제한 시간 안에 응답하지 않았어요."
+                        ? Loc.T("ComfyUI 서버가 제한 시간 안에 응답하지 않았어요.")
                         // 남의 서버를 한도까지 기다리다 끝났다 — 무엇을 기다렸는지와 볼 곳을 알린다(예전에는 이 자리에서 하나 더 띄우다 곧바로 exit 1 + 로그 진단으로 끝났다).
                         // 로그 진단(DiagnoseComfyLog)은 붙이지 못한다: 살아 있는 서버의 cmd가 comfy.log를 쓰기로 쥐고 있어 File.ReadAllText가 공유 위반으로 실패한다
                         // (2026-11-11 실측 — cmd 리다이렉트가 쥔 파일은 FileShare.ReadWrite로 열어야 읽힌다)
-                        : "다른 NekoManga가 깨우던 채색 엔진(ComfyUI)이 제한 시간 안에 응답하지 않았어요 — 아직 깨어나는 중이거나 켜지다 멈췄을 수 있어요. " +
-                          $"조금 뒤 다시 해 보고, 계속 그러면 설정 → 엔진의 [끄기]로 끈 다음 다시 해 보세요. 로그: {LogPath}");
+                        : Loc.T("다른 NekoManga가 깨우던 채색 엔진(ComfyUI)이 제한 시간 안에 응답하지 않았어요 — 아직 깨어나는 중이거나 켜지다 멈췄을 수 있어요. ") +
+                          Loc.F($"조금 뒤 다시 해 보고, 계속 그러면 설정 → 엔진의 [끄기]로 끈 다음 다시 해 보세요. 로그: {LogPath}"));
                 ct.ThrowIfCancellationRequested();
                 if (proc.HasExited)
                 {
@@ -133,7 +133,7 @@ public class ComfyServer(AppSettings settings) : IAsyncDisposable
                     // 흔한 원인(드라이버·VC++ 런타임·VRAM)은 로그에서 읽어 바로 할 일을 알려 준다 (2026-10-20, 다른 PC의 c10.dll 1114 사고)
                     var hint = Runtime.SystemCheck.DiagnoseComfyLog(LogPath, settings.GpuVendor);
                     throw new InvalidOperationException(
-                        $"ComfyUI가 시작하자마자 종료됐어요 (exit {proc.ExitCode}). " + (hint != null ? hint + " " : "") + $"로그: {LogPath}");
+                        Loc.F($"ComfyUI가 시작하자마자 종료됐어요 (exit {proc.ExitCode}). ") + (hint != null ? hint + " " : "") + Loc.F($"로그: {LogPath}"));
                 }
                 if (await _ledger.IsAliveAsync(baseUrl)) return;
                 await Task.Delay(_ledger.Poll, ct);

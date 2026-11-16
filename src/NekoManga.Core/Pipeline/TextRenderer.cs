@@ -32,7 +32,7 @@ public static class TextRenderer
         settings ??= new AppSettings();
         using var mat = ImgIo.Read(imagePath, ImreadModes.Color);
         if (mat.Empty())
-            throw new InvalidDataException($"이미지를 읽지 못했어요: {Path.GetFileName(imagePath)}");
+            throw new InvalidDataException(Loc.F($"이미지를 읽지 못했어요: {Path.GetFileName(imagePath)}"));
         using var bmp = ToBitmap(mat);
 
         // 다시 식자(결과 창 [다시 식자], --reletter)는 박제한 원본 크기로 환산한다. 원본 파일에 기대면 원고 폴더를 옮기거나 원본을 지운 뒤에는
@@ -64,7 +64,7 @@ public static class TextRenderer
         // 출력(--reletter <결과.png> out.png)에서 GetDirectoryName이 ""라 그림을 다 그린 뒤 저장 직전에 던졌다 (AppSettings.Save와 같은 함정).
         using var outMat = ToMat(bmp);
         if (!ImgIo.Write(outPath, outMat))
-            throw new IOException($"결과 저장에 실패했어요: {outPath}");
+            throw new IOException(Loc.F($"결과 저장에 실패했어요: {outPath}"));
     }
 
     /// <summary>세로쓰기 블록을 말풍선의 실제 흰 폭까지 가로로 넓힌다.

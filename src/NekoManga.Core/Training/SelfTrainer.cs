@@ -38,8 +38,8 @@ public sealed class SelfTrainer(AppSettings settings)
     public sealed record Material(int Pages, int Changed, int Skipped, DateTime? Last);
     public sealed record Metrics(int Hits, int Total, long FpPx, int CleanPages, int CleanFired)
     {
-        public string Text => Total == 0 && CleanPages == 0 ? "보류 페이지 없음"
-            : $"적중 {Hits}/{Total} · 라벨 밖 발화 {FpPx:N0}px" + (CleanPages > 0 ? $" · 깨끗 {CleanPages}쪽 중 발화 {CleanFired}" : "");
+        public string Text => Total == 0 && CleanPages == 0 ? Loc.T("보류 페이지 없음")
+            : Loc.F($"적중 {Hits}/{Total} · 라벨 밖 발화 {FpPx:N0}px") + (CleanPages > 0 ? Loc.F($" · 깨끗 {CleanPages}쪽 중 발화 {CleanFired}") : "");
     }
     public sealed record Result(bool Ok, string? Error, int Pages, int TrainPages, int HoldoutPages, int Crops, Metrics? Before, Metrics? After, double Minutes);
 
@@ -68,11 +68,11 @@ public sealed class SelfTrainer(AppSettings settings)
 
     public bool CanTrain(out string why)
     {
-        if (!settings.ComfyAvailable || !File.Exists(PythonExe)) { why = "학습은 ComfyUI에 딸린 파이썬으로 돌아요 — 설정 → 구성요소에서 ComfyUI를 설치해 주세요."; return false; }
-        if (!File.Exists(RuntimePt) && !File.Exists(CandidatePt)) { why = $"학습 기준 가중치가 없어요: {RuntimePt}"; return false; }
-        if (!File.Exists(ScriptPath)) { why = $"학습 스크립트가 없어요: {ScriptPath}"; return false; }
+        if (!settings.ComfyAvailable || !File.Exists(PythonExe)) { why = Loc.T("학습은 ComfyUI에 딸린 파이썬으로 돌아요 — 설정 → 구성요소에서 ComfyUI를 설치해 주세요."); return false; }
+        if (!File.Exists(RuntimePt) && !File.Exists(CandidatePt)) { why = Loc.F($"학습 기준 가중치가 없어요: {RuntimePt}"); return false; }
+        if (!File.Exists(ScriptPath)) { why = Loc.F($"학습 스크립트가 없어요: {ScriptPath}"); return false; }
         var m = CountMaterial();
-        if (m.Pages < settings.SelfTrainMinPages) { why = $"재료가 {m.Pages}쪽이라 아직 부족해요 (최소 {settings.SelfTrainMinPages}쪽). 검토 창을 거친 페이지가 쌓이면 켜져요."; return false; }
+        if (m.Pages < settings.SelfTrainMinPages) { why = Loc.F($"재료가 {m.Pages}쪽이라 아직 부족해요 (최소 {settings.SelfTrainMinPages}쪽). 검토 창을 거친 페이지가 쌓이면 켜져요."); return false; }
         why = ""; return true;
     }
 
@@ -84,7 +84,7 @@ public sealed class SelfTrainer(AppSettings settings)
             var n = JsonNode.Parse(File.ReadAllText(ResultPath))!;
             static Metrics? M(JsonNode? x) => x == null ? null : new(x["hits"]!.GetValue<int>(), x["total"]!.GetValue<int>(), x["fp_px"]!.GetValue<long>(),
                 x["clean_pages"]?.GetValue<int>() ?? 0, x["clean_fired"]?.GetValue<int>() ?? 0);
-            return new(n["ok"]?.GetValue<bool>() ?? false, n["error"]?.GetValue<string>(), n["pages"]?.GetValue<int>() ?? 0, n["train_pages"]?.GetValue<int>() ?? 0,
+            return new(n["ok"]?.GetValue<bool>() ?? false, ErrorText(n), n["pages"]?.GetValue<int>() ?? 0, n["train_pages"]?.GetValue<int>() ?? 0,
                 n["holdout_pages"]?.GetValue<int>() ?? 0, n["crops"]?.GetValue<int>() ?? 0, M(n["before"]), M(n["after"]), n["minutes"]?.GetValue<double>() ?? 0);
         }
         catch { return null; }
@@ -92,9 +92,9 @@ public sealed class SelfTrainer(AppSettings settings)
 
     // 쓰는 것은 진행 중인 본 작업, 닫은 결과 창에서 아직 돌고 있는 채색·검열 제거, 표지 색 뽑기다 — 결과 창과 설정 창은 둘 다 모달이라 같이 떠 있지 못하므로
     // '결과 창을 닫은 뒤'가 아니라 '작업이 끝난 뒤'라고 알린다
-    private const string BusyText =
-        "채색 엔진을 쓰는 작업이 있어서 학습을 시작하지 않았어요 — 학습은 GPU를 비우려고 엔진을 끄는데, 지금 끄면 그 작업이 도중에 실패해요. " +
-        "작업이 끝난 뒤 다시 눌러 주세요.";
+    private static string BusyText =>
+        Loc.T("채색 엔진을 쓰는 작업이 있어서 학습을 시작하지 않았어요 — 학습은 GPU를 비우려고 엔진을 끄는데, 지금 끄면 그 작업이 도중에 실패해요. ") +
+        Loc.T("작업이 끝난 뒤 다시 눌러 주세요.");
 
     /// <summary>학습을 시작하면 이 앱의 작업이 쓰는 중인 채색 엔진을 끄게 되는가 — 그러면 사용자에게 보일 까닭, 아니면 null.
     /// 학습은 GPU를 비우려고 엔진을 끄는데(TrainAsync) 쓰는 중인 엔진을 끄면 그 작업이 도중에 연결 오류로 실패한다 — 그래서 쓰는 중이면 조용히 끄지 않고 학습을 시작하지 않는다.
@@ -111,7 +111,7 @@ public sealed class SelfTrainer(AppSettings settings)
     {
         if (!await EngineAliveAsync()) return;
         if (_ledger.JobsUsing > 0) throw new InvalidOperationException(BusyText);
-        status?.Report("GPU를 비우려고 채색 엔진을 끄는 중...");
+        status?.Report(Loc.T("GPU를 비우려고 채색 엔진을 끄는 중..."));
         if (_killPythons == null) EngineManager.Stop(settings);
         else EngineManager.Stop(settings, _ledger, _killPythons);
     }
@@ -147,7 +147,7 @@ public sealed class SelfTrainer(AppSettings settings)
             while ((line = await p.StandardOutput.ReadLineAsync()) != null)
             {
                 log.WriteLine(line);
-                if (line.StartsWith("PROGRESS ")) status?.Report(line[9..].Replace("train ", "").Trim());
+                if (line.StartsWith("PROGRESS ")) status?.Report(ProgressText(line[9..]));
             }
         });
         var readErr = Task.Run(async () =>
@@ -157,20 +157,57 @@ public sealed class SelfTrainer(AppSettings settings)
             {
                 log.WriteLine(line);
                 // ultralytics 진행바는 stderr로 온다 — 에폭 줄만 간추려 보여 준다
-                if (++n % 20 == 0 && line.Contains('/') && line.Contains("it/s")) status?.Report("학습 중... " + line.Trim()[..Math.Min(60, line.Trim().Length)]);
+                if (++n % 20 == 0 && line.Contains('/') && line.Contains("it/s")) status?.Report(Loc.T("학습 중... ") + line.Trim()[..Math.Min(60, line.Trim().Length)]);
             }
         });
         try { await p.WaitForExitAsync(ct); }
         catch (OperationCanceledException) { try { p.Kill(true); } catch { } throw; }
         await Task.WhenAll(readOut, readErr);
-        var r = LastResult() ?? new Result(false, $"결과 파일이 없어요 (exit {p.ExitCode}) — {LogPath} 를 확인해 주세요.", 0, 0, 0, 0, null, null, 0);
+        var r = LastResult() ?? new Result(false, Loc.F($"결과 파일이 없어요 (exit {p.ExitCode}) — {LogPath} 를 확인해 주세요."), 0, 0, 0, 0, null, null, 0);
         return r;
+    }
+
+    /// <summary>학습 스크립트의 진행 줄("단계 값 … | 한국어 설명")을 지금 화면 언어의 글로. 스크립트(assets/training/selftrain.py)는 한국어로만 적으므로 그 글을 그대로 보이면
+    /// 다른 언어의 화면에 한국어가 섞인다 — 단계와 값만 받아 여기서 짓는다. 전처럼 단계 이름을 앞에 두되 train은 뺀다. 값이 없는 옛 꼴·모르는 단계는 받은 글 그대로.</summary>
+    internal static string ProgressText(string rest)
+    {
+        int bar = rest.IndexOf(" | ", StringComparison.Ordinal);
+        var head = (bar >= 0 ? rest[..bar] : "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        string stage = head.Length > 0 ? head[0] : "";
+        string A(int i) => i + 1 < head.Length ? head[i + 1] : "?";
+        string? text = stage switch
+        {
+            "scan" => Loc.F($"재료 {A(0)}쪽"),
+            "split" => Loc.F($"학습 {A(0)}쪽 · 보류 {A(1)}쪽"),
+            "data" => Loc.F($"크롭 {A(0)}장 · 라벨 {A(1)}개"),
+            "train" => Loc.F($"미세조정 시작 ({A(0)}에폭, lr {A(1)}, freeze {A(2)})"),
+            "export" => Loc.T("ONNX로 내보내는 중"),
+            "eval" => Loc.F($"보류 {A(0)}쪽 전/후 비교"),
+            "done" => Loc.F($"완료 {A(0)}분"),
+            _ => null,
+        };
+        if (text == null) return (bar >= 0 ? stage + " " + rest[(bar + 3)..] : rest).Replace("train ", "").Trim();
+        return stage == "train" ? text : stage + " " + text;
+    }
+
+    /// <summary>스크립트가 남긴 실패 까닭 — 아는 코드면 지금 화면 언어로 짓고, 코드가 없으면(옛 결과 파일) 스크립트의 글 그대로.</summary>
+    internal static string? ErrorText(JsonNode result)
+    {
+        string A(int i) => result["args"] is JsonArray a && i < a.Count ? a[i]?.ToString() ?? "?" : "?";
+        string? code = result["code"] is JsonValue v && v.TryGetValue<string>(out var c) ? c : null;   // 글이 아닌 값이면 모르는 코드로
+        return code switch
+        {
+            "few_pages" => Loc.F($"재료가 {A(0)}쪽이라 아직 부족해요 (최소 {A(1)}쪽)"),
+            "few_crops" => Loc.T("학습 크롭이 너무 적어요 (마스크가 있는 페이지가 더 필요)"),
+            "no_weights" => Loc.T("학습 결과 가중치가 없어요 (로그 확인)"),
+            _ => result["error"]?.GetValue<string>(),
+        };
     }
 
     /// <summary>후보 모델을 런타임에 적용한다 — 이전 모델은 previous.onnx/.pt로 보관해 되돌릴 수 있다. 후보 .pt는 다음 학습의 기준이 된다.</summary>
     public void Apply()
     {
-        if (!File.Exists(CandidateOnnx)) throw new FileNotFoundException("적용할 후보 모델이 없어요 — 먼저 학습을 돌려 주세요.");
+        if (!File.Exists(CandidateOnnx)) throw new FileNotFoundException(Loc.T("적용할 후보 모델이 없어요 — 먼저 학습을 돌려 주세요."));
         File.Copy(RuntimeOnnx, BackupOnnx, overwrite: true);
         if (File.Exists(RuntimePt)) File.Copy(RuntimePt, BackupPt, overwrite: true);
         File.Copy(CandidateOnnx, RuntimeOnnx, overwrite: true);
@@ -182,7 +219,7 @@ public sealed class SelfTrainer(AppSettings settings)
 
     public void Rollback()
     {
-        if (!CanRollback) throw new FileNotFoundException("되돌릴 이전 모델이 없어요.");
+        if (!CanRollback) throw new FileNotFoundException(Loc.T("되돌릴 이전 모델이 없어요."));
         File.Copy(BackupOnnx, RuntimeOnnx, overwrite: true);
         if (File.Exists(BackupPt)) File.Copy(BackupPt, RuntimePt, overwrite: true);
         File.Delete(BackupOnnx); if (File.Exists(BackupPt)) File.Delete(BackupPt);

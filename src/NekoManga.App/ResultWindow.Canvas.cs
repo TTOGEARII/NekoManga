@@ -215,12 +215,12 @@ public partial class ResultWindow
             {
                 _letterPreview = false;
                 Redraw();
-                TxtStatus.Text = "편집 모드 — 텍스트박스를 바로 고치세요";
+                TxtStatus.Text = Loc.T("편집 모드 — 텍스트박스를 바로 고치세요");
             }
             return;
         }
         // 결과 보기: 그림을 보기만 한다 — 칠하려면 마스크 보기로
-        if (ResultView) TxtStatus.Text = "결과 보기예요 — 지울 곳을 칠하려면 [🎭 마스크 보기]로 바꾸세요";
+        if (ResultView) TxtStatus.Text = Loc.T("결과 보기예요 — 지울 곳을 칠하려면 [🎭 마스크 보기]로 바꾸세요");
     }
 
     private void Host_RightClick(object sender, MouseButtonEventArgs e)

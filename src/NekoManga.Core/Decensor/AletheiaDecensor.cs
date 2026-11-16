@@ -35,8 +35,8 @@ public sealed class AletheiaDecensor(AppSettings settings, OnnxEnv env)
     public bool DetectorReady => _detector.IsReady;
     public bool InpainterReady => _inpainter.IsReady;
 
-    public const string DetectorMissing = "검열 감지 모델(Aletheia Lens)이 아직 설치되지 않았어요 — 설정 → 구성요소에서 받아주세요.";
-    public const string InpainterMissing = "검열 복원 모델(Aletheia Lens)이 아직 설치되지 않았어요 — 설정 → 구성요소에서 받아주세요.";
+    public static string DetectorMissing => Loc.T("검열 감지 모델(Aletheia Lens)이 아직 설치되지 않았어요 — 설정 → 구성요소에서 받아주세요.");
+    public static string InpainterMissing => Loc.T("검열 복원 모델(Aletheia Lens)이 아직 설치되지 않았어요 — 설정 → 구성요소에서 받아주세요.");
 
     private enum Tone { Dark, Bright, Color }
 
@@ -116,9 +116,9 @@ public sealed class AletheiaDecensor(AppSettings settings, OnnxEnv env)
                 bool all = settings.DecensorLegacyAssist == "All";
                 legacy = net.BuildMask(img, exclude, assistGrow, out _, bubbleFilter: settings.DecensorBubbleFilter,
                     white: true, black: all, mosaic: all || settings.DecensorLegacyAssist == "WhiteMosaic");
-                legacyNote = " + 전용 AI 보완";
+                legacyNote = Loc.T(" + 전용 AI 보완");
             }
-            else legacyNote = " (전용 AI 미설치 — 보완 없음)";
+            else legacyNote = Loc.T(" (전용 AI 미설치 — 보완 없음)");
         }
         else if (target is "WhiteBar" or "Color")
         {
@@ -129,13 +129,13 @@ public sealed class AletheiaDecensor(AppSettings settings, OnnxEnv env)
             {
                 legacy = net.BuildMask(img, exclude, assistGrow, out _, bubbleFilter: settings.DecensorBubbleFilter,
                     white: true, black: false, mosaic: false, conf: WhiteBarAssistConf);
-                legacyNote = " + 전용 AI 흰선";
+                legacyNote = Loc.T(" + 전용 AI 흰선");
             }
             else
             {
                 var s2 = settings.ShallowClone(); s2.DecensorMaskGrow = assistGrow;
                 legacy = MosaicDetector.BuildMaskForTarget(s2, img, exclude, out _);
-                legacyNote = $" + 기존 {(target == "WhiteBar" ? "흰 막대" : "색")} 감지";
+                legacyNote = target == "WhiteBar" ? Loc.T(" + 기존 흰 막대 감지") : Loc.T(" + 기존 색 감지");
             }
         }
 
@@ -178,7 +178,7 @@ public sealed class AletheiaDecensor(AppSettings settings, OnnxEnv env)
             var mask = new Mat();
             Cv2.Threshold(map, mask, 0, 255, ThresholdTypes.Binary);
             int px = Cv2.CountNonZero(mask);
-            summary = $"Aletheia(막대 {nBar}·모자이크 {nMosaic}{(nOtherTone > 0 ? $"·다른 색조 {nOtherTone} 제외" : "")}){legacyNote} → {px}px";
+            summary = Loc.F($"Aletheia(막대 {nBar}·모자이크 {nMosaic}{(nOtherTone > 0 ? Loc.F($"·다른 색조 {nOtherTone} 제외") : "")}){legacyNote} → {px}px");
             if (px == 0)
             {
                 mask.Dispose(); map.Dispose();
@@ -234,12 +234,12 @@ public sealed class AletheiaDecensor(AppSettings settings, OnnxEnv env)
     public string Repair(Mat img, Mat mask, Mat? kinds, LamaInpainter lama)
     {
         if (!_inpainter.IsReady) throw new FileNotFoundException(InpainterMissing);
-        if (mask.Type() != MatType.CV_8UC1 || mask.Size() != img.Size()) throw new ArgumentException("마스크는 그림과 같은 크기의 8비트 한 채널이어야 해요.", nameof(mask));
+        if (mask.Type() != MatType.CV_8UC1 || mask.Size() != img.Size()) throw new ArgumentException(Loc.T("마스크는 그림과 같은 크기의 8비트 한 채널이어야 해요."), nameof(mask));
         using var bin = new Mat();
         Cv2.Threshold(mask, bin, 0, 255, ThresholdTypes.Binary);
         using var labels = new Mat();
         int n = Cv2.ConnectedComponents(bin, labels, PixelConnectivity.Connectivity4, MatType.CV_32S);
-        if (n <= 1) return "지울 곳 없음";
+        if (n <= 1) return Loc.T("지울 곳 없음");
 
         Mat? km = null;
         if (kinds != null && !kinds.Empty())
@@ -309,10 +309,10 @@ public sealed class AletheiaDecensor(AppSettings settings, OnnxEnv env)
             if (nLegacy > 0)
             {
                 if (!lama.IsReady)
-                    throw new FileNotFoundException("복원 모델(LaMa)이 없어요 — 설정 → 구성요소에서 설치해 주세요.");
+                    throw new FileNotFoundException(Loc.T("복원 모델(LaMa)이 없어요 — 설정 → 구성요소에서 설치해 주세요."));
                 lama.Inpaint(img, legacyM);
             }
-            return $"막대 {nBar}·모자이크 {nMosaic}·기존 방식(LaMa) {nLegacy}";
+            return Loc.F($"막대 {nBar}·모자이크 {nMosaic}·기존 방식(LaMa) {nLegacy}");
         }
         finally { if (km != null && !ReferenceEquals(km, kinds)) km.Dispose(); }
     }

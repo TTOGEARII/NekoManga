@@ -557,6 +557,21 @@ public class PipelineRunnerRedoTests
 
     // ── 재생성 v3: 영역 계획 (모델·ComfyUI 없이 — detector null = 확장 경로) ──
 
+    [Theory]
+    [InlineData(false, 1)]   // 전과 같다: 상대 창 안에 보이면 한 영역
+    [InlineData(true, 2)]    // 떨어진 자리는 따로(2026-11-16) — 붙이는 범위가 안 겹친다
+    public void RegenPlanFor_SplitRegionsSetting_DecidesWhetherPiecesApartShareARegion(bool split, int expected)
+    {
+        using var t = new TempDir(); var s = EnginelessSettings(t);
+        s.RegenSplitRegions = split;
+        using var img = ColorImage(3000, 4000); using var mask = RectMask(3000, 4000, new Rect(1000, 2000, 200, 40));
+        mask.Rectangle(new Rect(1500, 2000, 200, 40), Scalar.White, -1);
+        using var runner = new PipelineRunner(s);
+        var plan = runner.RegenPlanFor(img, mask, null);
+        try { Assert.Equal(expected, plan.Count); }
+        finally { foreach (var r in plan) r.Dispose(); }
+    }
+
     [Fact]
     public void RegenPlanFor_NoDetector_OneRegionPerPiece_Unknown()
     {

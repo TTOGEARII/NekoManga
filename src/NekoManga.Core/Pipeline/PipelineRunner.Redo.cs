@@ -30,7 +30,7 @@ public partial class PipelineRunner
                 ct.ThrowIfCancellationRequested();
                 try { await RedoPageAsync(file, progress, ct, outPath, options, cx, i); done++; }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-                catch (Exception ex) { failed++; progress.Report(new(file, "실패", 100, Done: true, Error: ex.Message)); }
+                catch (Exception ex) { failed++; progress.Report(new(file, Loc.T("실패"), 100, Done: true, Error: ex.Message)); }
             }
         }
         finally { WorkFolders.Remove(cx.WorkDir); }   // 묶음의 작업 폴더 — 끝났든 멈췄든 중간 그림은 더 쓸 데가 없다

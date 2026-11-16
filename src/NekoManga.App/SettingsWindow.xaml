@@ -338,12 +338,20 @@
                         <TextBox x:Name="TxtRegenBodyM" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="28"/>
                         <TextBlock Text="신체부위 태그 — 여성" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
                         <TextBox x:Name="TxtRegenBodyF" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="28"/>
+                        <!-- 2026-11-16 사용자 "여자거에서 구멍에 전부다 질내사정으로 나오는데 실제 이미지에서 질내사정한 부분만": 여성 태그에서 뗀 사정 태그 — 사정인 조각이 있는 영역에만 더한다(RegenTags.For) -->
+                        <TextBlock Text="질내사정 태그 — 질내사정인 조각이 있는 곳에만" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
+                        <TextBox x:Name="TxtRegenBodyCum" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="28"/>
+                        <CheckBox x:Name="ChkRegenCumAuto" Content="질내사정인지 자동으로 판단해요 (조각마다 직접 고칠 수 있어요)" Foreground="{DynamicResource NekoText}" Margin="0,6,0,0"
+                                  ToolTip="여성 부위가 그려지는 자리 가운데 질내사정인 곳에만 위 태그를 더해요. 자동 판단은 검열 조각 둘레의 그림을 태그 모델(구성요소의 '질내사정 판단 모델', 또는 채색 엔진의 WD14 노드가 받아 둔 moat v2)로 봐서 정해요 — 틀릴 수 있으니 결과 창(검열 지우기 → 마스크 보기)에서 조각의 '사정' 표시를 눌러 고쳐 주세요. 고른 것은 그 장에 기억돼요. 꺼 두면 직접 고른 조각에만 넣어요. 태그 칸을 비우면 어디에도 넣지 않아요"/>
                         <!-- 2026-11-15 사용자 "남자거에 계속 여자거가 그려지는데 … 남/여 구분을 확실하게": 기본 켬 — 조각마다 성별을 가려(RegenRegion.PieceSex + 결과 창에서 직접 고른 것) 한쪽뿐인 영역에는 그쪽 태그만. 끄면 늘 같이(2026-11-13의 기본) -->
                         <CheckBox x:Name="ChkRegenTagsBySex" Content="남성·여성이 확실한 부위에는 그쪽 태그만 넣어요 (확실하지 않으면 같이)" Foreground="{DynamicResource NekoText}" Margin="0,6,0,0"
                                   ToolTip="검열 조각마다 부위 감지의 근거를 봐서, 한쪽 성별뿐인 영역에는 그쪽 태그만 넣어요. 삽입처럼 가려진 다른 쪽이 있을 수 있거나 부위를 못 찾은 조각이 있는 영역에는 두 태그를 같이 넣어요 — 그런 조각은 결과 창(검열 지우기 → 마스크 보기)의 남/여 표시를 눌러 직접 고를 수 있고, 고른 것은 그 장에 기억돼요. 꺼 두면 늘 같이 넣어요 — 남성 부위만 있는 장에 여성 부위가 그려질 수 있어요. 어느 태그로 그리는지는 진행 줄에 보여요. 아래 '부위 전체를 다시 그려요'가 꺼져 있거나 부위 감지 모델(구성요소)이 없으면 자동으로는 가릴 수 없어요(직접 고른 조각만 가려요)"/>
                         <!-- 2026-11-15 자리별 태그: 그리는 방식이 바뀐다 — 사용자가 전/후를 보고 정하기 전까지 기본 끔 -->
                         <CheckBox x:Name="ChkRegenTagsPerPiece" Content="남녀 부위가 한 범위에 같이 있으면 자리마다 그 성별의 태그만 넣어요 (시험 중)" Foreground="{DynamicResource NekoText}" Margin="0,6,0,0"
                                   ToolTip="한 번에 그리는 범위에 남성 조각과 여성 조각이 같이 있으면, 그림을 조각의 성별로 나눠 남성 조각 쪽에는 남성 태그만, 여성 조각 쪽에는 여성 태그만 넣어요(모르는 조각 쪽에는 같이). 꺼 두면 그런 범위에는 남녀 태그를 통째로 같이 넣어요. 위 옵션이 켜져 있을 때만 쓰여요. 섞인 범위는 조금 느려져요(자리 수만큼 프롬프트를 따로 계산). 그리는 방식이 달라지니 결과를 보고 정해 주세요"/>
+                        <!-- 2026-11-16 사용자 "인체 부위도 제대로 안나오는게 있는데": 떨어진 자리끼리 합쳐 쪽 전체를 0.4배로 줄여 보내던 것 — 결과가 바뀌므로 사용자가 전/후를 보고 정하기 전까지 기본 끔 -->
+                        <CheckBox x:Name="ChkRegenSplitRegions" Content="떨어져 있는 검열 자리는 따로 다시 그려요 (시험 중)" Foreground="{DynamicResource NekoText}" Margin="0,6,0,0"
+                                  ToolTip="검열 자리가 한 장에 여러 군데 흩어져 있으면 한 번에 묶어 그리느라 그림을 크게 줄여 보내게 돼서, 검열 주변의 몸이 흐려지거나 달라질 수 있어요. 켜 두면 서로 닿지 않는 자리는 따로따로 원래 크기에 가깝게 그려요. 그리는 횟수가 늘어 그만큼 오래 걸려요. 그리는 방식이 달라지니 결과를 보고 정해 주세요"/>
                         <TextBlock Text="네거티브" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
                         <TextBox x:Name="TxtRegenNeg" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="48"/>
                         <UniformGrid Columns="2" Rows="3" Margin="0,8,0,0">
@@ -756,6 +764,11 @@
                                Text="흑백 만화 자동 채색 + 검열 제거 + 번역 식자 올인원."/>
                     <ui:Button Content="GitHub 열기" Click="BtnGitHub_Click" Margin="0,16,0,0" Padding="16,8" HorizontalAlignment="Left"/>
 
+                    <!-- 화면 언어 — 칸의 이름(한국어 / English / 日本語)은 코드가 채운다(UiText.FillLanguagePicker). 만화를 옮기는 언어(번역 탭)와는 따로다 -->
+                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="🌐 화면 언어"/></Border>
+                    <ComboBox x:Name="CmbUiLanguage" MinWidth="180" HorizontalAlignment="Left" SelectionChanged="UiLanguage_Changed"/>
+                    <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,0"
+                               Text="고르는 즉시 열린 창의 글이 바뀌어요. 이미 나와 있는 진행 글은 다음에 바뀔 때 새 언어로 나와요. 만화를 옮기는 언어(번역 탭)와는 따로예요."/>
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="내장 AI 모듈"/></Border>
                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,2,0,0" Text="• 텍스트 감지 — comictextdetector: 말풍선과 글자 위치를 찾아요 (BT와 같은 모델)."/>
                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 글자 인식 — manga-ocr: 일본어 세로쓰기·후리가나 특화 OCR."/>

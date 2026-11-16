@@ -44,7 +44,7 @@ internal sealed class OnnxGraphFile
             v |= (ulong)(b & 0x7F) << shift;
             if ((b & 0x80) == 0) return v;
             shift += 7;
-            if (shift > 63) throw new InvalidDataException("ONNX 파일이 손상됐어요 (varint)");
+            if (shift > 63) throw new InvalidDataException(Loc.T("ONNX 파일이 손상됐어요 (varint)"));
         }
     }
 
@@ -65,7 +65,7 @@ internal sealed class OnnxGraphFile
                 p = checked(p + len);
                 return (field, wire, start, len);
             }
-            default: throw new InvalidDataException($"ONNX 파일이 손상됐어요 (wire type {wire})");
+            default: throw new InvalidDataException(Loc.F($"ONNX 파일이 손상됐어요 (wire type {wire})"));
         }
     }
 
@@ -81,7 +81,7 @@ internal sealed class OnnxGraphFile
             if (field == 7 && wire == 2) { graphStart = start; graphLen = len; }
             else _modelFields.Add((tagStart, p - tagStart));
         }
-        if (graphStart < 0) throw new InvalidDataException("ONNX 파일에 그래프가 없어요");
+        if (graphStart < 0) throw new InvalidDataException(Loc.T("ONNX 파일에 그래프가 없어요"));
 
         p = graphStart; int end = graphStart + graphLen;
         while (p < end)
@@ -197,10 +197,10 @@ internal sealed class OnnxGraphFile
             }
             else if (_initializers.ContainsKey(t)) initSet.Add(t);
             else if (_inputs.ContainsKey(t)) inputList.Add(t);
-            else throw new InvalidDataException($"ONNX 그래프에서 텐서를 찾지 못했어요: {t}");
+            else throw new InvalidDataException(Loc.F($"ONNX 그래프에서 텐서를 찾지 못했어요: {t}"));
         }
         foreach (var o in outputs)
-            if (!_producer.ContainsKey(o)) throw new InvalidDataException($"ONNX 그래프에 출력 텐서가 없어요: {o}");
+            if (!_producer.ContainsKey(o)) throw new InvalidDataException(Loc.F($"ONNX 그래프에 출력 텐서가 없어요: {o}"));
 
         // 그래프 본문 조립 (노드는 원래 순서 = 위상 순서)
         var parts = new List<(byte Tag, int Start, int Length, byte[]? Bytes)>();

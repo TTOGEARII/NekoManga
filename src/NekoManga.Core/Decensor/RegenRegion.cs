@@ -43,9 +43,11 @@ public static class RegenRegion
     /// Region·Erase는 그림 크기 CV_8UC1(호출자가 Dispose).
     /// <paramref name="parts"/>에는 약한 상자(<see cref="WeakConf"/> 이상)까지 넘긴다 — <paramref name="strongConf"/> 미만은 영역을 넓히거나 종류를 바꾸지 않고,
     /// 합친 뒤 조각마다 성별을 가리는 데만 쓴다(<see cref="RegenRegionInfo.Pieces"/>·<see cref="RegenRegionInfo.Sex"/>). <paramref name="marks"/>(사용자가 조각에 찍은 표시)도 태그만 정한다.
-    /// strongConf에는 기본값을 두지 않는다 — 빠뜨리면 약한 상자가 말없이 영역을 넓힌다(복원 결과가 바뀐다).</summary>
+    /// strongConf에는 기본값을 두지 않는다 — 빠뜨리면 약한 상자가 말없이 영역을 넓힌다(복원 결과가 바뀐다).
+    /// <paramref name="splitReach"/>: 0 이상이면 떨어진 자리를 따로 둔다 — 붙이는 범위(영역 상자 + 이 px)가 겹칠 때만 합친다(<see cref="SplitReachFor"/>, 설정 RegenSplitRegions). 음수면 옛 규칙(상대 창 안에 보이면 합친다).
+    /// <paramref name="cum"/>: 질내사정의 자동 판단(<see cref="CumRule"/>) — 남성이 아닌 조각 가운데 사용자가 표시하지 않은 것만 묻는다. null이면 표시한 조각만 사정으로 친다. 영역의 모양은 바꾸지 않는다.</summary>
     public static List<RegenRegionInfo> BuildRegions(Mat censorMask, IReadOnlyList<BodyPart> parts, double pad, double growRatio, Size img, int cropSize, double strongConf,
-        IReadOnlyList<SexMark>? marks = null)
+        IReadOnlyList<SexMark>? marks = null, int splitReach = -1, CumRule? cum = null)
     {
         // 점수는 float, 설정의 임계는 double — float로 맞춰 견준다((float)0.12 < 0.12라 double로 견주면 감지기가 받던 0.12f짜리 상자가 약한 상자로 떨어진다)
         var typed = parts.Where(p => p.Conf >= (float)strongConf)
@@ -69,6 +71,10 @@ public static class RegenRegion
         // 한쪽 영역이 다른 쪽 창 안에 보이면 하나로 — 그 창에 검열 조각이 그대로 비치고, 되돌려 붙이는 범위(영역+reach)도 겹칠 수 있다.
         // 창끼리 겹치기만 해서는 안 합친다(최종 검수): 2000px 쪽의 x≈500·1500 조각은 창이 48px만 겹치는데 합치면 창 1.9k → 0.53배로 둘 다 흐려진다.
         // 순서대로 그리므로 앞 결과가 다음 창의 맥락이 되고, 붙이는 범위만 안 겹치면 서로 덮지 않는다
+        // 떨어진 자리는 따로(splitReach ≥ 0, 2026-11-16): 위 규칙은 창이 최소 cropSize라 1813px 쪽에서 떨어진 자리끼리 줄줄이 합쳐 창이 쪽 전체가 된다 —
+        // 사용자 원고 18쪽·영역 28개 중 12개를 줄여 보냈고(6개는 0.40~0.44배) 조각 밖의 선명도가 원고의 0.08(1.0배인 영역은 0.83), 선 유지 73%(94%)였다.
+        // 붙이는 범위(상자 + reach)가 겹칠 때만 합치면 같은 원고에서 영역 28 → 46개, 1.0배가 16 → 39개(계획만 흉내 낸 수치). 생성 횟수가 그만큼 는다.
+        // 상대의 검열 조각이 창에 그대로 비치는 것은 받아들인다(다시 그리는 것은 제 영역뿐이고, 뒤 영역의 창에는 앞 영역의 결과가 비친다)
         bool merged = true;
         while (merged)
         {
@@ -76,9 +82,16 @@ public static class RegenRegion
             for (int i = 0; i < result.Count && !merged; i++)
                 for (int j = i + 1; j < result.Count; j++)
                 {
-                    var wi = RegenCrop.WindowFor(result[i].Bounds, img, cropSize).Window;
-                    var wj = RegenCrop.WindowFor(result[j].Bounds, img, cropSize).Window;
-                    if (!Overlaps(wi, result[j].Bounds) && !Overlaps(wj, result[i].Bounds)) continue;
+                    if (splitReach >= 0)
+                    {
+                        if (!Overlaps(Grown(result[i].Bounds, splitReach), Grown(result[j].Bounds, splitReach))) continue;
+                    }
+                    else
+                    {
+                        var wi = RegenCrop.WindowFor(result[i].Bounds, img, cropSize).Window;
+                        var wj = RegenCrop.WindowFor(result[j].Bounds, img, cropSize).Window;
+                        if (!Overlaps(wi, result[j].Bounds) && !Overlaps(wj, result[i].Bounds)) continue;
+                    }
                     Cv2.BitwiseOr(result[i].Region, result[j].Region, result[i].Region);
                     Cv2.BitwiseOr(result[i].Erase, result[j].Erase, result[i].Erase);
                     result[i] = result[i] with { Bounds = result[i].Bounds | result[j].Bounds, Kind = RegenTags.Combine(result[i].Kind, result[j].Kind) };
@@ -88,6 +101,7 @@ public static class RegenRegion
                 }
         }
         var marked = MarkedSexes(labels, marks);
+        var cumMarked = MarkedCums(labels, marks);
         for (int i = 0; i < result.Count; i++)
         {
             var list = pieces[i].Select(c => (C: c, Box: BoxOf(stats, c), Area: stats.At<int>(c, (int)ConnectedComponentsTypes.Area), ByUser: marked.ContainsKey(c))).ToList();
@@ -99,7 +113,7 @@ public static class RegenRegion
             {
                 var auto = PieceSex(p.Box, parts, pad);
                 // 티끌 = 작고, 근거가 없고, 사용자가 고르지도 않은 조각. 작아도 다른 성별로 잡힌 조각은 진짜 부위일 수 있어 뺄 수 없다
-                bool speck = !allTiny && Tiny(p) && !p.ByUser && auto == RegenKind.Unknown;
+                bool speck = !allTiny && Tiny(p) && !p.ByUser && auto == RegenKind.Unknown && !cumMarked.ContainsKey(p.C);   // 사정을 고른 조각도 사용자가 고른 조각이다 — 티끌로 빠지면 그 표시가 말없이 버려진다(검수)
                 return new RegenPiece(p.Box, p.Area, p.ByUser ? marked[p.C] : auto, p.ByUser, speck, AnchorOf(labels, p.C, p.Box), auto);
             }).ToList();
             var counted = Enumerable.Range(0, info.Count).Where(k => !info[k].Speck).ToList();
@@ -118,7 +132,16 @@ public static class RegenRegion
                     dst.SetTo(new Scalar(CodeOf(info[k].Sex)), own);
                 }
             }
-            result[i] = result[i] with { Sex = sex, PieceList = info, SexMap = map };
+            // 질내사정(2026-11-16): 여성 태그에 늘 들어 있던 'cum in pussy'를 떼어 조각마다 가린다 — 사용자가 표시한 조각은 그대로, 나머지는 자동 판단(없으면 아님).
+            // 남성으로 정해진 조각과 티끌은 묻지 않는다(그 태그가 들어갈 자리가 아니다)
+            var withCum = info.Select((p, k) =>
+            {
+                if (p.Speck || p.Sex == RegenKind.Male) return p;
+                if (cumMarked.TryGetValue(list[k].C, out bool on)) return p with { Cum = on, CumByUser = true };
+                bool auto = cum != null && cum.Score(p.Box) >= cum.Threshold;
+                return p with { Cum = auto, CumAuto = auto };
+            }).ToList();
+            result[i] = result[i] with { Sex = sex, PieceList = withCum, SexMap = map, Cum = withCum.Any(p => p.Cum) };
         }
         return result;
     }
@@ -152,8 +175,14 @@ public static class RegenRegion
         using var labels = new Mat(); using var stats = new Mat(); using var centroids = new Mat();
         int n = Cv2.ConnectedComponentsWithStats(censorMask, labels, stats, centroids, PixelConnectivity.Connectivity8);
         var chosen = MarkedSexes(labels, marks);
+        var cums = MarkedCums(labels, marks);
         for (int c = 1; c < n; c++)
-            if (chosen.TryGetValue(c, out var sex)) resolved.Add(new SexMark(AnchorOf(labels, c, BoxOf(stats, c)), sex));
+        {
+            if (!chosen.ContainsKey(c) && !cums.ContainsKey(c)) continue;
+            var at = AnchorOf(labels, c, BoxOf(stats, c));
+            if (chosen.TryGetValue(c, out var sex)) resolved.Add(new SexMark(at, sex));
+            if (cums.TryGetValue(c, out bool on)) resolved.Add(new SexMark(at, RegenKind.Unknown, on));   // 사정 표시는 성별 표시 뒤에
+        }
         return resolved;
     }
 
@@ -164,8 +193,22 @@ public static class RegenRegion
         int c = LabelNear(labels, pieceAnchor);
         onPiece = c > 0;
         if (c <= 0) return [.. marks];
-        var next = marks.Where(m => LabelNear(labels, m.At) != c).ToList();
+        var next = marks.Where(m => m.Cum != null || LabelNear(labels, m.At) != c).ToList();   // 그 조각의 사정 표시는 그대로 둔다
         if (sex is RegenKind.Male or RegenKind.Female or RegenKind.Both) next.Add(new SexMark(pieceAnchor, sex.Value));
+        return next;
+    }
+
+    /// <summary><see cref="WithSex"/>의 사정판 — <paramref name="pieceAnchor"/>가 가리키는 조각의 사정 표시를 걷고, <paramref name="on"/>이 null이 아니면 그 점에 새 표시를 둔다(null = 자동으로 되돌림).
+    /// 그 조각의 성별 표시와 다른 조각의 표시는 그대로 둔다.</summary>
+    public static List<SexMark> WithCum(Mat censorMask, IReadOnlyList<SexMark> marks, Point pieceAnchor, bool? on, out bool onPiece)
+    {
+        using var labels = new Mat();
+        Cv2.ConnectedComponents(censorMask, labels, PixelConnectivity.Connectivity8);
+        int c = LabelNear(labels, pieceAnchor);
+        onPiece = c > 0;
+        if (c <= 0) return [.. marks];
+        var next = marks.Where(m => m.Cum == null || LabelNear(labels, m.At) != c).ToList();
+        if (on != null) next.Add(new SexMark(pieceAnchor, RegenKind.Unknown, on));
         return next;
     }
 
@@ -190,10 +233,26 @@ public static class RegenRegion
         if (marks == null) return chosen;
         foreach (var m in marks)
         {
-            if (m.Sex == RegenKind.Unknown) continue;
+            if (m.Sex == RegenKind.Unknown || m.Cum != null) continue;
             int c = LabelNear(labels, m.At);
             if (c <= 0) continue;
             chosen[c] = chosen.TryGetValue(c, out var before) && before != m.Sex ? RegenKind.Both : m.Sex;
+        }
+        return chosen;
+    }
+
+    /// <summary>표시가 가리키는 조각(성분 번호)마다 사용자가 고른 사정 여부 — 조각을 찾는 법은 <see cref="MarkedSexes"/>와 같다.
+    /// 한 조각에 '넣는다'와 '넣지 않는다'가 같이 걸리면(따로 표시한 조각들을 칠해서 이었다) 넣는다.</summary>
+    private static Dictionary<int, bool> MarkedCums(Mat labels, IReadOnlyList<SexMark>? marks)
+    {
+        var chosen = new Dictionary<int, bool>();
+        if (marks == null) return chosen;
+        foreach (var m in marks)
+        {
+            if (m.Cum is not bool on) continue;
+            int c = LabelNear(labels, m.At);
+            if (c <= 0) continue;
+            chosen[c] = on || (chosen.TryGetValue(c, out bool before) && before);
         }
         return chosen;
     }
@@ -273,6 +332,15 @@ public static class RegenRegion
 
     private static bool Overlaps(Rect a, Rect b) { var i = a & b; return i.Width > 0 && i.Height > 0; }
 
+    private static Rect Grown(Rect r, int px) => new(r.X - px, r.Y - px, r.Width + px * 2, r.Height + px * 2);
+
+    /// <summary>재생성 결과를 되돌려 붙일 때 영역 밖으로 더 가져오는 폭(px) — 가장자리를 섞는 마스크(넓힘 + 흐림)가 닿는 데까지 + 2. 러너(ComfyRegenDecensorAsync)가 붙이는 범위와 같은 값이어야 한다.</summary>
+    public static int PasteReach(AppSettings s) => Math.Max(s.RegenEdgeGrow + s.RegenEdgeBlur, s.RegenCoreGrow + s.RegenCoreBlur) + 2;
+
+    /// <summary><see cref="BuildRegions"/>의 splitReach — '떨어진 자리는 따로'(RegenSplitRegions)가 켜져 있으면 붙이는 폭, 꺼져 있으면 -1(옛 규칙).
+    /// 영역 계획을 만드는 곳(러너·결과 창의 조각 표시)은 전부 이것을 넘긴다 — 한쪽만 빠뜨리면 창에 보이는 묶음과 실제로 그리는 묶음이 달라진다.</summary>
+    public static int SplitReachFor(AppSettings s) => s.RegenSplitRegions ? PasteReach(s) : -1;
+
     private static IEnumerable<Rect> Pieces(Mat censorMask)
     {
         using var labels = new Mat(); using var stats = new Mat(); using var centroids = new Mat();
@@ -322,7 +390,8 @@ public static class RegenRegion
 /// <summary>재생성 v3의 영역 하나 — Bounds: 영역 경계(그림 좌표), Region: 다시 그릴 범위, Erase: 지울 검열 조각, Kind: 부위 종류(임계 이상의 부위 상자에서 — 영역의 모양과 같이 정해진다),
 /// Sex: 태그를 고르는 성별 — 티끌 아닌 조각이 전부 같은 한쪽이면 Male·Female(그쪽 태그만), 아니면 Both(남녀 같이). 조각의 성별은 약한 근거와 사용자의 표시까지 본 것이라 Kind와 다를 수 있다.
 /// PieceList: 영역에 든 조각들. SexMap: 조각마다 성별이 다를 때만 — 그림 크기 CV_8UC1, 조각 픽셀에 RegenRegion.MaleCode·FemaleCode·BothCode(자리별 태그의 재료).</summary>
-public sealed record RegenRegionInfo(Rect Bounds, Mat Region, Mat Erase, RegenKind Kind, RegenKind Sex = RegenKind.Both, IReadOnlyList<RegenPiece>? PieceList = null, Mat? SexMap = null) : IDisposable
+public sealed record RegenRegionInfo(Rect Bounds, Mat Region, Mat Erase, RegenKind Kind, RegenKind Sex = RegenKind.Both, IReadOnlyList<RegenPiece>? PieceList = null, Mat? SexMap = null,
+    bool Cum = false) : IDisposable   // Cum: 이 영역의 조각 가운데 질내사정인 것이 있다 — 여성 태그가 들어가는 자리에 사정 태그를 더한다(RegenTags.For)
 {
     /// <summary>한쪽 성별로 정해졌다 — 그쪽 태그만 넣는다(RegenTags.For).</summary>
     public bool Sure => Sex is RegenKind.Male or RegenKind.Female;
@@ -333,4 +402,10 @@ public sealed record RegenRegionInfo(Rect Bounds, Mat Region, Mat Erase, RegenKi
 /// <summary>영역 안의 검열 조각 하나(마스크의 8연결 성분) — Box: 상자, Area: 픽셀 수, Sex: 성별(사용자가 고른 것이 있으면 그것, 없으면 부위 감지의 근거 — 근거가 없으면 Unknown),
 /// ByUser: 사용자가 고른 것, Speck: 티끌(영역의 성별을 정할 때 세지 않는다 — RegenRegion.SpeckShare), Anchor: 조각 안의 한 점(표시를 그리고 기억하는 자리),
 /// Auto: 부위 감지의 근거만으로 본 성별(사용자가 고른 것이 없으면 Sex와 같다 — 결과 창이 '자동이면 무엇'을 알려 준다).</summary>
-public readonly record struct RegenPiece(Rect Box, int Area, RegenKind Sex, bool ByUser, bool Speck, Point Anchor, RegenKind Auto = RegenKind.Unknown);
+/// <param name="Cum">질내사정으로 친다(사정 태그를 넣는다).</param><param name="CumByUser">사용자가 고른 것.</param>
+/// <param name="CumAuto">자동 판단의 결과 — 사용자가 고른 조각은 묻지 않아 false다(결과 창은 '자동'으로 되돌린 뒤에 다시 센다).</param>
+public readonly record struct RegenPiece(Rect Box, int Area, RegenKind Sex, bool ByUser, bool Speck, Point Anchor, RegenKind Auto = RegenKind.Unknown,
+    bool Cum = false, bool CumByUser = false, bool CumAuto = false);
+
+/// <summary>질내사정의 자동 판단 — Score: 조각 상자(그림 좌표)를 받아 0~1의 점수(Engine.CumDetector), Threshold: 이 점수 이상이면 사정으로 친다(AppSettings.RegenCumThreshold).</summary>
+public sealed record CumRule(Func<Rect, float> Score, double Threshold);

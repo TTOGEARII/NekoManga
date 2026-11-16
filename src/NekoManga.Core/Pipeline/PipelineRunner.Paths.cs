@@ -25,15 +25,15 @@ public partial class PipelineRunner
         var asIs = AsIsPathFor(pg.OutPath, pg.File);
         bool hitsSource = cx.FileKeys.Contains(FileKey(pg.OutPath))
                           || (!string.Equals(FileKey(asIs), FileKey(pg.File), StringComparison.Ordinal) && cx.FileKeys.Contains(FileKey(asIs)));
-        if (hitsSource) return $"결과 파일 이름({name})이 목록의 다른 원고와 같아요 — 그 원고를 덮지 않도록 이 장은 건너뛰어요.";
+        if (hitsSource) return Loc.F($"결과 파일 이름({name})이 목록의 다른 원고와 같아요 — 그 원고를 덮지 않도록 이 장은 건너뛰어요.");
         var slot = FileKey(pg.OutPath);
         if (cx.TakenSlots.TryGetValue(slot, out var first))
         {
             // 출력 폴더 탓은 고정했고 두 원고의 폴더가 다를 때만 — 같은 폴더의 01.jpg·01_jpg.png는 어느 출력 폴더에서나(기본 _neko에서도) 같은 자리다
             if (!string.IsNullOrWhiteSpace(cx.PathSettings?.OutputRoot) && !SameDir(first, pg.File))
-                return $"결과 파일 이름({name})이 목록의 다른 원고({first})와 같아요 — 출력 폴더를 고정해 폴더 이름이 같은 화가 섞였어요. " +
-                       "출력 폴더를 바꿔 따로 돌리거나 비워(원고 폴더 옆 _neko) 주세요.";   // 같은 출력 폴더로 따로 돌리면 ③에 막힌다(사이드카도 주인 기록도 없는 결과만 덮인다)
-            return $"결과 파일 이름({name})이 같은 폴더의 다른 원고({Path.GetFileName(first)})와 같아요 — 그 결과를 덮지 않도록 이 장은 건너뛰어요. " +
+                return Loc.F($"결과 파일 이름({name})이 목록의 다른 원고({first})와 같아요 — 출력 폴더를 고정해 폴더 이름이 같은 화가 섞였어요. ") +
+                       Loc.T("출력 폴더를 바꿔 따로 돌리거나 비워(원고 폴더 옆 _neko) 주세요.");   // 같은 출력 폴더로 따로 돌리면 ③에 막힌다(사이드카도 주인 기록도 없는 결과만 덮인다)
+            return Loc.F($"결과 파일 이름({name})이 같은 폴더의 다른 원고({Path.GetFileName(first)})와 같아요 — 그 결과를 덮지 않도록 이 장은 건너뛰어요. ") +
                    RenameOneOfTheTwo;
         }
         if (SidecarConflict(cx, pg, out bool foreignRecord) is { } why) return why;
@@ -43,7 +43,7 @@ public partial class PipelineRunner
     }
 
     /// <summary>같은 폴더의 두 원고가 한 결과 자리로 떨어질 때(01.jpg·01_jpg.png)의 안내 — 같이 돌려 걸리든(②) 따로 돌려 걸리든(③) 같은 말을 한다.</summary>
-    private const string RenameOneOfTheTwo = "둘 중 하나의 파일 이름을 바꿔 주세요.";
+    private static string RenameOneOfTheTwo => Loc.T("둘 중 하나의 파일 이름을 바꿔 주세요.");
 
     /// <summary>③ 결과 자리의 사이드카가 다른 원고의 것이면(<see cref="OtherSlotOwner"/>) 또는 잠겨 있어 주인을 확인하지 못했으면 그 안내 — 아니면 null.
     /// 안내는 상황에 맞춘다: 덮일 것은 실제 결과 파일 이름('원본 그대로' 복사본이면 그 이름)으로, 결과 파일 없이 사이드카만 있으면 '저장된 마스크·식자 자료'로.
@@ -57,8 +57,8 @@ public partial class PipelineRunner
         var owner = OtherSlotOwner(pg, SlotFollowsSource(cx.PathSettings), out var ownerLen, out var locked, out foreignRecord);
         if (owner == null)
             return locked == null ? null
-                : $"결과 자리의 사이드카(.neko 폴더의 {Path.GetFileName(locked)})를 다른 프로그램이 쥐고 있어(백신 검사·동기화 등) 누구의 결과인지 확인하지 못했어요 — " +
-                  "덮지 않도록 이 장은 건너뛰어요. 잠시 뒤 다시 돌려 주세요.";
+                : Loc.F($"결과 자리의 사이드카(.neko 폴더의 {Path.GetFileName(locked)})를 다른 프로그램이 쥐고 있어(백신 검사·동기화 등) 누구의 결과인지 확인하지 못했어요 — ") +
+                  Loc.T("덮지 않도록 이 장은 건너뛰어요. 잠시 뒤 다시 돌려 주세요.");
         // 옛 이름 자료의 주인 — v1.5.5 뒤에 폴더를 옮겼으면 적힌 경로는 옛 경로라, 이 폴더의 그 이름 원고를 사이드카처럼 경로 또는 이름+길이로 가린다
         // (옛 이름 옮기기도 같은 판정으로 그 원고의 자료를 옮긴다)
         var sibling = Path.Combine(Path.GetDirectoryName(pg.File) ?? "", Path.GetFileName(owner));
@@ -70,23 +70,23 @@ public partial class PipelineRunner
         // 같은 폴더에 지금도 있는 다른 원고가 지금 규칙으로 이 자리를 쓴다 — 이름이 겹친 것이라 폴더 전체 경로 대신 파일 이름으로 가리킨다(②와 같은 꼴)
         bool sameFolderTwin = !legacySibling && cx.PathSettings != null && SameDir(owner, pg.File) && File.Exists(owner)
                               && string.Equals(FileKey(OutputPathFor(cx.PathSettings, owner)), FileKey(pg.OutPath), StringComparison.Ordinal);
-        var who = sameFolderTwin ? $"같은 폴더의 다른 원고({Path.GetFileName(owner)})" : $"전에 돌린 다른 원고({owner})";
+        var who = sameFolderTwin ? Loc.F($"같은 폴더의 다른 원고({Path.GetFileName(owner)})") : Loc.F($"전에 돌린 다른 원고({owner})");
         var result = ResolveResultPath(pg.OutPath, owner);   // 그 원고의 결과물(png → '원본 그대로' 복사본) — 둘 다 없으면 원고 경로가 돌아온다
         bool hasResult = !string.Equals(FileKey(result), FileKey(owner), StringComparison.Ordinal);
         var msg = hasResult
-            ? $"결과 파일 이름({Path.GetFileName(result)})이 {who}의 결과와 같아요 — 그 결과를 덮지 않도록 이 장은 건너뛰어요."
-            : $"결과 이름({Path.GetFileNameWithoutExtension(pg.OutPath)})으로 저장된 마스크·식자 자료(.neko 폴더)가 {who}의 것이에요 — 그 자료를 덮지 않도록 이 장은 건너뛰어요.";
+            ? Loc.F($"결과 파일 이름({Path.GetFileName(result)})이 {who}의 결과와 같아요 — 그 결과를 덮지 않도록 이 장은 건너뛰어요.")
+            : Loc.F($"결과 이름({Path.GetFileNameWithoutExtension(pg.OutPath)})으로 저장된 마스크·식자 자료(.neko 폴더)가 {who}의 것이에요 — 그 자료를 덮지 않도록 이 장은 건너뛰어요.");
         if (sameFolderTwin) return msg + " " + RenameOneOfTheTwo;
-        if (!File.Exists(owner)) msg += " 그 원고가 지금 없어도(지웠거나 드라이브가 끊김) 이것이 하나뿐인 사본일 수 있어요.";
+        if (!File.Exists(owner)) msg += Loc.T(" 그 원고가 지금 없어도(지웠거나 드라이브가 끊김) 이것이 하나뿐인 사본일 수 있어요.");
         if (legacySibling && cx.PathSettings != null)
         {
             var ownerOut = OutputPathFor(cx.PathSettings, owner);
             if (!File.Exists(MaskSidecar.JsonPathFor(ownerOut)) && !File.Exists(LetterSidecar.JsonPathFor(ownerOut)))
-                return msg + $" 같은 폴더의 {Path.GetFileName(owner)}부터 한 번 돌리면 옛 버전 이름으로 남은 그 자료가 새 이름으로 옮겨져 이 장도 돌릴 수 있어요.";
+                return msg + Loc.F($" 같은 폴더의 {Path.GetFileName(owner)}부터 한 번 돌리면 옛 버전 이름으로 남은 그 자료가 새 이름으로 옮겨져 이 장도 돌릴 수 있어요.");
         }
-        if (!string.IsNullOrWhiteSpace(cx.PathSettings?.OutputRoot)) msg += " 출력 폴더를 바꾸거나 비워(원고 폴더 옆 _neko) 주세요.";
-        return msg + (hasResult ? " 덮어도 되는 결과면 그것과 .neko 폴더의 같은 이름 파일을 지운 뒤 다시 돌려 주세요."
-                                : " 덮어도 되는 자료면 .neko 폴더의 같은 이름 파일을 지운 뒤 다시 돌려 주세요.");
+        if (!string.IsNullOrWhiteSpace(cx.PathSettings?.OutputRoot)) msg += Loc.T(" 출력 폴더를 바꾸거나 비워(원고 폴더 옆 _neko) 주세요.");
+        return msg + (hasResult ? Loc.T(" 덮어도 되는 결과면 그것과 .neko 폴더의 같은 이름 파일을 지운 뒤 다시 돌려 주세요.")
+                                : Loc.T(" 덮어도 되는 자료면 .neko 폴더의 같은 이름 파일을 지운 뒤 다시 돌려 주세요."));
     }
 
     /// <summary>결과 자리에 이미 있는 사이드카의 주인이 이 원고가 아니면 그 원고 경로 — 아니면 null.
@@ -230,10 +230,10 @@ public partial class PipelineRunner
                 }
                 catch { left = File.Exists(path); }
             return left
-                ? $"결과의 주인 기록(.neko 폴더의 {name})을 고쳐 쓰지도 지우지도 못했어요 — 그 기록이 다른 원고의 것이면 다음에 이 원고를 돌릴 때 '다른 원고의 결과'라며 건너뛰고, " +
-                  $"그 원고를 돌리면 이 결과가 덮여요. .neko 폴더의 그 파일을 지워 주세요: {ex.Message}"
-                : $"결과의 주인 기록(.neko 폴더의 {name})을 쓰지 못했어요 — 이 결과는 주인 표시 없이 남아, 결과 이름이 같은 다른 원고(출력 폴더를 고정했을 때 폴더·파일 이름이 같은 다른 화)를 " +
-                  $"돌리면 묻지 않고 덮여요: {ex.Message}";
+                ? Loc.F($"결과의 주인 기록(.neko 폴더의 {name})을 고쳐 쓰지도 지우지도 못했어요 — 그 기록이 다른 원고의 것이면 다음에 이 원고를 돌릴 때 '다른 원고의 결과'라며 건너뛰고, ") +
+                  Loc.F($"그 원고를 돌리면 이 결과가 덮여요. .neko 폴더의 그 파일을 지워 주세요: {ex.Message}")
+                : Loc.F($"결과의 주인 기록(.neko 폴더의 {name})을 쓰지 못했어요 — 이 결과는 주인 표시 없이 남아, 결과 이름이 같은 다른 원고(출력 폴더를 고정했을 때 폴더·파일 이름이 같은 다른 화)를 ") +
+                  Loc.F($"돌리면 묻지 않고 덮여요: {ex.Message}");
         }
     }
 
@@ -324,7 +324,7 @@ public partial class PipelineRunner
             // '원본 그대로' 복사본은 원고 이름을 확장자까지 그대로 썼다 — 기본 출력 폴더(원고 폴더 하나의 결과만 받는다)에서는 이 원고 것뿐이다
             if (legacyCopy && !inSourceDir && (defaultDir || resultsOurs) && !File.Exists(asIs)) File.Move(legacyAsIs, asIs);
         }
-        catch (Exception ex) { Warn(cx, pg, "옛 이름의 결과를 새 이름으로 옮기지 못했어요: " + ex.Message); }
+        catch (Exception ex) { Warn(cx, pg, Loc.T("옛 이름의 결과를 새 이름으로 옮기지 못했어요: ") + ex.Message); }
     }
 
     /// <summary>원고 폴더에 <paramref name="name"/>.* 이미지가 <paramref name="file"/> 하나뿐인가 (01.jpg와 01.png가 같이 있으면 옛 01.png 결과의 주인을 모른다).</summary>

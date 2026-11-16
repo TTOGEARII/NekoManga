@@ -15,11 +15,11 @@ public static class AutoTune
     public sealed record Plan(string Vendor, string GpuName, int VramMb, double RamGb, IReadOnlyList<Change> Changes)
     {
         public string HardwareLine =>
-            (GpuName.Length > 0 ? GpuName : Vendor switch { "amd" => "AMD Radeon (이름 미확인)", "nvidia" or "nvidia-old" => "NVIDIA (이름 미확인)", _ => "전용 그래픽카드 없음" }) +
+            (GpuName.Length > 0 ? GpuName : Vendor switch { "amd" => Loc.T("AMD Radeon (이름 미확인)"), "nvidia" or "nvidia-old" => Loc.T("NVIDIA (이름 미확인)"), _ => Loc.T("전용 그래픽카드 없음") }) +
             (VramMb > 0 ? $" · VRAM {VramMb / 1024.0:0.#}GB" : "") +
             (RamGb > 0 ? $" · RAM {RamGb:0}GB" : "");
         public string Summary => Changes.Count == 0
-            ? "지금 설정이 이 PC에 맞아요 — 바꿀 것이 없어요."
+            ? Loc.T("지금 설정이 이 PC에 맞아요 — 바꿀 것이 없어요.")
             : string.Join("\n", Changes.Select(c => $"• {c.Label}: {c.From} → {c.To}  ({c.Why})"));
     }
 
@@ -50,20 +50,20 @@ public static class AutoTune
     {
         var ch = new List<Change>();
         var d = new AppSettings(); // 기본값 원본
-        string Mp(double v) => v <= 0 ? "원본 크기" : v.ToString("0.#", CultureInfo.InvariantCulture) + "MP";
+        string Mp(double v) => v <= 0 ? Loc.T("원본 크기") : v.ToString("0.#", CultureInfo.InvariantCulture) + "MP";
 
         // 케플러·페르미는 'nvidia-old'로 감지되지만 구형 묶음도 못 돌린다 — VRAM에 맞춰 낮추는 것이 아니라 GPU가 없는 PC처럼 채색을 끈다(2026-11-11까지는 --lowvram·1.0MP를 권했다)
         bool gpuUsable = vendor is "nvidia" or "nvidia-old" or "amd"
                          && (vendor != "amd" || name.Length == 0 || SystemCheck.LooksRocmSupported(name))
                          && !gpuTooOld;
-        string why = vendor == "none" ? "전용 그래픽카드가 없어요"
-                   : gpuTooOld ? "그래픽카드가 너무 오래돼 채색 엔진을 돌릴 수 없어요"
-                   : "엔진 빌드가 이 그래픽카드를 지원하지 않아요";
+        string why = vendor == "none" ? Loc.T("전용 그래픽카드가 없어요")
+                   : gpuTooOld ? Loc.T("그래픽카드가 너무 오래돼 채색 엔진을 돌릴 수 없어요")
+                   : Loc.T("엔진 빌드가 이 그래픽카드를 지원하지 않아요");
         if (!gpuUsable)
         {
-            if (s.EnableAutoColor) ch.Add(new("color-off", "자동 채색", "켬", "끔", why, x => x.EnableAutoColor = false));
-            if (s.DecensorMode is "ComfyRegen" or "ComfyCustom") ch.Add(new("decensor-basic", "검열 제거 방식", s.DecensorMode, "기본 (내장 모델)", why, x => x.DecensorMode = "Basic"));
-            if (s.EnableSelfTraining) ch.Add(new("selftrain-off", "자가 학습", "켬", "끔", why, x => x.EnableSelfTraining = false));
+            if (s.EnableAutoColor) ch.Add(new("color-off", Loc.T("자동 채색"), Loc.T("켬"), Loc.T("끔"), why, x => x.EnableAutoColor = false));
+            if (s.DecensorMode is "ComfyRegen" or "ComfyCustom") ch.Add(new("decensor-basic", Loc.T("검열 제거 방식"), s.DecensorMode, Loc.T("기본 (내장 모델)"), why, x => x.DecensorMode = "Basic"));
+            if (s.EnableSelfTraining) ch.Add(new("selftrain-off", Loc.T("자가 학습"), Loc.T("켬"), Loc.T("끔"), why, x => x.EnableSelfTraining = false));
         }
         else if (vram > 0)
         {
@@ -72,31 +72,31 @@ public static class AutoTune
             double colorMp = vram < 8000 ? 1.0 : vram < 12000 ? 1.5 : 2.0;
             string tier = $"VRAM {vram / 1024.0:0.#}GB";
             bool lowvram = vram < 8000;
-            if (Math.Abs(s.ColorMegapixels - colorMp) > 0.01) ch.Add(new("color-mp", "채색 해상도", Mp(s.ColorMegapixels), Mp(colorMp), tier, x => x.ColorMegapixels = colorMp));
+            if (Math.Abs(s.ColorMegapixels - colorMp) > 0.01) ch.Add(new("color-mp", Loc.T("채색 해상도"), Mp(s.ColorMegapixels), Mp(colorMp), tier, x => x.ColorMegapixels = colorMp));
             // 선화 추출 해상도는 빠듯한 카드에서만 낮춘다 — 넉넉한 카드에서 사용자가 올려 둔 값을 '기본값'으로 되돌릴 이유는 없다
-            if (lowvram && s.PreprocResolution > 1024) ch.Add(new("preproc-res", "선화 추출 해상도", s.PreprocResolution.ToString(), "1024", tier, x => x.PreprocResolution = 1024));
-            if (lowvram && s.RegenPreprocResolution > 1024) ch.Add(new("regen-res", "재생성 선화 해상도", s.RegenPreprocResolution.ToString(), "1024", tier, x => x.RegenPreprocResolution = 1024));
+            if (lowvram && s.PreprocResolution > 1024) ch.Add(new("preproc-res", Loc.T("선화 추출 해상도"), s.PreprocResolution.ToString(), "1024", tier, x => x.PreprocResolution = 1024));
+            if (lowvram && s.RegenPreprocResolution > 1024) ch.Add(new("regen-res", Loc.T("재생성 선화 해상도"), s.RegenPreprocResolution.ToString(), "1024", tier, x => x.RegenPreprocResolution = 1024));
             var args = s.ComfyExtraArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
             bool hasLow = args.Contains("--lowvram") || args.Contains("--novram");
             if (lowvram && !hasLow)
             {
                 var to = string.Join(' ', args.Append("--lowvram"));
-                ch.Add(new("extra-args", "엔진 인자", args.Count == 0 ? "(없음)" : s.ComfyExtraArgs, to, tier + " — 메모리 절약 모드", x => x.ComfyExtraArgs = to));
+                ch.Add(new("extra-args", Loc.T("엔진 인자"), args.Count == 0 ? Loc.T("(없음)") : s.ComfyExtraArgs, to, tier + Loc.T(" — 메모리 절약 모드"), x => x.ComfyExtraArgs = to));
             }
             else if (!lowvram && args.Contains("--lowvram"))
             {
                 var to = string.Join(' ', args.Where(a => a != "--lowvram"));
-                ch.Add(new("extra-args", "엔진 인자", s.ComfyExtraArgs, to.Length == 0 ? "(없음)" : to, tier + " — 절약 모드 불필요", x => x.ComfyExtraArgs = to));
+                ch.Add(new("extra-args", Loc.T("엔진 인자"), s.ComfyExtraArgs, to.Length == 0 ? Loc.T("(없음)") : to, tier + Loc.T(" — 절약 모드 불필요"), x => x.ComfyExtraArgs = to));
             }
         }
 
         // 엔진 상주: GPU를 못 쓰면 켤 이유가 없고, RAM이 16GB 미만이면 ComfyUI(실측 최대 13GB)를 평소엔 꺼 두는 게 낫다
         string? warmWhy = !gpuUsable ? why
-                        : ram > 0 && ram < 15.5 ? $"RAM {ram:0}GB — 엔진이 메모리를 10GB 넘게 써서 평소엔 꺼 두는 게 나아요" : null;
+                        : ram > 0 && ram < 15.5 ? Loc.F($"RAM {ram:0}GB — 엔진이 메모리를 10GB 넘게 써서 평소엔 꺼 두는 게 나아요") : null;
         if (warmWhy != null)
         {
-            if (s.PrewarmComfyOnLaunch) ch.Add(new("prewarm-off", "엔진 미리 켜기", "켬", "끔", warmWhy, x => x.PrewarmComfyOnLaunch = false));
-            if (s.KeepComfyWarm) ch.Add(new("keepwarm-off", "엔진 꺼두지 않기", "켬", "끔", warmWhy, x => x.KeepComfyWarm = false));
+            if (s.PrewarmComfyOnLaunch) ch.Add(new("prewarm-off", Loc.T("엔진 미리 켜기"), Loc.T("켬"), Loc.T("끔"), warmWhy, x => x.PrewarmComfyOnLaunch = false));
+            if (s.KeepComfyWarm) ch.Add(new("keepwarm-off", Loc.T("엔진 꺼두지 않기"), Loc.T("켬"), Loc.T("끔"), warmWhy, x => x.KeepComfyWarm = false));
         }
         return new Plan(vendor, name, vram, ram, ch);
     }

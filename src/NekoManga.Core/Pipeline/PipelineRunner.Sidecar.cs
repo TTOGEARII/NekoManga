@@ -31,32 +31,32 @@ public partial class PipelineRunner
                 if (pre == null)
                 {
                     // 검토 창 경로(원고를 다시 못 읽은 경우): json+mask는 저장됐고 검토도 이미 끝났다 — 결과 창 마스크 탭만 못 연다고 알리고 성공으로 둔다
-                    Warn(cx, pg, "검열 제거 전 원고(.pre.png)를 쓰지 못해 결과 창 마스크 탭은 열리지 않아요");
+                    Warn(cx, pg, Loc.T("검열 제거 전 원고(.pre.png)를 쓰지 못해 결과 창 마스크 탭은 열리지 않아요"));
                     return true;
                 }
                 // 페이지별 검토 경로: pre.png가 없으면 결과 창 마스크 탭이 열리지 않는다(검토 불가) — '저장됨'으로 치면 그 장이 풀 길 없는 대기에 걸린다
-                pg.SidecarError = "검열 제거 전 원고(.pre.png)를 쓰지 못했어요";
-                Warn(cx, pg, "마스크 저장 실패: " + pg.SidecarError);
+                pg.SidecarError = Loc.T("검열 제거 전 원고(.pre.png)를 쓰지 못했어요");
+                Warn(cx, pg, Loc.T("마스크 저장 실패: ") + pg.SidecarError);
                 return false;
             }
             catch (IOException ex) when (attempt < 2 && (ex.HResult & 0xFFFF) is 32 or 33)   // 공유·잠금 위반만 기다릴 가치가 있다 — 디스크 가득·폴더 없음은 곧장 실패
             {
                 Thread.Sleep(700);   // 결과 창 미리 읽기가 옛 .pre/.mask를 쥐고 있는 잠깐의 잠금 — 사이드카를 못 쓰면 그 장이 실패로 끝나니 한 번 더 기다려 본다
             }
-            catch (Exception ex) { pg.SidecarError = ex.Message; Warn(cx, pg, "마스크 저장 실패: " + ex.Message); return false; }
+            catch (Exception ex) { pg.SidecarError = ex.Message; Warn(cx, pg, Loc.T("마스크 저장 실패: ") + ex.Message); return false; }
         }
     }
 
     /// <summary>사이드카가 지울 곳을 약속하는데('검열 없음' 표시가 아닌데) 마스크 PNG를 그림으로 못 읽었다(0바이트·깨진 PNG) — 결과 창 [채색부터 다시]와 페이지별 검토의 확인이 같이 쓴다.</summary>
-    private const string StoredMaskUnreadable = "저장된 마스크(.mask.png)를 읽지 못했어요 — 마스크 탭에서 다시 저장하거나 처음부터 다시 돌려 주세요.";
+    private static string StoredMaskUnreadable => Loc.T("저장된 마스크(.mask.png)를 읽지 못했어요 — 마스크 탭에서 다시 저장하거나 처음부터 다시 돌려 주세요.");
 
     /// <summary>사이드카 json이 있는데 깨져서(0바이트·쓰다 끊김) 못 읽었다 — 사용자가 무엇을 저장했는지('검열 없음' 표시·고친 마스크) 알 수 없다.
     /// 다시 돌리면 1차가 새로 감지해 사이드카를 다시 쓴다.</summary>
-    private const string StoredSidecarUnreadable = "저장된 마스크 정보(.mask.json)를 읽지 못했어요 — 처음부터 다시 돌려 주세요.";
+    private static string StoredSidecarUnreadable => Loc.T("저장된 마스크 정보(.mask.json)를 읽지 못했어요 — 처음부터 다시 돌려 주세요.");
 
     /// <summary>사이드카 파일을 다른 프로그램이 끝내 쥐고 있어 못 읽었다 — 영어 OS 문구 대신 무엇을 못 읽었고 어떻게 하면 되는지.</summary>
     private static string StoredMaskLocked(string path) =>
-        $"저장된 마스크(.neko 폴더의 {Path.GetFileName(path)})를 다른 프로그램이 쥐고 있어(백신 검사·동기화 등) 읽지 못했어요 — 잠시 뒤 다시 돌려 주세요.";
+        Loc.F($"저장된 마스크(.neko 폴더의 {Path.GetFileName(path)})를 다른 프로그램이 쥐고 있어(백신 검사·동기화 등) 읽지 못했어요 — 잠시 뒤 다시 돌려 주세요.");
 
     /// <summary>결과 창이 사이드카에 저장한 마스크·건너뜀을 페이지에 되읽는다 (크기가 같을 때만).
     /// 마스크 PNG가 있는데 그림으로 못 읽으면 던진다 — 메모리의 자동 감지 마스크로 그냥 지우면 사용자가 지운 오탐 자리까지 칠하고 '확인됨'이 찍힌다.
@@ -103,11 +103,11 @@ public partial class PipelineRunner
             var next = FinishedRecord(sc, colorized, settings.EnableDecensor ? pg.MaskSavedAt : null, pg.RegenSeeds);
             if (next != sc) next.Save(pg.OutPath);
             if (DrawnWithOtherSeeds(sc, pg.RegenSeeds))
-                Warn(cx, pg, "이 장의 시드 고정은 그리기 시작한 뒤에 켜져서 이번 결과물에는 쓰이지 않았어요 — 이 장을 다시 렌더링하면 고정한 시드로 그려요");
+                Warn(cx, pg, Loc.T("이 장의 시드 고정은 그리기 시작한 뒤에 켜져서 이번 결과물에는 쓰이지 않았어요 — 이 장을 다시 렌더링하면 고정한 시드로 그려요"));
         }
         catch (Exception ex)
         {
-            Warn(cx, pg, "마스크 정보(.mask.json)를 갱신하지 못했어요 — 이번 결과물에는 영향이 없지만 '고친 장' 표시와 재생성 시드 기록이 맞지 않을 수 있어요: " + ex.Message);
+            Warn(cx, pg, Loc.T("마스크 정보(.mask.json)를 갱신하지 못했어요 — 이번 결과물에는 영향이 없지만 '고친 장' 표시와 재생성 시드 기록이 맞지 않을 수 있어요: ") + ex.Message);
         }
     }
 
@@ -197,12 +197,12 @@ public partial class PipelineRunner
                 if (LetterSidecar.LoadRecord(outPath) is { } unlocked) return unlocked;
                 if (!File.Exists(json)) return null;
                 if (!IsLocked(json))
-                    throw new InvalidDataException($"식자 정보(.neko 폴더의 {Path.GetFileName(json)})를 읽지 못했어요(파일이 깨졌어요) — 번역 글이 빠진 결과물로 덮지 않도록 멈췄어요. " +
-                                                   "[작업 시작]으로 이 장을 처음부터 다시 돌려 주세요.");
+                    throw new InvalidDataException(Loc.F($"식자 정보(.neko 폴더의 {Path.GetFileName(json)})를 읽지 못했어요(파일이 깨졌어요) — 번역 글이 빠진 결과물로 덮지 않도록 멈췄어요. ") +
+                                                   Loc.T("[작업 시작]으로 이 장을 처음부터 다시 돌려 주세요."));
             }
             if (attempt >= 2)
-                throw new IOException($"식자 정보(.neko 폴더의 {Path.GetFileName(json)})를 다른 프로그램이 쥐고 있어(백신 검사·동기화 등) 읽지 못했어요 — " +
-                                      "번역 글이 빠진 결과물로 덮지 않도록 멈췄어요. 잠시 뒤 다시 해 주세요.");
+                throw new IOException(Loc.F($"식자 정보(.neko 폴더의 {Path.GetFileName(json)})를 다른 프로그램이 쥐고 있어(백신 검사·동기화 등) 읽지 못했어요 — ") +
+                                      Loc.T("번역 글이 빠진 결과물로 덮지 않도록 멈췄어요. 잠시 뒤 다시 해 주세요."));
             Thread.Sleep(700);
         }
     }
@@ -265,14 +265,14 @@ public partial class PipelineRunner
             try { sc = LoadSidecarWaitingOutLock(pg.OutPath, brokenThrows: false); }
             catch (IOException)
             {
-                Warn(cx, pg, $"마스크 확인 표시 실패: 저장된 마스크 정보(.neko 폴더의 {Path.GetFileName(MaskSidecar.JsonPathFor(pg.OutPath))})를 다른 프로그램이 쥐고 있어요(백신 검사·동기화 등) — " +
-                             "이번 결과에는 영향이 없지만, 다음에 다시 돌리면 이 장의 검토를 한 번 더 기다려요.");
+                Warn(cx, pg, Loc.F($"마스크 확인 표시 실패: 저장된 마스크 정보(.neko 폴더의 {Path.GetFileName(MaskSidecar.JsonPathFor(pg.OutPath))})를 다른 프로그램이 쥐고 있어요(백신 검사·동기화 등) — ") +
+                             Loc.T("이번 결과에는 영향이 없지만, 다음에 다시 돌리면 이 장의 검토를 한 번 더 기다려요."));
                 return false;
             }
             if (sc is { Confirmed: false }) (sc with { Confirmed = true, Skip = pg.Skip }).Save(pg.OutPath);
             return true;
         }
-        catch (Exception ex) { Warn(cx, pg, "마스크 확인 표시 실패: " + ex.Message); return false; }
+        catch (Exception ex) { Warn(cx, pg, Loc.T("마스크 확인 표시 실패: ") + ex.Message); return false; }
     }
 
     private static bool MasksEqual(Mat a, Mat b)

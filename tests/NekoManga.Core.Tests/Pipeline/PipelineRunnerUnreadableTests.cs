@@ -493,6 +493,9 @@ public class PipelineRunnerUnreadableTests
             var lines = log.Items.Where(p => p.File == f).ToList();
             int waiting = lines.FindIndex(p => p.Stage.StartsWith("검토 대기")), queued = lines.FindIndex(p => p.Stage == Queued), done = lines.FindIndex(p => p.Done);
             Assert.True(0 <= waiting && waiting < queued && queued < done, $"{Path.GetFileName(f)}: 검토 대기 {waiting} → 차례 대기 {queued} → 끝 {done}");
+            // 화면은 상태 글의 머리를 견주지 않고 이 값으로 '검토 대기'를 알아본다(글은 화면 언어를 따라 바뀐다) — 검토 대기 줄에만 있고, 그 글의 꼬리가 이 요약이다
+            Assert.All(lines.Select((p, i) => (p, i)), x => Assert.Equal(x.i == waiting, x.p.ReviewSummary != null));
+            Assert.Equal("검토 대기 · " + lines[waiting].ReviewSummary, lines[waiting].Stage);
             Assert.Null(log.FinalOf(f).Error);
         }
     }

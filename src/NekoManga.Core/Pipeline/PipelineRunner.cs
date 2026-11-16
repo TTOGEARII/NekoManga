@@ -8,7 +8,9 @@ namespace NekoManga.Core.Pipeline;
 
 /// <param name="File">원고의 **전체 경로** — 메인 창이 행을 찾는 키 (이름만 주면 vol1\01.jpg·vol2\01.jpg가 한 행에 겹친다).</param>
 /// <param name="Percent">진행률 0~100. -1은 진행률을 바꾸지 않는 경고 보고.</param>
-public record PageProgress(string File, string Stage, double Percent, bool Done = false, string? Error = null);
+/// <param name="ReviewSummary">검토 대기로 남은 장이면 그 장의 감지 요약(아니면 null) — 화면이 '검토 대기 (더블클릭해 수정) · 요약'으로 다시 짓는다.
+/// 전에는 화면이 <c>Stage</c>가 "검토 대기 · "로 시작하는지를 봤다 — 상태 글은 화면 언어를 따라 바뀌므로(Loc) 견주는 데 쓰지 않는다.</param>
+public record PageProgress(string File, string Stage, double Percent, bool Done = false, string? Error = null, string? ReviewSummary = null);
 
 /// <summary>페이지 처리 파이프라인.
 ///
@@ -143,9 +145,9 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         bool needComfy = settings.EnableAutoColor || comfyRegen || comfyCustom;
 
         if (translator is { IsReady: false })
-            throw new FileNotFoundException("번역 엔진 모델이 아직 설치되지 않았어요 — 설정 → 구성요소에서 받아주세요.");
+            throw new FileNotFoundException(Loc.T("번역 엔진 모델이 아직 설치되지 않았어요 — 설정 → 구성요소에서 받아주세요."));
         if (settings.EnableDecensor && !comfyRegen && !comfyCustom && !lama.IsReady)
-            throw new FileNotFoundException("검열제거(기본) 모델(LaMa)이 아직 설치되지 않았어요 — 설정 → 구성요소에서 받아주세요.");
+            throw new FileNotFoundException(Loc.T("검열제거(기본) 모델(LaMa)이 아직 설치되지 않았어요 — 설정 → 구성요소에서 받아주세요."));
         if (settings.EnableDecensor && DetectorOverride == null)
         {
             if (!Aletheia.DetectorReady) throw new FileNotFoundException(AletheiaDecensor.DetectorMissing);
@@ -153,8 +155,8 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         }
         if (needComfy && !settings.ComfyAvailable)
             throw new FileNotFoundException(
-                (settings.EnableAutoColor ? "자동 채색" : comfyRegen ? "재생성 검열제거" : "커스텀 워크플로 검열제거") +
-                " 기능은 ComfyUI가 필요해요 — 설정 → 구성요소에서 ComfyUI를 설치해 주세요.");
+                (settings.EnableAutoColor ? Loc.T("자동 채색") : comfyRegen ? Loc.T("재생성 검열제거") : Loc.T("커스텀 워크플로 검열제거")) +
+                Loc.T(" 기능은 ComfyUI가 필요해요 — 설정 → 구성요소에서 ComfyUI를 설치해 주세요."));
         if (comfyRegen) CheckRegenModels();
 
         var cx = new RunContext
@@ -192,7 +194,7 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
                 && settings.ColorRefImage.Trim().Length > 0 && File.Exists(settings.ColorRefImage))
                 try
                 {
-                    Report(progress, files, "표지에서 캐릭터 색 뽑는 중...", 12);
+                    Report(progress, files, Loc.T("표지에서 캐릭터 색 뽑는 중..."), 12);
                     settings.ColorRefTags = await ColorRefHelper.ExtractAsync(settings, settings.ColorRefImage, null, ct);
                     // 캐시는 살아 있는 설정에 남겨야 다음 작업이 다시 뽑지 않는다 — 메인 창은 러너에 설정 사본을 주므로 적을 곳을 따로 알려 준다. 없으면(--run) 제 설정을 저장
                     if (ColorRefTagsCached != null) ColorRefTagsCached(settings.ColorRefTags);
@@ -221,7 +223,7 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
     private static void Fail(RunContext cx, ReviewPage pg, Exception ex)
     {
         pg.Error = ex.Message;
-        cx.Progress.Report(new(pg.File, "실패", 100, Done: true, Error: ex.Message));
+        cx.Progress.Report(new(pg.File, Loc.T("실패"), 100, Done: true, Error: ex.Message));
     }
 
     // ── 1차: 번역 + 검열 감지 (마스크는 페이지가 들고 있다 — 검토 창/마스크 탭이 편집한다) ──
@@ -242,7 +244,7 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         using var img = ImgIo.Read(pg.WorkPath, ImreadModes.Color);
         // 읽지 못한 원고(0바이트·깨진 파일)는 여기서 그 장의 실패로 — 빈 그림이 감지기로 가면 OpenCV 내부 문구로 실패하거나(Aletheia·막대·모자이크)
         // 색 검열 감지처럼 '검열 없음'으로 통과해 못 읽은 원고가 '원본 그대로' 복사된다. 번역을 켰으면 번역기가 같은 문구로 먼저 막는다
-        if (img.Empty()) throw new InvalidDataException($"이미지를 읽지 못했어요: {Path.GetFileName(pg.WorkPath)}");
+        if (img.Empty()) throw new InvalidDataException(Loc.F($"이미지를 읽지 못했어요: {Path.GetFileName(pg.WorkPath)}"));
 
         // 같은 원고를 다시 돌릴 때: .neko에 남은 마스크(사용자가 고친 것 포함)가 있으면 감지 대신 쓴다 — 고친 마스크가 재실행에도 유지된다
         // 사이드카는 결과 파일 이름으로만 찾아지므로 **같은 원고인지**(경로 또는 이름+바이트 길이)를 꼭 확인한다 — 출력 폴더를 고정해 두고
@@ -255,7 +257,7 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
             if ((!string.Equals(stored.Source, pg.File, StringComparison.OrdinalIgnoreCase) || stored.SrcLen == 0)
                 && (stored.SrcLen == 0 || !File.Exists(stored.Source)))
                 try { (stored with { Source = pg.File, SrcLen = MaskSidecar.LengthOf(pg.File) }).Save(pg.OutPath); }
-                catch (Exception ex) { Warn(cx, pg, "마스크 경로 갱신 실패: " + ex.Message); }
+                catch (Exception ex) { Warn(cx, pg, Loc.T("마스크 경로 갱신 실패: ") + ex.Message); }
             pg.Mask = storedMask;
             pg.Kinds = MaskSidecar.LoadKinds(pg.OutPath);   // 지난번 감지가 남긴 종류 지도 — 같은 엔진으로 지운다 (옛 사이드카엔 없다 → 전부 막대 모델)
             pg.AutoMask = MaskSidecar.LoadAuto(pg.OutPath);
@@ -263,17 +265,17 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
             pg.StoredConfirmed = stored.Confirmed;
             pg.MaskSavedAt = stored.SavedAt;
             pg.Summary = stored.Summary;   // 감지 요약을 그대로 둔다 — 표시용 문자열로 덮어쓰면 학습 재료 index에 그게 남는다 (상태 줄에만 '저장된 마스크'를 쓴다)
-            progress.Report(new(name, pg.Skip ? "저장된 마스크 — 검열 없음으로 표시됨" : $"저장된 마스크 사용{(stored.Edited ? " (수정됨)" : "")}", 46));
+            progress.Report(new(name, pg.Skip ? Loc.T("저장된 마스크 — 검열 없음으로 표시됨") : Loc.F($"저장된 마스크 사용{(stored.Edited ? Loc.T(" (수정됨)") : "")}"), 46));
             if (cx.Review)
             {
                 try { ImgIo.Write(MaskSidecar.PrePathFor(pg.OutPath), img); }   // 원고는 이번 번역 결과로 갱신
-                catch (Exception ex) { pg.SidecarError = ex.Message; Warn(cx, pg, "원고 사본(.pre) 갱신 실패: " + ex.Message); }
+                catch (Exception ex) { pg.SidecarError = ex.Message; Warn(cx, pg, Loc.T("원고 사본(.pre) 갱신 실패: ") + ex.Message); }
                 pg.SidecarSaved = MaskSidecar.HasPre(pg.OutPath);   // 갱신에 실패해도 옛 pre가 남아 있으면 마스크 탭은 열린다
             }
             return;
         }
 
-        progress.Report(new(name, "검열 영역 찾는 중", 45));
+        progress.Report(new(name, Loc.T("검열 영역 찾는 중"), 45));
         // 말풍선은 흰 막대로 오인되기 쉬우므로 감지된 글자 블록을 제외 영역으로 넘긴다.
         var exclude = pg.Blocks.Select(b =>
             new Rect(b.X1, b.Y1, Math.Max(1, b.X2 - b.X1), Math.Max(1, b.Y2 - b.Y1))).ToList();
@@ -283,7 +285,7 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         pg.Kinds = kinds;
         pg.Summary = kindUsed;
         if (settings.DecensorTarget == "Auto")
-            progress.Report(new(name, $"검열 분석: {kindUsed}", 46));
+            progress.Report(new(name, Loc.F($"검열 분석: {kindUsed}"), 46));
         // 검토 흐름에서는 감지가 비었어도 사용자가 칠할 수 있게 빈 마스크를 준다
         pg.Mask = mask ?? (cx.Review ? new Mat(img.Rows, img.Cols, MatType.CV_8UC1, Scalar.Black) : null);
         if (cx.Review)
@@ -291,7 +293,7 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
             pg.AutoMask = pg.Mask?.Clone();   // 수정 전 사본 — '자동 감지로' 되돌리기 + 학습 재료의 '자동 감지' 쪽
             // 감지가 없어도 사이드카를 남긴다 — 나중에 결과 창의 마스크 탭에서 놓친 검열을 칠해 다시 돌릴 수 있게
             pg.SidecarSaved = SaveMaskSidecar(cx, pg, confirmed: false, edited: false, pre: img, freshDetection: true);
-            if (!cx.PerPage) progress.Report(new(name, mask == null ? "검토 대기 (감지 없음)" : "검토 대기", 48));   // 페이지별은 호출부가 대기/진행을 알린다
+            if (!cx.PerPage) progress.Report(new(name, mask == null ? Loc.T("검토 대기 (감지 없음)") : Loc.T("검토 대기"), 48));   // 페이지별은 호출부가 대기/진행을 알린다
         }
     }
 
@@ -311,7 +313,7 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         {
             using var img = ImgIo.Read(work, ImreadModes.Color);
             // 1차 뒤에 망가진 작업 파일, 결과 창 [채색부터 다시]의 깨진 검열 제거 전 원고(.pre.png) — 마스크 크기 맞추기의 OpenCV 오류 대신 알아볼 문구로
-            if (img.Empty()) throw new InvalidDataException($"이미지를 읽지 못했어요: {Path.GetFileName(work)}");
+            if (img.Empty()) throw new InvalidDataException(Loc.F($"이미지를 읽지 못했어요: {Path.GetFileName(work)}"));
             var mask = pg.Mask;
             if (mask.Size() != img.Size())
             {
@@ -323,32 +325,34 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
                 var wide = RegenMaskFor(img, mask, cx.BodyParts);
                 if (!ReferenceEquals(mask, pg.Mask)) mask.Dispose();
                 mask = wide;
-                progress.Report(new(name, "검열 지우는 중 (커스텀 워크플로·GPU)", 50));
+                progress.Report(new(name, Loc.T("검열 지우는 중 (커스텀 워크플로·GPU)"), 50));
                 await ComfyCustomDecensorAsync(cx.Client!, cx.ComfyOutputDir, cx.CustomDecensor!, img, mask, i, cx.Ct);
             }
             else if (cx.ComfyRegen)
             {
                 // 재생성 v3: 영역마다 잘라 SDXL 두 단계(RegenPlanFor → ComfyRegenDecensorAsync). 저장 마스크는 그대로.
                 // 사용자가 조각에 고른 성별(결과 창의 ♂/♀ 표시)은 재생성 직전에 사이드카에서 읽는다 — 차례를 기다리는 사이에 고른 것도 따라간다. 못 읽으면(잠김) 그 장의 실패
-                var plan = RegenPlanFor(img, mask, cx.BodyParts, marks: SexMarksFor(pg.OutPath, pg.File, img.Size()));
+                // 채색 뒤 그림에서 시작한 다시 렌더링: 이 그림은 이미 한 번 다시 그려졌다 — 질내사정의 자동 판단은 검열 제거 전 원고에서 본다(검수 2026-11-16)
+                using var cumPre = pg.Colorized && MaskSidecar.HasPre(pg.OutPath) ? ImgIo.Read(MaskSidecar.PrePathFor(pg.OutPath), ImreadModes.Color) : null;
+                var plan = RegenPlanFor(img, mask, cx.BodyParts, marks: SexMarksFor(pg.OutPath, pg.File, img.Size()), cumSource: cumPre is { } pre0 && !pre0.Empty() ? pre0 : null);
                 try
                 {
                     // 이 장의 시드를 고정해 두었으면 그 시드로 — 재생성 직전에 읽어, 차례를 기다리는 사이의 고정·해제도 따라간다. 쓴 시드는 결과물을 쓴 뒤 사이드카에 적는다(FinishMaskSidecar)
                     var locked = LockedSeedsFor(pg.OutPath, pg.File);
-                    string lockNote = locked != null ? ", 시드 고정" : "";
+                    string lockNote = locked != null ? Loc.T(", 시드 고정") : "";
                     // 시드는 영역 순서로 맞춘다 — 고정할 때보다 영역이 늘었으면(마스크·여유·설정이 달라졌다) 새 영역은 새 시드로 그려진다. 한 번 알리고, 그 시드도 고정에 든다(FinishedRecord).
                     // 줄어든 쪽은 알리지 않는다: 남은 시드를 버리지 않으므로 그 장을 돌릴 때마다 같은 경고가 되풀이된다
                     if (locked != null && plan.Count > locked.Count)
-                        Warn(cx, pg, $"고정한 시드는 {locked.Count}개인데 다시 그릴 영역이 {plan.Count}개로 늘었어요 — 늘어난 영역은 새 시드로 그렸고, 그 시드도 이 장의 고정에 넣었어요");
-                    var stage = new Progress<string>(m => progress.Report(new(name, "검열 자리 " + m + $" (SDXL·GPU{lockNote})", 50)));
-                    progress.Report(new(name, $"검열 자리 재생성 중 (SDXL·GPU, 영역 {plan.Count}{lockNote})", 50));
+                        Warn(cx, pg, Loc.F($"고정한 시드는 {locked.Count}개인데 다시 그릴 영역이 {plan.Count}개로 늘었어요 — 늘어난 영역은 새 시드로 그렸고, 그 시드도 이 장의 고정에 넣었어요"));
+                    var stage = new Progress<string>(m => progress.Report(new(name, Loc.F($"검열 자리 {m} (SDXL·GPU{lockNote})"), 50)));
+                    progress.Report(new(name, Loc.F($"검열 자리 재생성 중 (SDXL·GPU, 영역 {plan.Count}{lockNote})"), 50));
                     pg.RegenSeeds = await ComfyRegenDecensorAsync(cx.Client!, cx.ComfyOutputDir, img, plan, i, cx.Ct, status: stage, lockedSeeds: locked);
                 }
                 finally { foreach (var rg in plan) rg.Dispose(); }
             }
             else
             {
-                progress.Report(new(name, "검열 지우는 중 (기본·Aletheia)", 50));
+                progress.Report(new(name, Loc.T("검열 지우는 중 (기본·Aletheia)"), 50));
                 var kindsMap = pg.Kinds;
                 await Task.Run(() => Aletheia.Repair(img, mask, kindsMap, cx.Lama), cx.Ct);   // 보완으로 찾은 자리(CensorKind.Legacy)는 LaMa로
             }
@@ -362,7 +366,7 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         // ── 자동채색 (ComfyUI) ──
         if (settings.EnableAutoColor && cx.Client != null)
         {
-            progress.Report(new(name, cx.CustomColor != null ? "채색 중 (커스텀 워크플로)" : "채색 중 (페이지당 1~2분)", 60));
+            progress.Report(new(name, cx.CustomColor != null ? Loc.T("채색 중 (커스텀 워크플로)") : Loc.T("채색 중 (페이지당 1~2분)"), 60));
             var png = await File.ReadAllBytesAsync(work, cx.Ct);
             var up = await cx.Client.UploadImageAsync(png, $"nm_cl_{_tag}_{i}.png", cx.Ct);
             ComfyClient.ComfyResult? r = null;
@@ -374,7 +378,7 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
                     : WorkflowBuilder.BuildAutoColor(settings, up, colorOut, _refImageName), cx.Ct);
                 r = await cx.Client.WaitAsync(pid, cx.ComfyOutputDir, TimeSpan.FromMinutes(20), cx.Ct);
                 if (r.OutputFiles.Count == 0)
-                    throw new InvalidOperationException("채색 결과 파일이 없어요.");
+                    throw new InvalidOperationException(Loc.T("채색 결과 파일이 없어요."));
                 // 채색 결과는 식자가 끝날 때까지 쓴다 — 작업 폴더로 옮겨 두고 ComfyUI의 출력 폴더에서는 지운다(전에는 거기 그대로 쌓였다)
                 var colored = Path.Combine(cx.WorkDir, pg.WorkKey + ".colored" + Path.GetExtension(r.OutputFiles[^1]));
                 Directory.CreateDirectory(cx.WorkDir);
@@ -391,7 +395,7 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         ForgetStaleRecords(pg, colorized);   // 결과물을 쓰기 전에 — 쓴 뒤의 기록(FinishMaskSidecar)이 실패하거나 그 전에 꺼져도 옛 값(채색 여부·재생성 시드)이 새 결과물을 속이지 않게
         if (blocks.Count > 0)
         {
-            progress.Report(new(name, "식자 중", 92));
+            progress.Report(new(name, Loc.T("식자 중"), 92));
             Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
 
             // 식자 전 원고와 블록을 남겨 둔다 — 결과 보기 창의 식자 탭이
@@ -415,7 +419,7 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
             // 이 가지는 원고를 디코드하지 않는다(엔진을 모두 끄면 1차도 읽지 않는다) — 쓰다·내려받다 끊긴 0바이트 원고가 0바이트 '원본 그대로'로
             // 성공하지 않게 길이만 본다(지난 결과도 그대로 둔다)
             var src = new FileInfo(file);
-            if (src.Exists && src.Length == 0) throw new InvalidDataException($"이미지를 읽지 못했어요: {Path.GetFileName(file)}");
+            if (src.Exists && src.Length == 0) throw new InvalidDataException(Loc.F($"이미지를 읽지 못했어요: {Path.GetFileName(file)}"));
             var asIs = AsIsPathFor(outPath, file);
             Directory.CreateDirectory(Path.GetDirectoryName(asIs)!);
             if (!string.Equals(asIs, file, StringComparison.OrdinalIgnoreCase))
@@ -425,7 +429,7 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
             }
             DeleteOther(outPath, asIs, file);   // 지난 실행의 png 결과가 남아 있으면 치운다 — 이 이름은 이 원고만 쓴다
             FinishMaskSidecar(cx, pg, colorized: false);   // 원본 그대로 — 채색도 검열 제거도 돌지 않았다
-            pg.FinalStage = "검열 없음 — 원본 그대로";
+            pg.FinalStage = Loc.T("검열 없음 — 원본 그대로");
             progress.Report(new(name, pg.FinalStage + WarnSuffix(pg), 100, Done: true));
             return;
         }
@@ -436,7 +440,7 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
             Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
             using var done = ImgIo.Read(work, ImreadModes.Color);
             if (done.Empty())
-                throw new InvalidDataException($"결과 이미지를 읽지 못했어요: {Path.GetFileName(work)}");
+                throw new InvalidDataException(Loc.F($"결과 이미지를 읽지 못했어요: {Path.GetFileName(work)}"));
             ImgIo.Write(outPath, done);
         }
         // 결과물(png)이 어느 원고 것인지 남긴다 — 식자한 장도(식자 사이드카는 원고를 못 읽으면 안 남는다), 글자 없는 장도. 결과 창 [채색부터 다시]도 이 길로 온다
@@ -444,7 +448,7 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         DeleteOther(AsIsPathFor(outPath, file), outPath, file);   // 지난 실행의 '원본 그대로' 복사본이 남아 있으면 치운다
         FinishMaskSidecar(cx, pg, colorized);   // 고친 마스크가 이 결과물에 반영됐다(표시를 지운다), 이 결과물이 채색된 그림인지·재생성이 쓴 시드도 적어 둔다
 
-        pg.FinalStage = "완료";
+        pg.FinalStage = Loc.T("완료");
         progress.Report(new(name, pg.FinalStage + WarnSuffix(pg), 100, Done: true));
     }
 

@@ -9,6 +9,7 @@ using ComboBox = System.Windows.Controls.ComboBox;
 using ComboBoxItem = System.Windows.Controls.ComboBoxItem;
 using MessageBox = System.Windows.MessageBox;
 using Application = System.Windows.Application;
+using NekoManga.Core;
 
 namespace NekoManga.App;
 
@@ -17,6 +18,9 @@ public partial class SettingsWindow
     public SettingsWindow()
     {
         InitializeComponent();
+        UiText.Apply(this);   // XAML에 적힌 글을 지금 화면 언어로 — 뜨기 전에
+        UiText.FillLanguagePicker(CmbUiLanguage);
+        Loc.Changed += OnLanguageChanged;
         var s = App.Settings;
 
         TxtMegapixels.Text = s.ColorMegapixels.ToString(CultureInfo.InvariantCulture);
@@ -77,8 +81,9 @@ public partial class SettingsWindow
         {
             var (v, name, tooOld) = t.Result;
             // 케플러·페르미는 'nvidia-old'로 감지되지만 구형 묶음도 못 돌린다 — "CUDA 12.6 빌드"라고 적으면 될 것처럼 읽힌다
-            var label = tooOld ? "너무 오래된 그래픽카드예요 (채색 엔진은 쓸 수 없어요 — 번역·기본 검열 제거는 CPU로 돼요)" : v switch { "nvidia" => "NVIDIA (RTX 20 이상 → CUDA 13 빌드)", "nvidia-old" => "NVIDIA 구형 (GTX 10 이하 → CUDA 12.6 빌드)", "amd" => "AMD Radeon (→ ROCm 빌드, Windows 11 필요)", _ => "전용 그래픽카드 없음" };
-            Dispatcher.Invoke(() => TxtGpuDetected.Text = "감지됨: " + (name.Length > 0 ? name + " — " : "") + label);
+            string Label() => tooOld ? Loc.T("너무 오래된 그래픽카드예요 (채색 엔진은 쓸 수 없어요 — 번역·기본 검열 제거는 CPU로 돼요)") : v switch { "nvidia" => Loc.T("NVIDIA (RTX 20 이상 → CUDA 13 빌드)"), "nvidia-old" => Loc.T("NVIDIA 구형 (GTX 10 이하 → CUDA 12.6 빌드)"), "amd" => Loc.T("AMD Radeon (→ ROCm 빌드, Windows 11 필요)"), _ => Loc.T("전용 그래픽카드 없음") };
+            // Bind — 창을 띄운 채 언어를 바꿔도 따라가게(이 글은 창이 뜰 때 한 번만 지어진다)
+            Dispatcher.Invoke(() => UiText.Bind(TxtGpuDetected, System.Windows.Controls.TextBlock.TextProperty, () => Loc.T("감지됨: ") + (name.Length > 0 ? name + " — " : "") + Label()));
         });
 
         // 고급 옵션 — 엔진·채색 워크플로
@@ -121,7 +126,7 @@ public partial class SettingsWindow
         TxtLinkedComfy.Text = s.LinkedComfyRoot;
         TxtCivitaiKey.Text = s.CivitaiApiKey;
 
-        TxtAboutVersion.Text = $"버전 v{new UpdateService().CurrentVersion}";
+        TxtAboutVersion.Text = Loc.F($"버전 v{new UpdateService().CurrentVersion}");
         _decensorUiReady = true;
         RefreshDecensorUi();
 
@@ -181,8 +186,11 @@ public partial class SettingsWindow
         s.RegenPrompt = TxtRegenPrompt.Text.Trim();
         s.RegenBodyTagsMale = TxtRegenBodyM.Text.Trim();
         s.RegenBodyTagsFemale = TxtRegenBodyF.Text.Trim();
+        s.RegenBodyTagsCum = TxtRegenBodyCum.Text.Trim();
+        s.RegenCumAuto = ChkRegenCumAuto.IsChecked == true;
         s.RegenTagsBySex = ChkRegenTagsBySex.IsChecked == true;
         s.RegenTagsPerPiece = ChkRegenTagsPerPiece.IsChecked == true;
+        s.RegenSplitRegions = ChkRegenSplitRegions.IsChecked == true;
         s.RegenNegative = TxtRegenNeg.Text.Trim();
         s.RegenDenoise = ParseD(TxtRegenDenoise.Text, s.RegenDenoise, 0.05, 1.0);
         s.RegenSteps = ParseI(TxtRegenSteps.Text, s.RegenSteps, 1, 150);
@@ -311,11 +319,43 @@ public partial class SettingsWindow
             try { DragMove(); } catch { /* 버튼을 뗀 뒤 도착한 이벤트 */ }
     }
 
-    private static void ToggleAdv(System.Windows.Controls.Panel panel, Wpf.Ui.Controls.Button btn)
+    /// <summary>펼침 단추의 원문("▸ 고급 옵션 …") — 화살표만 바꿔 보여 주고, 글은 지금 언어로 다시 번역해 쓴다.
+    /// 보이는 글을 잘라 화살표를 붙이면 언어를 바꾼 뒤에도 옛 언어의 글이 남는다.</summary>
+    private readonly Dictionary<Wpf.Ui.Controls.Button, string> _advLabels = new();
+
+    private void ToggleAdv(System.Windows.Controls.Panel panel, Wpf.Ui.Controls.Button btn)
     {
         bool show = panel.Visibility != Visibility.Visible;
         panel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-        btn.Content = (show ? "▾" : "▸") + ((string)btn.Content)[1..];
+        if (!_advLabels.TryGetValue(btn, out var label))
+            _advLabels[btn] = label = UiText.SourceOf(btn, System.Windows.Controls.ContentControl.ContentProperty) ?? (string)btn.Content;
+        btn.Content = (show ? "▾" : "▸") + Loc.T(label)[1..];
+    }
+
+    private void UiLanguage_Changed(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        UiText.ApplyPicked(CmbUiLanguage, save: true);   // 테마처럼 고르는 즉시 저장·적용 — 아래 OnLanguageChanged가 코드가 넣은 글을 다시 채운다
+    }
+
+    /// <summary>화면 언어가 바뀌었다 — XAML의 글은 UiText가 바꾸고, 여기서는 코드가 채운 글(요약·상태·펼침 단추)을 새 언어로 다시 채운다.</summary>
+    private void OnLanguageChanged()
+    {
+        if (!Dispatcher.CheckAccess()) { Dispatcher.InvokeAsync(OnLanguageChanged); return; }
+        foreach (System.Windows.Controls.ComboBoxItem item in CmbUiLanguage.Items)
+            if ((string)item.Tag == Loc.Lang && !item.IsSelected) item.IsSelected = true;   // 설치 창에서 바꿨을 때 이 칸도 맞춘다
+        foreach (var (btn, label) in _advLabels) btn.Content = ((string)btn.Content)[..1] + Loc.T(label)[1..];
+        TxtAboutVersion.Text = Loc.F($"버전 v{new UpdateService().CurrentVersion}");
+        RefreshDecensorUi();
+        RefreshTrainStatus();
+        // 엔진 상태는 켜거나 끄는 중이 아닐 때만 다시 묻는다 — 도는 중에 물으면 '켜는 중'인 엔진의 [켜기]가 다시 눌리게 된다(둘 다 꺼져 있는 동안이 그때다)
+        if (BtnEngineStart.IsEnabled || BtnEngineStop.IsEnabled) _ = RefreshEngineStateAsync();
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        Loc.Changed -= OnLanguageChanged;   // 정적 이벤트 — 떼지 않으면 닫힌 창이 남는다
+        base.OnClosed(e);
     }
 
     private void Theme_Changed(object sender, RoutedEventArgs e)
@@ -359,7 +399,7 @@ public partial class SettingsWindow
 
     private void BtnPickOutput_Click(object sender, RoutedEventArgs e)
     {
-        var dlg = new System.Windows.Forms.FolderBrowserDialog { Description = "결과물 저장 폴더" };
+        var dlg = new System.Windows.Forms.FolderBrowserDialog { Description = Loc.T("결과물 저장 폴더") };
         if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
             TxtOutputRoot.Text = dlg.SelectedPath;
     }
@@ -378,12 +418,12 @@ public partial class SettingsWindow
         // 삭제는 Application.Shutdown으로 끝난다 — 그 길은 메인 창의 '멈추고 닫을까요?'에 '아니요'라고 해도 끝난다(닫기 취소를 무시한다). 작업 중에는 먼저 막는다
         if (Owner is MainWindow { IsJobRunning: true })
         {
-            MessageBox.Show("작업이 도는 중이에요 — 작업이 끝난 뒤에(또는 [멈추기] 뒤에) 삭제해 주세요.", "NekoManga", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(Loc.T("작업이 도는 중이에요 — 작업이 끝난 뒤에(또는 [멈추기] 뒤에) 삭제해 주세요."), "NekoManga", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
         var r = MessageBox.Show(
-            "NekoManga를 삭제할까요?\n(내려받은 AI 구성요소 폴더는 남아요 — 직접 지워주세요)",
-            "삭제 확인", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            Loc.T("NekoManga를 삭제할까요?\n(내려받은 AI 구성요소 폴더는 남아요 — 직접 지워주세요)"),
+            Loc.T("삭제 확인"), MessageBoxButton.YesNo, MessageBoxImage.Warning);
         if (r != MessageBoxResult.Yes) return;
         try
         {
@@ -392,7 +432,7 @@ public partial class SettingsWindow
         }
         catch (Exception ex)
         {
-            MessageBox.Show("삭제 실행 실패: " + ex.Message + "\n설치형(Setup.exe)으로 설치했을 때만 쓸 수 있어요.",
+            MessageBox.Show(Loc.F($"삭제 실행 실패: {ex.Message}\n설치형(Setup.exe)으로 설치했을 때만 쓸 수 있어요."),
                 "NekoManga", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
