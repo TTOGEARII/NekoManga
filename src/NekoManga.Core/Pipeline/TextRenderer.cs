@@ -26,28 +26,49 @@ public static class TextRenderer
     /// <summary>원본 크기(srcW×srcH, 식자 사이드카에 박제한 값)를 함께 받는 판 — 크기를 알면 그 값으로 환산하고 참조 파일(원본)은 읽지 않는다.
     /// 블록 좌표는 번역할 때의 원본 기준이라, 그 뒤 원본이 옮겨지거나 지워지거나 같은 자리에서 다른 해상도로 바뀌어도 박제한 크기가 맞는 기준이다.
     /// 0이면 모르는 것으로 보고 참조 파일의 크기로, 그것도 못 읽으면 예전처럼 비율 1로 둔다.</summary>
+    /// <param name="commonSize">붙든 쪽 공통 글자 크기(<see cref="CommonSize"/>, 사이드카의 값) — 0이면 블록들에서 구한다.</param>
     public static void RenderBlocks(string imagePath, string sourceSizeRefPath, int srcW, int srcH,
-        IReadOnlyList<TextBlockInfo> blocks, string outPath, AppSettings? settings = null)
+        IReadOnlyList<TextBlockInfo> blocks, string outPath, AppSettings? settings = null, double commonSize = 0)
     {
         settings ??= new AppSettings();
         using var mat = ImgIo.Read(imagePath, ImreadModes.Color);
         if (mat.Empty())
             throw new InvalidDataException(Loc.F($"이미지를 읽지 못했어요: {Path.GetFileName(imagePath)}"));
-        using var bmp = ToBitmap(mat);
 
         // 다시 식자(결과 창 [다시 식자], --reletter)는 박제한 원본 크기로 환산한다. 원본 파일에 기대면 원고 폴더를 옮기거나 원본을 지운 뒤에는
         // 비율 1이 되어, 채색으로 식자 전 원고의 크기가 원본과 달라진 쪽에서 글이 엉뚱한 자리에 그려지거나 이미지 밖으로 나가 아무 알림 없이 빠졌다
         // (편집 미리보기는 사이드카 크기로 환산해 제자리에 보여 줘서, 저장하면 미리보기와 다른 결과가 남았다). 원본이 잠겨 있어도 실패하지 않는다.
         // 비율은 축별이고 결과 창의 편집 미리보기와 같은 계산(LetterScale.Resolve)이다 — 미리보기와 최종 식자가 같은 자리에 놓이게.
         var scale = LetterScale.Resolve(mat.Cols, mat.Rows, srcW, srcH, sourceSizeRefPath);   // bmp와 같은 크기
-        double scaleX = scale.X, scaleY = scale.Y;
 
+        using var outMat = Render(mat, blocks, scale.X, scale.Y, settings, out _, commonSize: commonSize);
+
+        // 저장 폴더는 ImgIo.Write가 만든다. 여기서 Directory.CreateDirectory(Path.GetDirectoryName(outPath)!)를 하면 폴더 없이 파일 이름만 준
+        // 출력(--reletter <결과.png> out.png)에서 GetDirectoryName이 ""라 그림을 다 그린 뒤 저장 직전에 던졌다 (AppSettings.Save와 같은 함정).
+        if (!ImgIo.Write(outPath, outMat))
+            throw new IOException(Loc.F($"결과 저장에 실패했어요: {outPath}"));
+    }
+
+    /// <summary>식자 전 원고(img)에 블록들을 그린 새 그림을 돌려준다 — 파일을 거치지 않는다. RenderBlocks와 결과 창의 편집 화면이 같이 쓴다
+    /// (편집 화면이 텍스트박스로 흉내 내던 때는 외곽선이 안 보이고 줄 나눔도 최종 식자와 달랐다).</summary>
+    /// <param name="drawnSizes">블록마다 실제로 그린 글자 크기(px) — 안 그린 블록(숨김·쪽 밖)은 0. 자동 크기는 PlanLayout의 크기에서 자리에 맞게 더 줄 수 있다.</param>
+    /// <param name="skip">그리지 않을 블록의 번호(자리·크기 계산에는 그대로 낀다) — 결과 창에서 글을 고치는 중인 풍선. 없으면 -1.</param>
+    public static Mat Render(Mat img, IReadOnlyList<TextBlockInfo> blocks, double scaleX, double scaleY, AppSettings settings,
+        out float[] drawnSizes, int skip = -1, double commonSize = 0) =>
+        Render(img, blocks, scaleX, scaleY, settings, out drawnSizes, out _, skip, commonSize);
+
+    /// <param name="layouts">블록마다 글을 놓은 자리와 정한 크기(PlanLayout의 결과) — 결과 창이 그 자리에 선택 상자를 띄운다.</param>
+    public static Mat Render(Mat img, IReadOnlyList<TextBlockInfo> blocks, double scaleX, double scaleY, AppSettings settings,
+        out float[] drawnSizes, out List<BlockLayout> layouts, int skip = -1, double commonSize = 0)
+    {
+        using var bmp = ToBitmap(img);
         using var g = Graphics.FromImage(bmp);
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
 
-        // 말풍선마다 글이 들어갈 자리와 글자 크기를 먼저 정한다 — 결과 보기 창의 편집 미리보기도 같은 계산(PlanLayout)을 쓴다.
-        var layouts = PlanLayout(mat, blocks, scaleX, scaleY, settings, g);
+        // 말풍선마다 글이 들어갈 자리와 글자 크기를 먼저 정한다 — 결과 보기 창의 상자도 같은 계산(PlanLayout)을 쓴다.
+        layouts = PlanLayout(img, blocks, scaleX, scaleY, settings, g, commonSize);
+        drawnSizes = new float[blocks.Count];
         for (int bi = 0; bi < blocks.Count; bi++)
         {
             var b = blocks[bi];
@@ -57,14 +78,20 @@ public static class TextRenderer
             var color = !string.IsNullOrWhiteSpace(b.ColorOverride) ? ParseColor(b.ColorOverride)
                 : string.IsNullOrWhiteSpace(settings.LetterColorHex) ? ParseColor(b.FontColorHex)
                 : ParseColor(settings.LetterColorHex);
-            DrawBlock(g, b, layouts[bi], color, settings);
+            drawnSizes[bi] = DrawBlock(g, b, layouts[bi], color, settings, draw: bi != skip);
         }
+        return ToMat(bmp);
+    }
 
-        // 저장 폴더는 ImgIo.Write가 만든다. 여기서 Directory.CreateDirectory(Path.GetDirectoryName(outPath)!)를 하면 폴더 없이 파일 이름만 준
-        // 출력(--reletter <결과.png> out.png)에서 GetDirectoryName이 ""라 그림을 다 그린 뒤 저장 직전에 던졌다 (AppSettings.Save와 같은 함정).
-        using var outMat = ToMat(bmp);
-        if (!ImgIo.Write(outPath, outMat))
-            throw new IOException(Loc.F($"결과 저장에 실패했어요: {outPath}"));
+    /// <summary>쪽 설정(자동 두께)이 그 크기(px)의 글자에 그리는 외곽선 두께(px) — 결과 창이 "지금 값"으로 보여 준다. 글자 밖으로 보이는 폭(펜 폭의 절반).</summary>
+    public static double AutoOutlinePx(double sizePx, AppSettings s) => OutlineOf(null, s, (float)sizePx).Pen / 2;
+
+    /// <summary>외곽선의 펜 폭(px)과 색 — 블록에 적은 값이 쪽 설정을 이긴다. 펜은 글자 윤곽에 걸쳐 그려 절반이 글자 밖으로 보인다.</summary>
+    private static (float Pen, Color Color) OutlineOf(TextBlockInfo? b, AppSettings s, float size)
+    {
+        float pen = b is { OutlinePx: >= 0 } ? (float)(2 * Math.Min(b.OutlinePx, 100))
+            : s.LetterOutlineScale > 0 ? (float)(Math.Max(2.5f, size / 7f) * Math.Clamp(s.LetterOutlineScale, 0, 4)) : 0;
+        return (pen, ParseColor(b?.OutlineColor ?? "", ParseColor(s.LetterOutlineColorHex, Color.White)));
     }
 
     /// <summary>세로쓰기 블록을 말풍선의 실제 흰 폭까지 가로로 넓힌다.
@@ -74,7 +101,7 @@ public static class TextRenderer
     /// avoid(다른 블록 영역)에 들어가면 측정을 멈춘다 — 결합 풍선은 테두리 없이 내부가
     /// 이어져 흰 구간이 이웃 풍선까지 이어지는데, 거기로 넓히면 글이 풍선 밖/남의 풍선에 겹친다
     /// (실측: 07p '집에서 기다려'가 좁은 풍선을 넘어 바지 위까지 식자됨).</summary>
-    public static RectangleF WidenToBubble(Mat img, RectangleF r, IReadOnlyList<RectangleF>? avoid = null)
+    public static RectangleF WidenToBubble(Mat img, RectangleF r, IReadOnlyList<RectangleF>? avoid = null, IReadOnlyList<NeckWall>? walls = null)
     {
         int cx = Math.Clamp((int)(r.X + r.Width / 2), 0, img.Cols - 1);
         int capL = (int)Math.Max(8, r.Width * 2.5f);
@@ -87,6 +114,7 @@ public static class TextRenderer
 
         bool Blocked(int x, int y)
         {
+            if (NeckWall.Blocks(walls, x, y)) return true;
             if (avoid == null) return false;
             foreach (var a in avoid)
                 if (x >= a.Left - 4 && x <= a.Right + 4 && y >= a.Top - 4 && y <= a.Bottom + 4)
@@ -121,7 +149,7 @@ public static class TextRenderer
     /// <summary>세로쓰기 블록의 높이를 풍선의 실제 흰 높이까지 늘린다 — WidenToBubble의 세로판.
     /// 글자 기둥 bbox보다 풍선이 길쭉하면 그 여유 줄 수만큼 글자를 덜 줄여도 되므로,
     /// 페이지 공통 크기(중간값)가 좁은 풍선에서도 유지된다 (크기 제각각 피드백의 대책).</summary>
-    public static RectangleF HeightenToBubble(Mat img, RectangleF r, IReadOnlyList<RectangleF>? avoid = null)
+    public static RectangleF HeightenToBubble(Mat img, RectangleF r, IReadOnlyList<RectangleF>? avoid = null, IReadOnlyList<NeckWall>? walls = null)
     {
         int cy = Math.Clamp((int)(r.Y + r.Height / 2), 0, img.Rows - 1);
         int capL = (int)Math.Max(8, r.Height * 1.8f);
@@ -134,6 +162,7 @@ public static class TextRenderer
 
         bool Blocked(int x, int y)
         {
+            if (NeckWall.Blocks(walls, x, y)) return true;
             if (avoid == null) return false;
             foreach (var a in avoid)
                 if (x >= a.Left - 4 && x <= a.Right + 4 && y >= a.Top - 4 && y <= a.Bottom + 4)
@@ -171,7 +200,8 @@ public static class TextRenderer
     /// <summary>블록 하나를 그릴 자리(결과 이미지 좌표)와 글자 크기(px). Size가 0이면 그리지 않는다.</summary>
     /// <param name="MaxWrap">이웃 블록과 겹치지 않으려면 넘지 말아야 할 줄 폭.</param>
     /// <param name="Round">풍선 모양(타원)에 맞춰 넣을지 — 손으로 잡은 블록은 사각형 그대로 쓴다.</param>
-    public readonly record struct BlockLayout(RectangleF Rect, float Size, float MaxWrap, bool Round);
+    /// <param name="Fixed">크기를 블록에 적었다(SizePx) — 자리에 안 들어가도 줄이지 않고 그 크기로 그린다.</param>
+    public readonly record struct BlockLayout(RectangleF Rect, float Size, float MaxWrap, bool Round, bool Fixed = false);
 
     // 아래 상수들은 사람이 식자한 원고를 잰 값에 맞췄다 (2026-11-09). 자료: 사용자 예시 8쪽 + 사용자 서고 602권에서 권당 6쪽씩 3,600쪽,
     // 그중 가로쓰기 여러 줄이 분명한 말풍선 2,013개(507권). 측정값·스크립트는 D:\NekoManga-train\letter_survey\ (survey.py, summarize_korean.py).
@@ -205,9 +235,25 @@ public static class TextRenderer
         return (left - w * ManualInsetX, top - h * ManualInsetY, w, h);
     }
 
+    /// <param name="commonSize">붙든 쪽 공통 글자 크기(<see cref="CommonSize"/>) — 0이면 블록들에서 구한다.</param>
     public static List<BlockLayout> PlanLayout(Mat img, IReadOnlyList<TextBlockInfo> blocks, double scaleX, double scaleY,
-        AppSettings settings, Graphics? g = null)
+        AppSettings settings, Graphics? g = null, double commonSize = 0) =>
+        PlanCore(img, blocks, scaleX, scaleY, settings, g, commonSize, out _);
+
+    /// <summary>이 블록들의 쪽 공통 글자 크기(px, 쪽 설정의 크기 배율을 곱하기 전) — 풍선별 맞춤 크기의 중앙값(쪽 높이의 일정 비율이 상한).
+    /// 자동 식자는 이것을 식자할 때마다 구해서, 풍선 하나의 글·자리가 바뀌면 중앙값이 움직여 손대지 않은 풍선의 글자까지 커지거나 작아졌다
+    /// (풍선 셋인 합성 쪽: 가운데 풍선의 글을 늘리자 옆 풍선이 26.5 → 20.5px, 2026-11-17 사용자 보고). 결과 창은 고치기 전에 이 값을 구해 붙들고
+    /// (<see cref="LetterSidecar.CommonSize"/>) 그 뒤의 식자에 넘긴다 — 고친 풍선만 바뀐다.</summary>
+    public static double CommonSize(Mat img, IReadOnlyList<TextBlockInfo> blocks, double scaleX, double scaleY, AppSettings settings)
     {
+        PlanCore(img, blocks, scaleX, scaleY, settings, null, 0, out float common);
+        return common;
+    }
+
+    private static List<BlockLayout> PlanCore(Mat img, IReadOnlyList<TextBlockInfo> blocks, double scaleX, double scaleY,
+        AppSettings settings, Graphics? g, double commonSize, out float commonBase)
+    {
+        commonBase = 0;
         Bitmap? scratch = null;
         if (g == null)
         {
@@ -227,6 +273,7 @@ public static class TextRenderer
             var fits = new float[n];
             var partial = new bool[n];   // 이미지 밖으로 걸쳐 보이는 부분이 블록의 절반도 안 되는 블록 — 쪽 공통 크기를 구할 때 뺀다
             float cap = Math.Max(MinSize, img.Rows * MaxSizeOfPage);
+            var neckWalls = NeckWalls(img, blocks, allRects, out var lobes);
 
             for (int i = 0; i < n; i++)
             {
@@ -253,7 +300,17 @@ public static class TextRenderer
                 if (!b.ManualRect)
                 {
                     var others = allRects.Where((_, j) => j != i).ToList();
-                    if (MeasureBubble(img, rect, others) is { } bubble)
+                    var walls = neckWalls[i];
+                    if (lobes[i] is { } lobe && RectangleF.Intersect(lobe, rect) is { Width: > 0, Height: > 0 } shared
+                        && shared.Width * shared.Height >= 0.3f * rect.Width * rect.Height)
+                    {
+                        // 겹친 풍선: 제 풍선(목으로 가른 조각)의 안쪽이 글 자리다 — 블록(원문 글이 있던 자리)에서 재지 않는다.
+                        // 원문 글이 풍선 한쪽에 치우쳐 있거나 블록이 풍선 밖 효과음까지 품으면 블록 가운데에 맞춘 자리가 테두리에 걸쳤다(실측 2026-11-16).
+                        // 번역본(사람 식자)도 글 덩어리를 제 풍선 가운데에 둔다(어긋남 중앙값 = 풍선 크기의 5%).
+                        rect = lobe;
+                        round[i] = true;
+                    }
+                    else if (MeasureBubble(img, rect, others, walls) is { } bubble)
                     {
                         // 닫힌 풍선: 풍선의 흰 안쪽을 자리로 삼고 글 덩어리를 그 한가운데에 둔다 (타원에 맞춰 넣는다).
                         // 다만 가운데는 원래 글이 있던 자리에서 크게 벗어나지 않게 한다 — 이웃 풍선과 이어진 풍선은 잰 구간이 한쪽으로
@@ -268,8 +325,8 @@ public static class TextRenderer
                     else
                     {
                         // 테두리 없는 해설문·여백: 흰 바탕이 측정 한도까지 이어진다. 세로쓰기는 예전처럼 잰 만큼, 가로쓰기는 조금만 넓힌다.
-                        var grown = HeightenToBubble(img, WidenToBubble(img, rect, others), others);
-                        rect = b.Vertical ? grown : LimitGrowth(rect, grown, HorizontalGrowth);
+                        var grown = HeightenToBubble(img, WidenToBubble(img, rect, others, walls), others, walls);
+                        rect = b.Vertical ? WidenColumn(rect, grown, b, allRects, i, img) : LimitGrowth(rect, grown, HorizontalGrowth);
                         rect.Inflate(-rect.Width * 0.05f, -rect.Height * 0.03f);
                     }
                 }
@@ -309,19 +366,27 @@ public static class TextRenderer
             var sorted = fits.Where((f, i) => f > 0 && !partial[i]).OrderBy(f => f).ToList();
             if (sorted.Count == 0) sorted = fits.Where(f => f > 0).OrderBy(f => f).ToList();
             float common = sorted.Count == 0 ? 16 : sorted[sorted.Count / 2];
-            common = Math.Min(common, img.Rows * CommonSizeOfPage) * (float)Math.Clamp(settings.LetterSizeScale, 0.3, 3.0);
+            common = Math.Min(common, img.Rows * CommonSizeOfPage);
+            if (commonSize > 0) common = (float)commonSize;   // 붙든 값 — 블록이 바뀌어도 그대로(위 CommonSize)
+            commonBase = common;
+            common *= (float)Math.Clamp(settings.LetterSizeScale, 0.3, 3.0);
 
             var result = new List<BlockLayout>(n);
             for (int i = 0; i < n; i++)
             {
                 float size = 0;
-                if (fits[i] > 0)
+                // 블록에 적은 크기(px, 결과 그림의 픽셀)는 풍선에 맞추지 않고 그대로 쓴다. 배율(StyleScale)만 있던 때는 풍선에 맞춘 크기가 상한이라
+                // 좁은 풍선은 줄여도 그대로였고, 키운 것도 그릴 때 자리에 맞춰 다시 줄었다("이 풍선만" 크기가 안 먹는다는 2026-11-17 사용자 보고).
+                bool fixedSize = fits[i] > 0 && blocks[i].SizePx > 0;
+                if (fixedSize)
+                    size = (float)Math.Clamp(blocks[i].SizePx, 4, 1000);
+                else if (fits[i] > 0)
                 {
                     // 블록별 배율(이 풍선만 크게/작게)은 공통 크기에 곱한다. 크게 한 블록은 풍선에 맞춘 크기도 그만큼 넘게 둔다.
                     float scale = (float)Math.Clamp(blocks[i].StyleScale, 0.3, 3.0);
                     size = Math.Max(MinSize, Math.Min(fits[i] * Math.Max(1, scale), common * scale));
                 }
-                result.Add(new BlockLayout(rects[i], size, wraps[i], round[i]));
+                result.Add(new BlockLayout(rects[i], size, wraps[i], round[i], fixedSize));
             }
             // 진단: NEKO_LETTER_DBG=<파일>이면 블록마다 감지 자리 → 넓힌 자리, 풍선에 맞춘 크기 → 실제 크기를 적는다 (글 내용은 적지 않는다)
             if (Environment.GetEnvironmentVariable("NEKO_LETTER_DBG") is { Length: > 0 } dbg)
@@ -337,10 +402,80 @@ public static class TextRenderer
         }
     }
 
+    /// <summary>겹친 풍선의 목을 지나는 벽 — 선 (Px, Py)에서 (Nx, Ny) 쪽은 이웃 풍선이라 풍선을 잴 때 넘어가지 않는다.</summary>
+    public readonly record struct NeckWall(float Px, float Py, float Nx, float Ny)
+    {
+        public static bool Blocks(IReadOnlyList<NeckWall>? walls, int x, int y)
+        {
+            if (walls == null) return false;
+            foreach (var w in walls)
+                if ((x - w.Px) * w.Nx + (y - w.Py) * w.Ny >= 0) return true;
+            return false;
+        }
+    }
+
+    /// <summary>블록마다 이웃 풍선 쪽을 막는 벽을 구한다 — 이음선 없이 안이 이어진 겹친 풍선(BubbleSplitter.NeckLine)의 목.
+    /// 다른 블록 영역만 벽으로 삼으면 흰 구간이 목을 지나 이웃 풍선으로 새서, 블록은 풍선마다 따로인데 식자 자리가 목에 걸쳤다
+    /// (실측 2026-11-16: 번역본이 풍선마다 따로 식자한 겹친 풍선 159개 중 52개). 목이 없는 블록에는 벽이 없다 — 예전 그대로 잰다.
+    /// 손으로 잡은 블록·숨긴 블록·서로 먼 블록(틈이 두 블록의 가장 긴 변의 두 배보다 넓다)은 따지지 않는다.</summary>
+    private static List<NeckWall>?[] NeckWalls(Mat img, IReadOnlyList<TextBlockInfo> blocks, IReadOnlyList<RectangleF> rects, out RectangleF?[] lobes)
+    {
+        var walls = new List<NeckWall>?[blocks.Count];
+        lobes = new RectangleF?[blocks.Count];   // 블록이 놓인 풍선(목으로 가른 조각)의 안쪽 — 목이 여럿이면(사슬의 가운데 풍선) 겹치는 부분
+        var found = lobes;
+        void Lobe(int k, Rect r)
+        {
+            if (r.Width <= 0 || r.Height <= 0) return;
+            var f = new RectangleF(r.X, r.Y, r.Width, r.Height);
+            found[k] = found[k] is { } old ? RectangleF.Intersect(old, f) : f;
+        }
+        Mat? gray = null;
+        try
+        {
+            static DetectedBlock Box(RectangleF r) => new((int)r.Left, (int)r.Top, (int)Math.Ceiling(r.Right), (int)Math.Ceiling(r.Bottom), 1f, false);
+            bool Usable(int i) => !blocks[i].ManualRect && !blocks[i].Hidden && rects[i].Width >= 4 && rects[i].Height >= 4
+                && rects[i].Left >= 0 && rects[i].Top >= 0 && rects[i].Right <= img.Cols && rects[i].Bottom <= img.Rows;
+            for (int i = 0; i < blocks.Count; i++)
+            {
+                if (!Usable(i)) continue;
+                for (int j = i + 1; j < blocks.Count; j++)
+                {
+                    if (!Usable(j)) continue;
+                    RectangleF a = rects[i], b = rects[j];
+                    float gap = Math.Max(Math.Max(a.Left, b.Left) - Math.Min(a.Right, b.Right), Math.Max(a.Top, b.Top) - Math.Min(a.Bottom, b.Bottom));
+                    if (gap > 2 * Math.Max(Math.Max(a.Width, a.Height), Math.Max(b.Width, b.Height))) continue;
+                    if (gray == null)
+                    {
+                        gray = new Mat();
+                        if (img.Channels() == 1) img.CopyTo(gray);
+                        else Cv2.CvtColor(img, gray, img.Channels() == 4 ? ColorConversionCodes.BGRA2GRAY : ColorConversionCodes.BGR2GRAY);
+                    }
+                    if (BubbleSplitter.NeckLobes(gray, Box(a), Box(b)) is not { } neck) continue;
+                    Lobe(i, neck.LobeA);
+                    Lobe(j, neck.LobeB);
+                    // 목의 법선 — 블록 j 쪽을 향하게
+                    float dx = neck.Q.X - neck.P.X, dy = neck.Q.Y - neck.P.Y, len = MathF.Sqrt(dx * dx + dy * dy);
+                    if (len < 1) continue;
+                    float nx = -dy / len, ny = dx / len;
+                    float toJ = (b.X + b.Width / 2 - neck.P.X) * nx + (b.Y + b.Height / 2 - neck.P.Y) * ny;
+                    if (toJ < 0) { nx = -nx; ny = -ny; }
+                    (walls[i] ??= new()).Add(new NeckWall(neck.P.X, neck.P.Y, nx, ny));
+                    (walls[j] ??= new()).Add(new NeckWall(neck.P.X, neck.P.Y, -nx, -ny));
+                }
+            }
+        }
+        catch
+        {
+            // 벽은 보너스 — 실패하면 예전처럼 잰다
+        }
+        finally { gray?.Dispose(); }
+        return walls;
+    }
+
     /// <summary>블록이 들어 있는 말풍선의 흰 안쪽을 잰다: 블록 높이의 25·50·75% 세 줄에서 좌우로, 블록 폭의 25·50·75% 세 줄에서 위아래로
     /// 밝은 픽셀(풍선 바탕색 기준)이 이어지는 구간을 재고 각각 **가장 좁은 값**을 쓴다(꼬리로 한 줄만 새는 것 방지). 다른 블록 영역은 벽이다.
     /// 어느 쪽이든 측정 한도(가로 한쪽 2.5배, 세로 한쪽 1.8배)까지 흰 바탕이 이어지면 풍선이 아니라고 보고 null.</summary>
-    private static RectangleF? MeasureBubble(Mat img, RectangleF r, IReadOnlyList<RectangleF> avoid)
+    private static RectangleF? MeasureBubble(Mat img, RectangleF r, IReadOnlyList<RectangleF> avoid, IReadOnlyList<NeckWall>? walls = null)
     {
         // 블록 안(글자를 지운 자리)과 그 둘레 조금은 밝기를 따지지 않는다. 글자 지움(LaMa)이 메운 자리는 순백이 아니라 옅은 회색(실측 213~223)이라,
         // 거기서부터 밝기를 재면 가운데에서 바로 막혀 풍선을 하나도 못 쟀다(실측: 한 쪽의 블록 11개 전부 실패).
@@ -368,6 +503,7 @@ public static class TextRenderer
         bool Bright(int x, int y) => own.Contains(x, y) || Gray(x, y) >= threshold;
         bool Blocked(int x, int y)
         {
+            if (NeckWall.Blocks(walls, x, y)) return true;
             foreach (var a in avoid)
                 if (x >= a.Left - 4 && x <= a.Right + 4 && y >= a.Top - 4 && y <= a.Bottom + 4) return true;
             return false;
@@ -408,6 +544,33 @@ public static class TextRenderer
         return new RectangleF(x, y, w, h);
     }
 
+    /// <summary>풍선을 못 잰 세로쓰기 **한 기둥** 블록(톤으로 채운 풍선·그림 위의 글)의 자리를 양쪽으로 글자 반 자씩 넓힌다.
+    /// 감지 블록은 글 기둥만 잡아서 한 기둥이면 글자 한 자 폭이다 — 가로로 쓰는 번역문이 한 자씩 꺾였다
+    /// (실측 2026-11-16: 39×166 블록에 "... / 그 / 래"). 풍선은 기둥보다 양쪽으로 반 자씩은 넓다(그 풍선의 안쪽 폭은 기둥의 두 배 남짓).
+    /// 글자 크기는 블록 넓이를 원문 글자 수로 나눠 어림한다(기둥이 여럿이면 블록 폭보다 작다). 가운데는 그대로 두고,
+    /// 옆 블록(4px 띄움)이나 그림 끝에 막힌 쪽은 거기까지만 넓힌다. 흰 바탕을 재서 이미 넓어진 자리(반 자 넘게)는 잰 그대로 둔다 — 흰 곳의 끝이 풍선의 끝이다.</summary>
+    private static RectangleF WidenColumn(RectangleF block, RectangleF grown, TextBlockInfo b, IReadOnlyList<RectangleF> all, int self, Mat img)
+    {
+        var r = block;
+        if (r.Height <= r.Width) return grown;
+        int letters = b.SourceText?.Count(c => !char.IsWhiteSpace(c)) ?? 0;
+        float glyph = letters > 0 ? Math.Min(r.Width, MathF.Sqrt(r.Width * r.Height / letters)) : r.Width;
+        if (grown.Width >= r.Width + glyph / 2) return grown;
+        // 한 기둥짜리(폭이 글자 1.6자 이하)만 넓힌다 — 기둥이 둘 이상이면 번역문의 어절(두세 자)이 들어갈 폭이 이미 있고,
+        // 못 잰 까닭이 톤이 아니라 블록이 풍선 밖 효과음까지 품어서인 흰 풍선에서는 넓힌 만큼 글이 테두리 밖으로 나갔다(실측: 122×323 블록)
+        if (r.Width > 1.6f * glyph) return grown;
+        float left = Math.Max(0, r.Left - glyph / 2), right = Math.Min(img.Cols, r.Right + glyph / 2);
+        for (int j = 0; j < all.Count; j++)
+        {
+            if (j == self) continue;
+            var o = all[j];
+            if (o.Bottom <= r.Top || o.Top >= r.Bottom) continue;
+            if (o.Right <= r.Left) left = Math.Max(left, Math.Min(r.Left, o.Right + 4));
+            else if (o.Left >= r.Right) right = Math.Min(right, Math.Max(r.Right, o.Left - 4));
+        }
+        return RectangleF.FromLTRB(Math.Min(left, grown.Left), grown.Top, Math.Max(right, grown.Right), grown.Bottom);
+    }
+
     /// <summary>블록이 이미지 밖으로 반 픽셀 넘게 나갔는지.</summary>
     private static bool Overhangs(RectangleF r, Mat img) =>
         r.Left < -0.5f || r.Top < -0.5f || r.Right > img.Cols + 0.5f || r.Bottom > img.Rows + 0.5f;
@@ -442,7 +605,9 @@ public static class TextRenderer
         var rect = box.Rect;
         float wrapWidth = Math.Min(rect.Width * WordOverflowAllow, Math.Max(rect.Width, box.MaxWrap));
         using var font = new Font(family, size, style, GraphicsUnit.Pixel);
-        var lines = WrapByWords(g, text, font, wrapWidth, out _).Split('\n');
+        var lines = WrapByWords(g, text, font, wrapWidth, out _, out float pieceLetters).Split('\n');
+        // 어절을 두 자 안팎으로 잘게 꺾어야 들어가는 크기는 버린다 — 더 작은 크기에서 조각을 길게 쓴다(실측 2026-11-16: 폭 94px 자리에서 33px로 "드르 / 륵드 / 르륵")
+        if (pieceLetters < MinPieceLetters) return null;
         float totalH = font.GetHeight(g) + (lines.Length - 1) * size * LineAdvanceEm * spacing;
         float maxW = lines.Max(l => l.Length == 0 ? 0 : g.MeasureString(l, font, PointF.Empty, Typographic).Width);
         // 한 줄에 한두 자씩 쌓이는 크기는 여기서도 버린다 (Arrange와 같은 규칙) — 더 작은 크기에서 줄을 넓게 쓴다
@@ -455,7 +620,7 @@ public static class TextRenderer
         // 블록별 스타일: 굵기(페이지 설정/보통/굵게) + 기울임 (페이지 기본에 블록이 더한다)
         var style = b.BoldOverride switch { 0 => FontStyle.Regular, 1 => FontStyle.Bold, _ => s.LetterBold ? FontStyle.Bold : FontStyle.Regular };
         if (b.Italic || s.LetterItalic) style |= FontStyle.Italic;
-        var family = ResolveFamily(s.LetterFontFamily);
+        var family = ResolveFamily(string.IsNullOrWhiteSpace(b.FontFamily) ? s.LetterFontFamily : b.FontFamily);
         // 일부 글꼴은 일부 스타일만 있다 — 없는 스타일로 Font를 만들면 던지므로 가능한 것으로 보정
         if (!family.IsStyleAvailable(style))
         {
@@ -644,7 +809,8 @@ public static class TextRenderer
         return mat;
     }
 
-    private static void DrawBlock(Graphics g, TextBlockInfo b, BlockLayout plan, Color color, AppSettings s)
+    /// <summary>블록 하나를 그리고 그린 글자 크기(px)를 돌려준다. draw가 false면 크기만 구한다.</summary>
+    private static float DrawBlock(Graphics g, TextBlockInfo b, BlockLayout plan, Color color, AppSettings s, bool draw = true)
     {
         var (family, style) = ResolveStyle(b, s);
         // 블록별 지정이 없으면(빈 문자열) 페이지 기본 설정을 따른다
@@ -657,28 +823,46 @@ public static class TextRenderer
         // CJK를 글자 아무 데서나 꺾어 "멀긴한/데"처럼 어절이 잘린다.
         // 크기는 PlanLayout이 풍선에 맞춰 정해 왔다. 순서: ① 그 크기에서 조금(75%까지) 줄여서라도 어절을 통째로,
         // ② 안 되면 긴 어절을 글자 단위로 꺾어서(띄어쓰기 없는 긴 글, 아주 좁은 풍선), ③ 그래도 안 되면 최소 크기로 넘치더라도 그린다.
-        void Draw(IReadOnlyList<string> lines, float size) =>
-            DrawLines(g, lines, family, style, size, size * LineAdvanceEm * spacing, words.SpaceAt(size), plan.Rect, align, color, s, (float)b.RotationDeg);
+        float Draw(IReadOnlyList<string> lines, float size)
+        {
+            if (draw)
+                DrawLines(g, lines, family, style, size, size * LineAdvanceEm * spacing, words.SpaceAt(size), plan.Rect, align, color,
+                    OutlineOf(b, s, size), (float)b.RotationDeg, plan.Fixed);
+            return size;
+        }
+        float wrapWidth = Math.Min(plan.Rect.Width * WordOverflowAllow, Math.Max(plan.Rect.Width, plan.MaxWrap));
+
+        if (plan.Fixed)
+        {
+            // 적은 크기 그대로: 자리에 들어가면 풍선 모양에 맞춘 줄 나눔, 안 들어가면 어절 단위로 넘겨 자리 밖으로 넘치게 둔다
+            // (줄이지도, 어절을 꺾지도 않는다 — 크기를 정한 사람이 자리를 늘리거나 줄을 직접 나눈다).
+            if (words.Arrange(plan.Size, plan, spacing) is { } fit) return Draw(fit, plan.Size);
+            using var font = new Font(family, plan.Size, style, GraphicsUnit.Pixel);
+            float widest = b.Translation.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+                .Select(w => g.MeasureString(w, font, PointF.Empty, Typographic).Width).DefaultIfEmpty(0).Max();
+            return Draw(WrapByWords(g, b.Translation, font, Math.Max(wrapWidth, widest + 1), out _).Split('\n'), plan.Size);
+        }
 
         for (float size = plan.Size; size >= Math.Max(MinSize, plan.Size * ShrinkBeforeBreak); size *= 0.95f)
-            if (words.Arrange(size, plan, spacing) is { } lines) { Draw(lines, size); return; }
+            if (words.Arrange(size, plan, spacing) is { } lines) return Draw(lines, size);
         for (float size = plan.Size; size >= MinSize; size *= 0.92f)
-            if (BrokenLines(g, b.Translation, family, style, size, plan, spacing) is { } lines) { Draw(lines, size); return; }
+            if (BrokenLines(g, b.Translation, family, style, size, plan, spacing) is { } lines) return Draw(lines, size);
 
         using var smallest = new Font(family, MinSize, style, GraphicsUnit.Pixel);
-        float wrapWidth = Math.Min(plan.Rect.Width * WordOverflowAllow, Math.Max(plan.Rect.Width, plan.MaxWrap));
-        Draw(WrapByWords(g, b.Translation, smallest, wrapWidth, out _).Split('\n'), MinSize);
+        return Draw(WrapByWords(g, b.Translation, smallest, wrapWidth, out _).Split('\n'), MinSize);
     }
 
     /// <summary>줄마다 어절을 하나씩 놓아 경로를 쌓고 외곽선+채움으로 그린다 — 줄 간격·어절 간격·정렬·회전을 직접 제어한다.
     /// 왼쪽·오른쪽 정렬은 글 덩어리를 자리 한가운데에 두고 그 안에서 줄을 맞춘다 (사람이 식자한 원고의 왼쪽 맞춤이 이 모양이다).</summary>
     private static void DrawLines(Graphics g, IReadOnlyList<string> lines, FontFamily family, FontStyle style, float size,
-        float lineAdvance, float wordGap, RectangleF rect, StringAlignment align, Color color, AppSettings s, float rotationDeg)
+        float lineAdvance, float wordGap, RectangleF rect, StringAlignment align, Color color, (float Pen, Color Color) outline, float rotationDeg,
+        bool overflowBothWays = false)
     {
         using var font = new Font(family, size, style, GraphicsUnit.Pixel);
         float lineH = font.GetHeight(g);
         float totalH = lines.Count == 0 ? 0 : lineAdvance * (lines.Count - 1) + lineH;
-        float y = rect.Y + Math.Max(0, (rect.Height - totalH) / 2);
+        // 자리보다 높은 글은 위에서부터 아래로 넘친다. 크기를 적은 블록(overflowBothWays)은 자리 가운데에 두고 위아래로 고르게 넘친다.
+        float y = rect.Y + (overflowBothWays ? (rect.Height - totalH) / 2 : Math.Max(0, (rect.Height - totalH) / 2));
 
         float Width(string t) => g.MeasureString(t, font, PointF.Empty, Typographic).Width;
 
@@ -720,10 +904,9 @@ public static class TextRenderer
         }
 
         // 외곽선(halo)으로 어떤 배경에서도 읽히게 한다.
-        if (s.LetterOutlineScale > 0)
+        if (outline.Pen > 0)
         {
-            float w = (float)(Math.Max(2.5f, size / 7f) * Math.Clamp(s.LetterOutlineScale, 0, 4));
-            using var halo = new Pen(ParseColor(s.LetterOutlineColorHex, Color.White), w) { LineJoin = LineJoin.Round };
+            using var halo = new Pen(outline.Color, outline.Pen) { LineJoin = LineJoin.Round };
             g.DrawPath(halo, path);
         }
         using var brush = new SolidBrush(color);
@@ -732,12 +915,20 @@ public static class TextRenderer
 
     /// <summary>어절(스페이스 단위) 줄바꿈. 한 줄에 다음 어절이 안 들어가면 줄을 넘긴다 —
     /// "좀 / 멀긴한데 / 우리 집에서 / 기다리고 / 있어!!"처럼 어절이 중간에 꺾이지 않는다.
-    /// 어절 하나가 줄 폭 자체를 넘으면 그 어절만 어쩔 수 없이 글자 단위로 쪼갠다.</summary>
-    private static string WrapByWords(Graphics g, string text, Font font, float maxWidth, out bool brokeWord)
+    /// 어절 하나가 줄 폭 자체를 넘으면 그 어절만 어쩔 수 없이 글자 단위로 쪼갠다(고른 길이로, 들여 쓰지 않고).</summary>
+    private static string WrapByWords(Graphics g, string text, Font font, float maxWidth, out bool brokeWord) =>
+        WrapByWords(g, text, font, maxWidth, out brokeWord, out _);
+
+    /// <summary>꺾인 어절의 조각이 가져야 할 평균 글자 수 — 이보다 잘게 꺾이는 크기는 쓰지 않는다(BrokenLines).</summary>
+    private const float MinPieceLetters = 2.5f;
+
+    /// <param name="pieceLetters">꺾인 어절 가운데 가장 잘게 꺾인 것의 조각당 평균 글자 수 — 꺾인 어절이 없으면 아주 큰 값.</param>
+    private static string WrapByWords(Graphics g, string text, Font font, float maxWidth, out bool brokeWord, out float pieceLetters)
     {
         float W(string t) => t.Length == 0 ? 0 : g.MeasureString(t, font).Width;
 
         brokeWord = false;
+        pieceLetters = float.MaxValue;
         var lines = new List<string>();
         foreach (var rawLine in text.Split('\n'))   // 사용자가 직접 넣은 줄바꿈은 존중
         {
@@ -754,21 +945,28 @@ public static class TextRenderer
                 // "근처에/서"처럼 어절이 꺾이는 것보다 가독성이 낫다 (사용자 요청: 벗어나도 됨).
                 if (W(word) <= maxWidth * WordOverflowAllow) { lines.Add(word); continue; }
 
-                // 그래도 너무 길면 글자 단위로 쪼개되, 이어지는 조각 줄은 들여쓰기로 표시한다.
+                // 그래도 너무 길면 글자 단위로 쪼갠다 — 조각 수는 줄 폭에 들어가는 가장 적은 수로, 길이는 고르게.
+                // 예전에는 줄 폭에 차는 대로 끊고 이어지는 줄을 공백 둘로 들여 썼는데, 좁은 풍선에서는 들여 쓴 만큼 줄이 좁아져
+                // "드 / 르륵 / 드 / 르륵"처럼 한두 자씩 엇갈려 쌓였다(실측 2026-11-16: 폭 98px 자리의 8자 어절 — 사용자: "들여쓰기가 되어 있어").
                 brokeWord = true;
-                string piece = "";
-                bool first = true;
-                foreach (var ch in word)
+                var runes = word.EnumerateRunes().Select(r => r.ToString()).ToArray();
+                string[] pieces = [word];
+                for (int n = 2; n <= runes.Length; n++)
                 {
-                    if (W(piece + ch) > maxWidth && piece.Length > (first ? 0 : BreakIndent.Length))
+                    // n조각으로 고르게: 앞 조각부터 한 자씩 더 준다
+                    var cut = new string[n];
+                    for (int k = 0, at = 0; k < n; k++)
                     {
-                        lines.Add(piece);
-                        piece = BreakIndent;    // 들여쓰기 — 이 줄이 앞 어절의 연속임을 보여준다
-                        first = false;
+                        int take = runes.Length / n + (k < runes.Length % n ? 1 : 0);
+                        cut[k] = string.Concat(runes.Skip(at).Take(take));
+                        at += take;
                     }
-                    piece += ch;
+                    pieces = cut;
+                    if (cut.All(c => W(c) <= maxWidth)) break;
                 }
-                line = piece;
+                pieceLetters = Math.Min(pieceLetters, (float)runes.Length / pieces.Length);
+                lines.AddRange(pieces.Take(pieces.Length - 1));
+                line = pieces[^1];
             }
             lines.Add(line);
         }
@@ -778,8 +976,6 @@ public static class TextRenderer
     /// <summary>긴 어절을 통째로 둘 때 허용하는 줄 폭 초과 배율 — 말풍선을 살짝 벗어나는 건
     /// 어절이 중간에 꺾이는 것보다 읽기 좋다 (사용자 피드백). DrawFitted의 폭 검사도 같이 쓴다.</summary>
     public const float WordOverflowAllow = 1.3f;
-    /// <summary>쪼개진 어절의 이어지는 줄 앞에 붙이는 들여쓰기 — 일반 공백 2칸 (EN SPACE는 경로 렌더에서 □로 나온다, 실측).</summary>
-    private const string BreakIndent = "  ";
 
     /// <summary>설정의 글꼴 이름을 FontFamily로. 미설치 이름이면 Malgun Gothic → GenericSansSerif 순으로 대체.</summary>
     private static FontFamily ResolveFamily(string name)

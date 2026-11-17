@@ -73,7 +73,7 @@ Open **View & edit results** to make adjustments:
   - If a page has censored spots scattered in several places and the body around them comes out blurry or changed, try **Redraw censored spots that are apart separately (experimental)** in Settings — spots that do not touch are drawn on their own at close to the original size (it takes longer, one pass per spot).
   - Edited masks are saved in `.neko` within the output folder and reused when you process the same source pages again. You can turn this off in Settings.
   - Zoom with `Alt` + mouse wheel or `Ctrl` + `+` / `-`, pan with `Space` + drag, and resize the brush with `[` or `]`.
-- 💬 **Edit lettering** — Edit text directly in its speech bubble. You can move it, resize it, or change its font and color, then apply it with **Redo lettering**.
+- 💬 **Edit lettering** — Work on the actual lettered page: click a bubble to select it, drag to move it, double-click to edit its text. Font, size (px), color, outline (px), alignment, and rotation can be set for the selected bubble only, and editing one bubble leaves the other bubbles' text size unchanged. Apply with **Redo lettering**.
 
 In **Settings**, you can adjust colorization quality, censorship detection and restoration methods, the translation engine, and fonts. Under **Engine**, you can load a replacement colorization model from a file or URL. If you move to a different PC, use **Tune for this PC** to recalculate the resolution and memory settings.
 

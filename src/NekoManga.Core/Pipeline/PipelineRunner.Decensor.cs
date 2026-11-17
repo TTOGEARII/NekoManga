@@ -45,6 +45,51 @@ public partial class PipelineRunner
         return Aletheia.Detect(img, exclude, out kindUsed, out kinds);
     }
 
+    /// <summary>검출의 이 비율 이상이 글 블록 안에 있고, 그 블록의 이 비율 이상을 덮으면 글을 지운 자리가 잡힌 것으로 본다.</summary>
+    private const double EraseHitInBlock = 0.6, EraseHitCoversBlock = 0.5;
+
+    /// <summary>검열 마스크에서 **글을 지운 자리가 잡힌 것**을 걷어낸다 — 걷어낸 성분 수를 돌려준다(종류 지도 <paramref name="kinds"/>에서도 지운다).
+    /// 검열 감지는 글을 지운 뒤의 원고에서 돈다. 흰 풍선의 글은 단색으로 칠해져 깨끗하지만, 톤(망점)으로 채운 풍선·그림 위의 글은 LaMa로 지우고
+    /// 그 뭉개진 자리를 Aletheia가 모자이크로 본다(전용 AI 보완은 글 블록을 빼지만 Aletheia 검출에는 그 필터가 없다).
+    /// 실측(2026-11-16, 사용자 원고 1쪽): 글을 지우기 전 원고에서는 막대 1곳(2,236px)만 잡히는데, 지운 뒤에는 글 블록 둘이 모자이크로 더 잡혔다(37,257px·36,223px).
+    /// 그 둘은 검출의 87%·77%가 글 블록 안이고 블록의 94%·91%를 덮었다 — 검출이 글 블록과 거의 같은 자리·같은 크기다.
+    /// 글 옆의 검열, 글을 가로지르는 가는 막대(블록의 일부만 덮는다), 글을 품은 넓은 검출(대부분이 블록 밖)은 남긴다.
+    /// <paramref name="textBlocks"/>는 번역 단계가 실제로 지운 블록이어야 한다 — 글을 지우지 않은 원고에는 쓰지 않는다(지우지 않은 글은 검열로 잡히지 않는다).</summary>
+    internal static int DropTextEraseHits(Mat mask, Mat? kinds, IReadOnlyList<Rect> textBlocks)
+    {
+        if (textBlocks.Count == 0 || Cv2.CountNonZero(mask) == 0) return 0;
+        using var labels = new Mat();
+        using var stats = new Mat();
+        using var cents = new Mat();
+        int n = Cv2.ConnectedComponentsWithStats(mask, labels, stats, cents, PixelConnectivity.Connectivity8);
+        var page = new Rect(0, 0, mask.Cols, mask.Rows);
+        int dropped = 0;
+        for (int i = 1; i < n; i++)
+        {
+            int area = stats.At<int>(i, (int)ConnectedComponentsTypes.Area);
+            var box = new Rect(stats.At<int>(i, (int)ConnectedComponentsTypes.Left), stats.At<int>(i, (int)ConnectedComponentsTypes.Top),
+                stats.At<int>(i, (int)ConnectedComponentsTypes.Width), stats.At<int>(i, (int)ConnectedComponentsTypes.Height));
+            foreach (var block in textBlocks)
+            {
+                var b = block.Intersect(page);
+                var common = b.Intersect(box);
+                if (b.Width <= 0 || b.Height <= 0 || common.Width <= 0 || common.Height <= 0) continue;
+                using var part = new Mat(labels, common);
+                using var hit = new Mat();
+                Cv2.InRange(part, new Scalar(i), new Scalar(i), hit);
+                int inside = Cv2.CountNonZero(hit);
+                if (inside < EraseHitInBlock * area || inside < EraseHitCoversBlock * b.Width * b.Height) continue;
+                using var comp = new Mat();
+                Cv2.InRange(labels, new Scalar(i), new Scalar(i), comp);
+                mask.SetTo(Scalar.Black, comp);
+                kinds?.SetTo(Scalar.Black, comp);
+                dropped++;
+                break;
+            }
+        }
+        return dropped;
+    }
+
     /// <summary>결과 보기 창에서 사용자가 손으로 고른 영역을 지운다 (자동 감지가 놓친 검열용).
     /// 파이프라인과 같은 복원 경로를 쓰므로 결과물의 성격이 일관된다.
     /// mode: "Basic" | "ComfyRegen" | "ComfyCustom" (옛 "Strong"·"DeepCream"은 2026-10-19, "ComfyLama"는 2026-11-12 폐기 — 모르는 값은 ArgumentException).</summary>

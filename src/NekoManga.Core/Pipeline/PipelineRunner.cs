@@ -282,6 +282,16 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         // 검열 추적: AI 모델(합성 학습 전용 모델)이 있으면 그게 1순위 — 흰/검/모자이크를 한 번에 찾는다. 없거나 못 찾으면 규칙 기반으로 폴백.
         // autoBubbles는 말풍선 필터를 켠 경우에만 — 필터가 꺼져 있으면 글자 감지는 검/모자이크의 글자 상자 빼기에만 쓰여 비용 대비 효과가 작다
         var mask = DetectCensor(img, exclude, out var kindUsed, out var kinds, autoBubbles: settings.DecensorBubbleFilter);
+        // 글을 지운 자리가 검열로 잡힌 것은 걷어낸다 — 감지는 글을 지운 뒤의 원고에서 돈다(DropTextEraseHits)
+        if (mask != null && DropTextEraseHits(mask, kinds, exclude) is > 0 and var erased)
+        {
+            kindUsed += Loc.F($" · 글 지운 자리 {erased}곳 제외");
+            if (Cv2.CountNonZero(mask) == 0)
+            {
+                mask.Dispose(); kinds?.Dispose();
+                mask = null; kinds = null;
+            }
+        }
         pg.Kinds = kinds;
         pg.Summary = kindUsed;
         if (settings.DecensorTarget == "Auto")
@@ -406,10 +416,10 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
                 {
                     ImgIo.Write(LetterSidecar.BasePathFor(outPath), baseImg);
                     new LetterSidecar(file, srcImg.Width, srcImg.Height,
-                        LetterSidecar.BasePathFor(outPath), [.. blocks], SrcLen: MaskSidecar.LengthOf(file)).Save(outPath);
+                        LetterSidecar.BasePathFor(outPath), [.. blocks], SrcLen: MaskSidecar.LengthOf(file), CommonSize: pg.LetterCommon).Save(outPath);
                 }
 
-            TextRenderer.RenderBlocks(work, file, blocks, outPath, settings);
+            TextRenderer.RenderBlocks(work, file, 0, 0, blocks, outPath, settings, pg.LetterCommon);
         }
         else if (work == file)
         {

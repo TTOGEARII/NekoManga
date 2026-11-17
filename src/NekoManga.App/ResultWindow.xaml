@@ -161,60 +161,138 @@
                     <TabItem x:Name="TabLetter" Header="💬 식자 다시 하기">
                         <StackPanel Margin="0,8,0,0">
                             <TextBlock x:Name="TxtLetterHint" Style="{StaticResource HintText}" Margin="0,0,0,6"
-                                       Text="말풍선 위 텍스트박스를 클릭해 바로 고치세요 — 타이핑이 즉시 보여요. 다 고치면 [다시 식자]가 최종 화질로 렌더링해요 (미리보기에서 그림을 클릭하면 다시 편집)."/>
-                            <WrapPanel Margin="0,0,0,6">
-                                <TextBlock Text="글꼴" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                <ComboBox x:Name="CmbLFont" Width="190" IsEditable="True" VerticalAlignment="Center"/>
-                                <CheckBox x:Name="ChkLBold" Content="굵게" Foreground="{DynamicResource NekoText}"
-                                          VerticalAlignment="Center" Margin="10,0,0,0"/>
-                                <TextBlock Text="크기" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="16,0,6,0"/>
-                                <TextBox x:Name="TxtLSize" Width="52" VerticalAlignment="Center"/>
-                                <TextBlock Text="글자 색" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="16,0,6,0"/>
-                                <TextBox x:Name="TxtLColor" Width="86" VerticalAlignment="Center" ToolTip="#RRGGBB — 비우면 원문 색 자동"/>
-                                <TextBlock Text="외곽선" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="16,0,6,0"/>
-                                <TextBox x:Name="TxtLOutScale" Width="52" VerticalAlignment="Center"/>
-                                <TextBox x:Name="TxtLOutColor" Width="86" VerticalAlignment="Center" Margin="6,0,0,0"/>
-                            </WrapPanel>
-                            <DockPanel>
-                                <TextBlock Text="블록" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                <ComboBox x:Name="CmbBlocks" Width="230" VerticalAlignment="Center"
-                                          SelectionChanged="CmbBlocks_Changed"/>
-                                <ui:Button x:Name="BtnBlockHide" DockPanel.Dock="Right" Content="이 블록 숨기기"
-                                           Click="BtnBlockHide_Click" Padding="10,4" Margin="8,0,0,0"/>
-                                <TextBox x:Name="TxtBlockText" Margin="8,0,0,0" VerticalAlignment="Center"
-                                         TextChanged="TxtBlockText_Changed"/>
-                            </DockPanel>
-                            <!-- 선택한 풍선만 적용되는 세부 스타일 (BT급 디테일 편집).
-                                 WrapPanel: 창이 좁아도 잘리지 않고 다음 줄로 흐른다 -->
-                            <WrapPanel Margin="0,6,0,0">
-                                <TextBlock Text="이 풍선만" Foreground="{DynamicResource NekoPink}" FontWeight="SemiBold"
-                                           VerticalAlignment="Center" Margin="0,2,10,2"/>
-                                <TextBlock Text="크기×" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="0,2,4,2"/>
-                                <TextBox x:Name="TxtBScale" Width="48" VerticalAlignment="Center" Margin="0,2,0,2" TextChanged="BlockStyle_Changed"/>
-                                <TextBlock Text="정렬" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
-                                <ComboBox x:Name="CmbBAlign" Width="126" VerticalAlignment="Center" Margin="0,2,0,2" SelectionChanged="BlockStyle_Changed">
-                                    <ComboBoxItem Tag="" Content="페이지 설정" IsSelected="True"/>
-                                    <ComboBoxItem Tag="Left" Content="왼쪽"/>
-                                    <ComboBoxItem Tag="Center" Content="가운데"/>
-                                    <ComboBoxItem Tag="Right" Content="오른쪽"/>
-                                </ComboBox>
-                                <TextBlock Text="굵기" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
-                                <ComboBox x:Name="CmbBBold" Width="124" VerticalAlignment="Center" Margin="0,2,0,2" SelectionChanged="BlockStyle_Changed">
-                                    <ComboBoxItem Tag="-1" Content="페이지 설정" IsSelected="True"/>
-                                    <ComboBoxItem Tag="1" Content="굵게"/>
-                                    <ComboBoxItem Tag="0" Content="보통"/>
-                                </ComboBox>
-                                <CheckBox x:Name="ChkBItalic" Content="기울임" Foreground="{DynamicResource NekoText}"
-                                          VerticalAlignment="Center" Margin="12,2,0,2"
-                                          Checked="BlockStyle_Changed" Unchecked="BlockStyle_Changed"/>
-                                <TextBlock Text="줄간격" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
-                                <TextBox x:Name="TxtBLineSp" Width="48" VerticalAlignment="Center" Margin="0,2,0,2" TextChanged="BlockStyle_Changed"/>
-                                <TextBlock Text="색" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
-                                <TextBox x:Name="TxtBColor" Width="90" VerticalAlignment="Center" Margin="0,2,0,2" TextChanged="BlockStyle_Changed"
-                                         ToolTip="#RRGGBB — 비우면 전역 설정"/>
-                                <TextBlock Text="회전°" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
-                                <TextBox x:Name="TxtBRot" Width="48" VerticalAlignment="Center" Margin="0,2,0,2" TextChanged="BlockStyle_Changed"/>
-                            </WrapPanel>
+                                       TextWrapping="Wrap"
+                                       Text="풍선을 클릭하면 선택돼요 — 아래 [선택한 풍선]에서 글꼴·크기·외곽선을 바꾸면 그림에 바로 보여요. 끌면 옮기고, 두 번 클릭하면 그 자리에서 글을 고쳐요. 다 고치면 [다시 식자]로 결과물에 반영하세요."/>
+                            <!-- 선택한 풍선의 글자 속성 (포토샵의 문자 패널처럼: 풍선을 고르고 값을 바꾸면 그 풍선에만, 그림에 바로 보인다).
+                                 크기·외곽선의 px는 결과 그림의 픽셀이다. -->
+                            <Border BorderBrush="{DynamicResource NekoStroke}" BorderThickness="1" CornerRadius="6" Padding="8,6" Margin="0,0,0,6">
+                                <StackPanel>
+                                    <DockPanel>
+                                        <TextBlock Text="선택한 풍선" Foreground="{DynamicResource NekoPink}" FontWeight="SemiBold"
+                                                   VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                        <ComboBox x:Name="CmbBlocks" Width="230" VerticalAlignment="Center"
+                                                  SelectionChanged="CmbBlocks_Changed"/>
+                                        <ui:Button x:Name="BtnBlockReset" DockPanel.Dock="Right" Content="속성 초기화"
+                                                   Click="BtnBlockReset_Click" Padding="10,4" Margin="8,0,0,0"
+                                                   ToolTip="이 풍선의 글꼴·크기·색·외곽선·정렬·회전을 자동과 페이지 설정으로 되돌려요 (글과 자리는 그대로)"/>
+                                        <ui:Button x:Name="BtnBlockHide" DockPanel.Dock="Right" Content="이 블록 숨기기"
+                                                   Click="BtnBlockHide_Click" Padding="10,4" Margin="8,0,0,0"/>
+                                        <TextBox x:Name="TxtBlockText" Margin="8,0,0,0" VerticalAlignment="Center"
+                                                 TextChanged="TxtBlockText_Changed"/>
+                                    </DockPanel>
+                                    <!-- WrapPanel: 창이 좁아도 잘리지 않고 다음 줄로 흐른다 -->
+                                    <WrapPanel Margin="0,6,0,0">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="글꼴" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="0,2,4,2"/>
+                                            <ComboBox x:Name="CmbBFont" Width="180" VerticalAlignment="Center" Margin="0,2,0,2" SelectionChanged="BlockStyle_Changed"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="크기" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
+                                            <TextBox x:Name="TxtBSize" Width="56" VerticalAlignment="Center" Margin="0,2,0,2" Tag="1"
+                                                     TextChanged="BlockStyle_Changed" PreviewKeyDown="NumBox_PreviewKeyDown" PreviewMouseWheel="NumBox_MouseWheel"
+                                                     ToolTip="글자 크기(px) — 결과 그림의 픽셀 크기예요. ↑↓ 키나 휠로 1씩(Shift는 10씩) 바꿔요"/>
+                                            <TextBlock Text="px" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="3,2,0,2"/>
+                                            <CheckBox x:Name="ChkBSizeAuto" Content="자동" Foreground="{DynamicResource NekoText}"
+                                                      VerticalAlignment="Center" Margin="8,2,0,2" MinWidth="0"
+                                                      Checked="BlockStyle_Changed" Unchecked="BlockStyle_Changed"
+                                                      ToolTip="켜면 풍선에 맞춰 크기를 자동으로 정해요. 크기 칸에 숫자를 적으면 꺼지고 그 크기 그대로 그려요"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="굵기" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
+                                            <ComboBox x:Name="CmbBBold" Width="124" VerticalAlignment="Center" Margin="0,2,0,2" SelectionChanged="BlockStyle_Changed">
+                                                <ComboBoxItem Tag="-1" Content="페이지 설정" IsSelected="True"/>
+                                                <ComboBoxItem Tag="1" Content="굵게"/>
+                                                <ComboBoxItem Tag="0" Content="보통"/>
+                                            </ComboBox>
+                                        </StackPanel>
+                                        <CheckBox x:Name="ChkBItalic" Content="기울임" Foreground="{DynamicResource NekoText}"
+                                                  VerticalAlignment="Center" Margin="12,2,0,2" MinWidth="0"
+                                                  Checked="BlockStyle_Changed" Unchecked="BlockStyle_Changed"/>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="정렬" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
+                                            <ComboBox x:Name="CmbBAlign" Width="126" VerticalAlignment="Center" Margin="0,2,0,2" SelectionChanged="BlockStyle_Changed">
+                                                <ComboBoxItem Tag="" Content="페이지 설정" IsSelected="True"/>
+                                                <ComboBoxItem Tag="Left" Content="왼쪽"/>
+                                                <ComboBoxItem Tag="Center" Content="가운데"/>
+                                                <ComboBoxItem Tag="Right" Content="오른쪽"/>
+                                            </ComboBox>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="줄간격" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
+                                            <TextBox x:Name="TxtBLineSp" Width="48" VerticalAlignment="Center" Margin="0,2,0,2" Tag="0.05"
+                                                     TextChanged="BlockStyle_Changed" PreviewKeyDown="NumBox_PreviewKeyDown" PreviewMouseWheel="NumBox_MouseWheel"
+                                                     ToolTip="줄 간격 배율(1 = 기본) — 비우면 페이지 설정"/>
+                                            <TextBlock Text="×" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="3,2,0,2"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="글자 색" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
+                                            <Border x:Name="SwBColor" Width="20" Height="20" CornerRadius="3" BorderBrush="{DynamicResource NekoStroke}" BorderThickness="1"
+                                                    Cursor="Hand" VerticalAlignment="Center" Margin="0,2,4,2" MouseLeftButtonUp="Swatch_Click"
+                                                    Tag="{Binding ElementName=TxtBColor}" ToolTip="색 고르기"/>
+                                            <TextBox x:Name="TxtBColor" Width="86" VerticalAlignment="Center" Margin="0,2,0,2" TextChanged="BlockStyle_Changed"
+                                                     ToolTip="#RRGGBB — 비우면 페이지 설정"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="외곽선" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
+                                            <TextBox x:Name="TxtBOut" Width="52" VerticalAlignment="Center" Margin="0,2,0,2" Tag="0.5"
+                                                     TextChanged="BlockStyle_Changed" PreviewKeyDown="NumBox_PreviewKeyDown" PreviewMouseWheel="NumBox_MouseWheel"
+                                                     ToolTip="외곽선 두께(px) — 글자 밖으로 보이는 폭이에요. 0이면 외곽선 없음. ↑↓ 키나 휠로 0.5씩(Shift는 5씩) 바꿔요"/>
+                                            <TextBlock Text="px" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="3,2,0,2"/>
+                                            <CheckBox x:Name="ChkBOutAuto" Content="자동" Foreground="{DynamicResource NekoText}"
+                                                      VerticalAlignment="Center" Margin="8,2,0,2" MinWidth="0"
+                                                      Checked="BlockStyle_Changed" Unchecked="BlockStyle_Changed"
+                                                      ToolTip="켜면 페이지 전체 기본의 외곽선(글자 크기에 맞춘 두께)을 따라요. 두께 칸에 숫자를 적으면 꺼져요"/>
+                                            <Border x:Name="SwBOutColor" Width="20" Height="20" CornerRadius="3" BorderBrush="{DynamicResource NekoStroke}" BorderThickness="1"
+                                                    Cursor="Hand" VerticalAlignment="Center" Margin="8,2,4,2" MouseLeftButtonUp="Swatch_Click"
+                                                    Tag="{Binding ElementName=TxtBOutColor}" ToolTip="색 고르기"/>
+                                            <TextBox x:Name="TxtBOutColor" Width="86" VerticalAlignment="Center" Margin="0,2,0,2" TextChanged="BlockStyle_Changed"
+                                                     ToolTip="#RRGGBB — 비우면 페이지 설정"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="회전" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="12,2,4,2"/>
+                                            <TextBox x:Name="TxtBRot" Width="48" VerticalAlignment="Center" Margin="0,2,0,2" Tag="1"
+                                                     TextChanged="BlockStyle_Changed" PreviewKeyDown="NumBox_PreviewKeyDown" PreviewMouseWheel="NumBox_MouseWheel"/>
+                                            <TextBlock Text="°" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="3,2,0,2"/>
+                                        </StackPanel>
+                                    </WrapPanel>
+                                </StackPanel>
+                            </Border>
+                            <!-- 이 페이지의 모든 풍선에 쓰는 기본값 — 풍선에 따로 정한 값이 이긴다 -->
+                            <Border BorderBrush="{DynamicResource NekoStroke}" BorderThickness="1" CornerRadius="6" Padding="8,4">
+                                <WrapPanel>
+                                    <TextBlock Text="페이지 전체 기본" Foreground="{DynamicResource NekoText}" FontWeight="SemiBold"
+                                               VerticalAlignment="Center" Margin="0,2,10,2"/>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="글꼴" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="0,2,6,2"/>
+                                        <ComboBox x:Name="CmbLFont" Width="190" IsEditable="True" VerticalAlignment="Center" Margin="0,2,0,2"/>
+                                    </StackPanel>
+                                    <CheckBox x:Name="ChkLBold" Content="굵게" Foreground="{DynamicResource NekoText}"
+                                              VerticalAlignment="Center" Margin="10,2,0,2" MinWidth="0"/>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="크기 배율" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="16,2,6,2"/>
+                                        <TextBox x:Name="TxtLSize" Width="52" VerticalAlignment="Center" Margin="0,2,0,2"
+                                                 ToolTip="자동으로 정한 글자 크기에 곱하는 배율(1 = 그대로). 크기를 px로 정한 풍선은 따르지 않아요"/>
+                                        <TextBlock Text="×" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="3,2,0,2"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="글자 색" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="16,2,6,2"/>
+                                        <Border x:Name="SwLColor" Width="20" Height="20" CornerRadius="3" BorderBrush="{DynamicResource NekoStroke}" BorderThickness="1"
+                                                Cursor="Hand" VerticalAlignment="Center" Margin="0,2,4,2" MouseLeftButtonUp="Swatch_Click"
+                                                Tag="{Binding ElementName=TxtLColor}" ToolTip="색 고르기"/>
+                                        <TextBox x:Name="TxtLColor" Width="86" VerticalAlignment="Center" Margin="0,2,0,2" ToolTip="#RRGGBB — 비우면 원문 색 자동"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="외곽선 배율" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="16,2,6,2"/>
+                                        <TextBox x:Name="TxtLOutScale" Width="52" VerticalAlignment="Center" Margin="0,2,0,2"
+                                                 ToolTip="글자 크기에 맞춘 외곽선 두께에 곱하는 배율(1 = 기본, 0 = 외곽선 없음)"/>
+                                        <TextBlock Text="×" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="3,2,0,2"/>
+                                        <Border x:Name="SwLOutColor" Width="20" Height="20" CornerRadius="3" BorderBrush="{DynamicResource NekoStroke}" BorderThickness="1"
+                                                Cursor="Hand" VerticalAlignment="Center" Margin="8,2,4,2" MouseLeftButtonUp="Swatch_Click"
+                                                Tag="{Binding ElementName=TxtLOutColor}" ToolTip="색 고르기"/>
+                                        <TextBox x:Name="TxtLOutColor" Width="86" VerticalAlignment="Center" Margin="0,2,0,2" ToolTip="외곽선 색 #RRGGBB"/>
+                                    </StackPanel>
+                                </WrapPanel>
+                            </Border>
                         </StackPanel>
                     </TabItem>
                 </TabControl>

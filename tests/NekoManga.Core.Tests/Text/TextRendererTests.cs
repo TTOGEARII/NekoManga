@@ -380,6 +380,107 @@ public class TextRendererTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void PlanLayout_OverlappedBubblesWithoutSeam_EachBlockStaysOnItsSideOfTheNeck(bool sideBySide)
+    {
+        // 이음선 없이 안이 이어진 겹친 풍선 — 블록은 풍선마다 따로인데, 흰 구간을 재면 목을 지나 이웃 풍선까지 이어진다.
+        // 목을 벽으로 삼아 제 풍선 안에서만 잰다(번역본도 풍선마다 제 가운데에 식자한다 — 2026-11-16 대조)
+        using var page = SolidPage(900, 800, 150);
+        TextBlockInfo first, second;
+        if (sideBySide)
+        {
+            DrawJoinedBubbles(page, 3, (300, 400, 170, 150), (580, 400, 170, 150));   // 목은 x = 440
+            first = Auto(230, 340, 350, 460, "HELLO THERE");
+            second = Auto(530, 340, 650, 460, "HELLO THERE");
+        }
+        else
+        {
+            DrawJoinedBubbles(page, 3, (450, 250, 150, 170), (450, 530, 150, 170));   // 목은 y = 390
+            first = Auto(390, 190, 510, 310, "HELLO THERE");
+            second = Auto(390, 470, 510, 590, "HELLO THERE");
+        }
+
+        var l = TextRenderer.PlanLayout(page, new[] { first, second }, 1, 1, Arial());
+
+        Assert.All(l, x => Assert.True(x.Round && x.Size > 0));
+        if (sideBySide)
+        {
+            Assert.True(l[0].Rect.Right <= 442, $"{l[0].Rect}");
+            Assert.True(l[1].Rect.Left >= 438, $"{l[1].Rect}");
+            Assert.True(l[0].Rect.Width > 200 && l[1].Rect.Width > 200, $"{l[0].Rect} {l[1].Rect}");   // 제 풍선은 다 쓴다
+        }
+        else
+        {
+            Assert.True(l[0].Rect.Bottom <= 392, $"{l[0].Rect}");
+            Assert.True(l[1].Rect.Top >= 388, $"{l[1].Rect}");
+            Assert.True(l[0].Rect.Height > 200 && l[1].Rect.Height > 200, $"{l[0].Rect} {l[1].Rect}");
+        }
+    }
+
+    [Fact]
+    public void PlanLayout_VerticalColumnWhereBubbleCannotBeMeasured_WidensPlaceByHalfGlyphEachSide()
+    {
+        // 톤(망점)으로 채운 풍선·그림 위의 글: 흰 안쪽이 없어 풍선을 못 잰다. 세로쓰기 한 기둥의 자리는 글자 한 자 폭뿐이라
+        // 가로로 쓰는 번역문이 "... / 그 / 래"처럼 한 자씩 꺾였다(실측 2026-11-16, 39×166 블록). 풍선은 기둥보다 양쪽으로 반 자씩은 넓다
+        using var page = SolidPage(900, 800, 150);
+        var column = Auto(400, 200, 440, 370, "HELLO", vertical: true);
+
+        var l = TextRenderer.PlanLayout(page, new[] { column }, 1, 1, Arial());
+
+        Assert.InRange(l[0].Rect.Width, 70, 80);                              // 40 + 반 자(20)씩, 안으로 5% 들임
+        Assert.Equal(420, l[0].Rect.X + l[0].Rect.Width / 2, 1f);             // 가운데는 그대로
+        Assert.InRange(l[0].Rect.Height, 150, 170);                           // 높이는 예전 그대로
+    }
+
+    [Fact]
+    public void PlanLayout_VerticalColumnWhereBubbleCannotBeMeasured_DoesNotWidenIntoNeighbourBlock()
+    {
+        using var page = SolidPage(900, 800, 150);
+        var column = Auto(400, 200, 440, 370, "HELLO", vertical: true);
+        var neighbour = Auto(446, 200, 486, 370, "HELLO", vertical: true);
+
+        var l = TextRenderer.PlanLayout(page, new[] { column, neighbour }, 1, 1, Arial());
+
+        Assert.True(l[0].Rect.Right <= 444, $"{l[0].Rect}");
+        Assert.True(l[1].Rect.Left >= 442, $"{l[1].Rect}");
+        Assert.True(l[0].Rect.Left < 400 && l[1].Rect.Right > 486, $"{l[0].Rect} {l[1].Rect}");   // 막힌 쪽만 못 넓힌다 — 반대쪽은 넓힌다
+    }
+
+    [Fact]
+    public void PlanLayout_OverlappedBubbles_BlockOffCentreInItsBubble_IsPlacedAtTheBubbleCentre()
+    {
+        // 겹친 풍선의 글 자리는 블록(원문 글이 있던 자리)이 아니라 제 풍선 — 목으로 가른 조각 — 에서 잰다.
+        // 원문 글이 풍선 한쪽에 치우쳐 있거나 블록이 풍선 밖 효과음까지 품으면, 블록 가운데에 맞춘 자리는 테두리에 붙거나 넘었다
+        // (실측 2026-11-16: 왼쪽 위 풍선의 글이 왼쪽 테두리에 걸침). 번역본도 글 덩어리를 제 풍선 가운데에 둔다(어긋남 중앙값 5%)
+        using var page = SolidPage(900, 800, 150);
+        DrawJoinedBubbles(page, 3, (300, 400, 170, 150), (580, 400, 170, 150));   // 목은 x = 440, 왼쪽 풍선의 안은 x 133~440
+        var left = Auto(160, 340, 260, 460, "HELLO THERE");                      // 왼쪽 풍선의 왼쪽 끝에 치우친 글
+        var right = Auto(450, 340, 550, 460, "HELLO THERE");
+
+        var l = TextRenderer.PlanLayout(page, new[] { left, right }, 1, 1, Arial());
+
+        Assert.True(l[0].Round);
+        Assert.InRange(l[0].Rect.X + l[0].Rect.Width / 2, 270, 300);              // 왼쪽 풍선(조각)의 가운데 ≈ 285 — 블록 가운데는 210
+        Assert.True(l[0].Rect.Width > 250, $"{l[0].Rect}");
+        Assert.True(l[0].Rect.Right <= 442, $"{l[0].Rect}");
+    }
+
+    [Fact]
+    public void PlanLayout_TwoBlocksInOneBubble_AreMeasuredAsBefore()
+    {
+        // 목이 없는 풍선에는 벽이 없다 — 이웃 블록 영역만 벽이다(예전 그대로). 수치는 이 수정 전의 결과를 박아 둔 것
+        using var page = SolidPage(900, 800, 150);
+        DrawBubble(page, 450, 400, 300, 250);
+        var a = Auto(480, 300, 560, 500, "HELLO THERE", vertical: true);
+        var b = Auto(340, 300, 420, 500, "HELLO THERE", vertical: true);
+
+        var l = TextRenderer.PlanLayout(page, new[] { a, b }, 1, 1, Arial());
+
+        Assert.Equal(new[] { "458.34,240.75,228.33,318.51,15.2,False", "213.34,241.55,228.33,316.89,15.2,False" }, l.Select(x => $"{x.Rect.X:0.##},{x.Rect.Y:0.##},{x.Rect.Width:0.##},{x.Rect.Height:0.##},{x.Size:0.##},{x.Round}"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void PlanLayout_AutoBlockCompletelyOutsideImage_IsNotDrawnAndLeavesOtherBlocksAlone(bool vertical)
     {
         // 완전히 밖에 있는 블록은 그리지 않는다 — 빈 자리나 음수 크기 자리를 내지 않고, 쪽 공통 크기(중앙값)도 끌어내리지 않는다.
@@ -694,6 +795,26 @@ public class TextRendererTests
         var lines = InkLines(changed);
         Assert.True(lines.Count >= 3, $"lines={lines.Count}");
         Assert.All(lines, l => Assert.True(l.Width <= 100 * TextRenderer.WordOverflowAllow + 4, $"{l}"));
+    }
+
+    [Fact]
+    public void RenderBlocks_WordWiderThanPlace_IsBrokenIntoEvenPiecesWithoutIndent()
+    {
+        // 꺾인 어절의 조각은 길이를 고르게 나누고 들여 쓰지 않는다 — 예전에는 줄 폭에 차는 대로 끊고 이어지는 줄을 공백 둘로 들여 써서
+        // 좁은 풍선에서 "드 / 르륵 / 드 / 르륵"처럼 한두 자씩 엇갈려 쌓였다(실측 2026-11-16, 폭 98px 자리에 8자 어절. 사용자: "들여쓰기가 되어 있어")
+        using var t = new TempDir();
+        using var page = SolidPage(600, 800);
+        SavePng(page, t.At("in.png"));
+
+        TextRenderer.RenderBlocks(t.At("in.png"), t.At("in.png"), new[] { Manual(250, 100, 350, 700, new string('H', 30)) }, t.At("out.png"), Arial());
+
+        using var after = LoadColor(t.At("out.png"));
+        using var changed = ChangedMask(page, after);
+        var lines = InkLines(changed);
+        Assert.True(lines.Count >= 3, $"lines={lines.Count}");
+        Assert.True(lines.Min(l => l.Width) >= 0.75 * lines.Max(l => l.Width), string.Join(" ", lines.Select(l => l.Width)));
+        var centres = lines.Select(l => l.X + l.Width / 2.0).ToList();
+        Assert.True(centres.Max() - centres.Min() <= 4, string.Join(" ", centres));
     }
 
     [Theory]

@@ -257,6 +257,7 @@ public partial class PipelineRunner
             MaskSavedAt = sc.SavedAt,
             Summary = sc.Summary,
             Blocks = lsc?.Blocks ?? [],
+            LetterCommon = lsc?.CommonSize ?? 0,
             Colorized = colorized,
         };
         // ComfyUI 업로드 이름(nm_cl_<i> 등)은 페이지 번호로 구분된다 — 본 작업이 쓰는 0~N·수동 제거의 900번대와 겹치지 않게 950
@@ -304,6 +305,8 @@ public partial class PipelineRunner
         /// <summary>번역(글자 지움) 뒤의 원고 경로 — 검토 창이 보여 주는 그림이자 검열 제거 입력.</summary>
         public string WorkPath { get; set; } = file;
         public IReadOnlyList<TextBlockInfo> Blocks { get; set; } = Array.Empty<TextBlockInfo>();
+        /// <summary>결과 창이 붙든 쪽 공통 글자 크기(식자 사이드카의 CommonSize) — 다시 렌더링의 식자도 이 값으로 해야 손대지 않은 풍선의 크기가 그대로다. 0 = 구한다.</summary>
+        public double LetterCommon { get; set; }
         public Mat? Mask { get; set; }
         /// <summary>자동 감지 결과 사본(검토 전) — '자동 감지로' 되돌리기 + 학습 재료 저장용. 검토 흐름에서만 채워진다.</summary>
         public Mat? AutoMask { get; set; }

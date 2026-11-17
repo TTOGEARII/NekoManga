@@ -22,8 +22,52 @@ public class TextDetector(OnnxEnv env)
 
     public bool IsReady => env.ModelExists(ModelFile);
 
-    /// <summary>img: BGR(Mat). 반환 마스크는 원본 크기의 8UC1 (255=텍스트 획).</summary>
+    /// <summary>이 프로세스에서 GPU(DirectML) 결과가 CPU와 같다고 확인됐는가 — null이면 아직 대조 전. AletheiaDetector._gpuVerified와 같은 안전장치.</summary>
+    private static bool? _gpuVerified;
+    private static readonly object VerifyLock = new();
+
+    /// <summary>img: BGR(Mat). 반환 마스크는 원본 크기의 8UC1 (255=텍스트 획).
+    /// GPU로 돌 때는 프로세스마다 첫 장에서 CPU 결과와 한 번 대조하고, 맞을 때만 이후 GPU를 쓴다(첫 장은 CPU 결과를 쓴다).
+    /// 실측(2026-11-16, RTX 2070 SUPER, ComfyUI가 VRAM 4GB를 쥔 상태): DirectML 세션이 **오류 없이 빈 결과**를 냈다 — 쪽마다 블록 0개라
+    /// 번역·글자 지움 없이 원본이 그대로 나왔다(같은 쪽이 CPU로는 9블록). 실행 오류만 잡는 OnnxEnv.Guard로는 못 막는다.</summary>
     public DetectionResult Detect(Mat img)
+    {
+        if (_gpuVerified == true || !env.UsesGpu(ModelFile)) return DetectOn(img, cpuOnly: false);
+        lock (VerifyLock)
+        {
+            if (_gpuVerified == true || !env.UsesGpu(ModelFile)) return DetectOn(img, cpuOnly: false);
+            var cpu = DetectOn(img, cpuOnly: true);
+            bool same = false;
+            try
+            {
+                var gpu = DetectOn(img, cpuOnly: false);
+                using (gpu.TextMask) same = env.UsesGpu(ModelFile) && SameResult(cpu, gpu);
+            }
+            catch { /* GPU 실행이 던졌다 — 아래에서 CPU로 내린다 */ }
+            _gpuVerified = same;
+            if (same) env.Release(ModelFile, cpuOnly: true);   // 대조에만 쓴 CPU 세션
+            else env.Demote(ModelFile);                        // 이후 Get(ModelFile)은 CPU 세션을 준다
+            if (Environment.GetEnvironmentVariable("NEKO_ONNX_DBG") == "1")
+                Console.Error.WriteLine($"[onnx] {ModelFile}: GPU 대조 {(same ? "일치 — 이후 GPU" : "불일치 — CPU로 내려요")}");   // loc:none
+            return cpu;
+        }
+    }
+
+    /// <summary>두 감지 결과가 같은가 — 블록 수가 같고 상자마다 2px 안, 글자 마스크가 다른 픽셀이 마스크 넓이의 2% 이하.</summary>
+    private static bool SameResult(DetectionResult a, DetectionResult b)
+    {
+        if (a.Blocks.Count != b.Blocks.Count) return false;
+        for (int i = 0; i < a.Blocks.Count; i++)
+        {
+            var (p, q) = (a.Blocks[i], b.Blocks[i]);
+            if (Math.Abs(p.X1 - q.X1) > 2 || Math.Abs(p.Y1 - q.Y1) > 2 || Math.Abs(p.X2 - q.X2) > 2 || Math.Abs(p.Y2 - q.Y2) > 2) return false;
+        }
+        using var diff = new Mat();
+        Cv2.BitwiseXor(a.TextMask, b.TextMask, diff);
+        return Cv2.CountNonZero(diff) <= 0.02 * Math.Max(1, Cv2.CountNonZero(a.TextMask));
+    }
+
+    private DetectionResult DetectOn(Mat img, bool cpuOnly)
     {
         int imW = img.Width, imH = img.Height;
 
@@ -55,10 +99,10 @@ public class TextDetector(OnnxEnv env)
         }
 
         // Guard: GPU에서 실행 오류가 나면 CPU로 내려 한 번 더 (OnnxEnv.Guard)
-        using var results = env.Guard(() => env.Get(ModelFile).Run(new[]
+        using var results = env.Guard(() => env.Get(ModelFile, cpuOnly).Run(new[]
         {
             Microsoft.ML.OnnxRuntime.NamedOnnxValue.CreateFromTensor("images", input),
-        }), ModelFile);
+        }), cpuOnly ? [] : [ModelFile]);
 
         var blk = results.First(v => v.Name == "blk").AsTensor<float>();   // [1, N, 7] cx cy w h obj c0 c1
         var seg = results.First(v => v.Name == "seg").AsTensor<float>();   // [1, 1, 1024, 1024]

@@ -116,6 +116,12 @@ public partial class ResultWindow
         TxtLColor.Text = s.LetterColorHex;
         TxtLOutScale.Text = s.LetterOutlineScale.ToString(System.Globalization.CultureInfo.InvariantCulture);
         TxtLOutColor.Text = s.LetterOutlineColorHex;
+        // 풍선별 글꼴: 맨 위는 "페이지 설정"(빈 값), 그 아래 설치된 글꼴
+        CmbBFont.Items.Add(new ComboBoxItem { Content = Loc.T("페이지 설정"), Tag = "" });
+        foreach (var f in CmbLFont.Items.OfType<string>().ToList())
+            CmbBFont.Items.Add(new ComboBoxItem { Content = f, Tag = f });
+        CmbBFont.SelectedIndex = 0;
+        UpdateSwatches();
 
         // 스타일 입력이 바뀌면 WYSIWYG 텍스트박스에 즉시 반영
         CmbLFont.SelectionChanged += (s, e) => LetterStyle_Changed(s, e);
@@ -124,6 +130,8 @@ public partial class ResultWindow
         ChkLBold.Unchecked += (s, e) => LetterStyle_Changed(s, e);
         TxtLSize.TextChanged += (s, e) => LetterStyle_Changed(s, e);
         TxtLColor.TextChanged += (s, e) => LetterStyle_Changed(s, e);
+        TxtLOutScale.TextChanged += (s, e) => LetterStyle_Changed(s, e);   // 외곽선 칸은 전에 화면에 안 이어져 있었다 — [다시 식자]를 눌러야 보였다
+        TxtLOutColor.TextChanged += (s, e) => LetterStyle_Changed(s, e);
 
         Loaded += (_, _) => { LoadPage(_index, fit: true); ScanEditedPages(); };
     }
@@ -137,11 +145,12 @@ public partial class ResultWindow
         UpdateModeButtons();
         _maskPoly.Clear();
         _letterPreview = false;      // 탭에 들어오면 항상 편집 모드부터
+        _editBlock = -1; _letterStale = true;
         if (!_img.Empty()) FitToWindow();   // 마스크 탭은 검열 제거 전 원고(원본 크기)를, 다른 탭은 결과물을 보여 줘 크기가 다를 수 있다
         Redraw();
         if (LetterMode)
             TxtStatus.Text = _letterBlocks.Count > 0
-                ? Loc.F($"번역 블록 {_letterBlocks.Count}개 — 말풍선의 텍스트박스를 바로 고치세요")
+                ? Loc.F($"번역 블록 {_letterBlocks.Count}개 — 풍선을 클릭해 고르고, 두 번 클릭하면 글을 고쳐요")
                 : Loc.T("이 장은 보일 블록이 없어요");
         else if (MaskMode)
             TxtStatus.Text = IsWaitingPage ? Loc.T("검토 대기 중 — 빨간 마스크를 고친 뒤 [검열 제거 시작]을 누르세요")
@@ -348,6 +357,7 @@ public partial class ResultWindow
         _redoCts?.Cancel();   // 다시 렌더링 중 닫으면 러너를 멈춘다 — 취소 없이 Dispose만 하면 닫힌 창 뒤에서 끝까지 돌아 결과물을 덮었다(하네스 실측, 최종 검수)
         _redoCts?.Dispose(); _redoCts = null;
         _baseImg?.Dispose();
+        DropLetterLive();
         ResetMaskState(null);
         while (_undo.Count > 0) _undo.Pop().Dispose();
         foreach (var t in _prefetch.Values) t.ContinueWith(x => { if (x.Status == TaskStatus.RanToCompletion) x.Result.Dispose(); });

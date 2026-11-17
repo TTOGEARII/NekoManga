@@ -23,6 +23,11 @@ public record TextBlockInfo(
     double LineSpacing = 0,        // 줄간격 배율 — 0이면 페이지 기본(LetterLineSpacing) 따름
     string ColorOverride = "",     // 블록별 글자색 #RRGGBB (비면 전역 규칙)
     double RotationDeg = 0,        // 글자 기울이기(회전, 도)
+    // 아래 넷은 결과 창 식자 탭의 "선택한 풍선" 글자 속성(2026-11-17) — 옛 json에는 없다 → 자동·쪽 설정
+    double SizePx = 0,             // 글자 크기(px — 결과 그림의 픽셀). 0 = 자동(풍선에 맞춤 × StyleScale)
+    string FontFamily = "",        // 글꼴 — 비면 쪽 설정
+    double OutlinePx = -1,         // 외곽선 두께(px — 결과 그림의 픽셀, 글자 밖으로 보이는 폭). 음수 = 쪽 설정(자동 두께), 0 = 없음
+    string OutlineColor = "",      // 외곽선 색 #RRGGBB — 비면 쪽 설정
     bool Hidden = false);          // 결과 창 [이 블록 숨기기] — 지우지 않고 그리지만 않는다(되살릴 수 있게). 옛 json에는 없다 → false
 
 public record PageTranslation(string InpaintedPath, IReadOnlyList<TextBlockInfo> Blocks);

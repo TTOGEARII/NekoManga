@@ -113,6 +113,26 @@ public class BubbleSplitterTests
     }
 
     [Fact]
+    public void Split_StackedTextInOneColumn_OverlappedBubblesWithoutSeam_GivesOneBlockPerBubble()
+    {
+        // 위아래로 겹친 두 풍선(이음선 없음)의 글이 같은 기둥에 있다 — 사이에 먹선이 없어도 목이 가르면 다른 풍선이다.
+        // 실측(2026-11-16, 번역본 대조 117·139쪽): 여기서 다시 붙이면 한 블록이 두 풍선에 걸쳐 남는다
+        using var page = SolidPage(600, 800, 150);
+        using var mask = EmptyMask(page);
+        DrawJoinedBubbles(page, 3, (300, 250, 150, 170), (300, 530, 150, 170));
+        var top = DrawGlyphs(page, mask, 250, 150, 3, 9);
+        var bottom = DrawGlyphs(page, mask, 250, 470, 3, 9);
+        DilateLikeDetector(mask);
+        var block = new DetectedBlock(top.X - 2, top.Y - 2, top.Right + 2, bottom.Bottom + 2, 0.9f, true);
+
+        var parts = BubbleSplitter.Split(page, mask, block);
+
+        Assert.Equal(2, parts.Count);
+        Assert.False(Touches(Assert.Single(parts, p => Covers(p, top)), bottom));
+        Assert.False(Touches(Assert.Single(parts, p => Covers(p, bottom)), top));
+    }
+
+    [Fact]
     public void Split_MaskOfWrongSize_ReturnsOriginalBlockInsteadOfThrowing()
     {
         // 나누기는 보너스다 — 무엇이 잘못돼도 원래 블록 그대로 돌려주고 번역은 계속된다
@@ -181,6 +201,159 @@ public class BubbleSplitterTests
         var blocks = new[] { BlockOf(second, 3), BlockOf(first, 3) };
 
         Assert.Equal(blocks, BubbleSplitter.MergeSiblings(page, mask, blocks));
+    }
+
+    [Theory]
+    [InlineData("side-by-side")]   // 좌우로 겹친 두 풍선
+    [InlineData("stacked")]        // 위아래로 겹친 두 풍선
+    [InlineData("diagonal")]       // 비스듬히 겹친 두 풍선
+    [InlineData("small-on-big")]   // 큰 풍선 옆에 작은 풍선이 붙었다
+    [InlineData("cut-by-page-edge")]   // 위아래로 겹친 두 풍선 — 위 풍선이 쪽 위 가장자리에 잘렸다(흰 영역이 쪽 끝에 닿는다)
+    public void MergeSiblings_OverlappedBubblesWithoutSeam_KeepOneBlockPerBubble(string layout)
+    {
+        // 이음선 없이 안이 통째로 이어진 겹친 풍선 — 흰 영역은 하나지만 윤곽이 양쪽에서 잘록하게 패어 있다(목).
+        // 목을 사이에 둔 두 글은 다른 풍선의 대사다: 합치지 않고 풍선마다 제 자리에 식자한다
+        using var page = SolidPage(900, 700, 150);
+        using var mask = EmptyMask(page);
+        Rect first, second;
+        switch (layout)
+        {
+            case "side-by-side":
+                DrawJoinedBubbles(page, 3, (330, 300, 130, 180), (520, 300, 130, 180));
+                first = DrawGlyphs(page, mask, 440, 220, 3, 9);
+                second = DrawGlyphs(page, mask, 340, 220, 3, 9);
+                break;
+            case "stacked":
+                DrawJoinedBubbles(page, 3, (400, 220, 150, 110), (400, 400, 150, 110));
+                first = DrawGlyphs(page, mask, 330, 200, 8, 4);
+                second = DrawGlyphs(page, mask, 330, 335, 8, 4);
+                break;
+            case "cut-by-page-edge":
+                DrawJoinedBubbles(page, 3, (400, 50, 110, 80), (400, 180, 110, 80));   // 넓이는 쪽의 8%쯤
+                first = DrawGlyphs(page, mask, 357, 15, 5, 4);
+                second = DrawGlyphs(page, mask, 357, 150, 5, 4);
+                break;
+            case "diagonal":
+                DrawJoinedBubbles(page, 3, (300, 250, 140, 120), (480, 380, 140, 120));
+                first = DrawGlyphs(page, mask, 412, 290, 3, 5);
+                second = DrawGlyphs(page, mask, 310, 240, 3, 5);
+                break;
+            default:
+                DrawJoinedBubbles(page, 3, (360, 320, 190, 220), (600, 300, 90, 110));
+                first = DrawGlyphs(page, mask, 570, 250, 3, 6);
+                second = DrawGlyphs(page, mask, 470, 250, 3, 9);
+                break;
+        }
+        DilateLikeDetector(mask);
+        var blocks = new[] { BlockOf(first, 3), BlockOf(second, 3) };
+
+        Assert.Equal(blocks, BubbleSplitter.MergeSiblings(page, mask, blocks));
+    }
+
+    [Fact]
+    public void NeckLine_BlocksOffTheLineThroughTheNeck_StillFindsTheNeckBetweenThem()
+    {
+        // 비스듬히 겹친 두 풍선 — 글 블록이 제 풍선의 한쪽에 치우쳐 있으면 두 블록 중심을 이은 선이 목을 비켜 지나간다
+        // (실측 2026-11-16: 뾰족한 풍선 둘이 비스듬히 겹친 곳에서 한 블록이 효과음까지 품어 길쭉했다 — 목은 찾았는데 "중심선이 목을 지나야 한다"에 걸려
+        //  두 대사가 한 블록으로 합쳐지고 글이 풍선 밖으로 나갔다). 목이 두 블록을 서로 다른 쪽으로 가르면 겹친 풍선이다
+        using var page = SolidPage(900, 700, 150);
+        DrawJoinedBubbles(page, 3, (300, 250, 140, 120), (480, 380, 140, 120));
+        using var gray = new Mat();
+        Cv2.CvtColor(page, gray, ColorConversionCodes.BGR2GRAY);
+        var upper = new DetectedBlock(360, 150, 420, 230, 1f, true);    // 왼쪽 위 풍선의 오른쪽 위
+        var lower = new DetectedBlock(530, 330, 590, 410, 1f, true);    // 오른쪽 아래 풍선의 오른쪽
+        var sameLobe = new DetectedBlock(200, 220, 260, 300, 1f, true); // 왼쪽 위 풍선의 왼쪽
+
+        Assert.NotNull(BubbleSplitter.NeckLine(gray, upper, lower));
+        Assert.Null(BubbleSplitter.NeckLine(gray, upper, sameLobe));
+    }
+
+    [Fact]
+    public void MergeSiblings_ChainOfThreeOverlappedBubbles_KeepsThreeBlocks()
+    {
+        using var page = SolidPage(1000, 600, 150);
+        using var mask = EmptyMask(page);
+        DrawJoinedBubbles(page, 3, (250, 300, 130, 180), (440, 300, 130, 180), (630, 300, 130, 180));
+        var blocks = new[]
+        {
+            BlockOf(DrawGlyphs(page, mask, 560, 220, 3, 9), 3),
+            BlockOf(DrawGlyphs(page, mask, 468, 220, 3, 9), 3),   // 가운데 풍선 — 오른쪽 목 옆
+            BlockOf(DrawGlyphs(page, mask, 372, 220, 3, 9), 3),   // 가운데 풍선 — 왼쪽 목 옆
+            BlockOf(DrawGlyphs(page, mask, 270, 220, 3, 9), 3),
+        };
+        DilateLikeDetector(mask);
+
+        var result = BubbleSplitter.MergeSiblings(page, mask, blocks);
+
+        // 가운데 풍선의 두 기둥만 합쳐진다 — 양옆 풍선의 글은 따로
+        Assert.Equal(new[]
+        {
+            blocks[0],
+            new DetectedBlock(blocks[2].X1, blocks[2].Y1, blocks[1].X2, blocks[1].Y2, 0.9f, true),
+            blocks[3],
+        }, result);
+    }
+
+    [Theory]
+    [InlineData("tail")]         // 꼬리 달린 풍선 — 꼬리 양옆의 패임은 두 글 사이를 지나지 않는다
+    [InlineData("cloud")]        // 구름 풍선 — 패임이 촘촘하고 얕다
+    [InlineData("burst")]        // 외침 풍선(뾰족뾰족) — 가시 사이의 패임
+    [InlineData("almost-one")]   // 거의 다 겹친 두 타원 — 목이 풍선 폭과 다름없다(한 풍선)
+    [InlineData("box-notch")]    // 한쪽 귀퉁이만 팬 상자 — 맞은편에 짝이 없다
+    [InlineData("unframed")]     // 테두리 없는 흰 바탕의 글
+    public void MergeSiblings_ColumnsOfOneBubbleWithConcaveOutline_StillBecomeOneBlock(string layout)
+    {
+        // 겹친 풍선을 가르는 기준이 한 풍선 안의 글 기둥을 가르면 안 된다(2026-11-10에 되돌린 PinchedBetween의 실패) — 윤곽이 패인 풍선도 예전처럼 한 블록
+        using var page = SolidPage(900, 700, layout == "unframed" ? 255 : 150);
+        using var mask = EmptyMask(page);
+        switch (layout)
+        {
+            case "tail":
+                DrawBubble(page, 400, 300, 200, 220);
+                Cv2.FillConvexPoly(page, new[] { new Point(380, 500), new Point(430, 500), new Point(400, 640) }, Scalar.White);
+                Cv2.Line(page, new Point(378, 518), new Point(400, 642), Scalar.Black, 3);
+                Cv2.Line(page, new Point(432, 518), new Point(400, 642), Scalar.Black, 3);
+                break;
+            case "cloud":
+                for (int pass = 0; pass < 2; pass++)
+                    for (int k = 0; k < 14; k++)
+                    {
+                        double t = 2 * Math.PI * k / 14;
+                        var c = new Point(400 + (int)(170 * Math.Cos(t)), 300 + (int)(190 * Math.Sin(t)));
+                        Cv2.Circle(page, c, pass == 0 ? 58 : 55, pass == 0 ? Scalar.Black : Scalar.White, -1);
+                    }
+                Cv2.Ellipse(page, new Point(400, 300), new Size(170, 190), 0, 0, 360, Scalar.White, -1);
+                break;
+            case "burst":
+            {
+                var pts = new List<Point>();
+                for (int k = 0; k < 24; k++)
+                {
+                    double t = 2 * Math.PI * k / 24, r = k % 2 == 0 ? 1.0 : 0.72;
+                    pts.Add(new Point(400 + (int)(230 * r * Math.Cos(t)), 300 + (int)(250 * r * Math.Sin(t))));
+                }
+                Cv2.FillPoly(page, new[] { pts.ToArray() }, Scalar.White);
+                Cv2.Polylines(page, new[] { pts.ToArray() }, true, Scalar.Black, 3);
+                break;
+            }
+            case "almost-one":
+                DrawJoinedBubbles(page, 3, (370, 300, 180, 220), (430, 300, 180, 220));
+                break;
+            case "box-notch":
+                DrawBox(page, new Rect(200, 100, 400, 420));
+                Cv2.Rectangle(page, new Rect(385, 97, 30, 60), new Scalar(150, 150, 150), -1);
+                Cv2.Rectangle(page, new Rect(385, 97, 30, 60), Scalar.Black, 3);
+                break;
+        }
+        var first = DrawGlyphs(page, mask, 410, 200, 3, 9);
+        var second = DrawGlyphs(page, mask, 322, 200, 3, 9);
+        DilateLikeDetector(mask);
+        var a = BlockOf(first, 3);
+        var b = BlockOf(second, 3);
+
+        var merged = Assert.Single(BubbleSplitter.MergeSiblings(page, mask, new[] { a, b }));
+
+        Assert.Equal(new DetectedBlock(b.X1, a.Y1, a.X2, a.Y2, 0.9f, true), merged);
     }
 
     [Fact]

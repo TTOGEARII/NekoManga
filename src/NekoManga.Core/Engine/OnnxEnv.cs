@@ -176,6 +176,18 @@ public sealed class OnnxEnv(AppSettings settings) : IDisposable
         lock (_lock) return _gpuKeys.Contains(fileName);
     }
 
+    /// <summary>그 모델을 이 실행 동안 CPU로 내린다 — GPU가 오류 없이 틀린 결과를 낼 때(호출부가 CPU 결과와 대조해 안다). 다음 <see cref="Get"/>부터 CPU 세션을 준다.
+    /// 내려진 GPU 세션은 Guard와 같이 바로 닫지 않는다(아직 쓰는 스레드가 있을 수 있다).</summary>
+    public void Demote(string fileName)
+    {
+        lock (_lock)
+        {
+            _demoted.Add(fileName);
+            _gpuKeys.Remove(fileName);
+            if (_sessions.Remove(fileName, out var s) && !_sessions.ContainsValue(s)) _retired.Add(s);
+        }
+    }
+
     /// <summary>캐시된 세션 하나를 닫는다 (한 번 쓰고 말 검증용 CPU 세션 등). 같은 세션이 다른 키로도 걸려 있으면 그대로 둔다.</summary>
     public void Release(string fileName, bool cpuOnly)
     {

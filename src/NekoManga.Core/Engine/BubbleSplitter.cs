@@ -65,12 +65,24 @@ public static class BubbleSplitter
             using var imRoi = new Mat(img, roi);
             using var gray = new Mat();
             Cv2.CvtColor(imRoi, gray, ColorConversionCodes.BGR2GRAY);
+            // 단, 겹친 풍선(이음선 없이 안이 이어진 풍선)이 위아래로 놓이면 사이에 먹선이 없다 — 목이 가르면 다시 붙이지 않는다(NeckBetween).
+            Mat? pageGray = null;
+            bool Neck(Rect a, Rect b)
+            {
+                if (pageGray == null) { pageGray = new Mat(); Cv2.CvtColor(img, pageGray, ColorConversionCodes.BGR2GRAY); }
+                DetectedBlock At(Rect r) => new(roi.X + r.X, roi.Y + r.Y, roi.X + r.Right, roi.Y + r.Bottom, block.Confidence, block.LangJa);
+                return NeckBetween(pageGray, At(a), At(b));
+            }
             var parent = Enumerable.Range(0, majors.Count).ToArray();
             int Find(int i) => parent[i] == i ? i : parent[i] = Find(parent[i]);
-            for (int a = 0; a < majors.Count; a++)
-                for (int b = a + 1; b < majors.Count; b++)
-                    if (SameBubble(gray, majors[a].Box, majors[b].Box))
-                        parent[Find(a)] = Find(b);
+            try
+            {
+                for (int a = 0; a < majors.Count; a++)
+                    for (int b = a + 1; b < majors.Count; b++)
+                        if (SameBubble(gray, majors[a].Box, majors[b].Box) && !Neck(majors[a].Box, majors[b].Box))
+                            parent[Find(a)] = Find(b);
+            }
+            finally { pageGray?.Dispose(); }
             majors = majors
                 .Select((c, i) => (Comp: c, Root: Find(i)))
                 .GroupBy(t => t.Root)
@@ -119,7 +131,8 @@ public static class BubbleSplitter
             int Find(int i) => parent[i] == i ? i : parent[i] = Find(parent[i]);
             for (int a = 0; a < blocks.Count; a++)
                 for (int b = a + 1; b < blocks.Count; b++)
-                    if (Adjacent(blocks[a], blocks[b]) && SameWhiteRegion(gray, textMask, blocks[a], blocks[b]))
+                    if (Adjacent(blocks[a], blocks[b]) && SameWhiteRegion(gray, textMask, blocks[a], blocks[b])
+                        && !NeckBetween(gray, blocks[a], blocks[b]))
                         parent[Find(a)] = Find(b);
 
             var merged = blocks
@@ -197,6 +210,254 @@ public static class BubbleSplitter
         int la = DominantLabel(a), lb2 = DominantLabel(b);
         return la != 0 && la == lb2;
     }
+
+    /// <summary>두 블록이 겹친 풍선(이음선 없이 안이 통째로 이어진 풍선 둘)의 서로 다른 풍선에 있는가 — 같은 흰 영역이어도 합치지 않는다.
+    ///
+    /// 겹친 풍선의 윤곽은 두 풍선이 만나는 곳에서 **양쪽이 마주 보고 패어** 잘록한 목이 된다. 한 풍선(타원·상자)의 윤곽은 볼록해서 그런 짝이 없다.
+    /// 흰 영역의 바깥 윤곽에서 볼록 껍질에 못 미치는 패임(convexity defect)을 찾고, 패임 둘의 가장 깊은 점을 이은 선(목)이
+    ///   ① 두 블록 중심 사이를 가르고(중심을 이은 선분과 만난다), ② 흰 영역 안을 지나고,
+    ///   ③ 패임마다 깊이가 목 길이의 5% 이상(이면서 4px 이상)이고, ④ 패임이 걸친 껍질 변이 목 길이의 절반 이상이고
+    ///      (두 풍선 사이의 패임은 풍선 크기만큼 넓다 — 구름·외침 풍선의 촘촘한 패임과 꼬리 옆 패임은 좁다),
+    ///   ⑤ 목이 양쪽 풍선의 폭(블록 중심을 지나 목과 나란한 흰 구간)의 90% 이하일 때만 겹친 풍선이다.
+    /// 흰 영역이 살피는 범위 밖으로 나가면(테두리 없는 글·열린 풍선) 따지지 않는다 — 예전처럼 합친다.
+    ///
+    /// 근거(2026-11-16, 같은 책의 원본·한글 번역본 204쪽을 쪽마다 맞대어 잼): 원본에서 이 기준(목 위에 글·그림이 없는 것)에 든 풍선 184개 중
+    /// 179개(97%)가 번역본에서 풍선마다 따로 식자돼 있었다 — 목 위에 글이 없고, 양쪽 글의 양 비율이 원본과 같고(차이 중앙값 0.04),
+    /// 글 덩어리 중심이 제 풍선 중심에 있다(어긋남 중앙값 = 풍선 크기의 5%). 목/풍선 폭 비율은 중앙값 0.43, 최대 0.86.
+    /// 예전의 PinchedBetween(거리 변환의 잘록함만 봄)은 한 풍선 안의 글 기둥까지 갈라 되돌렸다 — 그래서 윤곽의 마주 보는 패임을 요구한다.</summary>
+    private static bool NeckBetween(Mat gray, DetectedBlock a, DetectedBlock b) => NeckLobes(gray, a, b) != null;
+
+    /// <summary><see cref="NeckBetween"/>의 목(두 끝점, gray 좌표) — 겹친 풍선이 아니면 null. 식자(TextRenderer.PlanLayout)가 풍선을 잴 때 이 선을 벽으로 삼는다.</summary>
+    internal static (Point P, Point Q)? NeckLine(Mat gray, DetectedBlock a, DetectedBlock b) =>
+        NeckLobes(gray, a, b) is { } n ? (n.P, n.Q) : null;
+
+    /// <summary><see cref="NeckLine"/>의 목과, 목으로 가른 두 풍선의 안쪽 사각형(gray 좌표) — LobeA는 a가 놓인 풍선, LobeB는 b가 놓인 풍선.
+    /// 사각형은 그 조각의 무게중심을 지나는 가로·세로 구간과 그 반쯤 위아래·좌우 구간 가운데 가장 좁은 것이다(TextRenderer.MeasureBubble이 흰 안쪽을 재는 방식과 같다).
+    /// 조각의 무게중심이 조각 밖이면(심하게 굽은 풍선) 빈 사각형 — 그때는 식자가 예전처럼 블록에서 잰다.</summary>
+    internal static (Point P, Point Q, Rect LobeA, Rect LobeB)? NeckLobes(Mat gray, DetectedBlock a, DetectedBlock b)
+    {
+        try
+        {
+            // 풍선 전체가 들어오게 넉넉히 — 블록(글 자리)은 풍선보다 작다. 그래도 흰 영역이 가장자리에 닿으면 두 배씩 넓혀 다시 본다
+            // (사슬로 이어진 풍선은 블록보다 훨씬 크다). 쪽의 끝에 닿은 것은 닿은 대로 본다(NeckIn).
+            int margin = Math.Max(24, 2 * Math.Max(Math.Max(a.X2 - a.X1, a.Y2 - a.Y1), Math.Max(b.X2 - b.X1, b.Y2 - b.Y1)));
+            for (; ; margin *= 2)
+            {
+                int x1 = Math.Max(0, Math.Min(a.X1, b.X1) - margin), y1 = Math.Max(0, Math.Min(a.Y1, b.Y1) - margin);
+                int x2 = Math.Min(gray.Cols, Math.Max(a.X2, b.X2) + margin), y2 = Math.Min(gray.Rows, Math.Max(a.Y2, b.Y2) + margin);
+                var roi = new Rect(x1, y1, x2 - x1, y2 - y1);
+                if (NeckIn(gray, roi, a, b, out var neck) is { } found) return found ? neck : null;
+                if (roi.Width >= gray.Cols && roi.Height >= gray.Rows) return null;
+            }
+        }
+        catch
+        {
+            return null;   // 판정은 보너스 — 실패하면 예전처럼 합친다
+        }
+    }
+
+    /// <summary><see cref="NeckBetween"/>의 한 번 — roi 안에서 판정한다. 두 블록의 흰 영역이 roi 가장자리에 닿아 다 못 봤으면 null.</summary>
+    private static bool? NeckIn(Mat gray, Rect roi, DetectedBlock a, DetectedBlock b, out (Point P, Point Q, Rect LobeA, Rect LobeB) neck)
+    {
+        neck = default;
+        {
+            if (roi.Width < 8 || roi.Height < 8) return false;
+
+            using var g = new Mat(gray, roi);
+            using var passable = new Mat();
+            Cv2.Threshold(g, passable, 199, 255, ThresholdTypes.Binary);
+            using var labels = new Mat();
+            using var stats = new Mat();
+            using var cents = new Mat();
+            int n = Cv2.ConnectedComponentsWithStats(passable, labels, stats, cents, PixelConnectivity.Connectivity4);
+            if (n < 2) return false;
+
+            int Dominant(DetectedBlock blk)
+            {
+                var r = new Rect(blk.X1 - roi.X, blk.Y1 - roi.Y, blk.X2 - blk.X1, blk.Y2 - blk.Y1)
+                    .Intersect(new Rect(0, 0, labels.Cols, labels.Rows));
+                var count = new Dictionary<int, int>();
+                for (int y = r.Y; y < r.Bottom; y++)
+                    for (int x = r.X; x < r.Right; x++)
+                    {
+                        int lb = labels.At<int>(y, x);
+                        if (lb != 0) count[lb] = count.TryGetValue(lb, out var c) ? c + 1 : 1;
+                    }
+                return count.Count == 0 ? 0 : count.MaxBy(kv => kv.Value).Key;
+            }
+            int la = Dominant(a);
+            if (la == 0 || la != Dominant(b)) return false;
+
+            // 흰 영역이 살피는 범위의 가장자리에 닿았다 — 다 못 봤다. 다만 그 가장자리가 쪽의 끝이면 거기가 영역의 끝이다:
+            // 쪽 가장자리에 잘린 풍선도 풍선이다(실측 2026-11-16: 위 풍선이 쪽 위에 잘린 겹친 풍선의 두 대사가 한 블록으로 합쳐져 큰 풍선 가운데에 좁게 쌓였다).
+            // 쪽 끝에 닿은 넓은 흰 영역은 풍선이 아니라 쪽 바탕(칸 밖 여백)이다 — 따지지 않는다(쪽의 12% = 번역본 대조 때 풍선으로 본 크기의 상한).
+            int left = stats.At<int>(la, (int)ConnectedComponentsTypes.Left), top = stats.At<int>(la, (int)ConnectedComponentsTypes.Top);
+            int w = stats.At<int>(la, (int)ConnectedComponentsTypes.Width), h = stats.At<int>(la, (int)ConnectedComponentsTypes.Height);
+            if ((left <= 0 && roi.X > 0) || (top <= 0 && roi.Y > 0)
+                || (left + w >= roi.Width && roi.Right < gray.Cols) || (top + h >= roi.Height && roi.Bottom < gray.Rows)) return null;
+            if ((left <= 0 || top <= 0 || left + w >= roi.Width || top + h >= roi.Height)
+                && stats.At<int>(la, (int)ConnectedComponentsTypes.Area) > PageEdgeBubbleMax * gray.Cols * gray.Rows) return false;
+
+            using var region = new Mat();
+            Cv2.InRange(labels, new Scalar(la), new Scalar(la), region);
+            Cv2.FindContours(region, out Point[][] contours, out _, RetrievalModes.External, ContourApproximationModes.ApproxNone);
+            if (contours.Length == 0) return false;
+            var contour = contours.MaxBy(c => c.Length)!;
+            if (contour.Length < 8) return false;
+            using var filled = new Mat(region.Size(), MatType.CV_8UC1, Scalar.Black);   // 글자 획이 낸 구멍까지 메운 풍선 안
+            Cv2.DrawContours(filled, new[] { contour }, 0, Scalar.White, -1);
+
+            var hull = Cv2.ConvexHullIndices(contour);
+            if (hull.Length < 3) return false;
+            // 패임 하나에 뾰족한 곳(목의 끝)이 여럿일 수 있다 — 풍선 셋이 사슬로 이어지면 껍질 변 하나가 세 풍선의 꼭대기를 지나
+            // 목 둘을 한 패임으로 덮고, 가장 깊은 점은 그중 하나뿐이다. 패임 자리(껍질 변과 윤곽 사이)의 볼록 껍질 꼭짓점이 그 뾰족한 곳들이다.
+            var defects = new List<(Point Start, Point End, Point Far, double Depth)>();   // Start·End = 패임이 걸친 껍질 변의 두 끝
+            foreach (var d in Cv2.ConvexityDefects(contour, hull))
+            {
+                double depth = d.Item3 / 256.0;
+                if (depth < 4) continue;
+                Point s = contour[d.Item0], e = contour[d.Item1];
+                int count = ((d.Item1 - d.Item0 + contour.Length) % contour.Length) + 1;
+                var arc = Enumerable.Range(0, count).Select(k => contour[(d.Item0 + k) % contour.Length]).ToArray();
+                double edge = s.DistanceTo(e);
+                double DepthOf(Point p) => edge < 1 ? 0 : Math.Abs(Cross(e.X - s.X, e.Y - s.Y, p.X - s.X, p.Y - s.Y)) / edge;
+                var tips = Cv2.ConvexHullIndices(arc).Where(k => k > 1 && k < count - 2 && DepthOf(arc[k]) >= Math.Max(4, 0.5 * depth))
+                    .OrderBy(k => k).ToList();
+                // 둥근 끝은 꼭짓점 여럿으로 잡힌다 — 붙어 있는 것끼리 묶어 가장 깊은 하나만
+                int near = Math.Max(3, count / 30);
+                for (int k = 0; k < tips.Count;)
+                {
+                    int m = k;
+                    while (m + 1 < tips.Count && tips[m + 1] - tips[m] <= near) m++;
+                    var best = tips.Skip(k).Take(m - k + 1).MaxBy(t => DepthOf(arc[t]));
+                    defects.Add((s, e, arc[best], DepthOf(arc[best])));
+                    k = m + 1;
+                }
+            }
+            if (defects.Count < 2) return false;
+
+            bool Inside(double x, double y)
+            {
+                int xi = (int)Math.Round(x), yi = (int)Math.Round(y);
+                return xi >= 0 && yi >= 0 && xi < filled.Cols && yi < filled.Rows && filled.At<byte>(yi, xi) != 0;
+            }
+            // 중심을 지나 (ux, uy) 방향으로 풍선 안이 이어지는 길이
+            double Chord(double cx, double cy, double ux, double uy)
+            {
+                if (!Inside(cx, cy)) return 0;
+                int len = 0;
+                foreach (int s in new[] { 1, -1 })
+                    for (int k = 1; Inside(cx + s * ux * k, cy + s * uy * k); k++) len++;
+                return len;
+            }
+            // 뾰족한 곳이 풍선 안쪽으로 파고든 방향(껍질 변에서 그 점으로) 쪽에 q가 있는가 — 마주 보는 짝만 목이다(같은 쪽에 나란한 둘은 아니다)
+            bool Faces((Point Start, Point End, Point Far, double Depth) d, Point q)
+            {
+                double ex = d.End.X - d.Start.X, ey = d.End.Y - d.Start.Y, e2 = ex * ex + ey * ey;
+                if (e2 < 1) return false;
+                double t = ((d.Far.X - d.Start.X) * ex + (d.Far.Y - d.Start.Y) * ey) / e2;
+                double nx = d.Far.X - (d.Start.X + t * ex), ny = d.Far.Y - (d.Start.Y + t * ey);
+                return nx * (q.X - d.Far.X) + ny * (q.Y - d.Far.Y) > 0;
+            }
+            var necks = new List<(int I, int J, double Len)>();
+            for (int i = 0; i < defects.Count; i++)
+                for (int j = i + 1; j < defects.Count; j++)
+                {
+                    var (p, q) = (defects[i].Far, defects[j].Far);
+                    double dx = q.X - p.X, dy = q.Y - p.Y, len = Math.Sqrt(dx * dx + dy * dy);
+                    if (len < 8) continue;
+                    if (defects[i].Depth < NeckDepth * len || defects[j].Depth < NeckDepth * len) continue;
+                    if (defects[i].Start.DistanceTo(defects[i].End) < NeckSpan * len || defects[j].Start.DistanceTo(defects[j].End) < NeckSpan * len) continue;
+                    if (!Faces(defects[i], q) || !Faces(defects[j], p)) continue;
+                    int steps = (int)len, inside = 0;
+                    for (int k = 1; k < steps; k++)
+                        if (Inside(p.X + dx * k / steps, p.Y + dy * k / steps)) inside++;
+                    if (inside < 0.9 * (steps - 1)) continue;
+                    necks.Add((i, j, len));
+                }
+            foreach (var (i, j, len) in necks)
+            {
+                // 같은 끝에서 더 짧은 후보가 있으면 이것은 엇갈린 짝이다 — 사슬로 이어진 풍선에서 왼쪽 목의 위 끝과 오른쪽 목의 아래 끝을 이은 대각선이
+                // 가운데 풍선 안의 두 기둥을 갈랐다(합성 시험)
+                if (necks.Any(o => o.Len < 0.9 * len && (o.I == i || o.J == i || o.I == j || o.J == j))) continue;
+                var (p, q) = (defects[i].Far, defects[j].Far);
+                double dx = q.X - p.X, dy = q.Y - p.Y;
+                // 목이 두 블록을 가른다: 풍선 안을 목에서 자르면 두 블록이 서로 다른 쪽에 있다.
+                // 처음에는 "두 중심이 목의 양쪽에 있고 목의 두 끝이 중심을 이은 선의 양쪽에 있다"로 봤는데, 블록이 제 풍선의 한쪽에 치우치면
+                // (효과음까지 품어 길쭉해진 블록 등) 중심선이 목을 비켜 지나가 겹친 풍선을 놓쳤다 — 실측 2026-11-16, 비스듬히 겹친 뾰족한 풍선 두 쌍:
+                // 중심선이 목의 연장선을 목 길이의 8%·39% 밖에서 지났다.
+                using var cut = filled.Clone();
+                double ux = dx / len, uy = dy / len;
+                Cv2.Line(cut, new Point((int)Math.Round(p.X - 3 * ux), (int)Math.Round(p.Y - 3 * uy)),
+                    new Point((int)Math.Round(q.X + 3 * ux), (int)Math.Round(q.Y + 3 * uy)), Scalar.Black, 3);
+                using var parts = new Mat();
+                Cv2.ConnectedComponents(cut, parts, PixelConnectivity.Connectivity4);
+                // 블록이 놓인 쪽(블록 자리의 풍선 안 픽셀이 가장 많은 조각)과 그 픽셀들의 무게중심 — 조각 하나에 70% 넘게 있어야 그쪽이라고 본다
+                (int Part, double X, double Y) SideOf(DetectedBlock blk)
+                {
+                    var r = new Rect(blk.X1 - roi.X, blk.Y1 - roi.Y, blk.X2 - blk.X1, blk.Y2 - blk.Y1).Intersect(new Rect(0, 0, parts.Cols, parts.Rows));
+                    var sum = new Dictionary<int, (int N, long X, long Y)>();
+                    int all = 0;
+                    for (int y = r.Y; y < r.Bottom; y++)
+                        for (int x = r.X; x < r.Right; x++)
+                        {
+                            int lb = parts.At<int>(y, x);
+                            if (lb == 0) continue;
+                            var s = sum.TryGetValue(lb, out var v) ? v : default;
+                            sum[lb] = (s.N + 1, s.X + x, s.Y + y);
+                            all++;
+                        }
+                    if (all == 0) return default;
+                    var best = sum.MaxBy(kv => kv.Value.N);
+                    return best.Value.N < 0.7 * all ? default : (best.Key, (double)best.Value.X / best.Value.N, (double)best.Value.Y / best.Value.N);
+                }
+                var sa = SideOf(a);
+                var sb = SideOf(b);
+                if (sa.Part == 0 || sb.Part == 0 || sa.Part == sb.Part) continue;
+                double lobe = Math.Min(Chord(sa.X, sa.Y, ux, uy), Chord(sb.X, sb.Y, ux, uy));
+                if (len <= NeckRatio * lobe)
+                {
+                    // 조각의 안쪽 사각형: 무게중심을 지나는 구간과, 중심에서 끝까지의 반쯤 되는 곳의 구간 중 가장 좁은 것
+                    Rect LobeOf(int part)
+                    {
+                        using var m = new Mat();
+                        Cv2.InRange(parts, new Scalar(part), new Scalar(part), m);
+                        var mo = Cv2.Moments(m, true);
+                        if (mo.M00 < 1) return default;
+                        int cx = (int)Math.Round(mo.M10 / mo.M00), cy = (int)Math.Round(mo.M01 / mo.M00);
+                        bool In(int x, int y) => x >= 0 && y >= 0 && x < m.Cols && y < m.Rows && m.At<byte>(y, x) != 0;
+                        if (!In(cx, cy)) return default;
+                        (int Lo, int Hi) RunX(int x0, int y) { int l = x0, r = x0; while (In(l - 1, y)) l--; while (In(r + 1, y)) r++; return (l, r); }
+                        (int Lo, int Hi) RunY(int x, int y0) { int t = y0, d = y0; while (In(x, t - 1)) t--; while (In(x, d + 1)) d++; return (t, d); }
+                        var (l0, r0) = RunX(cx, cy);
+                        var (t0, d0) = RunY(cx, cy);
+                        int left = l0, right = r0, top = t0, bottom = d0;
+                        foreach (int y in new[] { cy - (cy - t0) / 2, cy + (d0 - cy) / 2 })
+                        {
+                            var (l, r) = RunX(cx, y);
+                            left = Math.Max(left, l); right = Math.Min(right, r);
+                        }
+                        foreach (int x in new[] { cx - (cx - l0) / 2, cx + (r0 - cx) / 2 })
+                        {
+                            var (t, d) = RunY(x, cy);
+                            top = Math.Max(top, t); bottom = Math.Min(bottom, d);
+                        }
+                        return right - left < 8 || bottom - top < 8 ? default : new Rect(left + roi.X, top + roi.Y, right - left + 1, bottom - top + 1);
+                    }
+                    neck = (new Point(p.X + roi.X, p.Y + roi.Y), new Point(q.X + roi.X, q.Y + roi.Y), LobeOf(sa.Part), LobeOf(sb.Part));
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    private static double Cross(double ax, double ay, double bx, double by) => ax * by - ay * bx;
+
+    /// <summary>겹친 풍선의 목: 풍선 폭 대비 목 길이의 상한 · 목 길이 대비 패임 깊이의 하한 · 목 길이 대비 패임이 걸친 껍질 변의 하한.</summary>
+    private const double NeckRatio = 0.9, NeckDepth = 0.05, NeckSpan = 0.5;
+    /// <summary>쪽 가장자리에 닿은 흰 영역을 풍선으로 보는 넓이의 상한(쪽 넓이 대비) — 그보다 넓으면 쪽 바탕이다.</summary>
+    private const double PageEdgeBubbleMax = 0.12;
 
     /// <summary>(보관) 두 블록 사이 틈에 먹선이 지나가는가 — 마주 보는 변 사이만 훑어 bbox 안쪽 이음선을 놓친다.</summary>
     private static bool InkBetween(Mat gray, Mat textMask, DetectedBlock a, DetectedBlock b)

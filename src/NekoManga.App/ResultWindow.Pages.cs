@@ -249,9 +249,10 @@ public partial class ResultWindow
         if (_img.Empty())
         {
             // 못 읽은 장 — 앞 장의 식자 상태를 비운다. 남겨 두면 이 장에서 [고친 장 모두 다시 렌더링]을 누를 때 앞 장의 블록이 이 장의 식자 사이드카로 쓰였다(2026-11-13 점검 14번)
-            _sidecar = null; _letterBlocks = []; _letterDirty = false;
+            _sidecar = null; _letterBlocks = []; _letterCommon = 0; _letterDirty = false;
             _baseImg?.Dispose(); _baseImg = null;
             _letterPreview = false;
+            DropLetterLive();
             EditLayer.Children.Clear();
             RefreshBlockCombo();
             RefreshSeedLockUi(); UpdateRegenHeader(_regenPerPage.ContainsKey(_index));   // 시드 고정 칸·머리글의 🔒도 앞 장의 것이 남지 않게(이 가지는 LoadRegenFields까지 가지 않는다)
@@ -262,10 +263,12 @@ public partial class ResultWindow
         }
         _sidecar = data.Sidecar;
         _letterBlocks = _sidecar?.Blocks.ToList() ?? [];
+        _letterCommon = _sidecar?.CommonSize ?? 0;
         _letterDirty = false;
         _baseImg?.Dispose();
         _baseImg = data.Base;
         _letterPreview = false;
+        DropLetterLive();   // 앞 장의 편집 화면 그림·고치던 풍선
         TabLetter.IsEnabled = _sidecar != null && _baseImg != null;
         if (!TabLetter.IsEnabled && TabMode.SelectedItem == TabLetter) TabMode.SelectedIndex = 0;
         TabDecensor.IsEnabled = _maskMat != null && _maskPre != null;   // ResetMaskState가 저장 마스크 없는 장에도 빈 마스크를 만든다 — 그림을 못 읽은 장만 꺼진다

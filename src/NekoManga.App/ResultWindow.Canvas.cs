@@ -62,9 +62,9 @@ public partial class ResultWindow
             DrawSexBadges();   // 조각의 성별 표시도 배율에 맞춰 다시
             return;
         }
-        // 식자 편집 모드에서는 글자가 안 구워진 원고(base)를 깔고 그 위에 텍스트박스를 띄운다
+        // 식자 편집 모드에서는 식자 전 원고(base)에 지금 블록·속성으로 식자한 그림을 깔고 그 위에 풍선마다 선택 상자를 띄운다
         bool editView = LetterMode && !_letterPreview && _baseImg != null;
-        var shown = editView ? _baseImg! : _img;
+        var shown = editView ? LetterShown() : _img;
         SexLayer.Visibility = Visibility.Collapsed;   // 조각의 성별 표시는 마스크 보기에만
         ImgView.Source = ToBitmapCached(shown);
         ImageHost.Width = ImgView.Width = Overlay.Width = EditLayer.Width = shown.Width * _scale;
@@ -210,13 +210,14 @@ public partial class ResultWindow
 
         if (LetterMode)
         {
-            // 미리보기 중이면 편집 모드로 (편집 모드의 클릭은 텍스트박스가 직접 받는다)
+            // 미리보기 중이면 편집 모드로 (편집 모드에서 풍선의 클릭은 그 선택 상자가 직접 받는다 — 여기 오는 것은 빈 곳의 클릭)
             if (_letterPreview)
             {
                 _letterPreview = false;
                 Redraw();
-                TxtStatus.Text = Loc.T("편집 모드 — 텍스트박스를 바로 고치세요");
+                TxtStatus.Text = Loc.T("편집 모드 — 풍선을 클릭해 고르고, 두 번 클릭하면 글을 고쳐요");
             }
+            else EndLetterEdit();   // 빈 곳을 누르면 제자리 글 고치기를 끝낸다
             return;
         }
         // 결과 보기: 그림을 보기만 한다 — 칠하려면 마스크 보기로
