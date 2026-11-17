@@ -142,10 +142,16 @@ public partial class ResultWindow
     private void TabMode_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (!IsLoaded || _loading) return;
+        // 탭 안의 콤보(풍선 목록·글꼴…)가 바뀌어도 SelectionChanged가 여기까지 올라온다(버블링) — 탭이 바뀐 것만 받는다.
+        // 전에는 풍선을 고르거나 글꼴을 바꿀 때마다 화면 맞춤·다시 그리기가 돌고, 그 안에서 동기화 표시(_syncingBlockUi)가 풀려
+        // 고른 풍선에 앞 풍선의 속성 칸 값이 적혔다(2026-11-17, 되돌리기 걸음 수가 맞지 않아 찾음).
+        // 검열 제거 방식 콤보(CmbEngine)는 예전대로 받는다 — 재생성 칸이 펴지고 접히며 그림 자리의 높이가 달라져 화면 맞춤이 필요하다.
+        if (!ReferenceEquals(e.OriginalSource, TabMode) && !ReferenceEquals(e.OriginalSource, CmbEngine)) return;
         UpdateModeButtons();
         _maskPoly.Clear();
         _letterPreview = false;      // 탭에 들어오면 항상 편집 모드부터
         _editBlock = -1; _letterStale = true;
+        if (_addingBlock) { _addingBlock = false; ImageHost.Cursor = null; }
         if (!_img.Empty()) FitToWindow();   // 마스크 탭은 검열 제거 전 원고(원본 크기)를, 다른 탭은 결과물을 보여 줘 크기가 다를 수 있다
         Redraw();
         if (LetterMode)
@@ -172,7 +178,9 @@ public partial class ResultWindow
         BtnSave.Content = MaskMode ? Loc.T("💾 마스크 저장") : Loc.T("💾 저장");
         BtnSave.Visibility = MaskMode && !HasStoredMask ? Visibility.Collapsed : Visibility.Visible;   // 저장 마스크가 없는 장은 사이드카를 새로 만들지 않는다
         BtnSave.IsEnabled = MaskMode ? _maskDirty : _dirty;
-        BtnUndo.IsEnabled = MaskMode ? _maskUndo.Count > 0 : _undo.Count > 0;
+        BtnUndo.IsEnabled = MaskMode ? _maskUndo.Count > 0 : _undo.Count > 0 || (LetterMode && _letterUndo.Count > 0);
+        BtnRedo.Visibility = LetterMode ? Visibility.Visible : Visibility.Collapsed;   // 다시 실행은 식자 탭의 풍선 편집에만 있다
+        BtnRedo.IsEnabled = LetterMode && _letterRedo.Count > 0;
         UpdateRerenderButton();
     }
 

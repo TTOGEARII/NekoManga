@@ -27,7 +27,8 @@ using MessageBox = System.Windows.MessageBox;
 
 namespace NekoManga.App;
 
-// 식자 탭 — 번역 블록 목록, 선택한 풍선의 글자 속성(글꼴·크기 px·외곽선…), 실제 식자 그림 위의 선택 상자(옮기기·늘리기·제자리 글 고치기), 다시 식자
+// 식자 탭 — 번역 블록 목록, 선택한 풍선의 글자 속성(글꼴·크기 px·외곽선…), 실제 식자 그림 위의 선택 상자(옮기기·여덟 방향 늘리기·돌리기·제자리 글과 줄 고치기),
+//           새 글 넣기, 되돌리기·다시 실행, 다시 식자
 public partial class ResultWindow
 {
     // ── 식자 탭 ─────────────────────────────────────────────
@@ -42,6 +43,140 @@ public partial class ResultWindow
     private int _editBlock = -1;                                  // 제자리에서 글을 고치는 중인 풍선(텍스트박스가 떠 있다) — 없으면 -1
     private bool _rebuildingBoxes;
     private System.Windows.Threading.DispatcherTimer? _letterTimer;
+
+    // ── 되돌리기·다시 실행: 블록 목록의 스냅샷을 쌓는다(블록은 바뀌지 않는 record라 목록만 베끼면 된다). 쪽을 넘기면 비운다.
+    // 아래 [↩ 되돌리기]·Ctrl+Z는 식자 탭에서 이것을 먼저 되돌리고, 다 되돌렸으면 예전처럼 결과 그림([다시 식자] 앞의 그림)을 되돌린다.
+    private readonly List<(TextBlockInfo[] Blocks, int Selected)> _letterUndo = [], _letterRedo = [];
+    private string _undoKey = "";     // 마지막으로 쌓은 편집의 종류 — 같은 칸을 이어서 고치는 것(글자를 치는 중, ↑↓로 숫자를 올리는 중)은 한 걸음으로 모은다
+    private DateTime _undoAt;
+    private bool _addingBlock;        // [새 글 넣기]를 누르고 그림에서 자리를 고르는 중
+    private bool _selectAllOnEdit;    // 새로 넣은 글 — 제자리 텍스트박스가 뜨면 전체를 골라 바로 덮어쓸 수 있게
+
+    /// <summary>블록을 바꾸기 직전에 지금 상태를 쌓는다. key가 앞의 것과 같고 1.2초 안이면 쌓지 않는다(한 걸음으로 모은다).</summary>
+    private void PushLetterUndo(string key = "")
+    {
+        var now = DateTime.UtcNow;
+        if (key.Length > 0 && key == _undoKey && _letterUndo.Count > 0 && (now - _undoAt).TotalSeconds < 1.2) { _undoAt = now; return; }
+        _letterUndo.Add(([.. _letterBlocks], CmbBlocks.SelectedIndex));
+        if (_letterUndo.Count > 200) _letterUndo.RemoveAt(0);
+        _letterRedo.Clear();
+        (_undoKey, _undoAt) = (key, now);
+        UpdateLetterUndoUi();
+    }
+
+    /// <summary>식자 탭의 편집을 한 걸음 되돌리거나(redo = false) 다시 한다. 할 것이 없으면 false.</summary>
+    private bool LetterUndo(bool redo)
+    {
+        var (from, to) = redo ? (_letterRedo, _letterUndo) : (_letterUndo, _letterRedo);
+        if (from.Count == 0 || _sidecar == null) return false;
+        _editBlock = -1; _addingBlock = false;
+        to.Add(([.. _letterBlocks], CmbBlocks.SelectedIndex));
+        var (blocks, selected) = from[^1];
+        from.RemoveAt(from.Count - 1);
+        _letterBlocks = [.. blocks];
+        _letterDirty = true;
+        _undoKey = "";
+        RefreshBlockCombo();
+        if (_letterBlocks.Count > 0) SelectBlock(Math.Clamp(selected, 0, _letterBlocks.Count - 1));
+        RefreshLetter();
+        UpdateLetterUndoUi();
+        TxtStatus.Text = redo ? Loc.T("다시 실행했어요") : Loc.T("되돌렸어요");
+        return true;
+    }
+
+    private void UpdateLetterUndoUi()
+    {
+        if (!LetterMode) return;
+        BtnUndo.IsEnabled = _letterUndo.Count > 0 || _undo.Count > 0;
+        BtnRedo.IsEnabled = _letterRedo.Count > 0;
+    }
+
+    private void BtnRedo_Click(object sender, RoutedEventArgs e) { if (!_busy && LetterMode && !_letterPreview) LetterUndo(redo: true); }
+
+    /// <summary>식자 탭의 단축키 — 텍스트박스에 커서가 있어도 받는다(창의 Preview 단계). 받았으면 true.
+    /// Ctrl+Z 되돌리기 · Ctrl+Y(Ctrl+Shift+Z) 다시 실행 · Esc 글 고치기/새 글 넣기 끝 · Ctrl+Enter 글 고치기 끝 · Delete 고른 풍선 숨기기(새로 넣은 글은 삭제).</summary>
+    private bool LetterKey(KeyEventArgs e)
+    {
+        if (_busy || _loading || _sidecar == null) return false;
+        bool ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control), shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+        var focus = Keyboard.FocusedElement as TextBox;
+        bool pageBox = focus != null && focus.Name.StartsWith("TxtL", StringComparison.Ordinal);   // 페이지 전체 기본의 칸 — 그 칸의 글자 되돌리기를 둔다
+        switch (e.Key)
+        {
+            case Key.Z when ctrl && !shift && !pageBox: return LetterUndo(redo: false);   // 쌓인 것이 없으면 false — 예전처럼 결과 그림을 되돌린다
+            case Key.Y when ctrl && !pageBox:
+            case Key.Z when ctrl && shift && !pageBox: LetterUndo(redo: true); return true;
+            case Key.Escape when _addingBlock: CancelAddBlock(); return true;
+            case Key.Escape when _editBlock >= 0: EndLetterEdit(); return true;
+            case Key.Enter when ctrl && _editBlock >= 0: EndLetterEdit(); return true;
+            case Key.Delete when focus == null && CmbBlocks.SelectedIndex >= 0: BtnBlockHide_Click(this, e); return true;
+        }
+        return false;
+    }
+
+    // ── 새 글 넣기 ──
+    private void BtnBlockAdd_Click(object sender, RoutedEventArgs e)
+    {
+        if (_busy || _sidecar == null || _baseImg == null) return;
+        if (_letterPreview) { _letterPreview = false; Redraw(); }
+        EndLetterEdit();
+        _addingBlock = true;
+        ImageHost.Cursor = Cursors.Cross;
+        TxtStatus.Text = Loc.T("글을 넣을 곳을 클릭하세요 — Esc로 취소");
+    }
+
+    private void CancelAddBlock()
+    {
+        if (!_addingBlock) return;
+        _addingBlock = false;
+        ImageHost.Cursor = null;
+        TxtStatus.Text = Loc.T("새 글 넣기를 취소했어요");
+    }
+
+    /// <summary>그림의 그 자리(편집 화면 좌표)에 새 글 상자를 넣고 바로 글을 적게 한다. 상자는 쪽 폭의 22% × 높이의 9%로 시작한다 — 손잡이로 늘린다.</summary>
+    private void AddBlockAt(System.Windows.Point at)
+    {
+        _addingBlock = false;
+        ImageHost.Cursor = null;
+        if (_sidecar == null || _baseImg == null) return;
+        var bs = LetterScaleNow(_sidecar, _baseImg);
+        double w = _baseImg.Width * 0.22, h = _baseImg.Height * 0.09;
+        double x = Math.Clamp(at.X / _scale - w / 2, 0, Math.Max(0, _baseImg.Width - w)), y = Math.Clamp(at.Y / _scale - h / 2, 0, Math.Max(0, _baseImg.Height - h));
+        if (bs.CommitBox(default, new LetterBox(x, y, w, h)) is not { } r) return;
+        LetterCommon();   // 넣기 전의 블록들로 공통 크기를 붙든다 — 새 글이 다른 풍선의 크기를 바꾸지 않게
+        PushLetterUndo();
+        _letterBlocks.Add(new TextBlockInfo(r.X1, r.Y1, r.X2, r.Y2, "", Loc.T("새 글"), 20, false, "#000000", ManualRect: true, Added: true));
+        _letterDirty = true;
+        int i = _letterBlocks.Count - 1;
+        RefreshBlockCombo();
+        SelectBlock(i);
+        _selectAllOnEdit = true;
+        BeginLetterEdit(i);
+        TxtStatus.Text = Loc.T("새 글을 넣었어요 — 글을 적고 다른 곳을 클릭하세요 (상자는 끌어 옮기고 손잡이로 늘려요)");
+    }
+
+    /// <summary>[줄 직접 나누기] — 켜면 지금 그려진 줄들을 글에 그대로 박고(그 뒤로 자동 줄 나눔을 하지 않는다), 끄면 줄바꿈을 지우고 다시 자동으로 나눈다.</summary>
+    private void ChkBManualLines_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_syncingBlockUi || !IsLoaded || CmbBlocks.SelectedIndex < 0 || _sidecar == null || _baseImg == null) return;
+        int i = CmbBlocks.SelectedIndex;
+        var b = _letterBlocks[i];
+        bool on = ChkBManualLines.IsChecked == true;
+        if (on == b.ManualLines) return;
+        string text;
+        if (on)
+        {
+            var bs = LetterScaleNow(_sidecar, _baseImg);
+            var lines = TextRenderer.DrawnLines(_baseImg, _letterBlocks, bs.X, bs.Y, LetterStyle(), i, LetterCommon());
+            text = lines.Length > 0 ? string.Join("\n", lines) : b.Translation;
+        }
+        else text = string.Join(" ", b.Translation.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        EndLetterEdit();
+        SetBlock(i, b with { Translation = text, ManualLines = on });
+        _syncingBlockUi = true; TxtBlockText.Text = text; _syncingBlockUi = false;
+        RefreshLetter();
+        TxtStatus.Text = on ? Loc.T("줄을 지금 모습대로 붙들었어요 — 글 칸이나 풍선(두 번 클릭)에서 Enter로 줄을 나누세요") : Loc.T("줄을 다시 자동으로 나눠요");
+    }
 
     /// <summary>페이지 전체 기본(글꼴·크기 배율·색·외곽선)이 바뀌면 편집 화면을 다시 그린다.</summary>
     private void LetterStyle_Changed(object? sender, EventArgs e)
@@ -114,6 +249,9 @@ public partial class ResultWindow
         _letterLive?.Dispose(); _letterLive = null;
         _liveLayouts = []; _drawnSizes = [];
         _letterStale = true; _editBlock = -1;
+        _letterUndo.Clear(); _letterRedo.Clear(); _undoKey = "";
+        _addingBlock = false; _selectAllOnEdit = false;
+        if (BtnRedo != null) BtnRedo.IsEnabled = false;
     }
 
     private void RefreshBlockCombo()
@@ -151,7 +289,8 @@ public partial class ResultWindow
         var b = _letterBlocks[i];
         if (TxtBlockText.Text != b.Translation) TxtBlockText.Text = b.Translation;
         LoadBlockStyleUi(b);
-        BtnBlockHide.Content = b.Hidden ? Loc.T("숨김 해제") : Loc.T("이 블록 숨기기");
+        BtnBlockHide.Content = b.Added ? Loc.T("이 글 삭제") : b.Hidden ? Loc.T("숨김 해제") : Loc.T("이 블록 숨기기");
+        ChkBManualLines.IsChecked = b.ManualLines;
         _syncingBlockUi = was;
         StyleBoxes();
     }
@@ -240,8 +379,8 @@ public partial class ResultWindow
             ColorOverride = HexOr(TxtBColor.Text, b.ColorOverride),
             OutlinePx = ChkBOutAuto.IsChecked == true ? -1 : D(TxtBOut.Text, b.OutlinePx, 0, 100),
             OutlineColor = HexOr(TxtBOutColor.Text, b.OutlineColor),
-            RotationDeg = D(TxtBRot.Text, b.RotationDeg, -45, 45),
-        });
+            RotationDeg = D(TxtBRot.Text, b.RotationDeg, -180, 180),
+        }, "style:" + ((sender as FrameworkElement)?.Name ?? "") + ":" + i);
         UpdateSwatches();
         QueueLetterRefresh();
         TxtStatus.Text = Loc.T("풍선 속성을 바꿨어요 — [다시 식자]로 결과물에 반영하세요");
@@ -322,14 +461,14 @@ public partial class ResultWindow
     {
         if (_syncingBlockUi || CmbBlocks.SelectedIndex < 0) return;
         int i = CmbBlocks.SelectedIndex;
-        SetBlock(i, _letterBlocks[i] with { Translation = TxtBlockText.Text });
+        SetBlock(i, _letterBlocks[i] with { Translation = TxtBlockText.Text.Replace("\r\n", "\n") }, "text:" + i);
         // 제자리에서 고치는 중이면 그 텍스트박스에도 바로 반영 (박스는 Grid 컨테이너 안에 있다) — 아니면 그림을 다시 그린다
         if (_editBlock == i)
         {
             foreach (var child in EditLayer.Children)
                 if (child is Grid host && host.Tag is int idx && idx == i)
                     foreach (var inner in host.Children)
-                        if (inner is TextBox tb && tb.Text != TxtBlockText.Text)
+                        if (inner is TextBox tb && tb.Text.Replace("\r\n", "\n") != TxtBlockText.Text.Replace("\r\n", "\n"))
                         { _syncingBlockUi = true; tb.Text = TxtBlockText.Text; _syncingBlockUi = false; }
         }
         else QueueLetterRefresh();
@@ -339,7 +478,8 @@ public partial class ResultWindow
     private void BtnBlockHide_Click(object sender, RoutedEventArgs e)
     {
         int i = CmbBlocks.SelectedIndex;
-        if (i < 0) return;
+        if (i < 0 || i >= _letterBlocks.Count) return;
+        if (_letterBlocks[i].Added) { RemoveBlock(i); return; }   // 새로 넣은 글은 원문이 없다 — 숨겨 둘 까닭이 없어 목록에서 뺀다(되돌리기로 되살린다)
         bool hide = !_letterBlocks[i].Hidden;
         SetBlock(i, _letterBlocks[i] with { Hidden = hide });
         if (hide && _editBlock == i) _editBlock = -1;
@@ -349,10 +489,25 @@ public partial class ResultWindow
         TxtStatus.Text = hide ? Loc.T("블록을 숨겼어요 — [숨김 해제]로 되살릴 수 있어요 (다시 식자·지우기 때 저장돼요)") : Loc.T("블록을 다시 보여요");
     }
 
+    /// <summary>새로 넣은 글을 목록에서 뺀다.</summary>
+    private void RemoveBlock(int i)
+    {
+        if (i < 0 || i >= _letterBlocks.Count) return;
+        if (_editBlock >= 0) _editBlock = -1;
+        PushLetterUndo();
+        _letterBlocks.RemoveAt(i);
+        _letterDirty = true;
+        RefreshBlockCombo();
+        if (_letterBlocks.Count > 0) SelectBlock(Math.Min(i, _letterBlocks.Count - 1));
+        RefreshLetter();
+        TxtStatus.Text = Loc.T("새로 넣은 글을 지웠어요 — Ctrl+Z로 되살릴 수 있어요");
+    }
+
     /// <summary>블록 하나를 바꾼다 — 실제로 달라졌을 때만 '고친 것'으로 표시한다(<see cref="_letterDirty"/>). 화면을 맞추느라 같은 값을 다시 넣는 경우(텍스트박스 ↔ 글 칸 동기화)는 세지 않는다.</summary>
-    private void SetBlock(int i, TextBlockInfo block)
+    private void SetBlock(int i, TextBlockInfo block, string undoKey = "")
     {
         if (_letterBlocks[i] == block) return;
+        PushLetterUndo(undoKey);
         _letterBlocks[i] = block;
         _letterDirty = true;
         _letterStale = true;
@@ -463,10 +618,14 @@ public partial class ResultWindow
             double zoom = _scale;
             LetterBox placed = default;
             void Commit() => placed = CommitBoxRect(host, placed, zoom, bs);
-            if (Math.Abs(b.RotationDeg) > 0.05)
+            // 돌린 글은 상자도 같이 돌려 보여 준다(가운데 기준 — 식자도 자리 가운데를 축으로 돌린다). Thumb의 끌기 값은 돌아간 상자 기준이라 화면 방향으로 되돌려 쓴다.
+            var turn = new RotateTransform(b.RotationDeg);
+            host.RenderTransformOrigin = new System.Windows.Point(0.5, 0.5);
+            host.RenderTransform = turn;
+            (double X, double Y) ToCanvas(double dx, double dy)
             {
-                host.RenderTransformOrigin = new System.Windows.Point(0.5, 0.5);
-                host.RenderTransform = new RotateTransform(b.RotationDeg);
+                double r = turn.Angle * Math.PI / 180, c = Math.Cos(r), s = Math.Sin(r);
+                return (dx * c - dy * s, dx * s + dy * c);
             }
 
             host.Children.Add(new System.Windows.Shapes.Rectangle { IsHitTestVisible = false, SnapsToDevicePixels = true });   // 테두리 — StyleBoxes가 칠한다
@@ -481,10 +640,16 @@ public partial class ResultWindow
                     ? ToMedia(b.ColorOverride, b.FontColorHex)
                     : ToMedia(style.LetterColorHex, b.FontColorHex);
                 var alignName = string.IsNullOrEmpty(b.Align) ? style.LetterAlign : b.Align;
+                // 텍스트박스에는 지금 그려진 줄들을 그대로 띄운다 — 줄을 직접 나눈 블록은 적은 그대로, 자동인 블록은 식자가 나눈 줄대로.
+                // 여기서 글을 건드리면 그 줄들이 블록에 박힌다(ManualLines) — 보이는 줄이 곧 식자되는 줄이다.
+                string editText = b.Translation;
+                if (!b.ManualLines)
+                    try { if (TextRenderer.DrawnLines(_baseImg, _letterBlocks, bs.X, bs.Y, style, i, LetterCommon()) is { Length: > 0 } drawn) editText = string.Join("\n", drawn); }
+                    catch { }
                 var tb = new TextBox
                 {
-                    Text = b.Translation,
-                    TextWrapping = TextWrapping.Wrap,
+                    Text = editText,
+                    TextWrapping = TextWrapping.NoWrap,
                     TextAlignment = alignName switch { "Left" => TextAlignment.Left, "Right" => TextAlignment.Right, _ => TextAlignment.Center },
                     VerticalContentAlignment = VerticalAlignment.Center,
                     AcceptsReturn = true,
@@ -510,7 +675,7 @@ public partial class ResultWindow
                     Dispatcher.BeginInvoke(() => { if (_editBlock == i && !tb.IsKeyboardFocusWithin) EndLetterEdit(); });
                 };
                 host.Children.Add(tb);
-                Dispatcher.BeginInvoke(() => { if (_editBlock == i && tb.IsVisible && !tb.IsKeyboardFocusWithin) { tb.Focus(); tb.CaretIndex = tb.Text.Length; } },
+                Dispatcher.BeginInvoke(() => { if (_editBlock == i && tb.IsVisible && !tb.IsKeyboardFocusWithin) { tb.Focus(); if (_selectAllOnEdit) { tb.SelectAll(); _selectAllOnEdit = false; } else tb.CaretIndex = tb.Text.Length; } },
                     System.Windows.Threading.DispatcherPriority.Input);
             }
             else
@@ -525,7 +690,7 @@ public partial class ResultWindow
                     movedX += a.HorizontalChange; movedY += a.VerticalChange;
                     if (!moving && Math.Abs(movedX) + Math.Abs(movedY) < 4) return;   // 클릭하다 조금 흔들린 것은 옮기기가 아니다
                     // 처음 움직일 때 그동안 쌓인 만큼을 한꺼번에 옮긴다 — 커서와 상자가 어긋나지 않게
-                    double dx = moving ? a.HorizontalChange : movedX, dy = moving ? a.VerticalChange : movedY;
+                    var (dx, dy) = ToCanvas(moving ? a.HorizontalChange : movedX, moving ? a.VerticalChange : movedY);
                     moving = true;
                     Canvas.SetLeft(host, Canvas.GetLeft(host) + dx);
                     Canvas.SetTop(host, Canvas.GetTop(host) + dy);
@@ -537,6 +702,7 @@ public partial class ResultWindow
                 {
                     if (_busy) { a.Handled = true; return; }
                     if (_spaceDown) { a.Handled = true; StartPan(a); return; }   // 손 도구 — 상자 위에서도 화면을 끈다
+                    if (_addingBlock) { a.Handled = true; AddBlockAt(a.GetPosition(EditLayer)); return; }   // 새 글 자리를 고르는 중 — 다른 풍선 위여도 그 자리에 넣는다
                     if (_editBlock >= 0)
                     {
                         // 다른 풍선의 글 고치기를 끝낸다 — 상자들이 새로 떠서 이 상자는 사라졌다
@@ -549,20 +715,63 @@ public partial class ResultWindow
                     if (a.ClickCount >= 2 && a.OriginalSource is DependencyObject src && IsInside(src, body)) { a.Handled = true; BeginLetterEdit(i); }
                 };
 
-                var size = new System.Windows.Controls.Primitives.Thumb
+                // 여덟 방향 손잡이(포토샵의 변형 상자처럼) — 잡은 쪽만 움직이고 맞은편 변·모서리는 제자리에 있다(돌린 상자에서도).
+                foreach (var (hx, hy, tag, cursor) in BoxHandles)
                 {
-                    Width = 12, Height = 12,
-                    VerticalAlignment = VerticalAlignment.Bottom, HorizontalAlignment = HorizontalAlignment.Right,
-                    Cursor = Cursors.SizeNWSE, Opacity = 0.85,
-                    Background = Brushes.HotPink, Tag = "size",
-                };
-                size.DragDelta += (s, a) =>
+                    var grip = new System.Windows.Controls.Primitives.Thumb
+                    {
+                        Template = HandleThumb, Width = 11, Height = 11, Tag = tag, Cursor = cursor,
+                        HorizontalAlignment = hx < 0 ? HorizontalAlignment.Left : hx > 0 ? HorizontalAlignment.Right : HorizontalAlignment.Center,
+                        VerticalAlignment = hy < 0 ? VerticalAlignment.Top : hy > 0 ? VerticalAlignment.Bottom : VerticalAlignment.Center,
+                        Margin = new Thickness(hx < 0 ? -6 : 0, hy < 0 ? -6 : 0, hx > 0 ? -6 : 0, hy > 0 ? -6 : 0),
+                    };
+                    grip.DragDelta += (_, a) =>
+                    {
+                        double w0 = host.Width, h0 = host.Height;
+                        double w1 = Math.Max(24, w0 + hx * a.HorizontalChange), h1 = Math.Max(20, h0 + hy * a.VerticalChange);
+                        var (cx, cy) = ToCanvas(hx * (w1 - w0) / 2, hy * (h1 - h0) / 2);   // 상자 가운데가 옮겨 갈 만큼(화면 방향)
+                        Canvas.SetLeft(host, Canvas.GetLeft(host) + cx - (w1 - w0) / 2);
+                        Canvas.SetTop(host, Canvas.GetTop(host) + cy - (h1 - h0) / 2);
+                        host.Width = w1; host.Height = h1;
+                    };
+                    grip.DragCompleted += (_, _) => Commit();
+                    host.Children.Add(grip);
+                }
+
+                // 돌리기 손잡이: 위쪽 가운데에서 조금 떨어진 동그라미. 끌면 상자 가운데를 축으로 돈다 — Shift는 15°씩, 0° 근처는 0°에 붙는다.
+                host.Children.Add(new Border
                 {
-                    host.Width = Math.Max(24, host.Width + a.HorizontalChange);
-                    host.Height = Math.Max(20, host.Height + a.VerticalChange);
+                    Width = 1.5, Height = 16, Background = Brushes.HotPink, IsHitTestVisible = false, Tag = "stem",
+                    VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, -17, 0, 0),
+                });
+                var spin = new System.Windows.Controls.Primitives.Thumb
+                {
+                    Template = RoundThumb, Width = 13, Height = 13, Tag = "rot", Cursor = Cursors.Hand,
+                    VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, -29, 0, 0),
+                    ToolTip = Loc.T("끌어서 돌려요 (Shift: 15°씩)"),
                 };
-                size.DragCompleted += (s, a) => Commit();
-                host.Children.Add(size);
+                double armX = 0, armY = 0;   // 상자 가운데에서 손잡이까지(화면 방향)
+                spin.DragStarted += (_, _) => (armX, armY) = ToCanvas(0, -(host.Height / 2 + 22));
+                spin.DragDelta += (_, a) =>
+                {
+                    var (dx, dy) = ToCanvas(a.HorizontalChange, a.VerticalChange);
+                    armX += dx; armY += dy;
+                    double deg = Math.Atan2(armX, -armY) * 180 / Math.PI;   // 위가 0°, 시계 방향이 +
+                    if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) deg = Math.Round(deg / 15) * 15;
+                    else if (Math.Abs(deg) < 2) deg = 0;
+                    turn.Angle = deg;
+                };
+                spin.DragCompleted += (_, _) =>
+                {
+                    if (i >= _letterBlocks.Count) return;
+                    double deg = Math.Round(turn.Angle, 1);
+                    if (Math.Abs(deg - _letterBlocks[i].RotationDeg) < 0.05) return;
+                    SetBlock(i, _letterBlocks[i] with { RotationDeg = deg });
+                    if (CmbBlocks.SelectedIndex == i) { _syncingBlockUi = true; TxtBRot.Text = Num(deg, "0.#"); _syncingBlockUi = false; }
+                    TxtStatus.Text = Loc.T("글을 돌렸어요 — [다시 식자]로 반영하세요");
+                    Dispatcher.BeginInvoke(RefreshLetter);
+                };
+                host.Children.Add(spin);
             }
 
             Canvas.SetLeft(host, rect.X * _scale);
@@ -573,11 +782,34 @@ public partial class ResultWindow
         StyleBoxes();
         ShowAutoValues();
         if (selected >= 0 && selected < _letterBlocks.Count && _editBlock < 0 && TxtBlockText.Text != _letterBlocks[selected].Translation)
-        { _syncingBlockUi = true; TxtBlockText.Text = _letterBlocks[selected].Translation; _syncingBlockUi = false; }
+        { bool was = _syncingBlockUi; _syncingBlockUi = true; TxtBlockText.Text = _letterBlocks[selected].Translation; _syncingBlockUi = was; }
     }
 
     /// <summary>상자의 몸통을 덮는 보이지 않는 Thumb의 틀 — 투명한 바탕만 있다(클릭·끌기는 받는다).</summary>
     private static readonly ControlTemplate InvisibleThumb = MakeInvisibleThumb();
+
+    /// <summary>여덟 방향 손잡이 — (가로 쪽, 세로 쪽, 이름, 커서). 오른쪽 아래의 이름 "size"는 손잡이가 하나뿐이던 때부터의 것이다.</summary>
+    private static readonly (int X, int Y, string Tag, System.Windows.Input.Cursor Cursor)[] BoxHandles =
+    [
+        (-1, -1, "nw", Cursors.SizeNWSE), (0, -1, "n", Cursors.SizeNS), (1, -1, "ne", Cursors.SizeNESW),
+        (-1, 0, "w", Cursors.SizeWE), (1, 0, "e", Cursors.SizeWE),
+        (-1, 1, "sw", Cursors.SizeNESW), (0, 1, "s", Cursors.SizeNS), (1, 1, "size", Cursors.SizeNWSE),
+    ];
+
+    /// <summary>손잡이의 틀 — 흰 바탕에 분홍 테두리(어두운 그림·밝은 그림 어디서나 보이게). 돌리기 손잡이는 동그랗다.</summary>
+    private static readonly ControlTemplate HandleThumb = MakeHandleThumb(1.5), RoundThumb = MakeHandleThumb(7);
+
+    private static ControlTemplate MakeHandleThumb(double radius)
+    {
+        var border = new FrameworkElementFactory(typeof(Border));
+        border.SetValue(Border.BackgroundProperty, Brushes.White);
+        border.SetValue(Border.BorderBrushProperty, Brushes.HotPink);
+        border.SetValue(Border.BorderThicknessProperty, new Thickness(1.5));
+        border.SetValue(Border.CornerRadiusProperty, new CornerRadius(radius));
+        var template = new ControlTemplate(typeof(System.Windows.Controls.Primitives.Thumb)) { VisualTree = border };
+        template.Seal();
+        return template;
+    }
 
     private static ControlTemplate MakeInvisibleThumb()
     {
@@ -595,7 +827,7 @@ public partial class ResultWindow
         return false;
     }
 
-    /// <summary>선택한 풍선의 상자만 또렷하게(분홍 테두리 + 늘리기 손잡이), 나머지는 옅은 점선으로.</summary>
+    /// <summary>선택한 풍선의 상자만 또렷하게(분홍 테두리 + 여덟 방향 손잡이 + 돌리기 손잡이), 나머지는 옅은 점선으로.</summary>
     private void StyleBoxes()
     {
         int selected = CmbBlocks.SelectedIndex;
@@ -614,6 +846,8 @@ public partial class ResultWindow
                 }
                 else if (inner is System.Windows.Controls.Primitives.Thumb { Tag: not "body" } grip)
                     grip.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+                else if (inner is Border { Tag: "stem" } stem)
+                    stem.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
             }
             Canvas.SetZIndex(host, on ? 1 : 0);   // 겹친 상자에서는 고른 것이 위 — 손잡이를 잡을 수 있게
         }
@@ -625,14 +859,18 @@ public partial class ResultWindow
         if (i < 0 || i >= _letterBlocks.Count || _letterBlocks[i].Hidden) return;
         _editBlock = i;
         RefreshLetter();
-        TxtStatus.Text = Loc.T("글을 고치는 중 — 다른 곳을 클릭하거나 Esc를 누르면 식자된 모습으로 돌아가요");
+        TxtStatus.Text = Loc.T("글을 고치는 중 — Enter로 줄을 나눠요. 다른 곳을 클릭하거나 Esc를 누르면 끝나요");
     }
 
     /// <summary>제자리 글 고치기를 끝낸다 — 고친 글로 다시 식자한 그림을 보여 준다.</summary>
     private void EndLetterEdit()
     {
         if (_editBlock < 0) return;
+        int i = _editBlock;
         _editBlock = -1;
+        _selectAllOnEdit = false;
+        // 아무것도 적지 않은 새 글은 남기지 않는다(포토샵이 빈 글 레이어를 지우듯)
+        if (i < _letterBlocks.Count && _letterBlocks[i].Added && string.IsNullOrWhiteSpace(_letterBlocks[i].Translation)) { RemoveBlock(i); return; }
         RefreshLetter();
     }
 
@@ -683,9 +921,11 @@ public partial class ResultWindow
     private void LetterBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (sender is not TextBox tb || tb.Tag is not int i || i >= _letterBlocks.Count) return;
-        SetBlock(i, _letterBlocks[i] with { Translation = tb.Text });
-        if (!_syncingBlockUi && CmbBlocks.SelectedIndex == i)
-        { _syncingBlockUi = true; TxtBlockText.Text = tb.Text; _syncingBlockUi = false; }
+        if (_syncingBlockUi) return;   // 글 칸에서 친 것을 받아 적는 중 — 블록은 글 칸 쪽이 이미 바꿨다
+        // 텍스트박스에 보이는 줄이 곧 식자되는 줄이다 — 여기서 고친 글은 줄을 직접 나눈 것으로 둔다
+        SetBlock(i, _letterBlocks[i] with { Translation = tb.Text.Replace("\r\n", "\n"), ManualLines = true }, "text:" + i);
+        if (CmbBlocks.SelectedIndex == i)
+        { _syncingBlockUi = true; TxtBlockText.Text = tb.Text; ChkBManualLines.IsChecked = true; _syncingBlockUi = false; }
     }
 
     private static Color ToMedia(string hex, string fallbackHex)

@@ -268,4 +268,83 @@ public class TextRendererBlockStyleTests
         File.WriteAllText(LetterSidecar.JsonPathFor(outPath), json);
         Assert.Equal(0, LetterSidecar.Load(outPath)!.CommonSize);
     }
+
+    // ── 줄을 직접 나눈 블록(ManualLines): 적은 줄 그대로 그린다 — 자동 줄 나눔을 하지 않는다(2026-11-17 사용자 "줄 나눔도 수정할수 있게")
+    [Fact]
+    public void DrawnLines_AutomaticBlock_AreTheWrappedLines()
+    {
+        using var page = SolidPage(1000, 1457, 255);
+        var b = Block(400, 400, 560, 700, "HHHH HHHH HHHH HHHH");
+
+        var lines = TextRenderer.DrawnLines(page, [b], 1, 1, Arial(), 0);
+
+        Assert.True(lines.Length > 1, string.Join("|", lines));
+        Assert.Equal("HHHH HHHH HHHH HHHH", string.Join(" ", lines));
+    }
+
+    [Fact]
+    public void ManualLines_AreDrawnExactlyAsTyped_NotRewrapped()
+    {
+        using var page = SolidPage(1000, 1457, 255);
+        var auto = Block(400, 400, 560, 700, "HHHH HHHH HHHH HHHH");
+        var manual = auto with { Translation = "HHHH HHHH HHHH\nHHHH", ManualLines = true };
+
+        Assert.Equal(["HHHH HHHH HHHH", "HHHH"], TextRenderer.DrawnLines(page, [manual], 1, 1, Arial(), 0));
+        // 한 줄로 적으면 좁은 자리에서도 한 줄 — 크기를 줄여 넣는다
+        var one = auto with { ManualLines = true };
+        using var a = TextRenderer.Render(page, [auto], 1, 1, Arial(), out var autoSize);
+        using var m = TextRenderer.Render(page, [one], 1, 1, Arial(), out var oneSize);
+        Assert.Equal(["HHHH HHHH HHHH HHHH"], TextRenderer.DrawnLines(page, [one], 1, 1, Arial(), 0));
+        Assert.True(oneSize[0] < autoSize[0], $"{oneSize[0]} vs {autoSize[0]}");
+        Assert.True(Ink(m).Width <= 160 * 1.25, $"{Ink(m)}");
+    }
+
+    [Fact]
+    public void ManualLines_OfTheDrawnLines_KeepTheSameLines()
+    {
+        // 결과 창: 두 번 클릭하면 지금 그려진 줄들이 그대로 텍스트박스에 뜬다 — 거기서 줄을 옮긴다
+        using var page = SolidPage(1000, 1457, 255);
+        var auto = Block(400, 400, 560, 700, "HHHH HHHH HHHH HHHH");
+        var lines = TextRenderer.DrawnLines(page, [auto], 1, 1, Arial(), 0);
+        var manual = auto with { Translation = string.Join("\n", lines), ManualLines = true };
+
+        Assert.Equal(lines, TextRenderer.DrawnLines(page, [manual], 1, 1, Arial(), 0));
+    }
+
+    [Fact]
+    public void ManualLines_WithFixedSize_KeepBothTheLinesAndTheSize()
+    {
+        using var page = SolidPage(1000, 1457, 255);
+        var b = Block(400, 400, 560, 700, "HHHH HHHH HHHH HHHH") with { ManualLines = true, SizePx = 50 };
+
+        using var img = TextRenderer.Render(page, [b], 1, 1, Arial(), out var sizes);
+
+        Assert.Equal(50f, sizes[0], 1);
+        Assert.Equal(["HHHH HHHH HHHH HHHH"], TextRenderer.DrawnLines(page, [b], 1, 1, Arial(), 0));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void WindowsLineEndings_AreTheSameAsNewlines(bool manual)
+    {
+        // WPF 텍스트박스의 줄바꿈은 \r\n이다 — \r이 글자로 남으면 □로 그려진다
+        using var page = SolidPage(1000, 1457, 255);
+        var lf = Block(200, 400, 800, 800, "HHHH\nHHHH HH") with { ManualLines = manual };
+        using var a = TextRenderer.Render(page, [lf], 1, 1, Arial(), out _);
+        using var b = TextRenderer.Render(page, [lf with { Translation = "HHHH\r\nHHHH HH" }], 1, 1, Arial(), out _);
+
+        PipelineTestHelpers.AssertSamePixels(a, b);
+    }
+
+    [Fact]
+    public void ManualLines_TrailingBlankLines_AreIgnored()
+    {
+        using var page = SolidPage(1000, 1457, 255);
+        var b = Block(200, 400, 800, 800, "HHHH\nHH") with { ManualLines = true };
+        using var a = TextRenderer.Render(page, [b], 1, 1, Arial(), out _);
+        using var c = TextRenderer.Render(page, [b with { Translation = "HHHH\nHH\n\n" }], 1, 1, Arial(), out _);
+
+        PipelineTestHelpers.AssertSamePixels(a, c);
+    }
 }

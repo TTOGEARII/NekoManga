@@ -250,6 +250,21 @@ public static class TextRenderer
         return common;
     }
 
+    /// <summary>그 블록이 지금 그려지는 줄들 — 결과 창이 제자리 글 고치기를 시작할 때 텍스트박스에 이 줄들을 그대로 띄운다(거기서 줄을 옮긴다).
+    /// 안 그려지는 블록(숨김·쪽 밖·빈 글)은 빈 배열.</summary>
+    public static string[] DrawnLines(Mat img, IReadOnlyList<TextBlockInfo> blocks, double scaleX, double scaleY, AppSettings settings,
+        int index, double commonSize = 0)
+    {
+        using var scratch = new Bitmap(8, 8, PixelFormat.Format24bppRgb);
+        using var g = Graphics.FromImage(scratch);
+        g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+        var layouts = PlanCore(img, blocks, scaleX, scaleY, settings, g, commonSize, out _);
+        if (index < 0 || index >= blocks.Count || layouts[index].Size <= 0) return [];
+        var lines = new List<string>();
+        DrawBlock(g, blocks[index], layouts[index], Color.Black, settings, draw: false, lines);
+        return [.. lines];
+    }
+
     private static List<BlockLayout> PlanCore(Mat img, IReadOnlyList<TextBlockInfo> blocks, double scaleX, double scaleY,
         AppSettings settings, Graphics? g, double commonSize, out float commonBase)
     {
@@ -578,9 +593,18 @@ public static class TextRenderer
     /// <summary>어절을 꺾지 않고 풍선 안에 들어가는 가장 큰 글자 크기. 어떤 크기로도 안 들어가면 최소 크기.</summary>
     private static float LargestFit(Graphics g, TextBlockInfo b, BlockLayout box, AppSettings s)
     {
+        b = NormalizeNewlines(b);
         var (family, style) = ResolveStyle(b, s);
         var words = new WordMetrics(g, family, style, b.Translation, s);
         float spacing = LineSpacing(b, s);
+        if (b.ManualLines)
+        {
+            // 줄을 직접 나눈 블록: 그 줄들이 자리에 들어가는 가장 큰 크기
+            var typed = TypedLines(b.Translation);
+            for (float size = box.Size; size >= MinSize; size *= 0.95f)
+                if (TypedLinesFit(g, typed, family, style, size, box, spacing, words.SpaceAt(size))) return size;
+            return MinSize;
+        }
         float whole = 0;
         for (float size = box.Size; size >= MinSize; size *= 0.95f)
             if (words.Arrange(size, box, spacing) != null) { whole = size; break; }
@@ -592,6 +616,35 @@ public static class TextRenderer
         for (float size = box.Size; size > Math.Max(MinSize, whole); size *= 0.92f)
             if (BrokenLines(g, b.Translation, family, style, size, box, spacing) != null) return size;
         return Math.Max(MinSize, whole);
+    }
+
+    /// <summary>WPF 텍스트박스의 줄바꿈(\r\n)을 \n으로 — \r이 글자로 남으면 □로 그려진다.</summary>
+    private static TextBlockInfo NormalizeNewlines(TextBlockInfo b) =>
+        b.Translation.Contains('\r') ? b with { Translation = b.Translation.Replace("\r\n", "\n").Replace('\r', '\n') } : b;
+
+    /// <summary>줄을 직접 나눈 블록(ManualLines)의 줄들 — 적은 그대로(줄 끝 공백과 맨 끝의 빈 줄만 버린다. 줄 앞 공백은 들여쓰기로 그려진다).</summary>
+    private static string[] TypedLines(string text)
+    {
+        var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n').Select(l => l.TrimEnd()).ToList();
+        while (lines.Count > 1 && lines[^1].Length == 0) lines.RemoveAt(lines.Count - 1);
+        return [.. lines];
+    }
+
+    /// <summary>적은 줄들이 이 크기로 자리에 들어가는가 — 폭·높이의 여유는 글자 단위 꺾기(BrokenLines)와 같다. 줄 폭은 그릴 때(DrawLines)와 같은 식으로 잰다.</summary>
+    private static bool TypedLinesFit(Graphics g, string[] lines, FontFamily family, FontStyle style, float size, BlockLayout box, float spacing, float wordGap)
+    {
+        var rect = box.Rect;
+        float wrapWidth = Math.Min(rect.Width * WordOverflowAllow, Math.Max(rect.Width, box.MaxWrap));
+        using var font = new Font(family, size, style, GraphicsUnit.Pixel);
+        float maxW = 0;
+        foreach (var line in lines)
+        {
+            int lead = line.Length - line.TrimStart(' ').Length;
+            var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            maxW = Math.Max(maxW, lead * wordGap + parts.Sum(w => g.MeasureString(w, font, PointF.Empty, Typographic).Width) + Math.Max(0, parts.Length - 1) * wordGap);
+        }
+        float totalH = font.GetHeight(g) + (lines.Length - 1) * size * LineAdvanceEm * spacing;
+        return totalH <= rect.Height * 1.08f + 2 && maxW <= wrapWidth * 1.05f + 2;
     }
 
     /// <summary>어절째로 들어가는 크기가 상한의 이 비율 이상이면 충분하다고 보고 글자 단위 꺾기를 시험하지 않는다.</summary>
@@ -810,8 +863,10 @@ public static class TextRenderer
     }
 
     /// <summary>블록 하나를 그리고 그린 글자 크기(px)를 돌려준다. draw가 false면 크기만 구한다.</summary>
-    private static float DrawBlock(Graphics g, TextBlockInfo b, BlockLayout plan, Color color, AppSettings s, bool draw = true)
+    /// <param name="linesOut">그린(그릴) 줄들을 여기에 담는다 — 없으면 null.</param>
+    private static float DrawBlock(Graphics g, TextBlockInfo b, BlockLayout plan, Color color, AppSettings s, bool draw = true, List<string>? linesOut = null)
     {
+        b = NormalizeNewlines(b);
         var (family, style) = ResolveStyle(b, s);
         // 블록별 지정이 없으면(빈 문자열) 페이지 기본 설정을 따른다
         var alignName = string.IsNullOrEmpty(b.Align) ? s.LetterAlign : b.Align;
@@ -825,12 +880,23 @@ public static class TextRenderer
         // ② 안 되면 긴 어절을 글자 단위로 꺾어서(띄어쓰기 없는 긴 글, 아주 좁은 풍선), ③ 그래도 안 되면 최소 크기로 넘치더라도 그린다.
         float Draw(IReadOnlyList<string> lines, float size)
         {
+            linesOut?.AddRange(lines);
             if (draw)
                 DrawLines(g, lines, family, style, size, size * LineAdvanceEm * spacing, words.SpaceAt(size), plan.Rect, align, color,
                     OutlineOf(b, s, size), (float)b.RotationDeg, plan.Fixed);
             return size;
         }
         float wrapWidth = Math.Min(plan.Rect.Width * WordOverflowAllow, Math.Max(plan.Rect.Width, plan.MaxWrap));
+
+        if (b.ManualLines)
+        {
+            // 줄을 직접 나눈 블록: 적은 줄 그대로. 크기를 적었으면 그 크기로(넘치면 넘치게), 자동이면 그 줄들이 들어갈 때까지 줄인다.
+            var typed = TypedLines(b.Translation);
+            if (plan.Fixed) return Draw(typed, plan.Size);
+            for (float size = plan.Size; size >= MinSize; size *= 0.95f)
+                if (TypedLinesFit(g, typed, family, style, size, plan, spacing, words.SpaceAt(size))) return Draw(typed, size);
+            return Draw(typed, MinSize);
+        }
 
         if (plan.Fixed)
         {

@@ -217,6 +217,7 @@ public partial class ResultWindow
                 Redraw();
                 TxtStatus.Text = Loc.T("편집 모드 — 풍선을 클릭해 고르고, 두 번 클릭하면 글을 고쳐요");
             }
+            else if (_addingBlock) AddBlockAt(e.GetPosition(EditLayer));   // [새 글 넣기] — 누른 자리에 글 상자
             else EndLetterEdit();   // 빈 곳을 누르면 제자리 글 고치기를 끝낸다
             return;
         }
@@ -289,6 +290,8 @@ public partial class ResultWindow
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        // 식자 탭의 되돌리기·글 고치기 끝·삭제는 텍스트박스에 커서가 있어도 받는다
+        if (LetterMode && !_letterPreview && LetterKey(e)) { e.Handled = true; return; }
         if (Keyboard.FocusedElement is TextBox) return;
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
         bool ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);

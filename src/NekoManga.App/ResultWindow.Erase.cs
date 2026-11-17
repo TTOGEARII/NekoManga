@@ -167,10 +167,11 @@ public partial class ResultWindow
     private void BtnUndo_Click(object sender, RoutedEventArgs e)
     {
         if (MaskMode) { MaskUndo(); return; }
+        if (LetterMode && !_letterPreview && LetterUndo(redo: false)) return;   // 식자 탭: 풍선 편집을 먼저 되돌린다 — 다 되돌렸으면 아래(결과 그림)
         if (_undo.Count == 0) return;
         _img.Dispose();
         _img = _undo.Pop();
-        BtnUndo.IsEnabled = _undo.Count > 0;
+        BtnUndo.IsEnabled = _undo.Count > 0 || (LetterMode && _letterUndo.Count > 0);
         RefreshManualMaskBase();   // 저장 마스크 없는 장의 마스크 보기 바닥도 되돌린 결과물로
         Redraw();
         TxtStatus.Text = Loc.T("되돌렸어요");

@@ -28,7 +28,9 @@ public record TextBlockInfo(
     string FontFamily = "",        // 글꼴 — 비면 쪽 설정
     double OutlinePx = -1,         // 외곽선 두께(px — 결과 그림의 픽셀, 글자 밖으로 보이는 폭). 음수 = 쪽 설정(자동 두께), 0 = 없음
     string OutlineColor = "",      // 외곽선 색 #RRGGBB — 비면 쪽 설정
-    bool Hidden = false);          // 결과 창 [이 블록 숨기기] — 지우지 않고 그리지만 않는다(되살릴 수 있게). 옛 json에는 없다 → false
+    bool Hidden = false,           // 결과 창 [이 블록 숨기기] — 지우지 않고 그리지만 않는다(되살릴 수 있게). 옛 json에는 없다 → false
+    bool ManualLines = false,      // 줄을 직접 나눴다 — Translation의 줄바꿈 그대로 그리고 자동 줄 나눔을 하지 않는다(결과 창에서 제자리 글 고치기·[줄 직접 나누기])
+    bool Added = false);           // 결과 창 [새 글 넣기]로 넣은 블록 — 원문이 없다. 지우면 숨기지 않고 목록에서 뺀다
 
 public record PageTranslation(string InpaintedPath, IReadOnlyList<TextBlockInfo> Blocks);
 

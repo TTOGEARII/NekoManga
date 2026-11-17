@@ -188,6 +188,44 @@ public class PipelineRunnerRedoTests
     }
 
 
+    [Fact]
+    public async Task RedoPageAsync_KeepsTheFrozenCommonSize_OfTheLetterSidecar()
+    {
+        // 결과 창이 붙든 쪽 공통 글자 크기(LetterSidecar.CommonSize)는 다시 렌더링의 식자에도 쓰이고 사이드카에 남는다 —
+        // 안 그러면 다시 렌더링한 장에서 손대지 않은 풍선의 글자 크기가 다시 중앙값으로 돌아간다(2026-11-17)
+        using var t = new TempDir(); var s = EnginelessSettings(t);
+        s.LetterFontFamily = "Arial";
+        const int W = 600, H = 800;
+        var src = t.At("vol1", "01.png");
+        using var pre = new Mat(H, W, MatType.CV_8UC3, new Scalar(200, 200, 200));
+        ImgIo.Write(src, pre);
+        var outPath = PipelineRunner.OutputPathFor(s, src);
+        using (var mask = RectMask(W, H, new Rect(5, 5, 10, 10)))
+            MaskSidecar.Write(outPath, src, mask, null, pre, "감지", skip: false, edited: true, confirmed: false, colorized: false);
+        ImgIo.Write(LetterSidecar.BasePathFor(outPath), pre);
+        ImgIo.Write(t.At("pre.png"), pre);
+        TextBlockInfo[] blocks =
+        [
+            new(50, 50, 550, 300, "あ", "HHHH", 12, false, "#000000", ManualRect: true),
+            new(50, 450, 550, 700, "あ", "HHHH", 12, false, "#000000", ManualRect: true),
+        ];
+        new LetterSidecar(src, W, H, LetterSidecar.BasePathFor(outPath), [.. blocks], MaskSidecar.LengthOf(src), CommonSize: 9).Save(outPath);
+
+        using (var runner = new PipelineRunner(s))
+            await runner.RedoPageAsync(src, new ProgressLog(), CancellationToken.None, options: DecensorOnly);
+
+        Assert.Equal(9, LetterSidecar.Load(outPath)!.CommonSize);
+        TextRenderer.RenderBlocks(t.At("pre.png"), src, W, H, blocks, t.At("frozen.png"), s, 9);
+        TextRenderer.RenderBlocks(t.At("pre.png"), src, W, H, blocks, t.At("auto.png"), s);
+        using var outImg = ImgIo.Read(outPath);
+        using var frozen = ImgIo.Read(t.At("frozen.png"));
+        using var auto = ImgIo.Read(t.At("auto.png"));
+        using var diff = new Mat(); Cv2.Absdiff(frozen, auto, diff);
+        Assert.True(Cv2.Sum(diff).Val0 > 0, "붙든 크기와 자동 크기의 그림이 같으면 이 시험은 아무것도 가리지 못한다");
+        AssertSamePixels(frozen, outImg);
+    }
+
+
     // ── 채색 없이 다시 렌더링할 때의 시작 그림 (2026-11-13 점검 1·3번) ──
 
     [Fact]
