@@ -396,6 +396,9 @@ public class ComfyServerSharingTests
         var main = Path.Combine(s.ComfyRoot, "ComfyUI", "main.py");
         Assert.Equal("cmd.exe", psi.FileName);
         Assert.Equal($"/c \"\"{python}\" -s \"{main}\" --port 8190 --disable-auto-launch --lowvram > \"{ComfyServer.LogPath}\" 2>&1\"", psi.Arguments);
+        // 출력 인코딩을 UTF-8로 묶는다 — 파일로 돌린 출력은 한국어·일본어 Windows에서 cp949·cp932가 되어, 노드가 이모지를 찍는 순간
+        // UnicodeEncodeError로 그 노드의 로드가 실패한다(2026-11-18 실측: LayerStyle의 안내 글)
+        Assert.Equal("utf-8", psi.Environment["PYTHONIOENCODING"]);
         Assert.Equal(s.ComfyRoot, psi.WorkingDirectory);
         Assert.False(psi.UseShellExecute);
         Assert.True(psi.CreateNoWindow);
@@ -1107,7 +1110,12 @@ public class ComfyServerSharingTests
 
     private static void FakeComfyInstall(AppSettings s)
     {
-        foreach (var f in new[] { Path.Combine(s.ComfyRoot, "python_embeded", "python.exe"), Path.Combine(s.ComfyRoot, "ComfyUI", "main.py") })
+        // 채색 모델·노드 파일도 둔다 — 러너가 시작할 때 체크포인트·ControlNet·채색 노드가 있는지 본다(PipelineRunner.MissingColorPart)
+        foreach (var f in new[] { Path.Combine(s.ComfyRoot, "python_embeded", "python.exe"), Path.Combine(s.ComfyRoot, "ComfyUI", "main.py"),
+                                  Path.Combine(s.ComfyRoot, "ComfyUI", "models", "checkpoints", s.ColorCheckpoint),
+                                  Path.Combine(s.ComfyRoot, "ComfyUI", "models", "controlnet", s.ColorControlNet),
+                                  Path.Combine(s.ComfyRoot, "ComfyUI", "custom_nodes", "ComfyUI-WD14-Tagger", "wd14tagger.py"),
+                                  Path.Combine(s.ComfyRoot, "ComfyUI", "custom_nodes", "ComfyUI-Custom-Scripts", "pysssss.py") })
         {
             Directory.CreateDirectory(Path.GetDirectoryName(f)!);
             File.WriteAllBytes(f, []);

@@ -158,6 +158,7 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
                 (settings.EnableAutoColor ? Loc.T("자동 채색") : comfyRegen ? Loc.T("재생성 검열제거") : Loc.T("커스텀 워크플로 검열제거")) +
                 Loc.T(" 기능은 ComfyUI가 필요해요 — 설정 → 구성요소에서 ComfyUI를 설치해 주세요."));
         if (comfyRegen) CheckRegenModels();
+        if (settings.EnableAutoColor && !colorCustom && MissingColorPart(settings) is { } missingColor) throw new FileNotFoundException(missingColor);
 
         var cx = new RunContext
         {

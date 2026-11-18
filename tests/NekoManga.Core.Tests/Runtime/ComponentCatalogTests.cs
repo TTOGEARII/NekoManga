@@ -171,4 +171,21 @@ public class ComponentCatalogTests
         Assert.Equal(d.ColorCheckpoint, d.RegenCheckpoint);
         Assert.Equal(d.ColorControlNet, d.RegenControlNet);
     }
+
+    [Fact]
+    public void ColorTagger_IsInstalledWhereTheWd14NodeLooks_AfterTheNode()
+    {
+        // WD14 노드는 제 폴더의 models\<모델 이름>.onnx·.csv가 없으면 처음 쓸 때 1.2GB를 말없이 받는다 — 느린 회선에서는 그 사이에
+        // 작업의 제한 시간(표지 색 추출 5분)이 지난다. 설치 때 진행률을 보이며 미리 받아 둔다
+        var d = new AppSettings();
+        var dir = $"{ComponentCatalog.ComfyDirName}/ComfyUI/custom_nodes/ComfyUI-WD14-Tagger/models/";
+        Assert.Equal(dir + d.ColorTaggerModel + ".onnx", ComponentCatalog.ModelColorTagger.Target);
+        Assert.Equal(dir + d.ColorTaggerModel + ".csv", ComponentCatalog.ModelColorTaggerTags.Target);
+        Assert.NotNull(ComponentCatalog.ModelColorTagger.Sha256);
+
+        var all = ComponentCatalog.All.ToList();
+        Assert.True(all.IndexOf(ComponentCatalog.ModelColorTagger) > all.IndexOf(ComponentCatalog.NodeWd14));
+        Assert.True(all.IndexOf(ComponentCatalog.ModelColorTaggerTags) > all.IndexOf(ComponentCatalog.NodeWd14));
+        Assert.True(ComponentCatalog.ModelColorTagger.ForComfy && ComponentCatalog.ModelColorTaggerTags.ForComfy);
+    }
 }

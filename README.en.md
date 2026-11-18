@@ -17,13 +17,22 @@ An all-in-one desktop app that works a little magic on black-and-white manga. Dr
   - **Add a color cover as a reference** to match characters’ hair, eyes, and clothing to the cover.
   - Open ComfyUI from within the app and use workflows exported as API JSON for colorization or censorship removal.
 
-NekoManga **installs, starts, and stops the AI engines automatically**. Translation and basic censorship removal use bundled models that require an initial download of about 1.1 GB. To use colorization, select the optional **colorization engine (about 20 GB)** during first-run setup.
+NekoManga **installs, starts, and stops the AI engines automatically**. Translation and basic censorship removal use bundled models that require an initial download of about 1.1 GB. If your graphics card qualifies, the engine for regeneration-based censorship removal (ComfyUI, about 12 GB) is downloaded as well. To use colorization, keep **Install colorization too (about 5 GB more)** checked during first-run setup.
 
 Setup checks your PC, selects an engine for your graphics card, and provides download links for any required drivers or runtimes. The app also **adjusts resolution and memory settings automatically** based on your available VRAM and RAM.
 
 ## Installation
 
 [Download the latest release](https://github.com/TTOGEARII/NekoManga/releases/latest), then run `NekoManga-win-Setup.exe`. The app notifies you when an update is available and lets you install it with one click.
+
+### If the installer doesn't start
+
+The installer isn't code-signed, so antivirus software or Windows may treat it as an unknown file and block or hold it.
+
+- **"Windows protected your PC" appears**: select **More info**, then **Run anyway**.
+- **Nothing appears after you run it**: your antivirus may be holding the file. First, end every `NekoManga-win-Setup.exe` process in Task Manager (Ctrl+Shift+Esc). Then allow the file in the antivirus notification or block history, or add it as an exception, and run it again.
+
+All source code is public in this repository, and GitHub Actions builds the installer from that source.
 
 ### System requirements
 

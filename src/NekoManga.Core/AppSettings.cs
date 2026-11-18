@@ -18,6 +18,9 @@ public class AppSettings
     public string OutputRoot { get; set; } = "";
     /// <summary>이미 설치된 ComfyUI portable 루트를 연결해 재다운로드를 피한다 (예: D:\ComfyUI\ComfyUI_windows_portable).</summary>
     public string LinkedComfyRoot { get; set; } = "";
+    /// <summary>채색에만 쓰는 구성요소(태거·IPAdapter 등 약 5GB)도 받는다 — 준비 창의 '채색도 설치'. 끄면 번역·검열 제거(기본·재생성)에 드는 것만 받는다
+    /// (2026-11-18 사용자 결정: 재생성까지는 늘 받고 채색은 고른다).</summary>
+    public bool InstallColor { get; set; } = true;
 
     // ── 자동채색 (ComfyUI) ─────────────────────────────────────
     /// <summary>리사이즈 상한 (메가픽셀). 8GB VRAM 기준 1.5가 안전, 원본 레시피는 2.3.</summary>

@@ -64,7 +64,7 @@ public class ComfyClient(string baseUrl)
                 new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"), ct);
             var text = await resp.Content.ReadAsStringAsync(ct);
             if (!resp.IsSuccessStatusCode)
-                throw new InvalidOperationException(Loc.F($"워크플로 검증 실패: {Truncate(text, 2000)}"));
+                throw new InvalidOperationException(Loc.F($"워크플로 검증 실패: {Truncate(ExplainRejection(text), 2000)}"));
             return JsonNode.Parse(text)!["prompt_id"]!.GetValue<string>();
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -72,6 +72,42 @@ public class ComfyClient(string baseUrl)
             await CancelPromptAsync(id);
             throw;
         }
+    }
+
+    /// <summary>ComfyUI가 워크플로를 받지 않으며 돌려준 답(JSON)을 사용자가 읽을 글로 푼다 — 알아보지 못한 꼴이면 답을 그대로 돌려준다.
+    /// 예전에는 JSON을 그대로 보여 줬다: 새 PC에서 노드가 로드되지 않았을 때(2026-11-18) 쪽마다 `{"error": {"type": "missing_node_type"…`만 보여
+    /// 무엇을 해야 하는지 알 수 없었다. 노드가 없는 경우와 모델 파일이 목록에 없는 경우(value_not_in_list)는 할 일을 같이 적는다.</summary>
+    internal static string ExplainRejection(string body)
+    {
+        JsonObject? root;
+        try { root = JsonNode.Parse(body) as JsonObject; }
+        catch (System.Text.Json.JsonException) { return body; }
+        if (root?["error"] is not JsonObject err) return body;
+        static string Str(JsonNode? n) => n is JsonValue v && v.TryGetValue<string>(out var s) ? s : "";
+
+        var message = Str(err["message"]);
+        // 노드 없음 — 새 ComfyUI는 종류(missing_node_type)와 노드 이름을 따로 주고, 옛 ComfyUI는 글("…node X does not exist.")로만 알린다
+        var node = Str((err["extra_info"] as JsonObject)?["class_type"]);
+        if (node.Length == 0 && System.Text.RegularExpressions.Regex.Match(message, "node (.+?) does not exist") is { Success: true } m) node = m.Groups[1].Value;
+        if (node.Length > 0 && (Str(err["type"]) == "missing_node_type" || message.Contains("does not exist")))
+            return Loc.F($"채색 엔진(ComfyUI)에 '{node}' 노드가 없어요 — 설정 → 구성요소에서 설치를 마친 뒤, 설정 → 엔진에서 엔진을 껐다가 다시 시도해 주세요.");
+
+        var lines = new List<string>();
+        if (root["node_errors"] is JsonObject nodes)
+            foreach (var (_, n) in nodes)
+            {
+                var cls = Str(n?["class_type"]);
+                foreach (var e in n?["errors"] as JsonArray ?? [])
+                {
+                    var info = e?["extra_info"] as JsonObject;
+                    var value = info?["received_value"] is { } rv ? (Str(rv) is { Length: > 0 } s ? s : rv.ToJsonString()) : "";
+                    lines.Add(Str(e?["type"]) == "value_not_in_list"
+                        ? Loc.F($"{cls}: '{value}'을(를) 채색 엔진에서 찾을 수 없어요 ({Str(info?["input_name"])}) — 모델 파일이면 설정 → 구성요소에서 받거나 설정에 적은 파일 이름을 확인해 주세요.")
+                        : $"{cls}: {Str(e?["message"])} ({Str(e?["details"])})");
+                }
+            }
+        if (lines.Count > 0) return string.Join("\n", lines.Distinct().Take(6));
+        return message.Length > 0 ? message + (Str(err["details"]) is { Length: > 0 } d ? $" ({d})" : "") : body;
     }
 
     public record ComfyResult(IReadOnlyList<string> OutputFiles, IReadOnlyList<string> Texts);

@@ -270,6 +270,23 @@ public partial class PipelineRunner
         resized.CopyTo(img, take);
     }
 
+    /// <summary>채색 워크플로가 쓰는 체크포인트·ControlNet 파일이나 채색 노드(WD14 태거·문자열 노드)가 없으면 그 안내, 있으면 null — 없는 채로 돌리면
+    /// 쪽마다 ComfyUI의 '워크플로 검증 실패'가 난다(구성요소 설치가 중간에 실패했거나, 준비 창에서 채색을 빼고 설치한 PC).
+    /// 앱이 깐 ComfyUI만 본다: 연결한 ComfyUI는 extra_model_paths.yaml로 모델을 다른 폴더에 둘 수 있다. 표지 매칭(IPAdapter)과 태그 모델은 없어도 채색은 돈다.</summary>
+    public static string? MissingColorPart(AppSettings settings)
+    {
+        if (!string.IsNullOrWhiteSpace(settings.LinkedComfyRoot)) return null;
+        var models = Path.Combine(settings.ComfyRoot, "ComfyUI", "models");
+        var ck = Path.Combine(models, "checkpoints", settings.ColorCheckpoint);
+        var cn = Path.Combine(models, "controlnet", settings.ColorControlNet);
+        if (!File.Exists(ck)) return Loc.F($"채색 체크포인트가 없어요: {ck}\n설정 → 구성요소에서 받거나, 설정 → 엔진의 체크포인트를 ComfyUI models\\checkpoints 안의 파일 이름으로 맞춰 주세요.");
+        if (!File.Exists(cn)) return Loc.F($"채색 ControlNet이 없어요: {cn}\n설정 → 구성요소에서 받거나, 설정 → 엔진의 ControlNet을 ComfyUI models\\controlnet 안의 파일 이름으로 맞춰 주세요.");
+        var installer = new Runtime.ComponentInstaller(settings);
+        if (!File.Exists(installer.Resolve(Runtime.ComponentCatalog.NodeWd14.Probe)) || !File.Exists(installer.Resolve(Runtime.ComponentCatalog.NodeCustomScripts.Probe)))
+            return Loc.T("채색에 쓰는 노드가 설치되지 않았어요 — 설정 → 구성요소에서 '채색도 설치'를 체크하고 받아 주세요.");
+        return null;
+    }
+
     /// <summary>재생성 워크플로가 쓰는 SDXL 체크포인트·ControlNet 파일이 ComfyUI models 폴더에 있는지 먼저 본다 —
     /// 없으면 ComfyUI가 큐 단계에서 알아듣기 어려운 오류를 내므로 파일 이름과 폴더를 그대로 알려 준다.
     /// (모델 파일은 사용자가 직접 넣는다 — 앱은 내려받지 않는다.)</summary>

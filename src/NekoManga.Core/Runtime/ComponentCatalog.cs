@@ -29,8 +29,20 @@ public record Component(
     /// <summary>이 구성요소가 대체한 옛 파일(RuntimeRoot 기준 상대) — 설치가 끝나면 지운다 (예: 만화판 LaMa가 대체한 Carve lama_fp32.onnx).</summary>
     string[]? Obsolete = null,
     /// <summary>단일 파일의 SHA-256(16진) — 있으면 받은 뒤 확인하고, 다르면 설치하지 않는다.</summary>
-    string? Sha256 = null
-);
+    string? Sha256 = null,
+    /// <summary>커스텀 노드의 requirements.txt (RuntimeRoot 기준 상대) — 있으면 푼 뒤 ComfyUI의 내장 파이썬에 pip로 설치한다.
+    /// v1.13.0까지는 zip만 풀어, 새로 받은 포터블에는 cv2·onnxruntime이 없어 노드가 로드되지 않았다(2026-11-18 새 PC 설치 시험에서 확인).</summary>
+    string? Requirements = null,
+    /// <summary>이 구성요소를 쓰는 데 필요한 파이썬 패키지 — Requirements처럼 ComfyUI의 내장 파이썬에 설치한다.</summary>
+    string[]? PipPackages = null,
+    /// <summary>채색에만 쓰는 구성요소(태거·문자열 노드·IPAdapter) — 준비 창에서 채색을 빼면 받지 않는다(AppSettings.InstallColor).
+    /// 재생성 검열 제거가 쓰는 것(ComfyUI·체크포인트·ControlNet·LayerStyle·전처리기 노드)은 여기 넣지 않는다 — 그것은 늘 받는다.</summary>
+    bool ColorOnly = false
+)
+{
+    /// <summary>파이썬 패키지 설치가 딸린 구성요소인가.</summary>
+    public bool HasDeps => Requirements != null || PipPackages != null;
+}
 
 /// <summary>필요 구성요소 목록. 검증된 소스 (2026-10 기준, 실제 설치에 사용한 URL).</summary>
 public static class ComponentCatalog
@@ -112,11 +124,14 @@ public static class ComponentCatalog
         "models/aletheia_mosaic.onnx", "models/aletheia_mosaic.onnx", 14_647_000,
         Sha256: "339503F625AD0AEA902B5ACD4ADC491741E53235E47B6C4DDD77AA3CC1D351F2");
 
-    /// <summary>검열 감지 모델의 PyTorch 가중치 — 자가 학습(SelfTrainer)의 시작점. ComfyUI의 python_embeded로만 학습하므로 ComfyUI 묶음에 넣는다 (7MB).</summary>
+    /// <summary>검열 감지 모델의 PyTorch 가중치 — 자가 학습(SelfTrainer)의 시작점. ComfyUI의 python_embeded로만 학습하므로 ComfyUI 묶음에 넣는다 (7MB).
+    /// 학습 스크립트(assets/training/selftrain.py)가 쓰는 ultralytics와 ONNX 내보내기에 드는 onnx·onnxslim도 같이 깐다 — 포터블에는 들어 있지 않다
+    /// (2026-11-18 새 PC 설치 시험: 받은 포터블 cu130에 ultralytics 없음. 예전 설명의 "ultralytics 내장"은 이 PC의 옛 ComfyUI에 손으로 깔려 있던 것).</summary>
     public static readonly Component ModelCensorPt = new(
         "model-censor-pt", Loc.Key("검열 감지 AI 학습용 가중치 (자가 학습)"), ComponentKind.File,
         "https://github.com/TTOGEARII/NekoManga/releases/latest/download/censor_seg.pt",
-        "models/censor_seg.pt", "models/censor_seg.pt", 7_120_000, ForComfy: true);
+        "models/censor_seg.pt", "models/censor_seg.pt", 7_120_000, ForComfy: true,
+        PipPackages: ["ultralytics", "onnx", "onnxslim"]);
 
     /// <summary>부위 감지 모델 — deepghs/anime_censor_detection v1.0_s(MIT, YOLOv8s detect, 만화·일러스트 학습, 클래스 nipple_f·penis·pussy).
     /// 재생성·커스텀 ComfyUI 검열 제거가 검열 조각이 덮은 부위 전체를 다시 그리게 하는 데 쓴다(RegenRegion, 2026-11-12 사용자 요청). 선택 구성요소 —
@@ -164,35 +179,59 @@ public static class ComponentCatalog
         "https://github.com/pythongosssss/ComfyUI-WD14-Tagger/archive/refs/heads/main.zip",
         $"{ComfyDirName}/ComfyUI/custom_nodes/ComfyUI-WD14-Tagger",
         $"{ComfyDirName}/ComfyUI/custom_nodes/ComfyUI-WD14-Tagger/wd14tagger.py", 1_000_000,
-        StripRootFolder: true, ForComfy: true);
+        StripRootFolder: true, ForComfy: true,
+        Requirements: $"{ComfyDirName}/ComfyUI/custom_nodes/ComfyUI-WD14-Tagger/requirements.txt", ColorOnly: true);
+
+    /// <summary>채색·표지 색 추출의 자동 태그 모델 — SmilingWolf/wd-eva02-large-tagger-v3(Apache-2.0), 설정 ColorTaggerModel의 기본값.
+    /// WD14 노드가 처음 쓸 때 제 폴더 models\에 스스로 받는 파일 그대로다(model.onnx → <이름>.onnx, selected_tags.csv → <이름>.csv).
+    /// 노드에 맡기면 첫 채색이 진행률 없이 1.2GB를 받느라 멈춘 듯 보이고, 느린 회선에서는 작업의 제한 시간(표지 색 추출 5분)이 먼저 지난다 — 설치 때 받아 둔다.
+    /// SHA-256은 2026-11-18에 Hugging Face의 X-Linked-ETag와 노드가 받은 파일을 견준 값. 사전(csv)은 그쪽이 고칠 수 있어 해시를 걸지 않는다.</summary>
+    public static readonly Component ModelColorTagger = new(
+        "model-colortagger", Loc.Key("자동 태그 모델 (WD eva02 large v3, 1.2GB)"), ComponentKind.File,
+        "https://huggingface.co/SmilingWolf/wd-eva02-large-tagger-v3/resolve/main/model.onnx",
+        $"{ComfyDirName}/ComfyUI/custom_nodes/ComfyUI-WD14-Tagger/models/wd-eva02-large-tagger-v3.onnx",
+        $"{ComfyDirName}/ComfyUI/custom_nodes/ComfyUI-WD14-Tagger/models/wd-eva02-large-tagger-v3.onnx",
+        1_260_435_999, ForComfy: true,
+        Sha256: "9e768793060c7939b277ccb382783e8670e8a042d29d77aa736be0c8cc898bfc", ColorOnly: true);
+
+    public static readonly Component ModelColorTaggerTags = new(
+        "model-colortagger-tags", Loc.Key("자동 태그 사전"), ComponentKind.File,
+        "https://huggingface.co/SmilingWolf/wd-eva02-large-tagger-v3/resolve/main/selected_tags.csv",
+        $"{ComfyDirName}/ComfyUI/custom_nodes/ComfyUI-WD14-Tagger/models/wd-eva02-large-tagger-v3.csv",
+        $"{ComfyDirName}/ComfyUI/custom_nodes/ComfyUI-WD14-Tagger/models/wd-eva02-large-tagger-v3.csv",
+        308_468, ForComfy: true, ColorOnly: true);
 
     public static readonly Component NodeCustomScripts = new(
         "node-pysssss", Loc.Key("Custom-Scripts 노드 (문자열 결합)"), ComponentKind.ArchiveZip,
         "https://github.com/pythongosssss/ComfyUI-Custom-Scripts/archive/refs/heads/main.zip",
         $"{ComfyDirName}/ComfyUI/custom_nodes/ComfyUI-Custom-Scripts",
         $"{ComfyDirName}/ComfyUI/custom_nodes/ComfyUI-Custom-Scripts/pysssss.py", 2_000_000,
-        StripRootFolder: true, ForComfy: true);
+        StripRootFolder: true, ForComfy: true, ColorOnly: true);
 
     public static readonly Component NodeLayerStyle = new(
         "node-layerstyle", Loc.Key("LayerStyle 노드 (이미지 합성)"), ComponentKind.ArchiveZip,
         "https://github.com/chflame163/ComfyUI_LayerStyle/archive/refs/heads/main.zip",
         $"{ComfyDirName}/ComfyUI/custom_nodes/ComfyUI_LayerStyle",
         $"{ComfyDirName}/ComfyUI/custom_nodes/ComfyUI_LayerStyle/__init__.py", 40_000_000,
-        StripRootFolder: true, ForComfy: true);
+        StripRootFolder: true, ForComfy: true,
+        Requirements: $"{ComfyDirName}/ComfyUI/custom_nodes/ComfyUI_LayerStyle/requirements.txt");
 
     public static readonly Component NodeControlnetAux = new(
         "node-cnaux", Loc.Key("ControlNet 전처리기 노드 (LineArt·XDoG)"), ComponentKind.ArchiveZip,
         "https://github.com/Fannovel16/comfyui_controlnet_aux/archive/refs/heads/main.zip",
         $"{ComfyDirName}/ComfyUI/custom_nodes/comfyui_controlnet_aux",
         $"{ComfyDirName}/ComfyUI/custom_nodes/comfyui_controlnet_aux/__init__.py", 2_000_000,
-        StripRootFolder: true, ForComfy: true);
+        StripRootFolder: true, ForComfy: true,
+        Requirements: $"{ComfyDirName}/ComfyUI/custom_nodes/comfyui_controlnet_aux/requirements.txt");
 
     public static readonly Component ModelCheckpoint = new(
         "model-wai", Loc.Key("채색 체크포인트 WAI-illustrious v17 (6.5GB)"), ComponentKind.File,
         "https://civitai.com/api/download/models/2883731?fileId=2763986",
         $"{ComfyDirName}/ComfyUI/models/checkpoints/waiIllustriousSDXL_v170.safetensors",
         $"{ComfyDirName}/ComfyUI/models/checkpoints/waiIllustriousSDXL_v170.safetensors",
-        6_930_000_000, UseCivitaiKey: true, ForComfy: true);
+        6_938_040_682, UseCivitaiKey: true, ForComfy: true,
+        // 2026-11-18에 키 없이 받은 파일을 잰 값 — 6.5GB를 남의 서버에서 받으므로 깨졌거나 다른 것이 그 이름으로 저장되지 않게 확인한다
+        Sha256: "f116b0c78ff441467b0cdc8f1936e1ed18ea31e9997c7b132b1b8db533f0bd04");
 
     public static readonly Component ModelControlnet = new(
         "model-cn-union", "ControlNet union promax (2.4GB)", ComponentKind.File,
@@ -207,21 +246,21 @@ public static class ComponentCatalog
         "https://github.com/cubiq/ComfyUI_IPAdapter_plus/archive/refs/heads/main.zip",
         $"{ComfyDirName}/ComfyUI/custom_nodes/ComfyUI_IPAdapter_plus",
         $"{ComfyDirName}/ComfyUI/custom_nodes/ComfyUI_IPAdapter_plus/IPAdapterPlus.py", 400_000,
-        StripRootFolder: true, ForComfy: true);
+        StripRootFolder: true, ForComfy: true, ColorOnly: true);
 
     public static readonly Component ModelIpAdapter = new(
         "model-ipadapter", Loc.Key("IPAdapter SDXL 모델 (0.85GB)"), ComponentKind.File,
         "https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-plus_sdxl_vit-h.safetensors",
         $"{ComfyDirName}/ComfyUI/models/ipadapter/ip-adapter-plus_sdxl_vit-h.safetensors",
         $"{ComfyDirName}/ComfyUI/models/ipadapter/ip-adapter-plus_sdxl_vit-h.safetensors",
-        847_517_000, ForComfy: true);
+        847_517_000, ForComfy: true, ColorOnly: true);
 
     public static readonly Component ModelClipVision = new(
         "model-clipvision", Loc.Key("CLIP 비전 모델 ViT-H (2.5GB)"), ComponentKind.File,
         "https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors",
         $"{ComfyDirName}/ComfyUI/models/clip_vision/CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors",
         $"{ComfyDirName}/ComfyUI/models/clip_vision/CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors",
-        2_528_373_000, ForComfy: true);
+        2_528_373_000, ForComfy: true, ColorOnly: true);
 
     /// <summary>설치 순서대로. 내장 엔진 모델 먼저, ComfyUI(선택)는 뒤에.</summary>
     public static IReadOnlyList<Component> All { get; } = new[]
@@ -229,7 +268,7 @@ public static class ComponentCatalog
         ModelCtd, ModelLama, ModelOcrEncoder, ModelOcrDecoder, ModelOcrVocab, ModelCensor,
         ModelAletheiaDetector, ModelAletheiaBar, ModelAletheiaMosaic,
         SevenZip, ComfyPortable,
-        NodeWd14, NodeCustomScripts, NodeLayerStyle, NodeControlnetAux, NodeIpAdapter,
+        NodeWd14, ModelColorTagger, ModelColorTaggerTags, NodeCustomScripts, NodeLayerStyle, NodeControlnetAux, NodeIpAdapter,
         ModelCheckpoint, ModelControlnet, ModelIpAdapter, ModelClipVision, ModelCensorPt, ModelBodyParts, ModelWdTagger,
     };
 
@@ -237,5 +276,5 @@ public static class ComponentCatalog
     public static IEnumerable<Component> ComfyComponents => All.Where(c => c.ForComfy);
 
     public static string FirstRunNote =>
-        Loc.T("번역·검열 감지·검열 복원은 작은 모델(1.1GB)만 있으면 돼요. 채색까지 쓰려면 채색 엔진(약 20GB)을 함께 설치해 주세요.");
+        Loc.T("번역·기본 검열 제거 모델(1.1GB)과 재생성 검열 제거에 쓰는 엔진(ComfyUI, 약 12GB)을 받아요. 채색까지 쓰려면 '채색도 설치'를 체크해 주세요(약 5GB 더).");
 }

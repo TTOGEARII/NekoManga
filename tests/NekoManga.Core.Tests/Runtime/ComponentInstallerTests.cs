@@ -67,6 +67,12 @@ public class ComponentInstallerTests
         // 커스텀 노드는 그 ComfyUI의 custom_nodes에서 찾는다
         Assert.False(installer.IsInstalled(ComponentCatalog.NodeWd14));
         RuntimeTestHelpers.Touch(Path.Combine(s.ComfyRoot, "ComfyUI", "custom_nodes", "ComfyUI-WD14-Tagger", "wd14tagger.py"));
+        // 파이썬 패키지가 필요한 노드는 앱이 깐 ComfyUI에서는 그 설치 표식까지 있어야 한다(연결된 ComfyUI는 사용자 것이라 파일만 본다)
+        if (string.IsNullOrWhiteSpace(s.LinkedComfyRoot))
+        {
+            Assert.False(installer.IsInstalled(ComponentCatalog.NodeWd14));
+            RuntimeTestHelpers.Touch(installer.DepsMarker(ComponentCatalog.NodeWd14));
+        }
         Assert.True(installer.IsInstalled(ComponentCatalog.NodeWd14));
 
         // 실행에는 내장 파이썬도 있어야 한다 — main.py만으로는 ComfyAvailable이 아니다
@@ -83,7 +89,7 @@ public class ComponentInstallerTests
         var installer = new ComponentInstaller(s);
 
         // 연결했으면 앱은 연결된 ComfyUI를 돌린다 — RuntimeRoot에 남은 사본은 설치로 치지 않는다
-        RuntimeTestHelpers.Touch(installer.Resolve(ComponentCatalog.ComfyPortable.Probe));
+        RuntimeTestHelpers.Touch(Path.Combine(s.RuntimeRoot, ComponentCatalog.ComfyDirName, "ComfyUI", "main.py"));
         Assert.False(installer.IsInstalled(ComponentCatalog.ComfyPortable));
 
         // ComfyUI 폴더 밖의 구성요소(7zr·엔진 모델)는 그대로 RuntimeRoot에서 찾는다
@@ -113,7 +119,7 @@ public class ComponentInstallerTests
         ComponentInstaller.ExtractZip(zip, dest, node.StripRootFolder);
 
         // 한 겹을 벗겨 대상 폴더 바로 아래에 푼다 — 설치 판정(Probe)이 그 자리를 본다. 옛 파일은 덮어쓴다
-        Assert.True(installer.IsInstalled(node));
+        Assert.True(File.Exists(installer.Resolve(node.Probe)));
         Assert.Equal("ComfyUI-WD14-Tagger-main/wd14tagger.py", File.ReadAllText(Path.Combine(dest, "wd14tagger.py")));
         Assert.Equal("ComfyUI-WD14-Tagger-main/js/wd14tagger.js", File.ReadAllText(Path.Combine(dest, "js", "wd14tagger.js")));
         Assert.True(File.Exists(Path.Combine(dest, "pysssss.json")));

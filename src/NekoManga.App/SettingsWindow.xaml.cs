@@ -132,8 +132,11 @@ public partial class SettingsWindow
 
         if ((Application.Current as App)?.DemoSettings == true)
             SettingsTabs.SelectedIndex = 2; // 번역 탭 (UI 데모용)
-        Closing += (_, _) => Apply();
+        Closing += (_, _) => { if (!_discardOnClose) Apply(); };
     }
+
+    /// <summary>닫을 때 화면의 값을 설정에 쓰지 않는다 — 준비 창이 설정을 바꾼 뒤 이 창을 새로 띄울 때(BtnOpenSetup_Click).</summary>
+    private bool _discardOnClose;
 
     private void Apply()
     {
@@ -407,7 +410,15 @@ public partial class SettingsWindow
     private void BtnOpenSetup_Click(object sender, RoutedEventArgs e)
     {
         Apply();
+        var before = System.Text.Json.JsonSerializer.Serialize(App.Settings);
         new SetupWindow { Owner = this }.ShowDialog();
+        if (System.Text.Json.JsonSerializer.Serialize(App.Settings) == before) return;
+        // 준비 창이 설정을 바꿨다(PC 맞춤 설정·그래픽카드 종류·설치 위치) — 이 창의 칸에는 옛 값이 남아 있어, 그대로 닫으면 그 값으로 덮어쓴다
+        // (6GB 카드에 맞춘 '채색 1.0MP·--lowvram'이 설정 창을 닫는 순간 사라졌다). 옛 값을 쓰지 않고 닫은 뒤 새 값으로 다시 띄운다.
+        var owner = Owner;
+        _discardOnClose = true;
+        Close();
+        new SettingsWindow { Owner = owner }.ShowDialog();
     }
 
     private void BtnGitHub_Click(object sender, RoutedEventArgs e) =>

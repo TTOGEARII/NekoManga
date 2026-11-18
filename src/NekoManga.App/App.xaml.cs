@@ -164,7 +164,8 @@ public partial class App : Application
         // 내장 엔진(번역·기본 검열제거)에 필요한 모델이 빠져 있으면 준비 마법사를 보여준다.
         // ComfyUI(채색·재생성·커스텀 검열)는 선택 — 마법사에서도 선택으로 표시된다.
         var installer = new ComponentInstaller(Settings);
-        if (installer.MissingEngine().Count > 0)
+        // 파일만 받고 파이썬 패키지가 안 깔린 노드(v1.13.0까지의 설치)가 있어도 띄운다 — 그대로 두면 채색·재생성이 '워크플로 검증 실패'로 멈춘다
+        if (installer.MissingEngine().Count > 0 || installer.NeedsRepair().Count > 0)
         {
             new SetupWindow().ShowDialog();
             main.SyncFromSettings();   // 메인 창은 위에서 이미 만들어졌다 — 준비 창이 바꾼 설정(PC 맞춤 설정이 끈 자동 채색 등)을 스위치에 다시 채운다

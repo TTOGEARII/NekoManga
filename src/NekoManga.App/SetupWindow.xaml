@@ -87,7 +87,14 @@
                 </StackPanel>
             </Border>
 
-            <Border Style="{StaticResource MangaTag}" Margin="0,12,0,0"><TextBlock Style="{StaticResource MangaTagText}" Text="구성요소"/></Border>
+            <DockPanel Margin="0,12,0,0">
+                <Border Style="{StaticResource MangaTag}" Margin="0,0,12,0" VerticalAlignment="Center"><TextBlock Style="{StaticResource MangaTagText}" Text="구성요소"/></Border>
+                <!-- 채색에만 쓰는 것(태거·IPAdapter)은 골라 받는다 — 재생성 검열 제거에 드는 것은 늘 받는다 (2026-11-18 사용자 결정) -->
+                <CheckBox x:Name="ChkColor" IsChecked="True" Foreground="{DynamicResource NekoText}" FontWeight="SemiBold" VerticalAlignment="Center"
+                          Checked="ChkColor_Changed" Unchecked="ChkColor_Changed"
+                          Content="채색도 설치 (약 5GB 더 받아요)"
+                          ToolTip="자동 채색과 표지 색 참조에 쓰는 태거·IPAdapter 모델이에요. 끄면 번역과 검열 제거(기본·재생성)에 드는 것만 받아요. 나중에 이 창에서 다시 체크해 받을 수 있어요."/>
+            </DockPanel>
         </StackPanel>
 
         <!-- 구성요소 목록: 메인 창 목록과 같은 먹선 패널 안에 -->

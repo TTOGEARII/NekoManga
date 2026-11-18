@@ -12,7 +12,7 @@ namespace NekoManga.App;
 public class ComponentRow : INotifyPropertyChanged
 {
     public required Component Component { get; init; }
-    public string Name => Component.ForComfy ? Loc.T(Component.DisplayName) + Loc.T("  · 채색용(선택)") : Loc.T(Component.DisplayName);
+    public string Name => Loc.T(Component.DisplayName) + (Component.ColorOnly ? Loc.T("  · 채색용(선택)") : Component.ForComfy ? Loc.T("  · 재생성·채색용") : "");
 
     private string _status = Loc.T("대기");
     public string Status { get => _status; set { _status = value; Notify(nameof(Status)); } }
@@ -33,6 +33,9 @@ public partial class SetupWindow
     private readonly ObservableCollection<ComponentRow> _rows = [];
     private ComponentInstaller _installer = new(App.Settings);
     private bool _running;
+    /// <summary>앱 전체에서 설치가 돌고 있는가 — [숨기기]로 창을 닫아도 설치는 계속 돈다. 그때 설정에서 이 창을 다시 열어 [준비 시작!]을 누르면
+    /// 같은 .part 파일을 두 설치가 같이 써서 '다른 프로세스가 사용 중'으로 실패했다.</summary>
+    private static bool s_installing;
     private bool _demo;            // --demo-setup: UI 확인용 — 설정 파일을 건드리지 않는다
     private bool _syncingDrive;
 
@@ -47,6 +50,7 @@ public partial class SetupWindow
         // 아래 안내·단추 이름은 Bind로 넣는다 — 이 창의 언어 칸으로 바꾸면 바로 따라가야 한다(설치가 끝난 뒤의 '준비 끝!'·오류 안내도)
         UiText.Bind(TxtNote, System.Windows.Controls.TextBlock.TextProperty, () => ComponentCatalog.FirstRunNote);
         CompList.ItemsSource = _rows;
+        ChkColor.IsChecked = App.Settings.InstallColor;   // 창이 뜨기 전이라 ChkColor_Changed는 아무것도 하지 않는다(IsLoaded)
         PopulateDrives();
         RefreshList();
         Loaded += async (_, _) => await RefreshPcAsync();
@@ -112,7 +116,7 @@ public partial class SetupWindow
         _syncingDrive = true;
         CmbDrive.Items.Clear();
         var media = QueryDriveMedia();
-        long neededBytes = ComponentCatalog.All.Sum(c => c.ApproxBytes);
+        long neededBytes = ComponentCatalog.All.Where(_installer.IsWanted).Sum(c => c.ApproxBytes);
 
         var drives = DriveInfo.GetDrives()
             .Where(d => d.DriveType == DriveType.Fixed && d.IsReady)
@@ -173,19 +177,28 @@ public partial class SetupWindow
     /// <summary>선택 위치 전체 경로 + 필요/여유 용량을 보여준다. 공간이 부족하면 경고색.</summary>
     private void UpdateLocationInfo()
     {
-        TxtRoot.Text = Loc.F($"설치 폴더: {App.Settings.RuntimeRoot}");
+        // 연결해 둔 ComfyUI가 있으면 그쪽에 깔리는 것을 알린다 — 사용자의 ComfyUI 폴더에 모델·노드가 더해진다(ComponentInstaller.Resolve)
+        var linked = App.Settings.LinkedComfyRoot.Trim();
+        TxtRoot.Text = Loc.F($"설치 폴더: {App.Settings.RuntimeRoot}")
+            + (linked.Length > 0 ? "\n" + Loc.F($"채색·재생성에 쓰는 ComfyUI의 모델·노드는 연결해 둔 ComfyUI에 설치돼요: {linked}") : "");
         try
         {
-            long needed = ComponentCatalog.All
-                .Where(c => !_installer.IsInstalled(c))
-                .Sum(c => c.ApproxBytes);
+            var missing = ComponentCatalog.All.Where(c => _installer.IsWanted(c) && !_installer.IsInstalled(c)).ToList();
+            long needed = missing.Sum(c => c.ApproxBytes);
             double needGb = needed / 1024.0 / 1024 / 1024;
-            var drive = new DriveInfo(Path.GetPathRoot(App.Settings.RuntimeRoot)!);
-            double freeGb = drive.AvailableFreeSpace / 1024.0 / 1024 / 1024;
-            bool ok = freeGb > needGb * 1.1;
+            var runtimeDrive = Path.GetPathRoot(App.Settings.RuntimeRoot)!;
+            double freeGb = new DriveInfo(runtimeDrive).AvailableFreeSpace / 1024.0 / 1024 / 1024;
+            // 드라이브마다 그 드라이브에 받을 몫으로 본다 — 연결한 ComfyUI가 다른 드라이브면 큰 모델은 그쪽에 받는다
+            var shortDrives = missing.GroupBy(c => Path.GetPathRoot(_installer.Resolve(c.Target))!, StringComparer.OrdinalIgnoreCase)
+                .Where(g => new DriveInfo(g.Key).AvailableFreeSpace <= g.Sum(c => c.ApproxBytes) * 1.1)
+                .Select(g => g.Key).ToList();
+            bool ok = shortDrives.Count == 0;
+            bool onlyRuntimeShort = shortDrives.All(d => string.Equals(d, runtimeDrive, StringComparison.OrdinalIgnoreCase));
+            var shortNames = string.Join(", ", shortDrives);
             TxtSpace.Text = needed == 0
                 ? Loc.F($"이 위치에 모두 설치돼 있어요 · 드라이브 여유 {freeGb:0}GB")
-                : Loc.F($"필요 공간 약 {needGb:0.#}GB  /  드라이브 여유 {freeGb:0}GB") + (ok ? "" : Loc.T("  ⚠ 공간이 부족해요 — 다른 드라이브를 골라주세요"));
+                : Loc.F($"필요 공간 약 {needGb:0.#}GB  /  드라이브 여유 {freeGb:0}GB")
+                  + (ok ? "" : onlyRuntimeShort ? Loc.T("  ⚠ 공간이 부족해요 — 다른 드라이브를 골라주세요") : Loc.F($"  ⚠ {shortNames} 드라이브의 공간이 부족해요"));
             TxtSpace.Foreground = ok
                 ? (System.Windows.Media.Brush)FindResource("NekoText")
                 : System.Windows.Media.Brushes.IndianRed;
@@ -200,16 +213,28 @@ public partial class SetupWindow
         foreach (var c in ComponentCatalog.All)
         {
             var installed = _installer.IsInstalled(c);
+            bool wanted = _installer.IsWanted(c);   // 채색을 뺐으면 채색에만 쓰는 것은 받지 않는다
             _rows.Add(new ComponentRow
             {
                 Component = c,
-                Status = installed ? Loc.T("설치됨 ✓") : Loc.T("필요"),
-                Needed = !installed,
+                Status = installed ? Loc.T("설치됨 ✓") : wanted ? Loc.T("필요") : Loc.T("선택 안 함"),
+                Needed = !installed && wanted,
                 Percent = installed ? 100 : 0,
             });
         }
         BtnInstall.IsEnabled = _rows.Any(r => r.Needed);
         if (!BtnInstall.IsEnabled) UiText.Bind(BtnInstall, System.Windows.Controls.ContentControl.ContentProperty, () => Loc.T("모두 준비됨 ✓"));
+    }
+
+    /// <summary>'채색도 설치'를 바꿨다 — 설정에 적고 목록·필요 공간·PC 점검을 다시 채운다. 받는 중에는 바꿀 수 없다(체크 칸을 잠근다).</summary>
+    private async void ChkColor_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded || _running) return;
+        App.Settings.InstallColor = ChkColor.IsChecked == true;
+        if (!_demo) App.Settings.Save();
+        RefreshList();
+        UpdateLocationInfo();
+        await RefreshPcAsync();
     }
 
     private void BtnPickRoot_Click(object sender, RoutedEventArgs e)
@@ -283,9 +308,16 @@ public partial class SetupWindow
     private async void BtnInstall_Click(object sender, RoutedEventArgs e)
     {
         if (_running) return;
-        _running = true;
+        if (s_installing)
+        {
+            UiText.Bind(TxtNote, System.Windows.Controls.TextBlock.TextProperty, () => Loc.T("이미 설치가 진행 중이에요 — 끝난 뒤에 이 창을 다시 열어 주세요."));
+            return;
+        }
+        _running = s_installing = true;
+        bool comfyTouched = false;   // 채색 엔진 쪽을 하나라도 깔았는가 — 끝나면 떠 있던 엔진을 끈다
         BtnInstall.IsEnabled = false;
         CmbGpu.IsEnabled = false;   // 받는 도중 종류를 바꾸면 저장도 안 되고 콤보만 달라져 혼란 — 끝나면 다시 켠다
+        ChkColor.IsEnabled = false;
         UiText.Bind(BtnSkip, System.Windows.Controls.ContentControl.ContentProperty, () => Loc.T("숨기기"));
 
         var progress = new Progress<InstallProgress>(p =>
@@ -314,19 +346,32 @@ public partial class SetupWindow
                 if (!_demo) App.Settings.Save();
                 TxtTune.Text = Loc.F($"적용했어요:\n{_tune.Summary}");
             }
+            // 채색을 빼고 설치하면 자동 채색도 꺼 둔다 — 켜진 채로 두면 첫 작업이 '채색에 쓰는 노드가 설치되지 않았어요'로 멈춘다.
+            // 채색 쪽이 이미 깔려 있으면(체크만 끈 경우) 그대로 둔다
+            if (!App.Settings.InstallColor && App.Settings.EnableAutoColor && NekoManga.Core.Pipeline.PipelineRunner.MissingColorPart(App.Settings) != null)
+            {
+                App.Settings.EnableAutoColor = false;
+                if (!_demo) App.Settings.Save();
+            }
 
             foreach (var row in _rows.Where(r => r.Needed).ToList())
             {
-                row.Needed = false;
                 row.Status = Loc.T("내려받는 중");
-                await _installer.InstallAsync(row.Component, progress, CancellationToken.None, detectedVendor);
+                try { await _installer.InstallAsync(row.Component, progress, CancellationToken.None, detectedVendor); }
+                catch { row.Status = Loc.T("실패 — 다시 시도해 주세요"); row.Percent = 0; throw; }
+                // 끝난 뒤에 내린다 — 예전에는 받기 전에 내려서, 실패한 구성요소가 다시 눌러도 건너뛰어지고 나머지만 깔린 채 '준비 끝!'이 나왔다
+                row.Needed = false;
+                comfyTouched |= row.Component.ForComfy;
                 row.Status = Loc.T("설치됨 ✓");
                 row.Percent = 100;
             }
             bool leftover = _rows.Any(r => r.Blocked);
             // 너무 오래된 카드에는 "위 조건을 해결한 뒤…"라고 하지 않는다 — 해결할 조건이 없다(Report.LeftoverNote)
+            // 연결한 ComfyUI는 앱이 끄지 않는다(StopStaleEngineAsync) — 켜져 있으면 새로 넣은 노드를 모르므로 다시 켜라고 알린다
+            bool restartLinked = comfyTouched && !string.IsNullOrWhiteSpace(App.Settings.LinkedComfyRoot);
             UiText.Bind(TxtNote, System.Windows.Controls.TextBlock.TextProperty, () => leftover ? (_req ?? new SystemCheck.Report([])).LeftoverNote
-                                                                     : Loc.T("준비 끝! 이제 바로 쓸 수 있어요 (ﾉ´ヮ`)ﾉ*:･ﾟ✧"));
+                                                                     : Loc.T("준비 끝! 이제 바로 쓸 수 있어요 (ﾉ´ヮ`)ﾉ*:･ﾟ✧")
+                                                                       + (restartLinked ? "\n" + Loc.T("연결해 둔 ComfyUI가 켜져 있으면 껐다 켜 주세요 — 새로 받은 노드는 다시 켜야 보여요.") : ""));
             UiText.Bind(BtnSkip, System.Windows.Controls.ContentControl.ContentProperty, () => Loc.T("시작하기"));
             if (leftover) { foreach (var row in _rows.Where(r => r.Blocked)) { row.Blocked = false; row.Needed = true; row.Status = Loc.T("필요"); } BtnInstall.IsEnabled = true; }
             else UiText.Bind(BtnInstall, System.Windows.Controls.ContentControl.ContentProperty, () => Loc.T("모두 준비됨 ✓"));
@@ -335,9 +380,30 @@ public partial class SetupWindow
         {
             var problem = ex.Message;
             UiText.Bind(TxtNote, System.Windows.Controls.TextBlock.TextProperty, () => Loc.F($"문제가 생겼어요: {problem}"));
+            // 조건이 안 맞아 건너뛴 행도 '필요'로 되돌린다 — 그대로 두면 다시 눌러도 건너뛴다
+            foreach (var row in _rows.Where(r => r.Blocked)) { row.Blocked = false; row.Needed = true; row.Status = Loc.T("필요"); }
             BtnInstall.IsEnabled = true;
         }
-        finally { _running = false; CmbGpu.IsEnabled = true; }
+        finally
+        {
+            if (comfyTouched && !_demo) await StopStaleEngineAsync();
+            _running = s_installing = false;
+            CmbGpu.IsEnabled = true;
+            ChkColor.IsEnabled = true;
+        }
+    }
+
+    /// <summary>노드·파이썬 패키지를 깐 뒤, 떠 있던 채색 엔진을 끈다 — ComfyUI는 뜰 때 읽은 노드만 안다. 그대로 두면 다음 작업이 그 엔진을 다시 써서
+    /// 방금 깐 노드를 모르고 '워크플로 검증 실패'가 난다(엔진을 남겨 두는 설정이면 앱을 다시 켜도 그대로다). 다음 작업이 새로 띄운다.
+    /// 연결해 둔 ComfyUI는 사용자 것이라 끄지 않고, 이 앱의 작업이 쓰는 중이면 그 작업이 실패하지 않게 둔다.</summary>
+    private static async Task StopStaleEngineAsync()
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(App.Settings.LinkedComfyRoot) || NekoManga.Core.Comfy.EngineManager.InUse) return;
+            await Task.Run(() => NekoManga.Core.Comfy.EngineManager.Stop(App.Settings));
+        }
+        catch { /* 끄지 못해도 설치는 끝났다 — 설정의 엔진 끄기로 끌 수 있다 */ }
     }
 
     private void BtnSkip_Click(object sender, RoutedEventArgs e) => Close();

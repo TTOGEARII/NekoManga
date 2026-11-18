@@ -95,6 +95,9 @@ public class ComfyServer(AppSettings settings) : IAsyncDisposable
                         WorkingDirectory = root,
                         UseShellExecute = false,
                         CreateNoWindow = true,
+                        // 파일로 돌린 출력은 시스템 코드 페이지(cp949·cp932)로 인코딩된다 — 노드가 이모지를 찍으면 UnicodeEncodeError로 그 노드의 로드가 실패한다
+                        // (2026-11-18 실측: LayerStyle의 안내 글에서 IMPORT FAILED). 출력만 UTF-8로 묶는다
+                        Environment = { ["PYTHONIOENCODING"] = "utf-8" },
                     }, ct);
                     // 살아 있는 서버가 다른 포트의 것이면 기다려도 이 포트로는 오지 않고, 하나 더 띄워도 그 서버가 쥔 comfy.log 때문에 곧바로 죽는다 — 까닭을 바로 알린다
                     if (claim.Port != port)

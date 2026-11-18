@@ -157,31 +157,33 @@ public class UpdateService
             // timeout은 콘솔 없는 환경에서 실패할 수 있어 ping으로 1초씩 대기한다.
             // find/findstr는 PATH에 GNU find가 앞서는 환경(Git Bash 등)이 있어 절대경로로 고정.
             var script = Path.Combine(Path.GetTempPath(), "NekoManga-restart.cmd");
-            // loc:none
+            // 경로는 배치 파일에 적지 않고 환경변수(NEKO_SQ·NEKO_STUB)로 넘기고, 파일은 ASCII로만 쓴다 — cmd는 배치 파일을 OEM 코드 페이지로 읽어서,
+            // 사용자 이름이 한글이면(%LocalAppData% 아래 경로) UTF-8로 적은 경로가 깨져 감시자가 새 버전을 알아보지도 앱을 띄우지도 못했다
+            // (2026-11-18 재현: 한글 폴더의 sq.version을 findstr이 못 찾음. 첫 줄에 chcp 65001을 넣는 방법은 뒤 줄이 어긋나 읽혀 쓰지 않는다).
+            // 교체 직후 백신이 새 실행 파일을 몇 분간 차단할 수 있어, 앱이 뜰 때까지 10초 간격으로 최대 6분간 다시 띄운다(둘째 for).
             File.WriteAllText(script, $"""
                 @echo off
                 set "sys=%SystemRoot%\System32"
                 for /l %%i in (1,1,60) do (
-                  "%sys%\findstr.exe" /c:"<version>{targetVersion}" "{sqVersion}" >nul 2>&1 && goto applied
+                  "%sys%\findstr.exe" /c:"<version>{targetVersion}" "%NEKO_SQ%" >nul 2>&1 && goto applied
                   "%sys%\ping.exe" -n 2 127.0.0.1 >nul
                 )
                 :applied
                 "%sys%\ping.exe" -n 5 127.0.0.1 >nul
-                rem 교체 직후 백신이 새 실행 파일을 몇 분간 차단할 수 있어
-                rem 앱이 뜰 때까지 10초 간격으로 최대 6분간 재시도한다.
                 for /l %%j in (1,1,36) do (
                   "%sys%\tasklist.exe" /fi "imagename eq {ExeName}.exe" | "%sys%\find.exe" /i "{ExeName}.exe" >nul && goto end
-                  start "" "{stub}"
+                  start "" "%NEKO_STUB%"
                   "%sys%\ping.exe" -n 11 127.0.0.1 >nul
                 )
                 :end
-                """);
+                """, System.Text.Encoding.ASCII);
             Process.Start(new ProcessStartInfo
             {
                 FileName = "cmd.exe",
                 Arguments = $"/c \"{script}\"",
                 UseShellExecute = false,
                 CreateNoWindow = true,
+                Environment = { ["NEKO_SQ"] = sqVersion, ["NEKO_STUB"] = stub },
                 // 앱의 CWD(…\current)를 물려받으면 감시자가 그 폴더를 잠가
                 // Update.exe의 current 교체를 막아버린다 — 반드시 앱 폴더 밖으로.
                 WorkingDirectory = Path.GetTempPath(),

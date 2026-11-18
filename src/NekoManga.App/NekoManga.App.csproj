@@ -37,5 +37,17 @@
     <Content Include="$(PkgMicrosoft_AI_DirectML)\bin\x64-win\DirectML.dll" Link="DirectML.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
   </ItemGroup>
 
+  <!-- VC++ 런타임을 실행 파일 옆에 둔다 (2026-11-18). onnxruntime.dll이 MSVCP140·MSVCP140_1·VCRUNTIME140·VCRUNTIME140_1을 정적으로 끌어오는데
+       (지연 로드가 아니다) 자체 포함 게시에는 들어 있지 않다(.NET이 가져오는 것은 vcruntime140_cor3.dll뿐) — VC++ 재배포 패키지가 없는 새 Windows에서는
+       번역·검열 제거가 첫 작업에서 onnxruntime 로드 실패로 죽는다. 개발 PC에는 늘 깔려 있어 드러나지 않았다.
+       빌드하는 PC(릴리스는 GitHub의 windows-latest)의 System32에서 가져온다. 없으면 조용히 빠지지 않게 게시를 실패시킨다. -->
+  <Target Name="CopyVcRuntime" AfterTargets="Publish" Condition="'$(RuntimeIdentifier)' == 'win-x64'">
+    <ItemGroup>
+      <VcRuntimeDll Include="$(SystemRoot)\System32\msvcp140.dll;$(SystemRoot)\System32\msvcp140_1.dll;$(SystemRoot)\System32\vcruntime140.dll;$(SystemRoot)\System32\vcruntime140_1.dll" />
+    </ItemGroup>
+    <Error Condition="!Exists('%(VcRuntimeDll.FullPath)')" Text="VC++ 런타임 DLL이 없습니다: %(VcRuntimeDll.FullPath) — VC++ 2015-2022 x64 재배포 패키지를 설치한 뒤 다시 게시하세요." />
+    <Copy SourceFiles="@(VcRuntimeDll)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>
 
