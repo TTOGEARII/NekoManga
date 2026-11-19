@@ -870,7 +870,7 @@ public static class TextRenderer
 
     private static TextBlockInfo ClampText(TextBlockInfo b)
     {
-        if (b.Translation.Length <= MaxTextChars) return b;
+        if (b.Translation is not { Length: > MaxTextChars }) return b;   // null(사이드카에 Translation이 없는 블록)은 PlanCore의 빈 글 검사가 건너뛴다 — 여기서 던지면 장 전체가 실패한다
         int cut = char.IsHighSurrogate(b.Translation[MaxTextChars - 1]) ? MaxTextChars - 1 : MaxTextChars;
         return b with { Translation = b.Translation[..cut] };
     }

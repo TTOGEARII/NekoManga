@@ -142,7 +142,7 @@ public partial class ResultWindow
             };
             string how = piece.ByUser ? Loc.F($"직접 고름 (자동 판단은 {SexLook(piece.Auto).Name})") : Loc.T("자동 판단");
             string note = mixed && !perPiece && piece.Sex is RegenKind.Male or RegenKind.Female
-                ? Loc.T("\n※ 같은 범위에 성별이 다른 조각이 있어 지금은 남녀 태그로 그린다냥 — 그 조각도 골라 줘냥") : "";
+                ? Loc.T("\n※ 같은 범위에 성별이 다른 조각이 있어 지금은 남녀 태그로 그린다냥 — 그 조각도 고르거나 ⚙ 설정의 '자리마다 그 성별의 태그만'을 켜 줘냥") : "";
             var badge = new Border
             {
                 Background = fill, BorderBrush = piece.ByUser ? Brushes.Gold : Brushes.White, BorderThickness = new Thickness(piece.ByUser ? 2 : 1),

@@ -390,7 +390,7 @@
                         </DockPanel>
                         <DockPanel Margin="0,6,0,0">
                             <TextBlock Text="조각 그리기 ControlNet" Style="{StaticResource FieldLabel}" Width="180"/>
-                            <ComboBox x:Name="CmbRegenInpaintControl" MinWidth="340" HorizontalAlignment="Left">
+                            <ComboBox x:Name="CmbRegenInpaintControl" MinWidth="340" HorizontalAlignment="Left" ToolTip="위의 조각 그리기 CN 강도가 0(기본)이면 1단계는 ControlNet 없이 그려서 이 선택은 효과가 없다냥">
                                 <ComboBoxItem Tag="Lineart" Content="선화에 조각 자리를 검게 칠한다냥 (기본)" ToolTip="조각 자리를 검게 칠한 선화를 ControlNet에 넣는다냥. union이 아니면 늘 이 방식이다냥."/>
                                 <ComboBoxItem Tag="Repaint" Content="리페인트 — union promax의 repaint (실험용)" ToolTip="조각 자리를 비운 원고를 repaint로 넣는다냥. 실측에서는 더 나빴다냥 — 비교용이다냥."/>
                             </ComboBox>
@@ -519,7 +519,7 @@
                         </DockPanel>
                         <DockPanel>
                             <TextBlock Text="글자 색" Style="{StaticResource FieldLabel}" Width="110"/>
-                            <TextBox x:Name="TxtLetterColor" Width="110" HorizontalAlignment="Left"/>
+                            <TextBox x:Name="TxtLetterColor" Width="110" HorizontalAlignment="Left" ToolTip="#RRGGBB — 기본 검정, auto면 원문 색이다냥"/>
                         </DockPanel>
                     </UniformGrid>
                     <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
@@ -770,7 +770,7 @@
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="🌐 화면 언어"/></Border>
                     <ComboBox x:Name="CmbUiLanguage" MinWidth="180" HorizontalAlignment="Left" SelectionChanged="UiLanguage_Changed"/>
                     <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,0"
-                               Text="고르는 즉시 열린 창의 글이 바뀌어요. 이미 나와 있는 진행 글은 다음에 바뀔 때 새 언어로 나와요. 만화를 옮기는 언어(번역 탭)와는 따로예요."/>
+                               Text="고르는 즉시 열린 창의 글이 바뀐다냥. 이미 나와 있는 진행 글은 다음에 바뀔 때 새 언어로 나온다냥. 만화를 옮기는 언어(번역 탭)와는 따로다냥."/>
                     <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="내장 AI 모듈"/></Border>
                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,2,0,0" Text="• 텍스트 감지 — comictextdetector: 말풍선과 글자 위치를 찾는다냥."/>
                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 글자 인식 — manga-ocr: 일본어 세로쓰기 특화 OCR이다냥."/>

@@ -219,7 +219,9 @@ public class AppSettings
     /// 기본 켬(2026-11-13 사용자 판정): 원고 4쪽 × 후보 4개(지금 / 막대만 / 막대만+남녀 태그 / 남녀 태그만, 시드 고정)를 나란히 보고 "막대만+남녀 태그가 제일 잘 나왔다".
     /// 조각 안 선 밀도가 빈 면으로 메워지던 조각 0.029→0.235, 손으로 쥔 장면 0.046→0.139. 끄면 v1.9.1까지처럼 마스크 통째를 지운다. 짝이 되는 태그 쪽은 RegenTagsBySex.</summary>
     public bool RegenEraseTight { get; set; } = true;
-    public double RegenRegionConf { get; set; } = 0.12;   // 부위 검출 임계 — 검열 조각과 겹치는 검출만 쓰므로 낮아도 오탐 비용이 없다
+    /// <summary>부위 검출 임계 — 영역의 모양은 검열 조각과 겹치는 검출만 넓히므로 낮아도 모양에는 비용이 없다. 다만 조각 성별에서는 '뚜렷한 상자'의 기준이라(RegenRegion.PieceSex, 2026-11-19)
+    /// 내리면 다른 성별의 약한 상자가 뚜렷한 상자로 올라와 남녀 태그가 늘어난다(28쪽의 여성 0.07은 0.07 이하로 내리면 다시 남녀 태그).</summary>
+    public double RegenRegionConf { get; set; } = 0.12;
     public double RegenRegionPad { get; set; } = 0.10;    // 검출 상자를 사방으로 넓히는 비율(상자 크기 기준)
     public double RegenRegionGrow { get; set; } = 0.6;    // 검출이 없는 조각을 넓히는 배율(조각 크기 기준, 사방)
 
@@ -475,7 +477,9 @@ public class AppSettings
         IpaEndAt = Math.Clamp(IpaEndAt, 0, 1);
         if (LetterAlign is not ("Left" or "Center" or "Right")) LetterAlign = "Center";
         // 글자 색 비움은 옛 기본값(원문 색 자동) — 기본이 검정이 된 뒤(2026-11-18)로는 검정으로 채운다. 자동은 "auto"로만.
-        if (string.IsNullOrWhiteSpace(LetterColorHex)) LetterColorHex = "#000000";
+        // 16진수(#RRGGBB)도 auto도 아닌 값("red"·"#12345"·알파 있는 #AARRGGBB)은 다른 설정처럼 유효값으로 — 렌더러는 어차피 검정으로 떨어졌다(검수 2026-11-19)
+        if (string.IsNullOrWhiteSpace(LetterColorHex) || (!IsAutoColor(LetterColorHex) && !System.Text.RegularExpressions.Regex.IsMatch(LetterColorHex.Trim(), "^#[0-9A-Fa-f]{6}$")))
+            LetterColorHex = "#000000";
         LetterLineSpacing = Math.Clamp(LetterLineSpacing, 0.6, 3.0);
         LetterWordSpacing = LetterWordSpacing <= 0 ? 0.75 : Math.Clamp(LetterWordSpacing, 0.3, 2.0);
     }

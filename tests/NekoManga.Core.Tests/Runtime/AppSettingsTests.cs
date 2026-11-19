@@ -609,7 +609,12 @@ public class AppSettingsTests
     [InlineData("\"   \"", "#000000")]
     [InlineData("null", "#000000")]
     [InlineData("\"auto\"", "auto")]         // 원문 색을 따라가려면 auto라고 적는다
+    [InlineData("\" Auto \"", " Auto ")]     // 대소문자·공백은 IsAutoColor가 받으므로 그대로 둔다
     [InlineData("\"#FF0000\"", "#FF0000")]   // 고른 색은 그대로
+    [InlineData("\"#ff00aa\"", "#ff00aa")]
+    [InlineData("\"red\"", "#000000")]       // 16진수도 auto도 아닌 값은 다른 설정처럼 유효값으로 — 렌더러는 어차피 검정으로 떨어졌다(검수 2026-11-19)
+    [InlineData("\"#12345\"", "#000000")]
+    [InlineData("\"#FF000000\"", "#000000")]   // 알파는 받지 않는다
     public void Load_LetterColor_EmptyBecomesBlack_AutoAndHexKept(string json, string expected)
     {
         using var t = new TempDir();

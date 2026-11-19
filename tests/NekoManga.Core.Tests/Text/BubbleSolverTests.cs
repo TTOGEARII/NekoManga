@@ -117,7 +117,8 @@ public class BubbleSolverTests
         DilateLikeDetector(mask);
         using var before = page.Clone();
 
-        Assert.True(BubbleSolver.IsInBubble(page, mask, RectOf(BlockOf(glyphs, 4))));
+        Assert.True(BubbleSolver.IsInBubble(page, mask, RectOf(BlockOf(glyphs, 4)), out var why));
+        Assert.Equal(BubbleSolver.BubbleVerdict.Bubble, why);   // 단색 바탕 폴백이 아니라 닫힌 테두리 규칙으로 — 폴백만으로도 참이 나와 테두리 규칙이 깨져도 모르던 것(검수 2026-11-19)
 
         using var changed = ChangedMask(before, page, 0);   // 판정만 한다 — 그림은 그대로
         Assert.Equal(0, Cv2.CountNonZero(changed));
@@ -134,7 +135,54 @@ public class BubbleSolverTests
         var glyphs = DrawGlyphs(page, mask, 293, 243, 1, 1);
         DilateLikeDetector(mask);
 
-        Assert.True(BubbleSolver.IsInBubble(page, mask, RectOf(BlockOf(glyphs, 4))));
+        Assert.True(BubbleSolver.IsInBubble(page, mask, RectOf(BlockOf(glyphs, 4)), out var why));
+        Assert.Equal(BubbleSolver.BubbleVerdict.Bubble, why);   // 최소 창 규칙이 테두리를 창 안에 넣었다 — 폴백이면 이 규칙이 깨져도 모른다
+    }
+
+    [Fact]
+    public void IsInBubble_BubbleCutByThePageEdge_True()
+    {
+        // 쪽 가장자리에 잘린 풍선: 테두리가 창의 왼쪽 끝에 닿지만 창도 쪽의 왼쪽 끝이다 — 억지로 닫은 사각형이 아니라 잘린 풍선이다(ClosedOutline의 예외)
+        using var page = SolidPage(600, 500, 200);
+        using var mask = EmptyMask(page);
+        DrawBubble(page, 40, 250, 90, 60);
+        var glyphs = DrawGlyphs(page, mask, 6, 225, 4, 3);
+        DilateLikeDetector(mask);
+
+        bool inBubble = BubbleSolver.IsInBubble(page, mask, RectOf(BlockOf(glyphs, 4)), out var why);
+        Assert.Equal(BubbleSolver.BubbleVerdict.Bubble, why);
+        Assert.True(inBubble);
+    }
+
+    [Fact]
+    public void IsInBubble_NeighbourTextInsideTheWindow_StillJudgesOwnBubble()
+    {
+        // 창(쪽의 40%×30%)이 커서 옆 풍선 밖의 글이 들어온다 — 이 블록의 글만 남겨 재야 자기 풍선의 테두리를 찾는다(실제 원고 248블록 중 207이 이 길, 2026-11-18)
+        using var page = SolidPage(600, 500, 200);
+        using var mask = EmptyMask(page);
+        DrawBubble(page, 300, 250, 90, 60);
+        var glyphs = DrawGlyphs(page, mask, 266, 225, 4, 3);
+        DrawGlyphs(page, mask, 396, 190, 1, 3);   // 풍선 밖 바로 옆의 다른 글(창 안)
+        DilateLikeDetector(mask);
+
+        bool inBubble = BubbleSolver.IsInBubble(page, mask, RectOf(BlockOf(glyphs, 4)), out var why);
+        Assert.Equal(BubbleSolver.BubbleVerdict.Bubble, why);
+        Assert.True(inBubble);
+    }
+
+    [Fact]
+    public void IsInBubble_PageSmallerThanTheMinimumWindow_DoesNotThrow()
+    {
+        // 작은 쪽(썸네일·조각): 최소 창(쪽의 40%×30% = 80×45)이 쪽보다 클 수 없다 — 창은 블록의 3배(120×66)로 잡히고 그 안에 풍선(테두리 포함 106×56)이 든다
+        using var page = SolidPage(200, 150, 200);
+        using var mask = EmptyMask(page);
+        DrawBubble(page, 100, 75, 50, 25);
+        var glyphs = DrawGlyphs(page, mask, 86, 68, 2, 1);
+        DilateLikeDetector(mask);
+
+        bool inBubble = BubbleSolver.IsInBubble(page, mask, RectOf(BlockOf(glyphs, 4)), out var why);
+        Assert.Equal(BubbleSolver.BubbleVerdict.Bubble, why);
+        Assert.True(inBubble);
     }
 
     [Theory]
@@ -148,14 +196,18 @@ public class BubbleSolverTests
             for (int k = -500; k < 600; k += 9) Cv2.Line(page, new Point(k, 0), new Point(k + 500, 500), Scalar.Black, 2);
         if (kind == "panel")
         {
-            DrawBox(page, new Rect(40, 40, 520, 420));
-            for (int k = -500; k < 600; k += 9) Cv2.Line(page, new Point(k, 40), new Point(k + 420, 460), Scalar.Black, 2);   // 칸 안은 그림
+            // 칸은 창(블록 68×50의 가운데 (284,235) → 240×150) 안에 들어와야 '닫힌 테두리'로 잡힌다 — 전에는 520×420 칸이 창 밖이라 빗금 경우와 같은 길을 탔다(검수 2026-11-19)
+            var inner = new Rect(184, 180, 200, 110);
+            DrawBox(page, inner);
+            using var art = new Mat(page, inner);
+            for (int k = -110; k < 200; k += 9) Cv2.Line(art, new Point(k, 0), new Point(k + 110, 110), Scalar.Black, 2);   // 칸 안은 그림
         }
         var glyphs = DrawGlyphs(page, mask, 250, 210, 4, 3);
         DilateLikeDetector(mask);
 
         Assert.False(BubbleSolver.IsInBubble(page, mask, RectOf(BlockOf(glyphs, 4)), out var why));
-        Assert.NotEqual(BubbleSolver.BubbleVerdict.Bubble, why);
+        if (kind == "panel") Assert.Equal(BubbleSolver.BubbleVerdict.Busy, why);   // 닫힌 테두리는 있지만 안이 그림으로 어지럽다(BubbleInsideStdMax)
+        else Assert.NotEqual(BubbleSolver.BubbleVerdict.Bubble, why);
     }
 
     [Fact]
@@ -173,12 +225,14 @@ public class BubbleSolverTests
     }
 
     [Fact]
-    public void IsInBubble_NoTextInMask_False()
+    public void IsInBubble_NoTextInMask_TrueKeepsItForTranslation()
     {
+        // 글 마스크에 이 블록의 획이 없으면 판정할 수 없다 — 모르면 번역 쪽(true)으로 둔다. 전에는 false라 효과음 꼴이면 조용히 빠졌다(검수 2026-11-19)
         using var page = SolidPage(600, 500);
         using var mask = EmptyMask(page);
         DrawBubble(page, 300, 250, 90, 60);
 
-        Assert.False(BubbleSolver.IsInBubble(page, mask, new Rect(246, 206, 76, 58)));
+        Assert.True(BubbleSolver.IsInBubble(page, mask, new Rect(246, 206, 76, 58), out var why));
+        Assert.Equal(BubbleSolver.BubbleVerdict.NoText, why);
     }
 }

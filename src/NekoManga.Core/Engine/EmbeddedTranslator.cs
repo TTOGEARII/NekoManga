@@ -133,6 +133,8 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
                 else kept.Add((b, text));
             }
             blocks = kept;
+            // 거른 수를 진행 줄에 남긴다 — 다른 작가의 원고에서 대사가 빠지면 OCR 실패인지 이 거르기인지 가릴 길이 있어야 한다(검수 2026-11-19)
+            if (outsideBubble > 0) status?.Report(Loc.F($"풍선 밖 효과음 {outsideBubble}개는 번역하지 않는다냥"));
         }
         Lap($"풍선 밖 글 거르기({outsideBubble}블록 제외)");   // loc:none
 
@@ -220,10 +222,6 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         return new PageTranslation(outPath, result);
     }
 
-    /// <summary>번역문 뒷손질 — 일본어가 아닌 목표 언어에 장음 기호 ー·〜가 남으면 ~로 (LLM이 "또ー!?"처럼 그대로 두는 실측),
-    /// 일본어 전각 느낌표·물음표는 반각으로. 세로쓰기 기호가 가로 식자에서 긴 막대로 그려지는 것을 막는다.
-    /// 중국어가 목표면 반각이 아니라 중국어 조판의 전각 부호로 맞춘다(<see cref="PolishChinese"/>). 일본어가 목표면 손대지 않는다.
-    /// 목표 언어 코드는 settings.json 값 그대로 온다(설정 창에는 ko·en뿐) — 어느 언어인지는 <see cref="LangCode"/>가 정한다.</summary>
     /// <summary><see cref="TameRunaway"/>의 상한 — 번역문은 원문의 이 배를 넘지 않고(짧은 원문은 최소 글자 수까지), 같은 글자는 이 수까지만 이어진다.
     /// 한국어는 일본어보다 글자 수가 비슷하거나 적어 4배면 정상 번역은 걸리지 않는다(지금까지의 식자 블록 537개 가운데 150자를 넘은 것은 폭주한 둘뿐).</summary>
     internal const int RunawayRatio = 4, RunawayMinChars = 60, MaxRepeat = 8;
@@ -247,32 +245,50 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         return sb.ToString();
     }
 
-    /// <summary>원문이 효과음·늘인 소리처럼 생겼는가 — 한자가 있거나 문장부호(、。？！「」)가 있으면 대사. 같은 글자(장음 포함)가 셋 넘게 이어지거나("あああ", "はーーー"),
-    /// 작은 글자·장음·기호를 뺀 알맹이가 한 글자 이하면("あ", "ぐっっ", "はーっ...") 효과음. 그 밖은 대사("はい", "それを", "...じゃあ"는 남긴다).
-    /// 풍선 밖 판정과 **같이** 써서 번역에서 뺀다(TranslateBubbleOnly). 실제 원고 448블록의 풍선 밖 판정 157블록 가운데 이것으로 거른 것과 남긴 것은 notes/translate-letter.md.</summary>
+    /// <summary>원문이 효과음·늘인 소리처럼 생겼는가 — 한자가 있으면 대사. 문장부호(、。？！「」)가 있고 알맹이(채움 글자를 뺀 뒤 같은 글자의 되풀이를 하나로 접은 것)가
+    /// 둘 이상이면 대사("いやだあああ！" — 전에는 되풀이 셋에서 효과음으로 가, 풍선 판정까지 어긋나면 대사가 빠졌다, 검수 2026-11-19). 같은 글자(장음 포함)가 셋 넘게 이어지면("あああ", "はーーー") 효과음,
+    /// 그 밖에 문장부호가 있으면 대사. 알맹이가 한 글자 이하면("あ", "ぐっっ", "はーっ...") 효과음 — 이 규칙은 **가나 글에만** 쓴다(채움 글자 표가 일본어 것이라 한국어·영어 한 음절 대사 "네"·"I"가 걸렸다).
+    /// 그 밖은 대사("はい", "それを", "...じゃあ"는 남긴다). 풍선 밖 판정과 **같이** 써서 번역에서 뺀다(TranslateBubbleOnly).
+    /// 실제 원고 448블록의 풍선 밖 판정 157블록 가운데 이것으로 거른 것과 남긴 것은 notes/translate-letter.md.</summary>
     public static bool LooksLikeSfx(string source)
     {
         var s = source.Trim();
         if (s.Length == 0) return true;
+        bool kana = false;
         foreach (var ch in s)
-            if (ch is >= '一' and <= '鿿') return false;   // 한자 = 대사
+        {
+            if (IsKanji(ch)) return false;   // 한자 = 대사
+            kana |= IsKana(ch);
+        }
+        // 알맹이: 채움 글자를 빼고, 같은 글자가 이어진 것은 하나로 — "あぁ、あぁ......あ、あああ"는 'あ' 하나, "いやだあああ！"는 'いやだ'
+        var core = new System.Text.StringBuilder();
+        foreach (var ch in s)
+            if (!SfxFiller.Contains(ch) && (core.Length == 0 || core[^1] != ch)) core.Append(ch);
+        bool marks = s.IndexOfAny(SentenceMarks) >= 0;
+        if (marks && core.Length >= 2) return false;   // 늘인 소리가 섞여도 말이 있는 대사
         int run = 1;
         for (int i = 1; i < s.Length; i++)
         {
             run = s[i] == s[i - 1] && Array.IndexOf(RunBreakers, s[i]) < 0 ? run + 1 : 1;   // "..."·"……"는 되풀이가 아니다
             if (run >= 3) return true;   // "あああ"·"はーーー" — 폭주하는 꼴
         }
-        if (s.IndexOfAny(SentenceMarks) >= 0) return false;
-        int core = 0;
-        foreach (var ch in s)
-            if (!SfxFiller.Contains(ch)) core++;
-        return core <= 1;
+        if (marks) return false;
+        return kana && core.Length <= 1;
     }
+
+    /// <summary>한자(CJK 통합 한자 + 확장 A) — <see cref="LooksLikeSource"/>와 같은 범위.</summary>
+    private static bool IsKanji(char ch) => ch is (>= '一' and <= '鿿') or (>= '㐀' and <= '䶿');
+    /// <summary>가나(히라가나·가타카나·반각 가타카나).</summary>
+    private static bool IsKana(char ch) => ch is (>= 'ぁ' and <= 'ヿ') or (>= 'ｦ' and <= 'ﾟ');
 
     private static readonly char[] SentenceMarks = ['、', '。', '？', '?', '！', '!', '「', '」', '『', '』'];
     private static readonly char[] RunBreakers = ['.', '…', '・', '、', '。', '!', '?', '！', '？', ' ', '　'];
     private const string SfxFiller = "ー〜～~♡♥…・.,、。!?！？ 　\n\tっッぁぃぅぇぉゃゅょゎァィゥェォャュョヮ゛゜゙゚";
 
+    /// <summary>번역문 뒷손질 — 일본어가 아닌 목표 언어에 장음 기호 ー·〜가 남으면 ~로 (LLM이 "또ー!?"처럼 그대로 두는 실측),
+    /// 일본어 전각 느낌표·물음표는 반각으로. 세로쓰기 기호가 가로 식자에서 긴 막대로 그려지는 것을 막는다.
+    /// 중국어가 목표면 반각이 아니라 중국어 조판의 전각 부호로 맞춘다(<see cref="PolishChinese"/>). 일본어가 목표면 손대지 않는다.
+    /// 목표 언어 코드는 settings.json 값 그대로 온다(설정 창에는 ko·en뿐) — 어느 언어인지는 <see cref="LangCode"/>가 정한다.</summary>
     internal static string PolishTranslation(string tr, string targetLang)
     {
         // 일본어로 옮길 때는 ー·〜·！？·・・・·‥ 가 전부 맞는 표기다 — 하나도 바꾸지 않는다 (ja-JP·jpn 같은 꼴도 같다)

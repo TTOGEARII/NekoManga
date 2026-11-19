@@ -154,7 +154,7 @@ def main():
     ents = load_entries(a.corrections)
     log("scan", f"재료 {len(ents)}쪽", len(ents))
     if len(ents) < a.min_pages:
-        json.dump(dict(ok=False, error=f"재료가 {len(ents)}쪽이라 아직 부족해요 (최소 {a.min_pages}쪽)", code="few_pages", args=[len(ents), a.min_pages]), open(os.path.join(a.work, "result.json"), "w", encoding="utf-8"), ensure_ascii=False)
+        json.dump(dict(ok=False, error=f"재료가 {len(ents)}쪽이라 아직 부족하다냥 (최소 {a.min_pages}쪽)", code="few_pages", args=[len(ents), a.min_pages]), open(os.path.join(a.work, "result.json"), "w", encoding="utf-8"), ensure_ascii=False)
         return 2
     # 보류 페이지: 원본 경로 해시로 고정 분할 (같은 페이지가 늘 같은 쪽에)
     hold = [e for e in ents if int(hashlib.md5(e.get("source", e["stem"]).encode()).hexdigest(), 16) % 100 < a.holdout * 100]
@@ -167,7 +167,7 @@ def main():
     n_crops, n_inst = build_dataset(train, ds)
     log("data", f"크롭 {n_crops}장 · 라벨 {n_inst}개", n_crops, n_inst)
     if n_crops < 10:
-        json.dump(dict(ok=False, error="학습 크롭이 너무 적어요 (마스크가 있는 페이지가 더 필요)", code="few_crops", args=[]), open(os.path.join(a.work, "result.json"), "w", encoding="utf-8"), ensure_ascii=False)
+        json.dump(dict(ok=False, error="학습 크롭이 너무 적다냥 (마스크가 있는 페이지가 더 필요하다냥)", code="few_crops", args=[]), open(os.path.join(a.work, "result.json"), "w", encoding="utf-8"), ensure_ascii=False)
         return 2
     from ultralytics import YOLO
     log("train", f"미세조정 시작 ({a.epochs}에폭, lr {a.lr0}, freeze {a.freeze})", a.epochs, a.lr0, a.freeze)
@@ -178,7 +178,7 @@ def main():
                 fliplr=0.5, mosaic=0.3, close_mosaic=2, copy_paste=0.0, erasing=0.0, plots=False, verbose=False)
     best = os.path.join(a.work, "run", "weights", "best.pt")
     if not os.path.exists(best):
-        json.dump(dict(ok=False, error="학습 결과 가중치가 없어요 (로그 확인)", code="no_weights", args=[]), open(os.path.join(a.work, "result.json"), "w", encoding="utf-8"), ensure_ascii=False)
+        json.dump(dict(ok=False, error="학습 결과 가중치가 없다냥 (로그를 확인해 줘냥)", code="no_weights", args=[]), open(os.path.join(a.work, "result.json"), "w", encoding="utf-8"), ensure_ascii=False)
         return 1
     log("export", "ONNX로 내보내는 중")
     onnx = YOLO(best).export(format="onnx", imgsz=CROP, opset=12, simplify=True, nms=False, dynamic=False)

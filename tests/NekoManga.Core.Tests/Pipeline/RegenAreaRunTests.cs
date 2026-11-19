@@ -39,10 +39,12 @@ public class RegenAreaRunTests
             {
                 Graph = JsonNode.Parse(await request.Content!.ReadAsStringAsync(ct))!["prompt"]!.AsObject();
                 var (_, save) = Only(Graph, "SaveImage");
-                var (_, empty) = Only(Graph, "EmptyImage");
                 _output = Str(Inputs(save)["filename_prefix"]) + "_00001_.png";
+                // 자른 그림의 크기는 올린 영역 그림(LoadImage nm_regen_*)에서 — 1단계 CN 강도 0(기본, 2026-11-19)이면 EmptyImage 노드가 없다
+                var regionName = OfType(Graph, "LoadImage").Select(l => Str(Inputs(l.Node)["image"])).First(n => n.StartsWith("nm_regen_"));
+                using var region = ImgIo.Read(Path.Combine(root, "ComfyUI", "input", regionName), ImreadModes.Color);
                 Directory.CreateDirectory(Path.Combine(root, "ComfyUI", "output"));
-                using var gray = new Mat((int)Num(Inputs(empty)["height"]), (int)Num(Inputs(empty)["width"]), MatType.CV_8UC3, new Scalar(128, 128, 128));
+                using var gray = new Mat(region.Rows, region.Cols, MatType.CV_8UC3, new Scalar(128, 128, 128));
                 ImgIo.Write(Path.Combine(root, "ComfyUI", "output", _output), gray);
                 json = new JsonObject { ["prompt_id"] = "p1" }.ToJsonString();
             }

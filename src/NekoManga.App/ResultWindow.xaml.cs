@@ -94,7 +94,7 @@ public partial class ResultWindow
         _index = Math.Clamp(startIndex, 0, _refs.Count - 1);
         _confirmPage = confirmPage; _isWaiting = isWaiting; _startOnMask = startOnMask; _isDone = isDone;
         _confirmAll = confirmAll; _isJobRunning = isJobRunning; _canRerenderEdited = canRerenderEdited;
-        if (_canRerenderEdited) TxtDecensorHint.Text += Loc.T(" 여러 장을 고친 뒤 [고친 장 모두 다시 렌더링]으로 한꺼번에 돌릴 수 있다냥.");
+        if (_canRerenderEdited) TxtDecensorHint.Text += Loc.T("\n· 여러 장을 고친 뒤 [고친 장 모두 다시 렌더링]으로 한꺼번에 돌릴 수 있다냥.");   // 안내가 글머리표 줄이라 같은 꼴로 한 줄 더
 
         // '기본' 모델은 늘 Aletheia Lens 복원('이전 방식' 엔진은 2026-11-12 삭제) — 손으로 고른 자리는 막대 모델로 지운다. 이름·툴팁은 XAML의 ItemEngineBasic
         foreach (var p in _refs) CmbPages.Items.Add(Path.GetFileName(p.ViewPath));

@@ -62,6 +62,18 @@ public class EmbeddedTranslatorTests
     [InlineData("どんなこと想像して?", false)]   // 한자 = 대사
     [InlineData("だめっこれムリっ", false)]
     [InlineData("キュンッキュンッ", false)]   // 알맹이가 셋 — 효과음이지만 번역해도 해롭지 않다
+    // 늘인 소리가 섞인 대사(검수 2026-11-19): 문장부호가 있고 되풀이·채움 글자를 뺀 알맹이가 둘 이상이면 대사다 — 전에는 되풀이 셋에서 효과음으로 가 풍선 판정이 어긋나면 빠졌다
+    [InlineData("いやだあああ！", false)]
+    [InlineData("うわあああ！", false)]
+    [InlineData("やめてえええ、お願い", false)]
+    [InlineData("いやああああ…やめて！", false)]
+    [InlineData("いやああああ", true)]       // 문장부호가 없는 늘인 소리는 그대로 효과음
+    // 원문이 일본어가 아닐 때(설정의 원본 언어 ko·en): 한 글자 규칙은 가나에만 — 한 음절 대사 "네"·"I"는 효과음이 아니다. 같은 글자 되풀이는 언어와 상관없이 효과음
+    [InlineData("네", false)]
+    [InlineData("응…", false)]
+    [InlineData("I", false)]
+    [InlineData("아아아", true)]
+    [InlineData("aaaaah", true)]
     public void LooksLikeSfx_RepeatsAndSingleSoundsOnly(string source, bool expected)
     {
         Assert.Equal(expected, EmbeddedTranslator.LooksLikeSfx(source));
@@ -70,12 +82,16 @@ public class EmbeddedTranslatorTests
     [Fact]
     public void TameRunaway_DoesNotSplitSurrogatePair()
     {
-        var tr = new string('a', EmbeddedTranslator.RunawayMinChars - 1) + "😀" + new string('b', 500);
+        // 되풀이가 없는 글이어야 접기 단계를 지나 자르기 단계까지 온다(검수 2026-11-19: 'a'×59는 8자로 접혀 자르기를 타지 않았다) — 상한 자리(60째)가 서로게이트 쌍의 앞 글자
+        var head = string.Concat(Enumerable.Range(0, EmbeddedTranslator.RunawayMinChars - 1).Select(i => (char)('a' + i % 26)));
+        var tail = string.Concat(Enumerable.Range(0, 500).Select(i => (char)('A' + i % 26)));
+        var tr = head + "😀" + tail;
 
         var tamed = EmbeddedTranslator.TameRunaway(tr, "");
 
+        Assert.Equal(EmbeddedTranslator.RunawayMinChars - 1, tamed.Length);   // 쌍을 가르지 않으려고 한 글자 앞에서 잘랐다
+        Assert.Equal(head, tamed);
         Assert.False(char.IsHighSurrogate(tamed[^1]));
-        Assert.True(tamed.Length <= EmbeddedTranslator.RunawayMinChars);
     }
 
     [Theory]

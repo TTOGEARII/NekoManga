@@ -163,7 +163,7 @@ public sealed class SelfTrainer(AppSettings settings)
         try { await p.WaitForExitAsync(ct); }
         catch (OperationCanceledException) { try { p.Kill(true); } catch { } throw; }
         await Task.WhenAll(readOut, readErr);
-        var r = LastResult() ?? new Result(false, Loc.F($"결과 파일이 없어요 (exit {p.ExitCode}) — {LogPath} 를 확인해 주세요."), 0, 0, 0, 0, null, null, 0);
+        var r = LastResult() ?? new Result(false, Loc.F($"결과 파일이 없다냥 (exit {p.ExitCode}) — {LogPath} 를 확인해 줘냥."), 0, 0, 0, 0, null, null, 0);
         return r;
     }
 
@@ -197,9 +197,9 @@ public sealed class SelfTrainer(AppSettings settings)
         string? code = result["code"] is JsonValue v && v.TryGetValue<string>(out var c) ? c : null;   // 글이 아닌 값이면 모르는 코드로
         return code switch
         {
-            "few_pages" => Loc.F($"재료가 {A(0)}쪽이라 아직 부족해요 (최소 {A(1)}쪽)"),
-            "few_crops" => Loc.T("학습 크롭이 너무 적어요 (마스크가 있는 페이지가 더 필요)"),
-            "no_weights" => Loc.T("학습 결과 가중치가 없어요 (로그 확인)"),
+            "few_pages" => Loc.F($"재료가 {A(0)}쪽이라 아직 부족하다냥 (최소 {A(1)}쪽)"),
+            "few_crops" => Loc.T("학습 크롭이 너무 적다냥 (마스크가 있는 페이지가 더 필요하다냥)"),
+            "no_weights" => Loc.T("학습 결과 가중치가 없다냥 (로그를 확인해 줘냥)"),
             _ => result["error"]?.GetValue<string>(),
         };
     }
@@ -207,7 +207,7 @@ public sealed class SelfTrainer(AppSettings settings)
     /// <summary>후보 모델을 런타임에 적용한다 — 이전 모델은 previous.onnx/.pt로 보관해 되돌릴 수 있다. 후보 .pt는 다음 학습의 기준이 된다.</summary>
     public void Apply()
     {
-        if (!File.Exists(CandidateOnnx)) throw new FileNotFoundException(Loc.T("적용할 후보 모델이 없어요 — 먼저 학습을 돌려 주세요."));
+        if (!File.Exists(CandidateOnnx)) throw new FileNotFoundException(Loc.T("적용할 후보 모델이 없다냥 — 먼저 학습을 돌려 줘냥."));
         File.Copy(RuntimeOnnx, BackupOnnx, overwrite: true);
         if (File.Exists(RuntimePt)) File.Copy(RuntimePt, BackupPt, overwrite: true);
         File.Copy(CandidateOnnx, RuntimeOnnx, overwrite: true);
@@ -219,7 +219,7 @@ public sealed class SelfTrainer(AppSettings settings)
 
     public void Rollback()
     {
-        if (!CanRollback) throw new FileNotFoundException(Loc.T("되돌릴 이전 모델이 없어요."));
+        if (!CanRollback) throw new FileNotFoundException(Loc.T("되돌릴 이전 모델이 없다냥."));
         File.Copy(BackupOnnx, RuntimeOnnx, overwrite: true);
         if (File.Exists(BackupPt)) File.Copy(BackupPt, RuntimePt, overwrite: true);
         File.Delete(BackupOnnx); if (File.Exists(BackupPt)) File.Delete(BackupPt);

@@ -273,8 +273,8 @@ public class WorkflowBuilderTests
     [Fact]
     public void BuildRegenCrop_Stage1ControlImage_Lineart_BlacksOutThePiece()
     {
-        // 기본(Lineart) — union이 아닌 ControlNet도 이 길이다
-        var g = Crop(w: 1000, h: 800);
+        // 기본(Lineart) — union이 아닌 ControlNet도 이 길이다. 강도는 0.5로 — 기본 0에서는 1단계 ControlNet 체인 자체를 만들지 않는다(아래 Stage1CnStrengthZero)
+        var g = Crop(new AppSettings { RegenSeed = 1, RegenInpaintCnStrength = 0.5 }, w: 1000, h: 800);
         Assert.Equal("Lineart", new AppSettings().RegenInpaintControl);
         var erase = Assert.Single(OfType(g, "LoadImage"), l => Str(Inputs(l.Node)["image"]) == "nm_regenmask_0_0.png");
         var applies = OfType(g, "ControlNetApplyAdvanced");
@@ -296,7 +296,7 @@ public class WorkflowBuilderTests
     public void BuildRegenCrop_Stage1_NonUnionControlNet_AlwaysLineart()
     {
         // union이 아닌 ControlNet은 종류를 고를 수 없어 Repaint 설정이어도 선화 검게 칠하기
-        var g = Crop(new AppSettings { RegenSeed = 1, RegenControlNet = "mistoLine_rank256.safetensors", RegenInpaintControl = "Repaint" }, w: 1000, h: 800);
+        var g = Crop(new AppSettings { RegenSeed = 1, RegenControlNet = "mistoLine_rank256.safetensors", RegenInpaintControl = "Repaint", RegenInpaintCnStrength = 0.5 }, w: 1000, h: 800);
         Assert.Empty(OfType(g, "SetUnionControlNetType"));
         Assert.Equal(2, OfType(g, "AIO_Preprocessor").Count);
         var stage1 = Assert.Single(OfType(g, "ControlNetApplyAdvanced"), a => ClassType(Source(g, Inputs(a.Node)["image"])) == "ImageCompositeMasked").Node;
@@ -319,13 +319,33 @@ public class WorkflowBuilderTests
         Assert.Equal(0, new AppSettings().RegenInpaintCnStrength);
     }
 
+    [Theory]
+    [InlineData("Lineart")]
+    [InlineData("Repaint")]
+    public void BuildRegenCrop_Stage1CnStrengthZero_SkipsTheStage1ControlChain(string control)
+    {
+        // 강도 0의 ControlNetApplyAdvanced는 조건을 그대로 돌려주지만 ComfyUI는 입력 노드(선화 전처리·검은 그림·합성)를 전부 실행한다 — 영역마다 몇 초를 버린다(검수 2026-11-19).
+        // 기본 0에서는 그 체인을 만들지 않고 1단계 샘플러에 프롬프트를 바로 잇는다. 결과는 같다(강도 0 = 조건 불변). 2단계 ControlNet은 그대로
+        var g = Crop(new AppSettings { RegenSeed = 1, RegenPrompt = "manga", RegenNegative = "bars", RegenInpaintControl = control, RegenInpaintCnStrength = 0 }, "penis");
+        var applies = OfType(g, "ControlNetApplyAdvanced");
+        var stage2 = Assert.Single(applies).Node;
+        Assert.Equal("AIO_Preprocessor", ClassType(Source(g, Inputs(stage2)["image"])));
+        Assert.Single(OfType(g, "AIO_Preprocessor"));   // 2단계 선화만
+        Assert.Empty(OfType(g, "EmptyImage"));
+        Assert.DoesNotContain(OfType(g, "SetUnionControlNetType"), n => Str(Inputs(n.Node)["type"]) == "repaint");
+        var pass1 = Assert.Single(OfType(g, "KSampler"), k => Num(Inputs(k.Node)["denoise"]) == 1.0).Node;
+        Assert.Equal("manga, penis", Str(Inputs(Source(g, Inputs(pass1)["positive"]))["text"]));   // 프롬프트를 바로
+        Assert.Equal("bars", Str(Inputs(Source(g, Inputs(pass1)["negative"]))["text"]));
+        Assert.Equal("SetLatentNoiseMask", ClassType(Source(g, Inputs(pass1)["latent_image"])));   // 나머지 1단계는 그대로
+    }
+
     [Fact]
     public void BuildRegenCrop_Stage1_RepaintOption_UsesOriginalImageWithPieceBlackedAndRepaintType()
     {
         // 2026-11-12 사용자 보고: 남녀 부위가 맞닿은 장면에서 기둥만 남고 여성 쪽이 통째로 지워짐 — 1단계 선화 ControlNet이 조각 자리를
         // "선 없음"으로 밀어붙이는 탓으로 보고 union promax의 'repaint' 종류를 시도했으나, 사용자 실측으로 검게 뭉개지고 더 나빴다 → 기본은 선화(Lineart)로 되돌리고
         // 리페인트는 실험용 선택지로만 남긴다: 제어 그림 = 원고의 조각 자리를 검게 비운 것(선화 아님). 2단계는 그대로 선화.
-        var g = Crop(new AppSettings { RegenSeed = 1, RegenInpaintControl = "Repaint" }, w: 1000, h: 800);
+        var g = Crop(new AppSettings { RegenSeed = 1, RegenInpaintControl = "Repaint", RegenInpaintCnStrength = 0.5 }, w: 1000, h: 800);
         var erase = Assert.Single(OfType(g, "LoadImage"), l => Str(Inputs(l.Node)["image"]) == "nm_regenmask_0_0.png");
         var applies = OfType(g, "ControlNetApplyAdvanced");
         Assert.Equal(2, applies.Count);
@@ -379,8 +399,8 @@ public class WorkflowBuilderTests
 
     // ── 자리별 태그(2026-11-15): 남녀 조각이 한 그림에 같이 있으면 자리마다 프롬프트를 따로 — ConditioningSetMask로 자리에 묶어 ConditioningCombine으로 합친다 ──
     private static JsonObject CropAreas(params string[] areaTags) =>
-        WorkflowBuilder.BuildRegenCrop(new AppSettings { RegenSeed = 1, RegenPrompt = "manga", RegenNegative = "bars" }, "in.png", "erase.png", "out", "penis, pussy", 1024, 1024,
-            areaUpload: "areas.png", areaTags: areaTags);
+        WorkflowBuilder.BuildRegenCrop(new AppSettings { RegenSeed = 1, RegenPrompt = "manga", RegenNegative = "bars", RegenInpaintCnStrength = 0.5 }, "in.png", "erase.png", "out", "penis, pussy", 1024, 1024,
+            areaUpload: "areas.png", areaTags: areaTags);   // 1단계 CN 0.5 — 두 단계 모두 ControlNet을 거쳐야 '두 단계가 합친 프롬프트를 받는다'를 볼 수 있다
 
     [Fact]
     public void BuildRegenCrop_Areas_EachAreaHasItsOwnPrompt_MaskedToItsChannel()

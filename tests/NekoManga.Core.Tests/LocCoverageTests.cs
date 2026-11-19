@@ -127,6 +127,8 @@ public class LocCoverageTests
             if (!Holes(key).SequenceEqual(Holes(text))) bad.Add($"자리가 다름: {Short(key)} → {Short(text)}");
             // 이어 붙여 쓰는 조각("저장 실패다냥: " + 까닭)은 앞뒤 공백·줄 바꿈이 원문과 같아야 붙는 모양이 같다
             if (Edge(key) != Edge(text)) bad.Add($"앞뒤 공백이 다름: '{Short(key)}' → '{Short(text)}'");
+            // 안내 글의 줄 수(글머리표 줄)는 세 언어가 같아야 한다 — 한국어만 줄여 두세 줄로 나누고 번역은 옛 문단 그대로 두면 영어·일본어 화면에서 안내가 길게 펼쳐진다(검수 2026-11-19: 41개 열쇠)
+            if (key.Count(c => c == '\n') != text.Count(c => c == '\n')) bad.Add($"줄 바꿈 수가 다름: {Short(key)} → {Short(text)}");
             if (LocSourceScan.HasHangul(text)) bad.Add($"번역에 한글이 남음: {Short(text)}");
         }
         Assert.True(bad.Count == 0, $"{lang}.json " + Show(bad));

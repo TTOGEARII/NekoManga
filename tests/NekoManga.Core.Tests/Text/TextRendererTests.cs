@@ -849,6 +849,24 @@ public class TextRendererTests
         }
     }
 
+    [Fact]
+    public void RenderBlocks_BlockWithNullTranslation_IsSkipped_OthersAreDrawn()
+    {
+        // 사이드카 json에 Translation이 없거나 null이면 레코드에 null이 들어온다 — 자르기(ClampText)가 길이를 보다 던지면 장 전체가 실패한다(검수 2026-11-19). 그 블록만 건너뛴다
+        using var t = new TempDir();
+        using var page = SolidPage(600, 800);
+        SavePng(page, t.At("in.png"));
+        var broken = Manual(50, 50, 550, 300, "x") with { Translation = null! };
+        var normal = Manual(50, 400, 550, 700, "안녕");
+
+        TextRenderer.RenderBlocks(t.At("in.png"), t.At("in.png"), new[] { broken, normal }, t.At("out.png"), Arial());
+
+        using var after = LoadColor(t.At("out.png"));
+        using var changed = ChangedMask(page, after);
+        Assert.True(Cv2.CountNonZero(new Mat(changed, new Rect(50, 400, 500, 300))) > 50);   // 정상 블록은 그렸다
+        Assert.Equal(0, Cv2.CountNonZero(new Mat(changed, new Rect(50, 50, 500, 250))));     // null 블록 자리는 그대로
+    }
+
     [Theory]
     [InlineData(40000, true)]    // 공백 없는 한 어절 4만 자 — GDI+는 32K자쯤에서 "A generic error occurred in GDI+"를 던진다(2026-11-18, 35p)
     [InlineData(33000, false)]   // 어절들로 된 긴 글

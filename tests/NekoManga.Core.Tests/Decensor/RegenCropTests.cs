@@ -142,7 +142,8 @@ public class RegenCropTests
 
     // ── 한쪽 성별로 확정(Sure) — 2026-11-15 사용자 "남자거에 계속 여자거가 그려지는데 검열부분을 보고 남/여 구분을 확실하게" ──
     // 시험 원고 23쪽의 부위 감지 수치로 정한 규칙: 영역의 모든 조각에 그 성별의 근거(약한 상자 0.05 이상도)가 있고, 어느 조각에도 다른 성별의 근거가 없을 때만 확정.
-    // 삽입 장면(남성 0.59 + 여성 0.07, 여성 0.27 + 옆 조각은 근거 없음)은 확정이 아니어서 남녀 태그를 같이 받고, 남성만 있는 장(여성 근거 0)은 남성 태그만 받는다.
+    // 2026-11-19부터 뚜렷한(임계 이상) 상자가 한쪽뿐이면 다른 쪽의 약한 상자는 세지 않는다 — 삽입 장면(남성 0.59 + 여성 0.07)도 남성 확정(가려진 쪽은 결과 창 표시로),
+    // 여성 0.27 + 옆 조각은 근거 없음은 확정이 아니어서 남녀 태그를 같이 받고, 남성만 있는 장(여성 근거 0)은 남성 태그만 받는다.
     private const int M = BodyPartDetector.ClsPenis, F = BodyPartDetector.ClsPussy;
     private static readonly Size Page = new(3000, 4000);
     private static readonly Rect PieceA = new(1400, 1900, 200, 40), BoxA = new(1300, 1700, 400, 400);
@@ -172,6 +173,16 @@ public class RegenCropTests
         using var mask = MaskWith(Page, PieceA);
         Assert.Equal((RegenKind.Male, true), Only(Regions(mask, new BodyPart(M, 0.59f, BoxA), new BodyPart(F, 0.07f, new Rect(1380, 1880, 120, 60)))));
         Assert.Equal((RegenKind.Female, true), Only(Regions(mask, new BodyPart(F, 0.74f, BoxA), new BodyPart(M, 0.07f, new Rect(1380, 1880, 120, 60)))));
+    }
+
+    [Theory]
+    [InlineData(M, F)]
+    [InlineData(F, M)]
+    public void BuildRegions_OtherSexBoxExactlyAtTheThreshold_IsStrong_SoBoth(int strongCls, int atThresholdCls)
+    {
+        // 임계와 똑같은 점수 0.12f — 임계는 설정의 double 0.12, 점수는 float: float로 맞춰 견줘야 뚜렷한 상자다((float)0.12 < 0.12라 double로 견주면 약한 상자로 떨어져 한쪽 태그만 간다 — 검수 2026-11-19 변이 확인)
+        using var mask = MaskWith(Page, PieceA);
+        Assert.Equal((RegenKind.Both, false), Only(Regions(mask, new BodyPart(strongCls, 0.7f, BoxA), new BodyPart(atThresholdCls, 0.12f, new Rect(1380, 1880, 120, 60)))));
     }
 
     [Fact]
@@ -604,13 +615,13 @@ public class RegenCropTests
         using var mask = MaskWith(Page, PieceA, new Rect(1800, 1900, 200, 40), new Rect(2500, 3500, 200, 40));
         var regions = Regions(mask,
             new BodyPart(M, 0.7f, BoxA), new BodyPart(M, 0.6f, new Rect(1700, 1700, 400, 400)),            // 합쳐지는 두 조각: 남성만
-            new BodyPart(M, 0.5f, new Rect(2400, 3350, 400, 400)), new BodyPart(F, 0.3f, new Rect(2480, 3480, 100, 80)));   // 떨어진 조각: 남성 + 뚜렷한 여성(약한 여성은 2026-11-19부터 뚜렷한 남성에 밀려 가르지 못한다)
+            new BodyPart(M, 0.08f, new Rect(2400, 3350, 400, 400)));   // 떨어진 조각: 약한 남성만 — 종류(Unknown)와 성별(Male)이 갈려 장부가 어긋나면 드러난다
         try
         {
             Assert.Equal(2, regions.Count);
             var top = Assert.Single(regions, r => r.Bounds.Y < 3000); var bottom = Assert.Single(regions, r => r.Bounds.Y > 3000);
-            Assert.Equal((RegenKind.Male, true), (top.Kind, top.Sure));
-            Assert.Equal((RegenKind.Both, false), (bottom.Kind, bottom.Sure));
+            Assert.Equal((RegenKind.Male, RegenKind.Male, true), (top.Kind, top.Sex, top.Sure));
+            Assert.Equal((RegenKind.Unknown, RegenKind.Male, true), (bottom.Kind, bottom.Sex, bottom.Sure));
         }
         finally { foreach (var r in regions) r.Dispose(); }
     }
@@ -618,15 +629,15 @@ public class RegenCropTests
     [Fact]
     public void BuildRegions_SeparateRegions_AreJudgedSeparately()
     {
-        // 멀리 떨어진 두 영역: 위는 남성만(확정), 아래는 남성 + 뚜렷한 여성(둘 다) — 한 영역의 근거가 다른 영역을 흔들지 않는다
+        // 멀리 떨어진 두 영역: 위는 남성만(확정), 아래는 약한 남성만(종류 Unknown·성별 Male) — 한 영역의 근거가 다른 영역을 흔들지 않는다
         using var mask = MaskWith(Page, new Rect(200, 200, 200, 40), new Rect(2500, 3500, 200, 40));
-        var regions = Regions(mask, new BodyPart(M, 0.7f, new Rect(100, 50, 400, 400)), new BodyPart(M, 0.5f, new Rect(2400, 3350, 400, 400)), new BodyPart(F, 0.3f, new Rect(2480, 3480, 100, 80)));
+        var regions = Regions(mask, new BodyPart(M, 0.7f, new Rect(100, 50, 400, 400)), new BodyPart(M, 0.08f, new Rect(2400, 3350, 400, 400)));
         try
         {
             Assert.Equal(2, regions.Count);
             var top = Assert.Single(regions, r => r.Bounds.Y < 1000); var bottom = Assert.Single(regions, r => r.Bounds.Y > 1000);
-            Assert.Equal((RegenKind.Male, true), (top.Kind, top.Sure));
-            Assert.Equal((RegenKind.Both, false), (bottom.Kind, bottom.Sure));
+            Assert.Equal((RegenKind.Male, RegenKind.Male, true), (top.Kind, top.Sex, top.Sure));
+            Assert.Equal((RegenKind.Unknown, RegenKind.Male, true), (bottom.Kind, bottom.Sex, bottom.Sure));
         }
         finally { foreach (var r in regions) r.Dispose(); }
     }

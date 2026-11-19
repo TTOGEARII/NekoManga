@@ -66,7 +66,7 @@ public static class BubbleSolver
     {
         why = BubbleVerdict.NoText;
         var roi = Enlarge(block, BubbleRoiRatio, img.Width, img.Height);
-        int minW = Math.Min(img.Width, (int)(img.Width * BubbleRoiMinWidthOfPage)), minH = Math.Min(img.Height, (int)(img.Height * BubbleRoiMinHeightOfPage));
+        int minW = (int)(img.Width * BubbleRoiMinWidthOfPage), minH = (int)(img.Height * BubbleRoiMinHeightOfPage);   // 비율이 1 미만이라 늘 쪽 안이다
         if (roi.Width < minW || roi.Height < minH)
         {
             int cw = Math.Max(roi.Width, minW), ch = Math.Max(roi.Height, minH);
@@ -76,14 +76,16 @@ public static class BubbleSolver
         using var im = new Mat(img, roi);
         // 이 블록의 글만 남긴다 — 창이 커서 이웃 풍선의 글이 들어오면 ExtractBallonMask가 그 글까지 감싸는 테두리를 찾고(없다), 창 가장자리에 걸린 글이
         // 억지로 닫는 사각형을 끊어 아무것도 못 찾는다(실제 원고 248블록 중 207이 그랬다, 2026-11-18)
-        using var msk = new Mat(textMask, roi).Clone();
-        var own = Enlarge(block, 1.15, img.Width, img.Height) & roi;
+        using var view = new Mat(textMask, roi);   // ROI 머리도 해제한다(finalizer에 맡기지 않게)
+        using var msk = view.Clone();
+        // 블록을 15% 넓힌 자리(이웃 풍선의 글은 밖). 폭 30px 미만의 세로 기둥은 15%가 1~2px뿐이라 감지기가 7px쯤 불린 획이 잘려 획 가장자리가 좁은 고리 후보로 남는다(검수 2026-11-19) — 적어도 8px은 둔다
+        var own = (Enlarge(block, 1.15, img.Width, img.Height) | Pad(block, 8, img.Width, img.Height)) & roi;
         using (var keep = new Mat(msk.Size(), MatType.CV_8UC1, Scalar.Black))
         {
             Cv2.Rectangle(keep, new Rect(own.X - roi.X, own.Y - roi.Y, own.Width, own.Height), Scalar.White, -1);
             Cv2.BitwiseAnd(msk, keep, msk);
         }
-        if (Cv2.CountNonZero(msk) == 0) return false;
+        if (Cv2.CountNonZero(msk) == 0) return true;   // 판정할 획이 없다 — 모르면 번역 쪽으로(효과음 꼴이어도 조용히 빼지 않는다, 검수 2026-11-19)
         if (ClosedOutline(im, msk, roi, img.Size(), out why)) return true;
 
         // 닫힌 테두리는 못 찾았지만 바탕이 단색이면(지금 글자 지우기가 LaMa 없이 칠하는 조건 — SolidPlan) 테두리를 못 읽은 풍선이거나 흰 바탕의 글이다 — 번역한다.
@@ -110,7 +112,8 @@ public static class BubbleSolver
     {
         why = BubbleVerdict.NoOutline;
         using var core = new Mat();
-        Cv2.Erode(msk, core, Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(BubbleTextErode, BubbleTextErode)));
+        using var erodeKernel = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(BubbleTextErode, BubbleTextErode));
+        Cv2.Erode(msk, core, erodeKernel);
         using var ballonMask = ExtractBallonMask(im, msk, BubbleCanny1, BubbleCanny2, BubbleEdgeDilate, BubbleCover, Cv2.CountNonZero(core) > 0 ? core : null);
         if (ballonMask == null) return false;
         var bounds = Cv2.BoundingRect(ballonMask);
@@ -145,7 +148,8 @@ public static class BubbleSolver
         Cv2.GaussianBlur(im, blur, new Size(3, 3), 0);
         using var canny = new Mat();
         Cv2.Canny(blur, canny, canny1, canny2, 3, true);
-        Cv2.Dilate(canny, canny, Cv2.GetStructuringElement(MorphShapes.Rect, new Size(dilate, dilate)));
+        using var dilateKernel = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(dilate, dilate));
+        Cv2.Dilate(canny, canny, dilateKernel);
 
         // 텍스트 bbox
         using var nz = new Mat();
@@ -157,15 +161,19 @@ public static class BubbleSolver
         Cv2.Rectangle(canny, new Rect(0, 0, w - 1, h - 1), Scalar.White, 1);
         using (var notText = new Mat())
         {
-            if (core != null && dilate > 3)
+            if (dilate > 3)   // 기본 경로(TrySolidFill)는 3 — 거기서는 전과 같다. core가 비는 작은 글(9px 깎기에 다 깎인 글)도 띠는 빼야 한다(검수 2026-11-19)
             {
                 // 글 획의 가장자리도 dilate만큼 번졌다 — 마스크 밖으로 삐져나온 그 띠가 글을 감싸는 '테두리'로 잡히지 않게 같은 폭으로 넓혀 뺀다(합성 시험 PlainBackground)
                 using var wide = new Mat();
-                Cv2.Dilate(textMask, wide, Cv2.GetStructuringElement(MorphShapes.Rect, new Size(dilate, dilate)));
+                using var wideKernel = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(dilate, dilate));
+                Cv2.Dilate(textMask, wide, wideKernel);
                 Cv2.BitwiseNot(wide, notText);
             }
             else Cv2.BitwiseNot(textMask, notText);
             Cv2.BitwiseAnd(canny, notText, canny);
+            // 글이 창 가장자리에 닿으면(쪽 가장자리의 블록 — 창이 쪽에 잘려 더 못 넓힌다) 위의 AND가 억지로 닫는 사각형까지 지워 풍선 안이 그림 밖과 이어지고,
+            // FindContours는 그것을 구멍으로 보지 않아 풍선을 못 찾았다(합성 시험 BubbleCutByThePageEdge, 검수 2026-11-19). 풍선 판정 경로에서만 사각형을 다시 그린다 — 지우기 경로(dilate 3)는 전과 같다
+            if (dilate > 3) Cv2.Rectangle(canny, new Rect(0, 0, w - 1, h - 1), Scalar.White, 1);
         }
 
         Cv2.FindContours(canny, out var cons, out _, RetrievalModes.CComp, ContourApproximationModes.ApproxNone);
@@ -202,6 +210,14 @@ public static class BubbleSolver
         int x = r.X - (cw - r.Width) / 2, y = r.Y - (ch - r.Height) / 2;
         int x1 = Math.Max(0, x), y1 = Math.Max(0, y);
         int x2 = Math.Min(imW, x + cw), y2 = Math.Min(imH, y + ch);
+        return new Rect(x1, y1, Math.Max(1, x2 - x1), Math.Max(1, y2 - y1));
+    }
+
+    /// <summary>사각형을 사방으로 px만큼 넓힌다(그림 안으로 자른다) — <see cref="IsInBubble"/>이 이 블록의 글만 남기는 자리의 최소 여백.</summary>
+    private static Rect Pad(Rect r, int px, int imW, int imH)
+    {
+        int x1 = Math.Max(0, r.X - px), y1 = Math.Max(0, r.Y - px);
+        int x2 = Math.Min(imW, r.Right + px), y2 = Math.Min(imH, r.Bottom + px);
         return new Rect(x1, y1, Math.Max(1, x2 - x1), Math.Max(1, y2 - y1));
     }
 

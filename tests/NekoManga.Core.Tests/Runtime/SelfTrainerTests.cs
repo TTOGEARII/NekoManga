@@ -85,13 +85,13 @@ public class SelfTrainerTests
         Assert.Equal(shown, SelfTrainer.ProgressText(fromScript));
 
     [Theory]
-    [InlineData("{\"ok\":false,\"error\":\"스크립트의 글\",\"code\":\"few_pages\",\"args\":[3,20]}", "재료가 3쪽이라 아직 부족해요 (최소 20쪽)")]
-    [InlineData("{\"ok\":false,\"error\":\"스크립트의 글\",\"code\":\"few_crops\",\"args\":[]}", "학습 크롭이 너무 적어요 (마스크가 있는 페이지가 더 필요)")]
-    [InlineData("{\"ok\":false,\"error\":\"스크립트의 글\",\"code\":\"no_weights\"}", "학습 결과 가중치가 없어요 (로그 확인)")]
+    [InlineData("{\"ok\":false,\"error\":\"스크립트의 글\",\"code\":\"few_pages\",\"args\":[3,20]}", "재료가 3쪽이라 아직 부족하다냥 (최소 20쪽)")]
+    [InlineData("{\"ok\":false,\"error\":\"스크립트의 글\",\"code\":\"few_crops\",\"args\":[]}", "학습 크롭이 너무 적다냥 (마스크가 있는 페이지가 더 필요하다냥)")]
+    [InlineData("{\"ok\":false,\"error\":\"스크립트의 글\",\"code\":\"no_weights\"}", "학습 결과 가중치가 없다냥 (로그를 확인해 줘냥)")]
     [InlineData("{\"ok\":false,\"error\":\"스크립트의 글\"}", "스크립트의 글")]                              // 코드 없는 옛 결과 파일
     [InlineData("{\"ok\":false,\"error\":\"스크립트의 글\",\"code\":\"something_new\"}", "스크립트의 글")]   // 모르는 코드
     [InlineData("{\"ok\":false,\"error\":\"스크립트의 글\",\"code\":7}", "스크립트의 글")]                    // 글이 아닌 코드
-    [InlineData("{\"ok\":false,\"code\":\"few_pages\",\"args\":[3]}", "재료가 3쪽이라 아직 부족해요 (최소 ?쪽)")]   // 값이 모자라도 던지지 않는다
+    [InlineData("{\"ok\":false,\"code\":\"few_pages\",\"args\":[3]}", "재료가 3쪽이라 아직 부족하다냥 (최소 ?쪽)")]   // 값이 모자라도 던지지 않는다
     [InlineData("{\"ok\":true}", null)]
     public void ErrorText_KnownCodes_AreBuiltByTheApp_OthersKeepTheScriptText(string resultJson, string? shown) =>
         Assert.Equal(shown, SelfTrainer.ErrorText(System.Text.Json.Nodes.JsonNode.Parse(resultJson)!));

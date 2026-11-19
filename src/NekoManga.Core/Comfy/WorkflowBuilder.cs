@@ -206,22 +206,33 @@ public static class WorkflowBuilder
         // 맞닿은 남녀 부위에서 막대 밑 부위가 평평하게 지워지는 보고(2026-11-12)가 있어 강도만 따로(RegenInpaintCnStrength) 둔다.
         // 'Repaint'(union promax repaint 종류에 원고 그대로)는 그 보고에 시도했으나 사용자 실측으로 검게 뭉개져(검은 선 많은 원고일수록) 실험용 선택지로만 남긴다
         bool repaint = union && s.RegenInpaintControl == "Repaint";
-        p["24"] = Node("EmptyImage", new() { ["width"] = w, ["height"] = h, ["batch_size"] = 1, ["color"] = 0 });
-        if (repaint)
+        // 강도 0(기본, 2026-11-19)이면 ControlNetApplyAdvanced는 조건을 그대로 돌려주지만 ComfyUI는 입력 노드(선화 전처리 9·검은 그림 24·합성 25)를 전부 실행한다 —
+        // 영역마다 몇 초를 버린다(28~46영역인 장도 있다). 그래서 체인을 만들지 않고 1단계 샘플러에 프롬프트를 바로 잇는다. 결과는 같다(강도 0 = 조건 불변, 검수 2026-11-19)
+        bool stage1Cn = s.RegenInpaintCnStrength > 0;
+        if (stage1Cn)
         {
-            p["34"] = Node("SetUnionControlNetType", new() { ["control_net"] = Link("12", 0), ["type"] = "repaint" });
-            p["25"] = Node("ImageCompositeMasked", new() { ["destination"] = Link("1", 0), ["source"] = Link("24", 0), ["mask"] = Link("5", 0), ["x"] = 0, ["y"] = 0, ["resize_source"] = true });
-            p["14"] = CnApply("25", "34", s.RegenInpaintCnStrength);
-        }
-        else
-        {
-            p["9"] = Node("AIO_Preprocessor", new() { ["image"] = Link("1", 0), ["preprocessor"] = "Manga2Anime_LineArt_Preprocessor", ["resolution"] = s.RegenPreprocResolution });
-            p["25"] = Node("ImageCompositeMasked", new() { ["destination"] = Link("9", 0), ["source"] = Link("24", 0), ["mask"] = Link("5", 0), ["x"] = 0, ["y"] = 0, ["resize_source"] = true });
-            p["14"] = CnApply("25", cn, s.RegenInpaintCnStrength);
+            p["24"] = Node("EmptyImage", new() { ["width"] = w, ["height"] = h, ["batch_size"] = 1, ["color"] = 0 });
+            if (repaint)
+            {
+                p["34"] = Node("SetUnionControlNetType", new() { ["control_net"] = Link("12", 0), ["type"] = "repaint" });
+                p["25"] = Node("ImageCompositeMasked", new() { ["destination"] = Link("1", 0), ["source"] = Link("24", 0), ["mask"] = Link("5", 0), ["x"] = 0, ["y"] = 0, ["resize_source"] = true });
+                p["14"] = CnApply("25", "34", s.RegenInpaintCnStrength);
+            }
+            else
+            {
+                p["9"] = Node("AIO_Preprocessor", new() { ["image"] = Link("1", 0), ["preprocessor"] = "Manga2Anime_LineArt_Preprocessor", ["resolution"] = s.RegenPreprocResolution });
+                p["25"] = Node("ImageCompositeMasked", new() { ["destination"] = Link("9", 0), ["source"] = Link("24", 0), ["mask"] = Link("5", 0), ["x"] = 0, ["y"] = 0, ["resize_source"] = true });
+                p["14"] = CnApply("25", cn, s.RegenInpaintCnStrength);
+            }
         }
         p["15"] = Node("VAEEncode", new() { ["pixels"] = Link("1", 0), ["vae"] = Link("2", 2) });
         p["26"] = Node("SetLatentNoiseMask", new() { ["samples"] = Link("15", 0), ["mask"] = Link("5", 0) });
         p["16"] = Sampler("14", "26", first, 1.0);
+        if (!stage1Cn)   // ControlNet 없이 프롬프트를 바로(노드 14가 없다)
+        {
+            var in16 = (JsonObject)p["16"]!["inputs"]!;
+            in16["positive"] = Link(pos, 0); in16["negative"] = Link("11", 0);
+        }
         p["17"] = Node("VAEDecode", new() { ["samples"] = Link("16", 0), ["vae"] = Link("2", 2) });
         p["27"] = Node("ImageCompositeMasked", new() { ["destination"] = Link("1", 0), ["source"] = Link("17", 0), ["mask"] = Link("5", 0), ["x"] = 0, ["y"] = 0, ["resize_source"] = false });
         // ── 2단계: 영역 다듬기 (디노이즈 설정값) ──

@@ -43,6 +43,7 @@ internal static class RuntimeTestHelpers
         [nameof(AppSettings.DecensorReviewMode)] = "Window",
         [nameof(AppSettings.LetterAlign)] = "Right",
         [nameof(AppSettings.RegenInpaintControl)] = "Repaint",
+        [nameof(AppSettings.LetterColorHex)] = "#FF0000",   // #RRGGBB·auto가 아닌 값은 검정으로 돌아온다(2026-11-19)
         [nameof(AppSettings.UiLanguage)] = "ja",
     };
 
