@@ -92,7 +92,7 @@ public sealed class OnnxEnv(AppSettings settings) : IDisposable
             if (_sessions.TryGetValue(Key(fileName, cpuOnly), out var s)) return s;
             var path = ModelPath(fileName);
             if (!File.Exists(path))
-                throw new FileNotFoundException(Loc.F($"엔진 모델이 없어요: {fileName} — 설정 → 구성요소에서 설치해 주세요."), path);
+                throw new FileNotFoundException(Loc.F($"엔진 모델이 없다냥: {fileName} — 설정 → 구성요소에서 설치해 줘냥."), path);
 
             InferenceSession session;
             string ep;

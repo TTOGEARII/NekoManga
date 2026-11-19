@@ -142,7 +142,7 @@ public static class WorkflowBuilder
         var positive = Prompt(s.RegenPrompt, bodyTags);
         bool byArea = areaUpload != null && areaTags is { Count: >= 2 };
         if (byArea && areaTags!.Count > NekoManga.Core.Decensor.RegenSexAreas.Channels.Length)
-            throw new ArgumentException(Loc.T("자리별 태그는 셋까지예요(마스크를 R·G·B 채널에 싣는다)."), nameof(areaTags));
+            throw new ArgumentException(Loc.T("자리별 태그는 셋까지다냥(마스크를 R·G·B 채널에 싣는다)."), nameof(areaTags));
         var p = new JsonObject
         {
             ["1"] = Node("LoadImage", new() { ["image"] = imgUpload }),      // 그림 + 알파 = 영역

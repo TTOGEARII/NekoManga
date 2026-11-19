@@ -94,7 +94,7 @@ public partial class ResultWindow
         _index = Math.Clamp(startIndex, 0, _refs.Count - 1);
         _confirmPage = confirmPage; _isWaiting = isWaiting; _startOnMask = startOnMask; _isDone = isDone;
         _confirmAll = confirmAll; _isJobRunning = isJobRunning; _canRerenderEdited = canRerenderEdited;
-        if (_canRerenderEdited) TxtDecensorHint.Text += Loc.T(" 여러 장을 고친 뒤 위의 [고친 장 모두 다시 렌더링]으로 한꺼번에 돌릴 수 있어요.");
+        if (_canRerenderEdited) TxtDecensorHint.Text += Loc.T(" 여러 장을 고친 뒤 [고친 장 모두 다시 렌더링]으로 한꺼번에 돌릴 수 있다냥.");
 
         // '기본' 모델은 늘 Aletheia Lens 복원('이전 방식' 엔진은 2026-11-12 삭제) — 손으로 고른 자리는 막대 모델로 지운다. 이름·툴팁은 XAML의 ItemEngineBasic
         foreach (var p in _refs) CmbPages.Items.Add(Path.GetFileName(p.ViewPath));
@@ -156,12 +156,12 @@ public partial class ResultWindow
         Redraw();
         if (LetterMode)
             TxtStatus.Text = _letterBlocks.Count > 0
-                ? Loc.F($"번역 블록 {_letterBlocks.Count}개 — 풍선을 클릭해 고르고, 두 번 클릭하면 글을 고쳐요")
-                : Loc.T("이 장은 보일 블록이 없어요");
+                ? Loc.F($"번역 블록 {_letterBlocks.Count}개 — 클릭해 고르고, 두 번 클릭하면 글을 고친다냥")
+                : Loc.T("이 장은 보일 블록이 없다냥");
         else if (MaskMode)
-            TxtStatus.Text = IsWaitingPage ? Loc.T("검토 대기 중 — 빨간 마스크를 고친 뒤 [검열 제거 시작]을 누르세요")
-                           : HasStoredMask ? Loc.T("빨간 마스크를 고친 뒤 [지우기] — 이 장만 검열 제거·식자를 다시 해요")
-                           : Loc.T("지울 곳을 칠한 뒤 [지우기] — 결과물에 바로 지워요");
+            TxtStatus.Text = IsWaitingPage ? Loc.T("검토 대기 중이다냥 — 빨간 마스크를 고친 뒤 [검열 제거 시작]을 누르라냥")
+                           : HasStoredMask ? Loc.T("빨간 마스크를 고친 뒤 [지우기] — 이 장만 검열 제거·식자를 다시 한다냥")
+                           : Loc.T("지울 곳을 칠한 뒤 [지우기] — 결과물에 바로 지운다냥");
     }
 
     /// <summary>탭에 따라 아래 버튼 바의 글자·표시를 맞춘다.</summary>
@@ -171,10 +171,10 @@ public partial class ResultWindow
                          : IsWaitingPage ? Loc.T("✔ 검열 제거 시작")
                          : Loc.T("✨ 지우기 (이 장 다시 렌더링)");
         BtnApply.ToolTip = LetterMode ? null
-                         : IsWaitingPage ? Loc.T("고친 마스크를 저장하고, 검토 대기 중인 모든 장의 검열 제거를 시작해요 — 이 창은 닫혀요")
-                         : JobRunning ? Loc.T("작업이 도는 중이에요 — 모든 장이 한 번 끝난 뒤에 이 장만 다시 지울 수 있어요")
-                         : HasStoredMask ? Loc.T("검열 제거 전 원고에 이 마스크로 검열 제거 → 식자를 이 장만 다시 해요 (채색은 안 해요)")
-                         : Loc.T("결과물에 이 마스크 자리를 바로 지워요 — 끝나면 [저장]");
+                         : IsWaitingPage ? Loc.T("고친 마스크를 저장하고 검토 대기 중인 모든 장의 검열 제거를 시작한다냥 — 이 창은 닫힌다냥")
+                         : JobRunning ? Loc.T("작업이 도는 중이다냥 — 모든 장이 끝난 뒤에 이 장만 다시 지울 수 있다냥")
+                         : HasStoredMask ? Loc.T("이 마스크로 검열 제거 → 식자를 이 장만 다시 한다냥 (채색은 안 한다냥)")
+                         : Loc.T("결과물에 이 마스크 자리를 바로 지운다냥 — 끝나면 [저장]");
         BtnSave.Content = MaskMode ? Loc.T("💾 마스크 저장") : Loc.T("💾 저장");
         BtnSave.Visibility = MaskMode && !HasStoredMask ? Visibility.Collapsed : Visibility.Visible;   // 저장 마스크가 없는 장은 사이드카를 새로 만들지 않는다
         BtnSave.IsEnabled = MaskMode ? _maskDirty : _dirty;
@@ -239,7 +239,7 @@ public partial class ResultWindow
         if (_maskDirty && autoSaveMask && !SaveMaskSidecar()) return false;   // 저장 실패 — 상태 줄에 까닭이 있다. 고친 것을 말없이 잃지 않게 이 장에 머문다
         if (_maskDirty)
         {
-            var mr = MessageBox.Show(Loc.T("고친 마스크를 저장할까요?"), Loc.T("마스크 수정"), MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+            var mr = MessageBox.Show(Loc.T("고친 마스크를 저장할까냥?"), Loc.T("마스크 수정"), MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
             if (mr == MessageBoxResult.Cancel) return false;
             if (mr == MessageBoxResult.Yes) { if (!SaveMaskSidecar()) return false; }
             else dropMask = true;
@@ -253,7 +253,7 @@ public partial class ResultWindow
             bool askReletter = !(_canRerenderEdited && _pendingPages.Contains(_index)) && !_dirty && !_busy;
             if (askReletter)
             {
-                var lr = MessageBox.Show(Loc.T("식자 탭에서 고친 글·위치를 아직 결과물에 반영하지 않았어요.\n다시 식자해서 저장할까요?"), Loc.T("식자 수정"), MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+                var lr = MessageBox.Show(Loc.T("식자 탭에서 고친 글·자리를 아직 결과물에 반영하지 않았다냥.\n다시 식자해서 저장할까냥?"), Loc.T("식자 수정"), MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
                 if (lr == MessageBoxResult.Cancel) return false;
                 if (lr == MessageBoxResult.Yes) { if (!(ApplyLettering() && Save())) return false; }
                 else dropLetter = true;
@@ -261,13 +261,13 @@ public partial class ResultWindow
             else if (!SaveLetterSidecar())
             {
                 // 못 썼다(상태 줄에 까닭) — 버릴 길을 준다. 머물기만 하면 출력 폴더가 사라졌을 때(드라이브가 빠짐 등) 장을 넘길 수도 창을 닫을 수도 없다
-                if (MessageBox.Show(Loc.T("식자 탭에서 고친 내용을 저장하지 못했어요.\n버리고 계속할까요?"), Loc.T("식자 수정"), MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return false;
+                if (MessageBox.Show(Loc.T("식자 탭에서 고친 내용을 저장하지 못했다냥.\n버리고 계속할까냥?"), Loc.T("식자 수정"), MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return false;
                 dropLetter = true;
             }
         }
         if (_dirty)
         {
-            var r = MessageBox.Show(Loc.T("저장하지 않은 수정이 있어요. 저장할까요?"), Loc.T("결과 보기"),
+            var r = MessageBox.Show(Loc.T("저장하지 않은 수정이 있다냥. 저장할까냥?"), Loc.T("결과 보기"),
                 MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
             if (r == MessageBoxResult.Cancel) return false;
             if (r == MessageBoxResult.Yes) { if (!Save()) return false; }
@@ -288,11 +288,11 @@ public partial class ResultWindow
     {
         if (MaskMode)
         {
-            if (!HasStoredMask) { TxtStatus.Text = Loc.T("이 장은 저장 마스크가 없어 마스크를 저장하지 않아요 — [지우기]로 결과물에 지운 뒤 [저장]하세요"); return; }
+            if (!HasStoredMask) { TxtStatus.Text = Loc.T("이 장은 저장 마스크가 없어 마스크를 저장하지 않는다냥 — [지우기]로 지운 뒤 [저장]하라냥"); return; }
             if (!SaveMaskSidecar()) return;   // 저장 실패 — 상태 줄에 까닭이 있다
             TxtStatus.Text = _canRerenderEdited && _maskSc?.Pending == true
-                ? Loc.T("마스크를 저장했어요 — [지우기]로 이 장만, [고친 장 모두 다시 렌더링]으로 고친 장을 한꺼번에 결과물에 반영해요")
-                : Loc.T("마스크를 저장했어요 — 다음에 다시 돌려도 이 마스크를 써요");
+                ? Loc.T("마스크를 저장했다냥 — [지우기]로 이 장만, [고친 장 모두 다시 렌더링]으로 한꺼번에 반영한다냥")
+                : Loc.T("마스크를 저장했다냥 — 다음에 다시 돌려도 이 마스크를 쓴다냥");
             return;
         }
         Save();
@@ -302,7 +302,7 @@ public partial class ResultWindow
     private bool Save()
     {
         // 페이지를 읽는 동안(_index는 새 장, 그림·마스크는 아직 옛 장)에는 저장하지 않는다 — 옛 장의 그림이 새 장의 결과로 들어간다
-        if (_loading) { TxtStatus.Text = Loc.T("페이지를 읽는 중이에요 — 잠시 뒤 다시 저장해 주세요"); return false; }
+        if (_loading) { TxtStatus.Text = Loc.T("페이지를 읽는 중이다냥 — 잠시 뒤 다시 저장해 줘냥"); return false; }
         try
         {
             var r = _refs[_index];
@@ -313,7 +313,7 @@ public partial class ResultWindow
                 target = Path.Combine(Path.GetDirectoryName(r.ViewPath) ?? "", Path.GetFileNameWithoutExtension(r.ViewPath) + ".edited.png");
             if (!string.IsNullOrEmpty(r.Source) && string.Equals(PipelineRunner.FileKey(target), PipelineRunner.FileKey(r.Source), StringComparison.Ordinal))
             {
-                TxtStatus.Text = Loc.T("원본 원고와 같은 경로라 저장하지 않았어요 — 설정에서 출력 폴더를 따로 지정해 주세요");
+                TxtStatus.Text = Loc.T("원본 원고와 같은 경로라 저장하지 않았다냥 — 설정에서 출력 폴더를 따로 정해 줘냥");
                 return false;
             }
             ImgIo.Write(target, _img);
@@ -334,14 +334,14 @@ public partial class ResultWindow
             if (redirect)
             {
                 SetViewPath(_index, target);
-                TxtStatus.Text = Loc.F($"결과물로 저장했어요 → {Path.GetFileName(target)} (원본은 그대로)")
-                               + (IsWaitingPage ? Loc.T(" — 검열 제거를 진행하면 이 결과물은 다시 만들어져요") : "");
+                TxtStatus.Text = Loc.F($"결과물로 저장했다냥 → {Path.GetFileName(target)} (원본은 그대로)")
+                               + (IsWaitingPage ? Loc.T(" — 검열 제거를 진행하면 이 결과물은 다시 만들어진다냥") : "");
             }
-            else TxtStatus.Text = Loc.F($"저장했어요 → {Path.GetFileName(target)}");
+            else TxtStatus.Text = Loc.F($"저장했다냥 → {Path.GetFileName(target)}");
             if (ownerWarning != null) TxtStatus.Text += " · ⚠ " + ownerWarning;
             return true;
         }
-        catch (Exception ex) { TxtStatus.Text = Loc.T("저장 실패: ") + ex.Message; return false; }
+        catch (Exception ex) { TxtStatus.Text = Loc.T("저장 실패다냥: ") + ex.Message; return false; }
     }
 
     /// <summary>이 페이지가 보여 주는(=저장하는) 파일을 바꾼다 — 제목·페이지 콤보도 같이.</summary>

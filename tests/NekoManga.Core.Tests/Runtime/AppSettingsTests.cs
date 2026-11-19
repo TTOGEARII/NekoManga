@@ -588,6 +588,46 @@ public class AppSettingsTests
         Assert.Empty(RuntimeTestHelpers.Differences(snapshot, original));
     }
 
+    [Fact]
+    public void Defaults_TranslateBubbleOnly_On()
+    {
+        // 2026-11-18 사용자: 번역은 말풍선 안의 글만 — 그림 위의 효과음·손글씨는 그대로 둔다
+        Assert.True(new AppSettings().TranslateBubbleOnly);
+    }
+
+    // ── 식자 글자 색 ──
+
+    [Fact]
+    public void Defaults_LetterColor_PureBlack()
+    {
+        // 2026-11-18 사용자: 기본은 완전 검정 — 원문 색 자동(획 픽셀 평균)은 짙은 회색이 나와 기본에서 뺐다
+        Assert.Equal("#000000", new AppSettings().LetterColorHex);
+    }
+
+    [Theory]
+    [InlineData("\"\"", "#000000")]          // 옛 기본값(비움 = 원문 색 자동)은 검정으로
+    [InlineData("\"   \"", "#000000")]
+    [InlineData("null", "#000000")]
+    [InlineData("\"auto\"", "auto")]         // 원문 색을 따라가려면 auto라고 적는다
+    [InlineData("\"#FF0000\"", "#FF0000")]   // 고른 색은 그대로
+    public void Load_LetterColor_EmptyBecomesBlack_AutoAndHexKept(string json, string expected)
+    {
+        using var t = new TempDir();
+
+        var s = LoadJson(t, "{\"LetterColorHex\": " + json + "}");
+
+        Assert.Equal(expected, s.LetterColorHex);
+    }
+
+    [Theory]
+    [InlineData("auto", true)]
+    [InlineData("AUTO", true)]
+    [InlineData(" auto ", true)]
+    [InlineData("", false)]
+    [InlineData("#000000", false)]
+    public void IsAutoColor_AutoKeywordOnly(string value, bool expected) =>
+        Assert.Equal(expected, AppSettings.IsAutoColor(value));
+
     // ── 화면 언어 ──
 
     [Fact]

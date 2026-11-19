@@ -143,7 +143,7 @@ public class PipelineRunnerUnreadableTests
         using (var runner = RuleRunner(s))
         {
             var ex = await Assert.ThrowsAsync<InvalidDataException>(() => runner.RedoPageAsync(src, new ProgressLog(), CancellationToken.None));
-            Assert.Equal("이미지를 읽지 못했어요: 01.pre.png", ex.Message);
+            Assert.Equal("이미지를 읽지 못했다냥: 01.pre.png", ex.Message);
         }
 
         AssertUnchanged(before, outDir);
@@ -177,7 +177,7 @@ public class PipelineRunnerUnreadableTests
             await runner.RunAsync([src], log, CancellationToken.None);
         }
 
-        Assert.Equal("이미지를 읽지 못했어요: 01.jpg", log.FinalOf(src).Error);
+        Assert.Equal("이미지를 읽지 못했다냥: 01.jpg", log.FinalOf(src).Error);
         Assert.Equal(["01.jpg"], FilesUnder(t.At("vol1")));   // 결과·'원본 그대로' 복사본·마스크 사이드카 어느 것도 생기지 않았다
     }
 
@@ -198,7 +198,7 @@ public class PipelineRunnerUnreadableTests
         using (var runner = RuleRunner(s))
             await runner.RunAsync([src], log, CancellationToken.None);
 
-        Assert.Equal("이미지를 읽지 못했어요: 01.jpg", log.FinalOf(src).Error);
+        Assert.Equal("이미지를 읽지 못했다냥: 01.jpg", log.FinalOf(src).Error);
         AssertUnchanged(before, vol);   // 0바이트 복사본도 없고, 지난 결과물도 그대로다
     }
 
@@ -225,7 +225,7 @@ public class PipelineRunnerUnreadableTests
         Assert.True(ImgIo.Write(MaskSidecar.MaskPathFor(PipelineRunner.OutputPathFor(s, source)), cleared));
     }
 
-    private const string Untouched = "검열 없음 — 원본 그대로";
+    private const string Untouched = "검열 없음 — 원본 그대로다냥";
 
     [Theory]
     [InlineData("zero")]
@@ -414,7 +414,7 @@ public class PipelineRunnerUnreadableTests
         // '검열 없음 — 바로 진행'은 1차를 도는 쪽이 2차 큐에 넣기 직전에 보고한다 — 그 자리에서 칠해 저장한다
         var log = new HookedLog(p =>
         {
-            if (p.File != clean || !p.Stage.StartsWith("검열 없음 — 바로 진행")) return;
+            if (p.File != clean || !p.Stage.StartsWith("검열 없음 — 바로 진행한다냥")) return;
             var sc = MaskSidecar.Load(outPath)!;
             while (DateTime.Now == sc.SavedAt) Thread.Sleep(1);
             using var mask = RectMask(W, H, Bar);
@@ -1044,7 +1044,7 @@ public class PipelineRunnerUnreadableTests
         Assert.NotNull(error);
         Assert.Contains(".mask.png", error);
         Assert.Contains("잠시 뒤 다시", error);
-        Assert.DoesNotContain(log.Items, p => p.Stage == "검열 영역 찾는 중");   // 새로 감지하지 않았다
+        Assert.DoesNotContain(log.Items, p => p.Stage == "검열 영역 찾는 중이다냥");   // 새로 감지하지 않았다
         AssertUnchanged(before, outDir);
     }
 
@@ -1069,6 +1069,6 @@ public class PipelineRunnerUnreadableTests
 
         Assert.Null(log.FinalOf(src).Error);
         Assert.Contains(log.Items, p => p.Stage.StartsWith("저장된 마스크"));
-        Assert.DoesNotContain(log.Items, p => p.Stage == "검열 영역 찾는 중");
+        Assert.DoesNotContain(log.Items, p => p.Stage == "검열 영역 찾는 중이다냥");
     }
 }

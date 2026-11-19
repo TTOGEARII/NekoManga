@@ -50,7 +50,7 @@
         <!-- 창 전체 톤망점 (원고 질감) — 메인·설정·설치 창과 동일 -->
         <Rectangle Fill="{DynamicResource MangaDots}" IsHitTestVisible="False"/>
         <DockPanel>
-            <ui:TitleBar DockPanel.Dock="Top" Title="검열 마스크 검토 — 빨간 곳이 지워져요">
+            <ui:TitleBar DockPanel.Dock="Top" Title="검열 마스크 검토 — 빨간 곳이 지워진다냥">
                 <ui:TitleBar.Icon>
                     <ui:ImageIcon Source="{DynamicResource NekoLogo}"/>
                 </ui:TitleBar.Icon>
@@ -79,22 +79,22 @@
                     <RadioButton x:Name="RbAdd" Content="🖌 칠하기" IsChecked="True" GroupName="tool" Margin="0,0,10,0" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" ToolTip="B"/>
                     <RadioButton x:Name="RbErase" Content="🧽 지우개" GroupName="tool" Margin="0,0,10,0" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" ToolTip="E"/>
                     <RadioButton x:Name="RbPoly" Content="⬠ 다각형" GroupName="tool" Margin="0,0,16,0" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center"
-                                 ToolTip="L — 꼭짓점을 클릭해 영역을 그리고 더블클릭(또는 Enter)으로 닫아요"/>
+                                 ToolTip="L — 꼭짓점을 찍고 더블클릭(또는 Enter)으로 닫는다냥"/>
                     <TextBlock Text="브러시" VerticalAlignment="Center" Foreground="{DynamicResource NekoText}" Margin="0,0,6,0"/>
-                    <Slider x:Name="SldBrush" Minimum="4" Maximum="120" Value="24" Width="140" VerticalAlignment="Center" ToolTip="브러시 반지름(원본 px) — [ ] 키로도 바꿔요"/>
+                    <Slider x:Name="SldBrush" Minimum="4" Maximum="120" Value="24" Width="140" VerticalAlignment="Center" ToolTip="브러시 반지름(원본 px) — [ ] 키로도 바꾼다냥"/>
                     <TextBlock x:Name="TxtBrush" Text="24px" VerticalAlignment="Center" Foreground="{DynamicResource NekoText}" Margin="6,0,20,0"/>
 
                     <Border Style="{StaticResource BarTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="마스크"/></Border>
                     <ui:Button Content="↶ 되돌리기" Click="BtnUndo_Click" Padding="12,4" ToolTip="Ctrl+Z"/>
-                    <ui:Button Content="자동 감지로" Click="BtnReset_Click" Padding="12,4" Margin="8,0,0,0" ToolTip="이 페이지 마스크를 감지 결과로 되돌려요"/>
+                    <ui:Button Content="자동 감지로" Click="BtnReset_Click" Padding="12,4" Margin="8,0,0,0" ToolTip="이 장의 마스크를 감지 결과로 되돌린다냥"/>
                     <ui:Button Content="전부 지우기" Click="BtnClear_Click" Padding="12,4" Margin="8,0,0,0"/>
-                    <CheckBox x:Name="ChkSkip" Content="이 페이지는 검열 없음 (건너뛰기)" Margin="12,0,20,0" VerticalAlignment="Center"
+                    <CheckBox x:Name="ChkSkip" Content="이 장은 검열 없음 (건너뛴다냥)" Margin="12,0,20,0" VerticalAlignment="Center"
                               Foreground="{DynamicResource NekoText}" Checked="ChkSkip_Changed" Unchecked="ChkSkip_Changed"/>
 
                     <Border Style="{StaticResource BarTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="보기"/></Border>
                     <TextBlock Text="확대" VerticalAlignment="Center" Foreground="{DynamicResource NekoText}" Margin="0,0,6,0"/>
                     <Slider x:Name="SldZoom" Minimum="0.2" Maximum="4" Value="1" Width="120" VerticalAlignment="Center" ValueChanged="Zoom_Changed"
-                            ToolTip="포토샵식: Alt+휠·Ctrl+± 확대, Ctrl+0 맞춤, Ctrl+1 100%, 휠=스크롤, Ctrl+휠=가로 스크롤, Space+드래그=이동"/>
+                            ToolTip="Alt+휠·Ctrl+± 확대, Ctrl+0 맞춤, Ctrl+1 100%, Space+드래그 이동이다냥"/>
                 </WrapPanel>
             </Border>
 

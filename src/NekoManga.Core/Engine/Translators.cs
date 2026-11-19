@@ -82,7 +82,7 @@ public class DeepLTranslator(string apiKey) : ITranslator
         });
         using var resp = await Http.SendAsync(req, ct);
         if (!resp.IsSuccessStatusCode)
-            throw new InvalidOperationException(Loc.F($"DeepL 오류 (HTTP {(int)resp.StatusCode}) — 설정의 API 키를 확인해 주세요."));
+            throw new InvalidOperationException(Loc.F($"DeepL 오류 (HTTP {(int)resp.StatusCode}) — 설정의 API 키를 확인해 줘냥."));
         var root = JsonNode.Parse(await resp.Content.ReadAsStringAsync(ct));
         return (root?["translations"] as JsonArray)?
             .Select(t => t?["text"]?.GetValue<string>() ?? "").ToList() ?? new List<string>();
@@ -158,7 +158,7 @@ public class LlmTranslator(string endpoint, string apiKey, string model, string 
             {
                 // thinking 파라미터를 모르는 모델/엔드포인트면 그것 없이 한 번 더
                 if (thinkingOff && (int)resp.StatusCode == 400) { thinkingOff = false; continue; }
-                throw new InvalidOperationException(Loc.F($"{engineName} 오류 (HTTP {(int)resp.StatusCode}) — 설정의 API 키를 확인해 주세요."));
+                throw new InvalidOperationException(Loc.F($"{engineName} 오류 (HTTP {(int)resp.StatusCode}) — 설정의 API 키를 확인해 줘냥."));
             }
 
             var choice = JsonNode.Parse(text)?["choices"]?[0];

@@ -173,7 +173,7 @@ public static class UiText
         foreach (var (property, now) in found)
         {
             // 지금 값이 우리가 넣은 글 그대로면 원문에서 다시 번역한다. 다른 글이면(코드가 넣었다) 그 글을 원문으로 보되, 기억은 지우지 않는다 —
-            // 코드가 잠깐 다른 글을 보였다가("뽑는 중...") 들고 있던 옛 이름표를 도로 넣으면, 그 이름표를 다시 원문에서 번역할 수 있어야 한다
+            // 코드가 잠깐 다른 글을 보였다가("뽑는 중이다냥...") 들고 있던 옛 이름표를 도로 넣으면, 그 이름표를 다시 원문에서 번역할 수 있어야 한다
             bool ours = known != null && known.TryGetValue(property, out var was) && was.Shown == now;
             string source = ours ? known![property].Source : now;
             if (!HasHangul(source)) continue;

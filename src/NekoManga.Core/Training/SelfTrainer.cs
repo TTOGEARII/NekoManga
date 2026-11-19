@@ -68,11 +68,11 @@ public sealed class SelfTrainer(AppSettings settings)
 
     public bool CanTrain(out string why)
     {
-        if (!settings.ComfyAvailable || !File.Exists(PythonExe)) { why = Loc.T("학습은 ComfyUI에 딸린 파이썬으로 돌아요 — 설정 → 구성요소에서 ComfyUI를 설치해 주세요."); return false; }
-        if (!File.Exists(RuntimePt) && !File.Exists(CandidatePt)) { why = Loc.F($"학습 기준 가중치가 없어요: {RuntimePt}"); return false; }
-        if (!File.Exists(ScriptPath)) { why = Loc.F($"학습 스크립트가 없어요: {ScriptPath}"); return false; }
+        if (!settings.ComfyAvailable || !File.Exists(PythonExe)) { why = Loc.T("학습은 ComfyUI에 딸린 파이썬으로 돈다냥 — 설정 → 구성요소에서 ComfyUI를 설치해 줘냥."); return false; }
+        if (!File.Exists(RuntimePt) && !File.Exists(CandidatePt)) { why = Loc.F($"학습 기준 가중치가 없다냥: {RuntimePt}"); return false; }
+        if (!File.Exists(ScriptPath)) { why = Loc.F($"학습 스크립트가 없다냥: {ScriptPath}"); return false; }
         var m = CountMaterial();
-        if (m.Pages < settings.SelfTrainMinPages) { why = Loc.F($"재료가 {m.Pages}쪽이라 아직 부족해요 (최소 {settings.SelfTrainMinPages}쪽). 검토 창을 거친 페이지가 쌓이면 켜져요."); return false; }
+        if (m.Pages < settings.SelfTrainMinPages) { why = Loc.F($"재료가 {m.Pages}쪽이라 아직 부족하다냥 (최소 {settings.SelfTrainMinPages}쪽). 검토를 거친 페이지가 쌓이면 켜진다냥."); return false; }
         why = ""; return true;
     }
 
@@ -93,8 +93,8 @@ public sealed class SelfTrainer(AppSettings settings)
     // 쓰는 것은 진행 중인 본 작업, 닫은 결과 창에서 아직 돌고 있는 채색·검열 제거, 표지 색 뽑기다 — 결과 창과 설정 창은 둘 다 모달이라 같이 떠 있지 못하므로
     // '결과 창을 닫은 뒤'가 아니라 '작업이 끝난 뒤'라고 알린다
     private static string BusyText =>
-        Loc.T("채색 엔진을 쓰는 작업이 있어서 학습을 시작하지 않았어요 — 학습은 GPU를 비우려고 엔진을 끄는데, 지금 끄면 그 작업이 도중에 실패해요. ") +
-        Loc.T("작업이 끝난 뒤 다시 눌러 주세요.");
+        Loc.T("엔진을 쓰는 작업이 있어서 학습을 시작하지 않았다냥 — 학습은 엔진을 끄는데, 지금 끄면 그 작업이 실패한다냥. ") +
+        Loc.T("작업이 끝난 뒤 다시 눌러 줘냥.");
 
     /// <summary>학습을 시작하면 이 앱의 작업이 쓰는 중인 채색 엔진을 끄게 되는가 — 그러면 사용자에게 보일 까닭, 아니면 null.
     /// 학습은 GPU를 비우려고 엔진을 끄는데(TrainAsync) 쓰는 중인 엔진을 끄면 그 작업이 도중에 연결 오류로 실패한다 — 그래서 쓰는 중이면 조용히 끄지 않고 학습을 시작하지 않는다.
@@ -111,7 +111,7 @@ public sealed class SelfTrainer(AppSettings settings)
     {
         if (!await EngineAliveAsync()) return;
         if (_ledger.JobsUsing > 0) throw new InvalidOperationException(BusyText);
-        status?.Report(Loc.T("GPU를 비우려고 채색 엔진을 끄는 중..."));
+        status?.Report(Loc.T("GPU를 비우려고 엔진을 끄는 중이다냥..."));
         if (_killPythons == null) EngineManager.Stop(settings);
         else EngineManager.Stop(settings, _ledger, _killPythons);
     }

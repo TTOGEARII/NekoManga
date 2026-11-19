@@ -49,7 +49,7 @@ public class ImgIoTests
         // 메인 창이 받지 않은 파일을 조용히 버려, 전에 받던 .avif가 왜 목록에 안 들어오는지 알 수 없었다 — 그림이 아닌 파일까지 알리면 잡음이다
         var notice = ImgIo.UnreadableNotice(["vol1/02.avif", "vol1/sub/03.AVIF", "photo.heic", "notes.txt", "01_jpg.mask.json", "archive.zip", "page"]);
 
-        Assert.Equal("AVIF 2장·HEIC 1장은 읽을 수 없어 뺐어요", notice);
+        Assert.Equal("AVIF 2장·HEIC 1장은 읽을 수 없어 뺐다냥", notice);
     }
 
     [Fact]
@@ -138,7 +138,7 @@ public class ImgIoTests
     [Fact]
     public void Read_FileThatIsNotAnImage_ReturnsEmptyMat()
     {
-        // 못 읽는 파일은 예외가 아니라 빈 Mat — 호출부가 Empty()로 갈라 "읽지 못했어요"를 알린다
+        // 못 읽는 파일은 예외가 아니라 빈 Mat — 호출부가 Empty()로 갈라 "읽지 못했다냥"를 알린다
         using var t = new TempDir();
         var path = t.At(UnicodeName, "가짜.png");
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);

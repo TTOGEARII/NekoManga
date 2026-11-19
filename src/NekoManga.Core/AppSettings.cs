@@ -10,6 +10,10 @@ public class AppSettings
     public bool EnableAutoColor { get; set; } = true;
     public bool EnableDecensor { get; set; } = false;
     public bool EnableTranslate { get; set; } = true;
+    /// <summary>말풍선 밖의 효과음은 번역하지 않는다(2026-11-18 사용자 "번역은 말풍선 안에 있는 것만") — 풍선 밖으로 보이고(<see cref="Engine.BubbleSolver.IsInBubble"/>)
+    /// 효과음처럼 생긴(<see cref="Engine.EmbeddedTranslator.LooksLikeSfx"/>) 글은 번역·지움·식자하지 않고 그대로 둔다. 그런 글은 번역기가 폭주하기 쉽고 식자해도 그림을 가린다.
+    /// 풍선 판정만으로 거르지 않는다 — 실제 원고에서 테두리가 닫히지 않는 풍선이 많아 대사가 빠진다(notes/translate-letter.md).</summary>
+    public bool TranslateBubbleOnly { get; set; } = true;
 
     // ── 경로 ──────────────────────────────────────────────────
     /// <summary>ComfyUI·BallonsTranslator·모델이 설치되는 루트. 용량이 커서(약 15GB) 여유 있는 드라이브 권장.</summary>
@@ -200,9 +204,11 @@ public class AppSettings
     /// "Repaint"(실험용) = union promax의 repaint — 조각 자리를 검게 비운 원고를 넣어 채운다. 맞닿은 남녀 부위에서 막대 밑 부위가 지워지는 보고(2026-11-12)에 시도했으나
     /// 사용자 실측으로 검게 뭉개지고(검은 선이 많은 원고일수록 심함 — 검게 비운 자리를 먹칠로 읽는다) 더 나빴다. union이 아닌 ControlNet은 종류 설정이 없어 늘 Lineart.</summary>
     public string RegenInpaintControl { get; set; } = "Lineart";
-    /// <summary>1단계(조각 인페인트) ControlNet 강도 — 2단계(RegenCnStrength)와 따로. 기본 0.5(2026-11-12 실측·사용자 확인): 0.85에서는 조각 자리를 '선 없음'으로 밀어 막대 밑 부위가 빈 살결로 메워지는 쪽이 있었다
-    /// (시험 4쪽 중 2쪽 — 막대 안 선 밀도 0.004·0.009, 0.5에서는 0.25·0.22; 나머지 2쪽은 차이 없음. 여성 태그 추가·가중치는 효과 없음). 끝 지점(RegenCnEnd)은 둘이 같이 쓴다.</summary>
-    public double RegenInpaintCnStrength { get; set; } = 0.5;
+    /// <summary>1단계(조각 인페인트) ControlNet 강도 — 2단계(RegenCnStrength)와 따로. 기본 0(2026-11-19 같은 시드 A/B·사용자 결정): 1단계의 제어 그림은 조각 자리를 검게 비운 선화라
+    /// 강도가 있으면 그 구멍을 '선 없음'으로 따라 평평한 흰 막대로 메운다 — 3쪽 15조각×4시드에서 흰 막대(안 흰비율 ≥0.6, 둘레보다 0.15 더 흼)가 0.5는 13/60, 0은 4/60(남은 넷은 성별 태그가 틀렸던 한 조각).
+    /// 시드만 바꾸면 흰 막대가 자리만 옮겨 다닌다. 0.5는 2026-11-12 실측으로 정했던 값(0.85에서 막대 밑 부위가 빈 살결로 메워진 시험 4쪽 중 2쪽 — 막대 안 선 밀도 0.004·0.009 — 이 0.5에서 0.25·0.22로 살아남).
+    /// 끝 지점(RegenCnEnd)은 둘이 같이 쓴다.</summary>
+    public double RegenInpaintCnStrength { get; set; } = 0;
 
     // ── 재생성·커스텀의 '부위 통째 다시 그리기' (2026-11-12, 사용자 요청: 막대 자리만이 아니라 검열이 덮은 부위 전체를 재생성) ──
     // 검열 조각마다 겹치는 부위 검출 상자(BodyPartDetector, penis/pussy)를 여백만큼 넓혀 합치고, 검출이 없는 조각은 크기의 배율만큼 넓힌 타원으로(RegenRegion).
@@ -260,8 +266,15 @@ public class AppSettings
     public bool LetterBold { get; set; } = true;
     /// <summary>글자 크기 배율. OCR이 추정한 원문 크기에 곱한다 (1.0 = 원문 크기 그대로).</summary>
     public double LetterSizeScale { get; set; } = 1.0;
-    /// <summary>글자 색 "#RRGGBB". 비우면 자동 — 원문 글자 색을 따라간다.</summary>
-    public string LetterColorHex { get; set; } = "";
+    /// <summary>글자 색 "#RRGGBB". 기본은 완전 검정(2026-11-18 사용자 결정 — 전에는 비움 = 원문 색 자동이었는데, 그 자동은 획 픽셀의
+    /// 평균이라 안티에일리어싱 때문에 짙은 회색이 나왔다). 원문 색을 따라가려면 <see cref="LetterColorAuto"/>("auto")라고 적는다.
+    /// 비우면 MigrateLegacy가 검정으로 채운다(옛 settings.json의 ""가 자동으로 남지 않게).</summary>
+    public string LetterColorHex { get; set; } = "#000000";
+    /// <summary>글자 색 칸에 적으면 원문 글자 색을 따라가는 낱말(대소문자 무관).</summary>
+    public const string LetterColorAuto = "auto";
+    /// <summary>글자 색 값이 '원문 색 자동'인지.</summary>
+    public static bool IsAutoColor(string? value) =>
+        value != null && value.Trim().Equals(LetterColorAuto, StringComparison.OrdinalIgnoreCase);
     /// <summary>외곽선(halo) 색. 어떤 배경에서도 읽히게 글자 둘레에 두른다.</summary>
     public string LetterOutlineColorHex { get; set; } = "#FFFFFF";
     /// <summary>외곽선 두께 배율. 0이면 외곽선 없음 (1.0 = 글자 크기의 1/7 정도).</summary>
@@ -335,19 +348,19 @@ public class AppSettings
             var fromBackup = TryRead(path + ".bak", out _);
             // 경우마다 온 문장으로 적는다 — 가운데 낱말만 갈아 끼우면 다른 언어로 옮길 수 없다(Loc)
             LoadProblem = fromBackup != null
-                ? Loc.T("설정 파일을 다른 프로그램이 쥐고 있어(백신 검사·동기화 등) 읽지 못했어요 — 이번 실행은 지난번에 읽힌 설정(백업)으로 돌아가요. 설정 파일은 건드리지 않으니(이번 실행에서 바꾼 설정은 저장되지 않아요) 앱을 다시 켜 주세요.")
-                : Loc.T("설정 파일을 다른 프로그램이 쥐고 있어(백신 검사·동기화 등) 읽지 못했어요 — 이번 실행은 기본값으로 돌아가요. 설정 파일은 건드리지 않으니(이번 실행에서 바꾼 설정은 저장되지 않아요) 앱을 다시 켜 주세요.");
+                ? Loc.T("설정 파일을 다른 프로그램이 쥐고 있어 읽지 못했다냥 — 이번 실행은 백업 설정으로 돈다냥. 바꾼 설정은 저장되지 않으니 앱을 다시 켜 줘냥.")
+                : Loc.T("설정 파일을 다른 프로그램이 쥐고 있어 읽지 못했다냥 — 이번 실행은 기본값으로 돈다냥. 바꾼 설정은 저장되지 않으니 앱을 다시 켜 줘냥.");
             return fromBackup ?? new AppSettings();
         }
         string? kept = $"{path}.broken-{DateTime.Now:yyyyMMdd-HHmmss}";
         try { File.Copy(path, kept, overwrite: true); } catch { kept = null; }
-        var where = kept != null ? Loc.F($"\n읽지 못한 파일은 {Path.GetFileName(kept)} 이름으로 같은 폴더({Path.GetDirectoryName(Path.GetFullPath(kept))})에 남겨 두었어요.") : "";
+        var where = kept != null ? Loc.F($"\n읽지 못한 파일은 {Path.GetFileName(kept)} 이름으로 같은 폴더({Path.GetDirectoryName(Path.GetFullPath(kept))})에 남겨 두었다냥.") : "";
         if (TryRead(path + ".bak", out _) is { } restored)
         {
-            LoadProblem = Loc.T("설정 파일을 읽지 못해, 지난번에 읽힌 설정(백업)으로 되살렸어요 — 마지막 실행에서 바꾼 설정은 빠져 있을 수 있어요.") + where;
+            LoadProblem = Loc.T("설정 파일을 읽지 못해 백업 설정으로 되살렸다냥 — 마지막에 바꾼 설정은 빠졌을 수 있다냥.") + where;
             return restored;
         }
-        LoadProblem = Loc.T("설정 파일을 읽지 못해 기본값으로 시작해요 — API 키·프롬프트·ComfyUI 연결을 다시 넣어 주세요.") + where;
+        LoadProblem = Loc.T("설정 파일을 읽지 못해 기본값으로 시작한다냥 — API 키·프롬프트·ComfyUI 연결을 다시 넣어 줘냥.") + where;
         return new AppSettings();
     }
 
@@ -461,6 +474,8 @@ public class AppSettings
         ScribbleXdogThreshold = Math.Clamp(ScribbleXdogThreshold, 1, 128);
         IpaEndAt = Math.Clamp(IpaEndAt, 0, 1);
         if (LetterAlign is not ("Left" or "Center" or "Right")) LetterAlign = "Center";
+        // 글자 색 비움은 옛 기본값(원문 색 자동) — 기본이 검정이 된 뒤(2026-11-18)로는 검정으로 채운다. 자동은 "auto"로만.
+        if (string.IsNullOrWhiteSpace(LetterColorHex)) LetterColorHex = "#000000";
         LetterLineSpacing = Math.Clamp(LetterLineSpacing, 0.6, 3.0);
         LetterWordSpacing = LetterWordSpacing <= 0 ? 0.75 : Math.Clamp(LetterWordSpacing, 0.3, 2.0);
     }

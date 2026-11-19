@@ -108,13 +108,13 @@ public static class ColorRefHelper
         IProgress<string>? status = null, CancellationToken ct = default)
     {
         if (!File.Exists(imagePath))
-            throw new FileNotFoundException(Loc.T("표지 이미지를 찾을 수 없어요."), imagePath);
+            throw new FileNotFoundException(Loc.T("표지 이미지를 찾을 수 없다냥."), imagePath);
 
         await using var server = new ComfyServer(settings);
         await server.EnsureRunningAsync(status, ct);
         var client = new ComfyClient(server.BaseUrl);
 
-        status?.Report(Loc.T("표지에서 색 태그 뽑는 중..."));
+        status?.Report(Loc.T("표지에서 색 태그 뽑는 중이다냥..."));
         var bytes = await File.ReadAllBytesAsync(imagePath, ct);
         var up = await client.UploadImageAsync(bytes, $"nm_ref_{Guid.NewGuid():N}.png", ct);
         ComfyClient.ComfyResult? r = null;

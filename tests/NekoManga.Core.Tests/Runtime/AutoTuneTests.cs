@@ -25,7 +25,7 @@ public class AutoTuneTests
     public void Summary_OneLinePerChangeOrNothingToDo()
     {
         var nothing = new AutoTune.Plan("nvidia", "NVIDIA GeForce RTX 4090", 24576, 64, []);
-        Assert.Contains("바꿀 것이 없어요", nothing.Summary);
+        Assert.Contains("바꿀 것이 없다냥", nothing.Summary);
 
         AutoTune.Change[] changes =
         [
@@ -192,6 +192,6 @@ public class AutoTuneTests
             ["NVIDIA GeForce RTX 3060", "AMD Radeon RX 5700 XT (시험용 이름)"], 32);
 
         Assert.Equal(("amd", "AMD Radeon RX 5700 XT (시험용 이름)"), (plan.Vendor, plan.GpuName));
-        Assert.Contains(plan.Changes, c => c.Key == "color-off" && c.Why.Contains("지원하지 않아요"));
+        Assert.Contains(plan.Changes, c => c.Key == "color-off" && c.Why.Contains("지원하지 않는다냥"));
     }
 }

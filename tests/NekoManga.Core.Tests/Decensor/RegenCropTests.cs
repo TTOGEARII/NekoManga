@@ -164,11 +164,23 @@ public class RegenCropTests
     }
 
     [Fact]
-    public void BuildRegions_WeakBoxOfTheOtherSexOnThePiece_IsNotSure()
+    public void BuildRegions_WeakBoxOfTheOtherSexOnThePiece_GoesWithTheStrongOne()
     {
-        // 삽입 장면: 남성은 뚜렷하게(0.59), 여성은 조각 위에 약하게(0.07) 잡힌다 — 가려진 쪽이 있다는 신호
+        // 사용자 원고 28쪽(2026-11-19, 그림은 안 봄): 남성 0.74 상자의 조각에 여성 0.07 상자가 3px 옆에서 여백으로 걸쳤다 — 남녀 태그가 같이 들어가
+        // 남성 부위 윗부분이 살결로 메워졌다(같은 시드 15번 전부, 시드·CN 강도와 무관). 뚜렷한(임계 이상) 상자가 한쪽뿐이면 그쪽이다 — 약한 상자는 뚜렷한 상자가 없을 때만 근거다.
+        // 2026-11-15의 삽입 장면(남성 0.59 + 여성 0.07)은 이 규칙으로 남성 태그만 받는다 — 가려진 쪽은 결과 창의 조각 표시로 고른다(사용자 결정 2026-11-19)
         using var mask = MaskWith(Page, PieceA);
-        Assert.Equal((RegenKind.Male, false), Only(Regions(mask, new BodyPart(M, 0.59f, BoxA), new BodyPart(F, 0.07f, new Rect(1380, 1880, 120, 60)))));
+        Assert.Equal((RegenKind.Male, true), Only(Regions(mask, new BodyPart(M, 0.59f, BoxA), new BodyPart(F, 0.07f, new Rect(1380, 1880, 120, 60)))));
+        Assert.Equal((RegenKind.Female, true), Only(Regions(mask, new BodyPart(F, 0.74f, BoxA), new BodyPart(M, 0.07f, new Rect(1380, 1880, 120, 60)))));
+    }
+
+    [Fact]
+    public void BuildRegions_WeakBoxOfTheOtherSex_CountsWhenTheUserLoweredTheThresholdToIt()
+    {
+        // '뚜렷하다'는 설정의 임계(RegenRegionConf)다 — 사용자가 0.05로 내렸으면 0.07 상자도 뚜렷한 상자라 남녀가 같이 있는 조각이다
+        using var mask = MaskWith(Page, PieceA);
+        var regions = RegenRegion.BuildRegions(mask, [new BodyPart(M, 0.59f, BoxA), new BodyPart(F, 0.07f, new Rect(1380, 1880, 120, 60))], 0.1, 0.6, mask.Size(), 1024, strongConf: 0.05);
+        Assert.Equal((RegenKind.Both, false), Only(regions));
     }
 
     [Fact]
@@ -224,7 +236,7 @@ public class RegenCropTests
     }
 
     [Fact]
-    public void BuildRegions_WeakBoxNextToAStrongOne_DoesNotChangeTheRegionShape()
+    public void BuildRegions_WeakBoxNextToAStrongOne_ChangesNothing()
     {
         using var mask = MaskWith(Page, PieceA);
         var with = Regions(mask, new BodyPart(M, 0.7f, BoxA), new BodyPart(F, 0.07f, new Rect(1200, 1850, 600, 300)));
@@ -235,8 +247,8 @@ public class RegenCropTests
             Assert.Equal(b.Bounds, a.Bounds);
             using var diff = new Mat(); Cv2.BitwiseXor(a.Region, b.Region, diff);
             Assert.Equal(0, Cv2.CountNonZero(diff));
-            Assert.Equal(RegenKind.Male, a.Kind);   // 약한 상자는 종류를 '둘 다'로 바꾸지 않는다 — 확정만 푼다
-            Assert.False(a.Sure); Assert.True(b.Sure);
+            Assert.Equal(RegenKind.Male, a.Kind);   // 약한 상자는 종류를 '둘 다'로 바꾸지 않는다
+            Assert.True(a.Sure); Assert.True(b.Sure);   // 뚜렷한 남성 상자가 있으니 약한 여성 상자는 확정도 풀지 않는다(2026-11-19 — 전에는 확정만 풀어 남녀 태그가 같이 갔다)
         }
         finally { foreach (var r in with.Concat(without)) r.Dispose(); }
     }
@@ -592,13 +604,13 @@ public class RegenCropTests
         using var mask = MaskWith(Page, PieceA, new Rect(1800, 1900, 200, 40), new Rect(2500, 3500, 200, 40));
         var regions = Regions(mask,
             new BodyPart(M, 0.7f, BoxA), new BodyPart(M, 0.6f, new Rect(1700, 1700, 400, 400)),            // 합쳐지는 두 조각: 남성만
-            new BodyPart(M, 0.5f, new Rect(2400, 3350, 400, 400)), new BodyPart(F, 0.07f, new Rect(2480, 3480, 100, 80)));   // 떨어진 조각: 남성 + 약한 여성
+            new BodyPart(M, 0.5f, new Rect(2400, 3350, 400, 400)), new BodyPart(F, 0.3f, new Rect(2480, 3480, 100, 80)));   // 떨어진 조각: 남성 + 뚜렷한 여성(약한 여성은 2026-11-19부터 뚜렷한 남성에 밀려 가르지 못한다)
         try
         {
             Assert.Equal(2, regions.Count);
             var top = Assert.Single(regions, r => r.Bounds.Y < 3000); var bottom = Assert.Single(regions, r => r.Bounds.Y > 3000);
             Assert.Equal((RegenKind.Male, true), (top.Kind, top.Sure));
-            Assert.Equal((RegenKind.Male, false), (bottom.Kind, bottom.Sure));
+            Assert.Equal((RegenKind.Both, false), (bottom.Kind, bottom.Sure));
         }
         finally { foreach (var r in regions) r.Dispose(); }
     }
@@ -606,15 +618,15 @@ public class RegenCropTests
     [Fact]
     public void BuildRegions_SeparateRegions_AreJudgedSeparately()
     {
-        // 멀리 떨어진 두 영역: 위는 남성만(확정), 아래는 남성 + 약한 여성(확정 아님) — 한 영역의 근거가 다른 영역을 흔들지 않는다
+        // 멀리 떨어진 두 영역: 위는 남성만(확정), 아래는 남성 + 뚜렷한 여성(둘 다) — 한 영역의 근거가 다른 영역을 흔들지 않는다
         using var mask = MaskWith(Page, new Rect(200, 200, 200, 40), new Rect(2500, 3500, 200, 40));
-        var regions = Regions(mask, new BodyPart(M, 0.7f, new Rect(100, 50, 400, 400)), new BodyPart(M, 0.5f, new Rect(2400, 3350, 400, 400)), new BodyPart(F, 0.07f, new Rect(2480, 3480, 100, 80)));
+        var regions = Regions(mask, new BodyPart(M, 0.7f, new Rect(100, 50, 400, 400)), new BodyPart(M, 0.5f, new Rect(2400, 3350, 400, 400)), new BodyPart(F, 0.3f, new Rect(2480, 3480, 100, 80)));
         try
         {
             Assert.Equal(2, regions.Count);
             var top = Assert.Single(regions, r => r.Bounds.Y < 1000); var bottom = Assert.Single(regions, r => r.Bounds.Y > 1000);
             Assert.Equal((RegenKind.Male, true), (top.Kind, top.Sure));
-            Assert.Equal((RegenKind.Male, false), (bottom.Kind, bottom.Sure));
+            Assert.Equal((RegenKind.Both, false), (bottom.Kind, bottom.Sure));
         }
         finally { foreach (var r in regions) r.Dispose(); }
     }

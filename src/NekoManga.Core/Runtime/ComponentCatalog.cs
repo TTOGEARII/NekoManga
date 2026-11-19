@@ -276,5 +276,5 @@ public static class ComponentCatalog
     public static IEnumerable<Component> ComfyComponents => All.Where(c => c.ForComfy);
 
     public static string FirstRunNote =>
-        Loc.T("번역·기본 검열 제거 모델(1.1GB)과 재생성 검열 제거에 쓰는 엔진(ComfyUI, 약 12GB)을 받아요. 채색까지 쓰려면 '채색도 설치'를 체크해 주세요(약 5GB 더).");
+        Loc.T("번역·기본 검열 제거 모델(1.1GB)과 재생성 엔진(ComfyUI, 약 12GB)을 받는다냥.\n· 채색까지 쓰려면 '채색도 설치'를 체크해 줘냥(약 5GB 더).");
 }

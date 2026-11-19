@@ -226,7 +226,7 @@ public class AletheiaDetector(OnnxEnv env)
                         nd.Outputs.Single()));
                 }
                 if (found.Count(l => !l.Mask) != 4 || found.Count(l => l.Mask) != 4)
-                    throw new InvalidDataException(Loc.F($"ROI 정렬 Loop 수가 예상(분류 4·마스크 4)과 달라요: {found.Count}"));
+                    throw new InvalidDataException(Loc.F($"ROI 정렬 Loop 수가 예상(분류 4·마스크 4)과 다르다냥: {found.Count}"));
                 var features = found.Select(l => l.Feature).Distinct().ToArray();
                 var cls = found.Where(l => !l.Mask).ToArray(); var msk = found.Where(l => l.Mask).ToArray();
 

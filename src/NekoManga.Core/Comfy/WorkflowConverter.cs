@@ -36,7 +36,7 @@ public static class WorkflowConverter
     public static JsonObject ToApi(JsonObject ui, JsonObject objectInfo)
     {
         if (ui["definitions"]?["subgraphs"] is JsonArray { Count: > 0 })
-            throw new InvalidDataException(Loc.T("서브그래프가 든 워크플로는 아직 변환하지 못해요 — ComfyUI에서 'Export (API)'로 내보낸 파일을 골라 주세요."));
+            throw new InvalidDataException(Loc.T("서브그래프가 든 워크플로는 아직 변환하지 못한다냥 — 'Export (API)' 파일을 골라 줘냥."));
 
         var graph = new Graph
         {
@@ -56,8 +56,8 @@ public static class WorkflowConverter
 
         if (graph.Missing.Count > 0)
             throw new InvalidDataException(
-                Loc.T("이 워크플로가 쓰는 노드 가운데 앱의 ComfyUI에 없는 것이 있어요: ") + string.Join(", ", graph.Missing.Distinct()) +
-                Loc.T("\n설정 → 엔진 → 'ComfyUI 화면 열기'에서 이 파일을 열면 빠진 노드가 빨갛게 보여요. 그 노드를 설치하거나 다른 노드로 바꿔 주세요."));
+                Loc.T("이 워크플로가 쓰는 노드 가운데 앱의 ComfyUI에 없는 것이 있다냥: ") + string.Join(", ", graph.Missing.Distinct()) +
+                Loc.T("\n설정 → 엔진 → 'ComfyUI 화면 열기'에서 열면 빠진 노드가 빨갛게 보인다냥. 설치하거나 다른 노드로 바꿔 줘냥."));
         return api;
     }
 
@@ -256,7 +256,7 @@ public static class WorkflowConverter
             string title = node["_meta"]?["title"]?.GetValue<string>() is { Length: > 0 } t ? t : type;
             if (objectInfo[type] is not JsonObject info)
             {
-                problems.Add(Loc.F($"'{type}' 노드가 앱의 ComfyUI에 없어요."));
+                problems.Add(Loc.F($"'{type}' 노드가 앱의 ComfyUI에 없다냥."));
                 continue;
             }
             var inputs = node["inputs"] as JsonObject ?? new JsonObject();
@@ -268,7 +268,7 @@ public static class WorkflowConverter
                     var value = inputs[name];
                     if (value is null)
                     {
-                        if (group == "required") problems.Add(Loc.F($"'{title}' 노드의 입력 '{name}'이(가) 비어 있어요 (연결이 끊겼거나 값이 없어요)."));
+                        if (group == "required") problems.Add(Loc.F($"'{title}' 노드의 입력 '{name}'이(가) 비어 있다냥 (연결이 끊겼거나 값이 없다냥)."));
                         continue;
                     }
                     // 목록에서 고르는 값(모델 파일 등)이 이 서버에 있는지. 앱이 바꿔 끼우는 LoadImage의 그림 이름은 보지 않는다.
@@ -280,13 +280,13 @@ public static class WorkflowConverter
                         continue;
                     }
                     string have = choices.Count == 0 ? Loc.T("없음") : string.Join(", ", choices.Take(6)) + (choices.Count > 6 ? " …" : "");
-                    problems.Add(Loc.F($"'{title}' 노드의 {name}: '{chosen}'이(가) 앱의 ComfyUI에 없어요 (있는 것: {have})."));
+                    problems.Add(Loc.F($"'{title}' 노드의 {name}: '{chosen}'이(가) 앱의 ComfyUI에 없다냥 (있는 것: {have})."));
                 }
             }
         }
         if (problems.Count > 0)
-            throw new InvalidDataException(Loc.T("이 워크플로를 그대로는 돌릴 수 없어요.\n· ") + string.Join("\n· ", problems) +
-                Loc.T("\n없는 파일은 ComfyUI의 models 폴더에 넣거나(설정 → 엔진 → 파일 가져오기), ComfyUI 화면에서 워크플로를 열어 있는 것으로 바꿔 저장해 주세요."));
+            throw new InvalidDataException(Loc.T("이 워크플로를 그대로는 돌릴 수 없다냥.\n· ") + string.Join("\n· ", problems) +
+                Loc.T("\n없는 파일은 models 폴더에 넣거나(설정 → 엔진 → 파일 가져오기), 워크플로를 있는 것으로 바꿔 저장해 줘냥."));
     }
 
     /// <summary>입력 정의가 고르는 목록이면 그 항목들. 옛 표기([목록, 옵션])와 새 표기(["COMBO", {options: 목록}]) 둘 다 본다.</summary>

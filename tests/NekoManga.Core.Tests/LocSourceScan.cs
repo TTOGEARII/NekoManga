@@ -282,7 +282,7 @@ internal static class LocSourceScan
             {
                 Assert.True(kind == "F" == lit.Interpolated, $"{rel}:{line}: Loc.T·Loc.Key에는 보통 문자열을, Loc.F에는 보간 문자열($\"…\")을 넣는다");
                 Assert.False(lit.Raw, $"{rel}:{line}: 원시 문자열(\"\"\"…\"\"\")은 Loc에 넣지 않는다 — 열쇠를 뽑는 도구가 들여쓰기 규칙을 다루지 않는다");
-                // 인자는 리터럴 하나여야 한다 — Loc.T("저장 실패: " + 까닭)은 실행 때 이어 붙인 글을 찾으므로 표에 있을 수 없다(여기서는 리터럴만 열쇠로 보여 통과해 버린다)
+                // 인자는 리터럴 하나여야 한다 — Loc.T("저장 실패다냥: " + 까닭)은 실행 때 이어 붙인 글을 찾으므로 표에 있을 수 없다(여기서는 리터럴만 열쇠로 보여 통과해 버린다)
                 if (!src.AsSpan(lit.End).TrimStart().StartsWith(")"))
                     unwrapped.Add($"{rel}:{line}: Loc.{kind}(…)의 괄호 안에는 리터럴 하나만 — 값은 Loc.F($\"… {{값}}\")로 끼우거나 밖에서 이어 붙인다: {lines[line - 1].Trim()}");
                 keys.Add(new Use(kind == "F" ? FormatOf(lit) : ValueOf(lit), kind, $"{rel}:{line}"));

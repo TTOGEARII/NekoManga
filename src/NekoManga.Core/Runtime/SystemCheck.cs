@@ -28,13 +28,13 @@ public static class SystemCheck
 
         /// <summary>설치 창이 막힌 항목들 아래에 붙이는 말. 너무 오래된 카드는 해결할 항목이 없으니(2026-11-11 검수: 그래도 "위 항목을 해결한 뒤 [다시 확인]…"이 붙었다)
         /// 판정이 틀릴 수 있는 한 가지 경우 — 새 카드를 막 달아 드라이버가 아직 없는 PC — 에 할 일만 적는다.</summary>
-        public string BlockedNote => Loc.T("번역·검열 감지·기본 복원은 영향 없이 설치돼요. ") +
-            (GpuTooOld ? Loc.T("새 그래픽카드를 방금 달았다면 그 카드의 드라이버를 설치한 뒤 [다시 확인]을 눌러 주세요.") : Loc.T("위 항목을 해결한 뒤 [다시 확인]을 누르면 엔진 묶음도 이어서 받아요."));
+        public string BlockedNote => Loc.T("번역·검열 감지·기본 복원은 영향 없이 설치된다냥. ") +
+            (GpuTooOld ? Loc.T("새 그래픽카드를 방금 달았다면 드라이버를 설치한 뒤 [다시 확인]을 눌러 줘냥.") : Loc.T("위 항목을 해결한 뒤 [다시 확인]을 누르면 엔진도 이어서 받는다냥."));
 
         /// <summary>엔진 묶음을 건너뛰고 내장 엔진만 설치했을 때 설치 창 아래 줄에 적는 말.</summary>
         public string LeftoverNote => GpuTooOld
-            ? Loc.T("내장 엔진은 준비됐어요. 이 그래픽카드로는 채색 엔진을 쓸 수 없어 받지 않았어요 — 번역·기본 검열 제거는 바로 쓸 수 있어요.")
-            : Loc.T("내장 엔진은 준비됐어요. 채색 엔진은 위 조건을 해결한 뒤 [다시 확인] → [준비 시작!]으로 받아요.");
+            ? Loc.T("내장 엔진은 준비됐다냥. 이 그래픽카드로는 채색 엔진을 못 써 받지 않았다냥 — 번역·기본 검열 제거는 바로 쓸 수 있다냥.")
+            : Loc.T("내장 엔진은 준비됐다냥. 채색 엔진은 위 조건을 해결한 뒤 [다시 확인] → [준비 시작!]으로 받는다냥.");
     }
 
     /// <summary>nvidia-smi로 드라이버·GPU 이름·VRAM을 읽는다. 여러 장이면 엔진이 쓸 카드(<see cref="PickNvidiaGpu"/>). 드라이버가 없으면 null.</summary>
@@ -352,21 +352,21 @@ public static class SystemCheck
         {
             bool win11 = Environment.OSVersion.Version.Build >= 22000;
             bool found = detName.Length > 0;
-            items.Add(new(Loc.T("그래픽카드"), found, false, found ? detName + Loc.T(" (AMD — ROCm 포터블)") : Loc.T("AMD Radeon을 찾지 못했어요 — 그래도 AMD용(ROCm) 포터블을 받아요. 종류를 잘못 고른 건 아닌지 확인하세요."), null, null));
+            items.Add(new(Loc.T("그래픽카드"), found, false, found ? detName + Loc.T(" (AMD — ROCm 포터블)") : Loc.T("AMD Radeon을 찾지 못했다냥 — 그래도 AMD용(ROCm) 포터블을 받는다냥. 종류를 잘못 고른 건 아닌지 확인하라냥."), null, null));
             items.Add(new("Windows 11", win11, true,
-                win11 ? Loc.F($"빌드 {Environment.OSVersion.Version.Build} (충분)") : Loc.F($"빌드 {Environment.OSVersion.Version.Build} — AMD용 엔진(ROCm)은 Windows 11이 필요해요."), null, null));
+                win11 ? Loc.F($"빌드 {Environment.OSVersion.Version.Build} (충분)") : Loc.F($"빌드 {Environment.OSVersion.Version.Build} — AMD용 엔진(ROCm)은 Windows 11이 필요하다냥."), null, null));
             bool genOk = !found || LooksRocmSupported(detName);
             items.Add(new(Loc.T("Radeon 세대"), genOk, true,
-                genOk ? Loc.T("RDNA2 이상(RX 6000/7000/9000)으로 보여요. AMD Software(Adrenalin)를 최신으로 유지하세요.") : Loc.F($"{detName} — ROCm(Windows)이 지원하지 않는 세대예요(RX 5000·Vega 등). 번역·검열제거는 되지만 채색·재생성은 돌릴 수 없어요."),
+                genOk ? Loc.T("RDNA2 이상(RX 6000/7000/9000)으로 보인다냥. AMD Software(Adrenalin)를 최신으로 유지하라냥.") : Loc.F($"{detName} — ROCm(Windows)이 지원하지 않는 세대다냥(RX 5000·Vega 등). 번역·검열제거는 되지만 채색·재생성은 못 돌린다냥."),
                 genOk ? AmdDriverUrl : null, Loc.T("AMD 드라이버 받기")));
             int vram = found ? AdapterVramMb(detName) : 0;
             if (vram > 0)
-                items.Add(new("VRAM", vram >= 8000, false, $"{vram / 1024.0:0.#}GB" + (vram < 8000 ? Loc.T(" — ROCm은 메모리를 넉넉히 써서 8GB 미만이면 채색·재생성이 실패하기 쉬워요 (--lowvram·1.0MP 권장)") : ""), null, null));
-            items.Add(new(Loc.T("참고"), true, false, Loc.T("AMD용 엔진은 ComfyUI 공식 ROCm 포터블(초기 지원)이라 NVIDIA보다 느리거나 일부 노드가 안 될 수 있어요. VRAM 8GB 이상 권장."), null, null));
+                items.Add(new("VRAM", vram >= 8000, false, $"{vram / 1024.0:0.#}GB" + (vram < 8000 ? Loc.T(" — ROCm은 메모리를 넉넉히 써서 8GB 미만이면 채색·재생성이 실패하기 쉽다냥 (--lowvram·1.0MP 권장)") : ""), null, null));
+            items.Add(new(Loc.T("참고"), true, false, Loc.T("AMD용 엔진은 ComfyUI 공식 ROCm 포터블(초기 지원)이라 NVIDIA보다 느리거나 일부 노드가 안 될 수 있다냥. VRAM 8GB 이상 권장."), null, null));
         }
         else if (vendor == "none")
         {
-            items.Add(new(Loc.T("그래픽카드"), false, true, Loc.T("NVIDIA나 AMD 그래픽카드를 찾지 못했어요. 채색·재생성·자가 학습은 전용 GPU가 필요해요 (번역·검열제거는 CPU로 돼요)."), null, null));
+            items.Add(new(Loc.T("그래픽카드"), false, true, Loc.T("NVIDIA나 AMD 그래픽카드를 찾지 못했다냥. 채색·재생성·자가 학습은 전용 GPU가 필요하다냥 (번역·검열제거는 CPU로 된다냥)."), null, null));
         }
         else
         {
@@ -376,12 +376,12 @@ public static class SystemCheck
         var vc = VcRuntime();
         bool vcOk = vc != null && (vc.Major > 14 || (vc.Major == 14 && vc.Minor >= MinVcBuild));
         items.Add(new(Loc.T("Visual C++ 런타임 (x64)"), vcOk, true,
-            vcOk ? Loc.F($"{vc} (충분)") : (vc == null ? Loc.T("설치돼 있지 않아요") : Loc.F($"{vc} — 너무 오래됐어요")) + Loc.T(". 엔진의 torch가 VC++ 2015–2022 x64 런타임을 요구해요 — 받아서 설치한 뒤 다시 확인하세요."),
+            vcOk ? Loc.F($"{vc} (충분)") : (vc == null ? Loc.T("설치돼 있지 않다냥") : Loc.F($"{vc} — 너무 오래됐다냥")) + Loc.T(". 엔진의 torch가 VC++ 2015–2022 x64 런타임을 요구한다냥 — 받아서 설치한 뒤 다시 확인하라냥."),
             vcOk ? null : VcRedistUrl, Loc.T("VC++ 런타임 받기")));
         double ram = RamGb();
         bool ramOk = ram >= 15.5;
         items.Add(new(Loc.T("메모리(RAM)"), ramOk, false,
-            ramOk ? $"{ram:0}GB" + (ram < 30 ? Loc.T(" — 16GB는 채색 중 다른 프로그램을 닫아 두는 편이 안전해요") : "") : Loc.F($"{ram:0}GB — 채색 엔진(SDXL)은 16GB 이상을 권해요."), null, null));
+            ramOk ? $"{ram:0}GB" + (ram < 30 ? Loc.T(" — 16GB는 채색 중 다른 프로그램을 닫아 두는 편이 안전하다냥") : "") : Loc.F($"{ram:0}GB — 채색 엔진(SDXL)은 16GB 이상을 권한다냥."), null, null));
         return new Report(items, tooOld);
     }
 
@@ -397,30 +397,30 @@ public static class SystemCheck
         {
             var name = gpu?.Name ?? PickNvidia(NvidiaAdapters(adapters)) ?? "";
             items.Add(new(Loc.T("그래픽카드"), false, true,
-                Loc.F($"{name} — 너무 오래된 그래픽카드라 GPU 채색(채색·재생성·자가 학습)은 쓸 수 없어요. 이 세대는 새 드라이버가 더 나오지 않아 드라이버를 올려도 해결되지 않아요. 번역과 기본 검열 제거는 CPU로 그대로 쓸 수 있어요."),
+                Loc.F($"{name} — 너무 오래된 그래픽카드라 GPU 채색(채색·재생성·자가 학습)은 못 쓴다냥. 드라이버를 올려도 안 된다냥. 번역과 기본 검열 제거는 CPU로 쓸 수 있다냥."),
                 DriverUrl, Loc.T("드라이버 받기")));
             return items;
         }
         int minDrv = old ? MinDriverMajorCu126 : MinDriverMajor;
         if (gpu == null)
         {
-            items.Add(new(Loc.T("NVIDIA 드라이버"), false, true, Loc.T("NVIDIA 드라이버를 찾지 못했어요 (nvidia-smi 없음). 드라이버를 설치해 주세요."), DriverUrl, Loc.T("드라이버 받기")));
+            items.Add(new(Loc.T("NVIDIA 드라이버"), false, true, Loc.T("NVIDIA 드라이버를 찾지 못했다냥 (nvidia-smi 없음). 드라이버를 설치해 줘냥."), DriverUrl, Loc.T("드라이버 받기")));
             return items;
         }
         bool drvOk = gpu.DriverMajor >= minDrv;
         items.Add(new(Loc.T("NVIDIA 드라이버"), drvOk, true,
-            drvOk ? Loc.F($"{gpu.Driver} (충분)") : Loc.F($"{gpu.Driver} — 엔진의 {(old ? "CUDA 12.6" : "CUDA 13")} 런타임은 {minDrv} 이상이 필요해요. 최신 GeForce 드라이버로 올린 뒤 재부팅하세요."),
+            drvOk ? Loc.F($"{gpu.Driver} (충분)") : Loc.F($"{gpu.Driver} — 엔진의 {(old ? "CUDA 12.6" : "CUDA 13")} 런타임은 {minDrv} 이상이 필요하다냥. 최신 GeForce 드라이버로 올린 뒤 재부팅하라냥."),
             drvOk ? null : DriverUrl, Loc.T("드라이버 받기")));
         // 사용자가 'RTX 20 이상'을 골랐는데 지금 꽂힌 카드가 모두 CUDA 13이 버린 세대면 막는다 — CUDA 13 빌드가 이 세대를 지원하지 않아 설치해도 채색 엔진이 돌지 않는다
         // (c10.dll 1114 사고는 지원 세대인 GTX 1660에 옛 드라이버를 쓴 경우로, 위 드라이버 항목이 맡는다). 지원 카드가 한 장이라도 있으면 막지 않는다
         bool genBad = !old && BlocksCuda13(smi.Select(g => g.Name).ToList());
         items.Add(new(Loc.T("그래픽카드"), !genBad, true, genBad
-            ? Loc.F($"{gpu.Name} — CUDA 13이 지원하지 않는 세대예요. 그래픽카드 종류를 'NVIDIA GTX 10 이하 (구형)'으로 바꿔 주세요.")
-            : gpu.Name + (old ? Loc.T(" — GTX 10 이하용 CUDA 12.6 포터블을 받아요 (느릴 수 있어요)") : Loc.T(" — CUDA 13 포터블")), null, null));
+            ? Loc.F($"{gpu.Name} — CUDA 13이 지원하지 않는 세대다냥. 그래픽카드 종류를 'NVIDIA GTX 10 이하 (구형)'으로 바꿔 줘냥.")
+            : gpu.Name + (old ? Loc.T(" — GTX 10 이하용 CUDA 12.6 포터블을 받는다냥 (느릴 수 있다냥)") : Loc.T(" — CUDA 13 포터블")), null, null));
         bool vramOk = gpu.MemoryMb >= 6000;
         items.Add(new("VRAM", vramOk, false,
-            vramOk ? $"{gpu.MemoryMb / 1024.0:0.#}GB" + (gpu.MemoryMb < 8000 ? Loc.T(" — 6GB는 빠듯해요: 엔진 인자 --lowvram, 채색 해상도 1.0MP, 재생성 축소 MP 1.0을 권해요") : "")
-                   : Loc.F($"{gpu.MemoryMb / 1024.0:0.#}GB — 6GB 미만이라 채색·재생성이 메모리 부족으로 실패하기 쉬워요."), null, null));
+            vramOk ? $"{gpu.MemoryMb / 1024.0:0.#}GB" + (gpu.MemoryMb < 8000 ? Loc.T(" — 6GB는 빠듯하다냥: 엔진 인자 --lowvram, 채색 해상도 1.0MP를 권한다냥") : "")
+                   : Loc.F($"{gpu.MemoryMb / 1024.0:0.#}GB — 6GB 미만이라 채색·재생성이 메모리 부족으로 실패하기 쉽다냥."), null, null));
         return items;
     }
 
@@ -443,18 +443,18 @@ public static class SystemCheck
                 var why = r.Items.Where(i => !i.Ok && i.Blocking).Select(i => i.Title + ": " + i.Detail).ToList();
                 bool amd = (vendor == "auto" ? JudgeVendor(smi, adapters).Vendor : vendor) == "amd";
                 // 너무 오래된 카드에 "(드라이버: …, VC++: …)"를 붙이면 받아도 소용없는 것을 받으라는 말이 된다 — 새 카드를 막 단 경우에 쓸 드라이버 주소만 남긴다
-                return Loc.T("엔진의 torch DLL을 올리지 못했어요. ") + (why.Count > 0 ? string.Join(" / ", why)
-                    : amd ? Loc.T("최신 AMD Software(Adrenalin)와 VC++ 2015–2022 x64 런타임이 필요해요.")
-                          : Loc.F($"NVIDIA 드라이버 {MinDriverMajor} 이상과 VC++ 2015–2022 x64 런타임이 필요해요."))
-                    + (r.GpuTooOld ? Loc.F($" 새 그래픽카드를 방금 달았다면 그 카드의 드라이버를 설치한 뒤 다시 시도해 주세요 (드라이버: {DriverUrl})")
+                return Loc.T("엔진의 torch DLL을 올리지 못했다냥. ") + (why.Count > 0 ? string.Join(" / ", why)
+                    : amd ? Loc.T("최신 AMD Software(Adrenalin)와 VC++ 2015–2022 x64 런타임이 필요하다냥.")
+                          : Loc.F($"NVIDIA 드라이버 {MinDriverMajor} 이상과 VC++ 2015–2022 x64 런타임이 필요하다냥."))
+                    + (r.GpuTooOld ? Loc.F($" 새 그래픽카드를 방금 달았다면 드라이버를 설치한 뒤 다시 시도해 줘냥 (드라이버: {DriverUrl})")
                                    : Loc.F($" (드라이버: {(amd ? AmdDriverUrl : DriverUrl)}, VC++: {VcRedistUrl})"));
             }
             if (txt.Contains("CUDA out of memory") || txt.Contains("OutOfMemoryError"))
-                return Loc.T("GPU 메모리가 부족했어요 — 설정 → 엔진 → 고급 옵션의 추가 실행 인자에 --lowvram 을 넣고, 채색 해상도 상한·재생성 축소 MP를 1.0으로 낮춰 보세요.");
+                return Loc.T("GPU 메모리가 부족했다냥 — 설정 → 엔진 → 고급 옵션의 추가 실행 인자에 --lowvram 을 넣고 채색 해상도를 1.0MP로 낮춰 보라냥.");
             if (txt.Contains("Torch not compiled with CUDA") || txt.Contains("no kernel image is available"))
-                return Loc.T("이 그래픽카드는 엔진 빌드가 지원하지 않아요. NVIDIA GTX 10 이하면 설정 → 엔진의 '그래픽카드 종류'를 'GTX 10 이하'로 바꾸고 ComfyUI 포터블 폴더를 지운 뒤 구성요소를 다시 설치하세요 (AMD는 RX 6000 이상 필요). 번역·검열제거는 돌아가요.");
+                return Loc.T("이 그래픽카드는 엔진 빌드가 지원하지 않는다냥. GTX 10 이하면 설정 → 엔진의 '그래픽카드 종류'를 바꾸고 포터블 폴더를 지운 뒤 다시 설치하라냥 (AMD는 RX 6000 이상). 번역·검열제거는 된다냥.");
             if (txt.Contains("HIP error") || txt.Contains("hipErrorNoBinaryForGpu") || txt.Contains("rocBLAS"))
-                return Loc.T("AMD 엔진(ROCm)이 이 Radeon을 지원하지 않거나 드라이버가 오래됐어요. AMD Software(Adrenalin)를 최신으로 올리고, RX 6000/7000/9000 계열인지 확인하세요.");
+                return Loc.T("AMD 엔진(ROCm)이 이 Radeon을 지원하지 않거나 드라이버가 오래됐다냥. AMD Software(Adrenalin)를 최신으로 올리고 RX 6000/7000/9000 계열인지 확인하라냥.");
             return null;
         }
         catch { return null; }

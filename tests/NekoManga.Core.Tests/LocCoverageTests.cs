@@ -125,7 +125,7 @@ public class LocCoverageTests
         {
             // 서식 자리({0}, {1:N0} …)는 원문과 같은 것들이어야 한다(순서는 달라도 된다) — 없는 자리를 쓰면 Loc.F가 원문으로 물러나 한국어가 나온다
             if (!Holes(key).SequenceEqual(Holes(text))) bad.Add($"자리가 다름: {Short(key)} → {Short(text)}");
-            // 이어 붙여 쓰는 조각("저장 실패: " + 까닭)은 앞뒤 공백·줄 바꿈이 원문과 같아야 붙는 모양이 같다
+            // 이어 붙여 쓰는 조각("저장 실패다냥: " + 까닭)은 앞뒤 공백·줄 바꿈이 원문과 같아야 붙는 모양이 같다
             if (Edge(key) != Edge(text)) bad.Add($"앞뒤 공백이 다름: '{Short(key)}' → '{Short(text)}'");
             if (LocSourceScan.HasHangul(text)) bad.Add($"번역에 한글이 남음: {Short(text)}");
         }

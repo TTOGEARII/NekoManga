@@ -80,7 +80,7 @@ public partial class ResultWindow
         if (_letterBlocks.Count > 0) SelectBlock(Math.Clamp(selected, 0, _letterBlocks.Count - 1));
         RefreshLetter();
         UpdateLetterUndoUi();
-        TxtStatus.Text = redo ? Loc.T("다시 실행했어요") : Loc.T("되돌렸어요");
+        TxtStatus.Text = redo ? Loc.T("다시 실행했다냥") : Loc.T("되돌렸다냥");
         return true;
     }
 
@@ -122,7 +122,7 @@ public partial class ResultWindow
         EndLetterEdit();
         _addingBlock = true;
         ImageHost.Cursor = Cursors.Cross;
-        TxtStatus.Text = Loc.T("글을 넣을 곳을 클릭하세요 — Esc로 취소");
+        TxtStatus.Text = Loc.T("글을 넣을 곳을 클릭하라냥 — Esc로 취소");
     }
 
     private void CancelAddBlock()
@@ -130,7 +130,7 @@ public partial class ResultWindow
         if (!_addingBlock) return;
         _addingBlock = false;
         ImageHost.Cursor = null;
-        TxtStatus.Text = Loc.T("새 글 넣기를 취소했어요");
+        TxtStatus.Text = Loc.T("새 글 넣기를 취소했다냥");
     }
 
     /// <summary>그림의 그 자리(편집 화면 좌표)에 새 글 상자를 넣고 바로 글을 적게 한다. 상자는 쪽 폭의 22% × 높이의 9%로 시작한다 — 손잡이로 늘린다.</summary>
@@ -152,7 +152,7 @@ public partial class ResultWindow
         SelectBlock(i);
         _selectAllOnEdit = true;
         BeginLetterEdit(i);
-        TxtStatus.Text = Loc.T("새 글을 넣었어요 — 글을 적고 다른 곳을 클릭하세요 (상자는 끌어 옮기고 손잡이로 늘려요)");
+        TxtStatus.Text = Loc.T("새 글을 넣었다냥 — 글을 적고 다른 곳을 클릭하라냥");
     }
 
     /// <summary>[줄 직접 나누기] — 켜면 지금 그려진 줄들을 글에 그대로 박고(그 뒤로 자동 줄 나눔을 하지 않는다), 끄면 줄바꿈을 지우고 다시 자동으로 나눈다.</summary>
@@ -175,7 +175,7 @@ public partial class ResultWindow
         SetBlock(i, b with { Translation = text, ManualLines = on });
         _syncingBlockUi = true; TxtBlockText.Text = text; _syncingBlockUi = false;
         RefreshLetter();
-        TxtStatus.Text = on ? Loc.T("줄을 지금 모습대로 붙들었어요 — 글 칸이나 풍선(두 번 클릭)에서 Enter로 줄을 나누세요") : Loc.T("줄을 다시 자동으로 나눠요");
+        TxtStatus.Text = on ? Loc.T("줄을 지금 모습대로 붙들었다냥 — Enter로 줄을 나누라냥") : Loc.T("줄을 다시 자동으로 나눈다냥");
     }
 
     /// <summary>페이지 전체 기본(글꼴·크기 배율·색·외곽선)이 바뀌면 편집 화면을 다시 그린다.</summary>
@@ -383,7 +383,7 @@ public partial class ResultWindow
         }, "style:" + ((sender as FrameworkElement)?.Name ?? "") + ":" + i);
         UpdateSwatches();
         QueueLetterRefresh();
-        TxtStatus.Text = Loc.T("풍선 속성을 바꿨어요 — [다시 식자]로 결과물에 반영하세요");
+        TxtStatus.Text = Loc.T("풍선 속성을 바꿨다냥 — [다시 식자]로 반영하라냥");
     }
 
     /// <summary>[속성 초기화] — 이 풍선의 글자 속성을 자동·페이지 설정으로 되돌린다(글·자리·숨김은 그대로).</summary>
@@ -400,7 +400,7 @@ public partial class ResultWindow
         LoadBlockStyleUi(_letterBlocks[i]);
         _syncingBlockUi = false;
         RefreshLetter();
-        TxtStatus.Text = Loc.T("풍선 속성을 자동·페이지 설정으로 되돌렸어요");
+        TxtStatus.Text = Loc.T("풍선 속성을 자동·페이지 설정으로 되돌렸다냥");
     }
 
     /// <summary>숫자 칸에서 ↑↓ — Tag에 적힌 걸음만큼(Shift는 10배) 올리고 내린다 (포토샵의 숫자 칸처럼).</summary>
@@ -486,7 +486,7 @@ public partial class ResultWindow
         RefreshBlockCombo();
         SelectBlock(i);
         RefreshLetter();
-        TxtStatus.Text = hide ? Loc.T("블록을 숨겼어요 — [숨김 해제]로 되살릴 수 있어요 (다시 식자·지우기 때 저장돼요)") : Loc.T("블록을 다시 보여요");
+        TxtStatus.Text = hide ? Loc.T("블록을 숨겼다냥 — [숨김 해제]로 되살린다냥") : Loc.T("블록을 다시 보인다냥");
     }
 
     /// <summary>새로 넣은 글을 목록에서 뺀다.</summary>
@@ -500,7 +500,7 @@ public partial class ResultWindow
         RefreshBlockCombo();
         if (_letterBlocks.Count > 0) SelectBlock(Math.Min(i, _letterBlocks.Count - 1));
         RefreshLetter();
-        TxtStatus.Text = Loc.T("새로 넣은 글을 지웠어요 — Ctrl+Z로 되살릴 수 있어요");
+        TxtStatus.Text = Loc.T("새 글을 지웠다냥 — Ctrl+Z로 되살린다냥");
     }
 
     /// <summary>블록 하나를 바꾼다 — 실제로 달라졌을 때만 '고친 것'으로 표시한다(<see cref="_letterDirty"/>). 화면을 맞추느라 같은 값을 다시 넣는 경우(텍스트박스 ↔ 글 칸 동기화)는 세지 않는다.</summary>
@@ -527,7 +527,7 @@ public partial class ResultWindow
             _letterDirty = false;
             return true;
         }
-        catch (Exception ex) { TxtStatus.Text = Loc.T("식자 편집 저장 실패: ") + ex.Message; return false; }
+        catch (Exception ex) { TxtStatus.Text = Loc.T("식자 편집 저장 실패다냥: ") + ex.Message; return false; }
     }
 
     /// <summary>식자 탭의 스타일 값들로 재식자 전용 설정을 만든다 (전역 설정은 건드리지 않는다).</summary>
@@ -545,7 +545,7 @@ public partial class ResultWindow
             LetterFontFamily = string.IsNullOrWhiteSpace(CmbLFont.Text) ? "Malgun Gothic" : CmbLFont.Text.Trim(),
             LetterBold = ChkLBold.IsChecked == true,
             LetterSizeScale = double.TryParse(TxtLSize.Text, out var sz) ? Math.Clamp(sz, 0.3, 3.0) : 1.0,
-            LetterColorHex = Hex(TxtLColor.Text, ""),
+            LetterColorHex = AppSettings.IsAutoColor(TxtLColor.Text) ? AppSettings.LetterColorAuto : Hex(TxtLColor.Text, "#000000"),
             LetterOutlineScale = double.TryParse(TxtLOutScale.Text, out var os) ? Math.Clamp(os, 0, 4) : 1.0,
             LetterOutlineColorHex = Hex(TxtLOutColor.Text, "#FFFFFF"),
             // 페이지 기본 정렬·기울임·줄간격은 설정 전역을 따른다 (블록별 지정이 우선)
@@ -567,7 +567,7 @@ public partial class ResultWindow
             // 사이드카에 박제한 원본 크기로 환산한다 — 원고를 옮겼거나 지웠어도 편집 화면(LetterShown)처럼 제자리에 그린다
             TextRenderer.RenderBlocks(_sidecar.BasePath, _sidecar.Source, _sidecar.SrcW, _sidecar.SrcH, _letterBlocks, tmp, LetterStyle(), LetterCommon());
             var rendered = ImgIo.Read(tmp);
-            if (rendered.Empty()) { rendered.Dispose(); TxtStatus.Text = Loc.T("다시 식자에 실패했어요"); return false; }
+            if (rendered.Empty()) { rendered.Dispose(); TxtStatus.Text = Loc.T("다시 식자에 실패했다냥"); return false; }
             _undo.Push(_img);
             _img = rendered;
             BtnUndo.IsEnabled = true;
@@ -579,11 +579,11 @@ public partial class ResultWindow
             _letterDirty = false;    // 고친 글은 이제 결과 그림(_img)에 들어 있다 — 결과물로 쓰는 것은 [저장]의 몫(_dirty)
             RefreshManualMaskBase(); // 저장 마스크 없는 장의 마스크 보기 바닥도 새 결과물로
             Redraw();
-            TxtStatus.Text = Loc.F($"최종 렌더링 미리보기 (블록 {_letterBlocks.Count}개) — [저장] 또는 그림 클릭으로 다시 편집")
-                           + (blocksSaved ? "" : Loc.T(" · ⚠ 고친 글을 사이드카에 저장하지 못했어요(다시 렌더링하면 옛 글로 돌아가요)"));
+            TxtStatus.Text = Loc.F($"최종 렌더링 미리보기 (블록 {_letterBlocks.Count}개)다냥 — [저장] 또는 그림 클릭으로 다시 편집")
+                           + (blocksSaved ? "" : Loc.T(" · ⚠ 고친 글을 저장하지 못했다냥(다시 렌더링하면 옛 글로 돌아간다냥)"));
             return true;
         }
-        catch (Exception ex) { TxtStatus.Text = Loc.T("다시 식자 실패: ") + ex.Message; return false; }
+        catch (Exception ex) { TxtStatus.Text = Loc.T("다시 식자 실패다냥: ") + ex.Message; return false; }
         finally { try { File.Delete(tmp); } catch { } }
     }
 
@@ -636,9 +636,10 @@ public partial class ResultWindow
                 float px = i < _drawnSizes.Length && _drawnSizes[i] > 0 ? _drawnSizes[i] : layouts[i].Size > 0 ? layouts[i].Size : 16;
                 var style = LetterStyle();
                 bool bold = b.BoldOverride switch { 0 => false, 1 => true, _ => style.LetterBold };
-                var fg = !string.IsNullOrWhiteSpace(b.ColorOverride)
-                    ? ToMedia(b.ColorOverride, b.FontColorHex)
-                    : ToMedia(style.LetterColorHex, b.FontColorHex);
+                // 식자(TextRenderer.Render)와 같은 규칙: 블록별 지정 > 쪽 설정(기본 검정, "auto"면 원문 색)
+                var fg = !string.IsNullOrWhiteSpace(b.ColorOverride) ? ToMedia(b.ColorOverride, "#000000")
+                    : AppSettings.IsAutoColor(style.LetterColorHex) ? ToMedia(b.FontColorHex, "#000000")
+                    : ToMedia(style.LetterColorHex, "#000000");
                 var alignName = string.IsNullOrEmpty(b.Align) ? style.LetterAlign : b.Align;
                 // 텍스트박스에는 지금 그려진 줄들을 그대로 띄운다 — 줄을 직접 나눈 블록은 적은 그대로, 자동인 블록은 식자가 나눈 줄대로.
                 // 여기서 글을 건드리면 그 줄들이 블록에 박힌다(ManualLines) — 보이는 줄이 곧 식자되는 줄이다.
@@ -748,7 +749,7 @@ public partial class ResultWindow
                 {
                     Template = RoundThumb, Width = 13, Height = 13, Tag = "rot", Cursor = Cursors.Hand,
                     VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, -29, 0, 0),
-                    ToolTip = Loc.T("끌어서 돌려요 (Shift: 15°씩)"),
+                    ToolTip = Loc.T("끌어서 돌린다냥 (Shift: 15°씩)"),
                 };
                 double armX = 0, armY = 0;   // 상자 가운데에서 손잡이까지(화면 방향)
                 spin.DragStarted += (_, _) => (armX, armY) = ToCanvas(0, -(host.Height / 2 + 22));
@@ -768,7 +769,7 @@ public partial class ResultWindow
                     if (Math.Abs(deg - _letterBlocks[i].RotationDeg) < 0.05) return;
                     SetBlock(i, _letterBlocks[i] with { RotationDeg = deg });
                     if (CmbBlocks.SelectedIndex == i) { _syncingBlockUi = true; TxtBRot.Text = Num(deg, "0.#"); _syncingBlockUi = false; }
-                    TxtStatus.Text = Loc.T("글을 돌렸어요 — [다시 식자]로 반영하세요");
+                    TxtStatus.Text = Loc.T("글을 돌렸다냥 — [다시 식자]로 반영하라냥");
                     Dispatcher.BeginInvoke(RefreshLetter);
                 };
                 host.Children.Add(spin);
@@ -859,7 +860,7 @@ public partial class ResultWindow
         if (i < 0 || i >= _letterBlocks.Count || _letterBlocks[i].Hidden) return;
         _editBlock = i;
         RefreshLetter();
-        TxtStatus.Text = Loc.T("글을 고치는 중 — Enter로 줄을 나눠요. 다른 곳을 클릭하거나 Esc를 누르면 끝나요");
+        TxtStatus.Text = Loc.T("글을 고치는 중이다냥 — Enter로 줄 나눔, 다른 곳 클릭이나 Esc로 끝");
     }
 
     /// <summary>제자리 글 고치기를 끝낸다 — 고친 글로 다시 식자한 그림을 보여 준다.</summary>
@@ -893,7 +894,7 @@ public partial class ResultWindow
         if (host.Tag is not int i || i >= _letterBlocks.Count) return now;
         if (shownWith.CommitBox(placed, now) is not { } r) return placed;
         SetBlock(i, _letterBlocks[i] with { X1 = r.X1, Y1 = r.Y1, X2 = r.X2, Y2 = r.Y2, ManualRect = true });
-        TxtStatus.Text = Loc.T("블록 위치·크기를 조정했어요 — [다시 식자]로 반영하세요");
+        TxtStatus.Text = Loc.T("블록 자리·크기를 바꿨다냥 — [다시 식자]로 반영하라냥");
         // 놓은 자리에 다시 식자해 보여 준다 — 지금은 손잡이의 이벤트 안이라 상자를 갈아 끼우는 일은 이벤트가 끝난 뒤로 미룬다
         Dispatcher.BeginInvoke(RefreshLetter);
         return now;

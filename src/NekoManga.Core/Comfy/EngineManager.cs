@@ -137,8 +137,8 @@ public static class EngineManager
             {
                 await dst.WriteAsync(buf.AsMemory(0, n), ct);
                 done += n;
-                if (total > 0) status?.Report(Loc.F($"받는 중... {done * 100 / total}% ({done / 1048576}MB)"));
-                else status?.Report(Loc.F($"받는 중... {done / 1048576}MB"));
+                if (total > 0) status?.Report(Loc.F($"받는 중이다냥... {done * 100 / total}% ({done / 1048576}MB)"));
+                else status?.Report(Loc.F($"받는 중이다냥... {done / 1048576}MB"));
             }
         }
         File.Move(part, dest, overwrite: true);

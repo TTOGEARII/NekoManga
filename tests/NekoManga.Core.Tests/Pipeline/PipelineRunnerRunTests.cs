@@ -290,7 +290,7 @@ public class PipelineRunnerRunTests
         if (result == "asIs") Assert.Contains(Path.GetFileName(asIs), error);
         if (result == "none")
         {
-            Assert.Contains("저장된 마스크·식자 자료", error);
+            Assert.Contains("마스크·식자 자료", error);
             Assert.DoesNotContain("결과 파일", error);
         }
     }

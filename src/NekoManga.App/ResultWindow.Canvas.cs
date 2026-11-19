@@ -215,14 +215,14 @@ public partial class ResultWindow
             {
                 _letterPreview = false;
                 Redraw();
-                TxtStatus.Text = Loc.T("편집 모드 — 풍선을 클릭해 고르고, 두 번 클릭하면 글을 고쳐요");
+                TxtStatus.Text = Loc.T("편집 모드다냥 — 클릭해 고르고, 두 번 클릭하면 글을 고친다냥");
             }
             else if (_addingBlock) AddBlockAt(e.GetPosition(EditLayer));   // [새 글 넣기] — 누른 자리에 글 상자
             else EndLetterEdit();   // 빈 곳을 누르면 제자리 글 고치기를 끝낸다
             return;
         }
         // 결과 보기: 그림을 보기만 한다 — 칠하려면 마스크 보기로
-        if (ResultView) TxtStatus.Text = Loc.T("결과 보기예요 — 지울 곳을 칠하려면 [🎭 마스크 보기]로 바꾸세요");
+        if (ResultView) TxtStatus.Text = Loc.T("결과 보기다냥 — 칠하려면 [🎭 마스크 보기]로 바꾸라냥");
     }
 
     private void Host_RightClick(object sender, MouseButtonEventArgs e)

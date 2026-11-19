@@ -315,7 +315,8 @@ public class WorkflowBuilderTests
         Assert.Equal(0.4, Num(Inputs(stage1)["strength"]));
         Assert.Equal(0.9, Num(Inputs(stage2)["strength"]));
         Assert.Equal(0.7, Num(Inputs(stage1)["end_percent"])); Assert.Equal(0.7, Num(Inputs(stage2)["end_percent"]));
-        Assert.Equal(0.5, new AppSettings().RegenInpaintCnStrength);   // 실측으로 정한 기본값
+        // 기본값 0(2026-11-19 같은 시드 A/B, 3쪽 15조각×4시드): 0.5에서는 흰 막대(안 흰비율 ≥0.6·둘레보다 0.15↑) 13/60, 0에서는 4/60(전부 성별 태그 문제였던 한 조각) — 1단계 제어 그림의 검은 구멍을 '선 없음'으로 따라 평평하게 메우던 것
+        Assert.Equal(0, new AppSettings().RegenInpaintCnStrength);
     }
 
     [Fact]

@@ -86,7 +86,7 @@ public partial class ResultWindow
             Cv2.Resize(_maskPre, _maskPreDisp, new Size((int)Math.Round(_maskPre.Width * ds), (int)Math.Round(_maskPre.Height * ds)), 0, 0, InterpolationFlags.Area);
         }
         // 체크박스를 사이드카 값으로 맞추는 것은 수정이 아니다 — 가드 없이 바꾸면 ChkMSkip_Changed가 _maskDirty를 켜서
-        // 손도 안 댄 페이지를 넘길 때마다 "고친 마스크를 저장할까요?"를 물었다
+        // 손도 안 댄 페이지를 넘길 때마다 "고친 마스크를 저장할까냥?"를 물었다
         if (data != null)
         {
             _maskResetting = true;
@@ -298,11 +298,11 @@ public partial class ResultWindow
         int px = Cv2.CountNonZero(_maskMat);
         if (_maskSc == null)
         {
-            TxtMaskInfo.Text = Loc.F($"저장된 마스크가 없는 장 — 결과물 위에 칠해 바로 지워요 (사이드카는 안 생겨요) · {px:N0}px") + SexInfo();
+            TxtMaskInfo.Text = Loc.F($"저장된 마스크가 없는 장 — 결과물 위에 칠해 바로 지운다냥 · {px:N0}px") + SexInfo();
             return;
         }
         bool waiting = IsWaitingPage;
-        TxtMaskInfo.Text = (waiting ? Loc.T("검토 대기 중 — 고친 뒤 [검열 제거 시작]") : _maskSc.Pending ? Loc.T("고친 마스크 — 아직 결과물에 반영 전") : _maskSc.Confirmed ? Loc.T("제거에 쓴 마스크") : Loc.T("저장된 마스크"))
+        TxtMaskInfo.Text = (waiting ? Loc.T("검토 대기 중 — 고친 뒤 [검열 제거 시작]이다냥") : _maskSc.Pending ? Loc.T("고친 마스크 — 아직 결과물에 반영 전이다냥") : _maskSc.Confirmed ? Loc.T("제거에 쓴 마스크") : Loc.T("저장된 마스크"))
                          + $" · {px:N0}px" + (_maskEdited || _maskSc.Edited ? Loc.T(" · 수정됨") : "") + (ChkMSkip.IsChecked == true ? Loc.T(" · 검열 없음 표시") : "")
                          + (RegionPreviewWanted ? Loc.T(" · 점선 = 다시 그려질 부위") : "") + SexInfo();
     }
@@ -381,7 +381,7 @@ public partial class ResultWindow
         {
             if (e.ClickCount >= 2) { MaskClosePolygon(); return; }
             _maskPoly.Add(p); DrawShapes();
-            TxtStatus.Text = Loc.F($"{_maskPoly.Count}점 — 더블클릭(또는 Enter)으로 닫으면 {(RbMErase.IsChecked == true ? Loc.T("지워져요") : Loc.T("마스크에 더해져요"))}");
+            TxtStatus.Text = Loc.F($"{_maskPoly.Count}점 — 더블클릭(또는 Enter)으로 닫으면 {(RbMErase.IsChecked == true ? Loc.T("지워진다냥") : Loc.T("마스크에 더해진다냥"))}");
             return;
         }
         MaskPushUndo();
@@ -416,8 +416,8 @@ public partial class ResultWindow
         SettleMaskDirty();   // 아무것도 못 고른 다각형·이미 칠해진 자리만 덮은 다각형은 고친 것이 아니다
         Redraw(); UpdateMaskInfo();
         if (added == 0 && tone != MaskTone.All)
-            TxtStatus.Text = tone == MaskTone.Dark ? Loc.T("다각형 안에서 검은 부분을 찾지 못했어요 — [흰 부분만]이나 [도형 전체]로 바꿔 보세요")
-                                                   : Loc.T("다각형 안에서 흰 부분을 찾지 못했어요 — [도형 전체]로 바꿔 보세요");
+            TxtStatus.Text = tone == MaskTone.Dark ? Loc.T("다각형 안에 검은 부분이 없다냥 — [흰 부분만]이나 [도형 전체]로 바꿔 보라냥")
+                                                   : Loc.T("다각형 안에 흰 부분이 없다냥 — [도형 전체]로 바꿔 보라냥");
     }
 
     private void MaskUndo()
@@ -431,7 +431,7 @@ public partial class ResultWindow
         SettleMaskDirty();   // 읽어 온 마스크까지 되돌렸으면 고친 것이 없다
         UpdateRerenderButton();
         Redraw(); UpdateMaskInfo(); RefreshRegionPreview();
-        TxtStatus.Text = Loc.T("마스크를 되돌렸어요");
+        TxtStatus.Text = Loc.T("마스크를 되돌렸다냥");
     }
 
     private void MaskTool_Changed(object sender, RoutedEventArgs e)
@@ -449,7 +449,7 @@ public partial class ResultWindow
         Redraw();
         UpdateModeButtons();
         RefreshRegionPreview();
-        TxtStatus.Text = MaskMode ? Loc.T("마스크 보기 — 빨간 곳이 지워져요") : Loc.T("결과 보기 — 지금 결과물이에요");
+        TxtStatus.Text = MaskMode ? Loc.T("마스크 보기 — 빨간 곳이 지워진다냥") : Loc.T("결과 보기 — 지금 결과물이다냥");
     }
 
     private void BtnMReset_Click(object sender, RoutedEventArgs e)
@@ -458,12 +458,12 @@ public partial class ResultWindow
         Mat? auto;
         // 자동 감지 사본을 다른 프로그램이 쥐고 있으면(백신 검사·동기화) 읽기가 던진다 — 받는 곳이 없어 앱이 꺼졌다(2026-11-13 점검 9번). '없음'으로 치고 마스크를 비우지도 않는다
         try { auto = MaskSidecar.LoadAuto(_refs[_index].OutPath); }
-        catch (Exception ex) { TxtStatus.Text = Loc.T("자동 감지 사본(.auto.png)을 읽지 못했어요 — 잠시 뒤 다시 눌러 주세요: ") + ex.Message; return; }
+        catch (Exception ex) { TxtStatus.Text = Loc.T("자동 감지 사본(.auto.png)을 읽지 못했다냥 — 잠시 뒤 다시 눌러 줘냥: ") + ex.Message; return; }
         using var autoOwner = auto;
         MaskPushUndo();
         if (auto != null && auto.Size() == _maskMat.Size()) auto.CopyTo(_maskMat); else _maskMat.SetTo(Scalar.Black);
         MaskTouched(); SettleMaskDirty(); Redraw(); UpdateMaskInfo();
-        TxtStatus.Text = auto != null ? Loc.T("자동 감지 결과로 되돌렸어요") : Loc.T("자동 감지 사본이 없어 마스크를 비웠어요");
+        TxtStatus.Text = auto != null ? Loc.T("자동 감지 결과로 되돌렸다냥") : Loc.T("자동 감지 사본이 없어 마스크를 비웠다냥");
     }
 
     private void BtnMClear_Click(object sender, RoutedEventArgs e)
@@ -523,7 +523,7 @@ public partial class ResultWindow
             // 마스크 PNG는 썼는데 json에서 실패했을 수 있다 — 디스크가 어느 상태인지 모르니 기준을 버린다(기준이 없으면 '달라진 것 없음'으로 더티를 끄지 못한다:
             // 그대로 두면 되돌리기로 옛 마스크에 돌아왔을 때 저장할 것이 없다고 보고, 디스크에는 되돌린 수정이 남는다)
             _maskBaseline?.Dispose(); _maskBaseline = null;
-            TxtStatus.Text = Loc.T("마스크 저장 실패: ") + ex.Message;
+            TxtStatus.Text = Loc.T("마스크 저장 실패다냥: ") + ex.Message;
             return false;
         }
     }
@@ -541,12 +541,12 @@ public partial class ResultWindow
             if (!SaveMaskSidecar()) return;   // 저장 실패 — 상태 줄에 까닭이 있다. 못 쓴 마스크 대신 옛 마스크로 지우지 않는다
             int sent = _confirmAll != null ? _confirmAll() : _confirmPage?.Invoke(WaitKey) == true ? 1 : 0;
             if (sent > 0) { Close(); return; }
-            TxtStatus.Text = Loc.T("이 페이지는 지금 검토 대기 중이 아니에요");
+            TxtStatus.Text = Loc.T("이 장은 지금 검토 대기 중이 아니다냥");
             return;
         }
         if (JobRunning)
         {
-            TxtStatus.Text = Loc.T("작업이 도는 중이에요 — 모든 장이 한 번 끝난 뒤에 이 장만 다시 지울 수 있어요");
+            TxtStatus.Text = Loc.T("작업이 도는 중이다냥 — 모든 장이 끝난 뒤에 이 장만 다시 지울 수 있다냥");
             return;
         }
         if (HasStoredMask) await RedoThisPageAsync();
@@ -628,17 +628,17 @@ public partial class ResultWindow
         _rerenderShown = n;
         BtnRerenderEdited.Content = n > 0 ? Loc.F($"🔁 고친 장 모두 다시 렌더링 ({n}장)") : Loc.T("🔁 고친 장 모두 다시 렌더링");
         BtnRerenderEdited.ToolTip = n > 0
-            ? Loc.T("마스크를 고친 장(목록의 ✎)을 한꺼번에 다시 렌더링해요 — 검열 제거 + 식자, 채색은 그대로. ⚙ 설정의 검열 제거 방식으로 돌고, 이 창은 닫혀요 (진행은 목록에서 볼 수 있어요)")
-            : Loc.T("마스크를 고친 장이 아직 없어요 — 여러 장의 마스크를 고치면(장을 넘길 때 자동으로 저장돼요) 한꺼번에 다시 렌더링할 수 있어요");
+            ? Loc.T("마스크를 고친 장(✎)을 한꺼번에 다시 렌더링한다냥 — 검열 제거 + 식자, 채색은 그대로. 이 창은 닫힌다냥")
+            : Loc.T("마스크를 고친 장이 아직 없다냥 — 여러 장을 고치면 한꺼번에 다시 렌더링할 수 있다냥");
     }
 
     private void BtnRerenderEdited_Click(object sender, RoutedEventArgs e)
     {
         if (_busy || _loading) return;
-        if (JobRunning) { TxtStatus.Text = Loc.T("작업이 도는 중이에요 — 모든 장이 한 번 끝난 뒤에 고친 장을 다시 렌더링할 수 있어요"); return; }
+        if (JobRunning) { TxtStatus.Text = Loc.T("작업이 도는 중이다냥 — 모든 장이 끝난 뒤에 다시 렌더링할 수 있다냥"); return; }
         SettleMaskBeforeLeaving();   // 찍다 만 다각형도 살려 준다([지우기]와 같다) — 안 닫으면 말없이 버려지고 그 장이 묶음에서 빠진다. 달라진 것이 없으면 고친 장으로 치지 않는다
         if (_maskDirty && HasStoredMask && !IsWaitingPage && !SaveMaskSidecar()) return;   // 지금 장의 저장 안 한 수정도 같이 돌린다(버튼의 장 수에 이미 들어 있다) — 저장 실패면 상태 줄에 까닭이 있다
-        if (_pendingPages.Count == 0) { TxtStatus.Text = Loc.T("마스크를 고쳐 저장한 장이 없어요"); return; }
+        if (_pendingPages.Count == 0) { TxtStatus.Text = Loc.T("마스크를 고친 장이 없다냥"); return; }
         // 지금 장도 돌 장이면 식자 탭에서 고친 글·숨김이 다시 렌더링 뒤에도 남게 (낱장 [지우기]와 같다) — 못 쓰면 옛 글로 돌게 두지 않는다
         if (_sidecar != null && _pendingPages.Contains(_index) && !SaveLetterSidecar()) return;
         if (!ConfirmDiscard()) return;               // 결과물에 저장 안 한 손 편집만 묻는다(다시 렌더링이 덮는다)
@@ -681,8 +681,8 @@ public partial class ResultWindow
     private async Task RedoThisPageAsync()
     {
         if (_maskSc == null || _maskMat == null || _busy || _loading) return;
-        if (ChkMSkip.IsChecked != true && Cv2.CountNonZero(_maskMat) == 0) { TxtStatus.Text = Loc.T("마스크가 비어 있어요 — 지울 곳을 칠하거나 '검열 없음'으로 표시해 주세요"); return; }
-        if (!SaveMaskSidecar()) return;              // 먼저 — [지우기]는 이 마스크를 쓰라는 뜻이라 "고친 마스크를 저장할까요?"를 묻지 않는다(하네스에서 창이 멈춰 잡힘). 못 썼으면 옛 마스크로 돌리지 않는다
+        if (ChkMSkip.IsChecked != true && Cv2.CountNonZero(_maskMat) == 0) { TxtStatus.Text = Loc.T("마스크가 비어 있다냥 — 지울 곳을 칠하거나 '검열 없음'으로 표시해 줘냥"); return; }
+        if (!SaveMaskSidecar()) return;              // 먼저 — [지우기]는 이 마스크를 쓰라는 뜻이라 "고친 마스크를 저장할까냥?"를 묻지 않는다(하네스에서 창이 멈춰 잡힘). 못 썼으면 옛 마스크로 돌리지 않는다
         if (_sidecar != null && !SaveLetterSidecar()) return;   // 식자 탭에서 고친 글·숨김이 다시 렌더링 뒤에도 남게 — 못 썼으면 옛 글로 돌리지 않는다
         if (!ConfirmDiscard()) return;               // 결과물에 저장 안 한 손 편집만 묻는다(다시 렌더링이 덮는다)
         var source = WaitKey;
@@ -696,7 +696,7 @@ public partial class ResultWindow
         string? warned = null;   // 러너가 '완료' 줄에 붙인 경고(⚠ …) — 오버레이에 잠깐 보이고 사라지지 않게 끝난 뒤 상태 줄에 옮긴다(고정한 시드보다 영역이 늘었다 등)
         var progress = new Progress<PageProgress>(p =>
         {
-            ShowLoading(true, p.Error != null ? Loc.T("실패: ") + p.Error : p.Stage, p.Percent);
+            ShowLoading(true, p.Error != null ? Loc.T("실패다냥: ") + p.Error : p.Stage, p.Percent);
             int at = p.Done ? p.Stage.IndexOf(" · ⚠ ", StringComparison.Ordinal) : -1;
             if (at >= 0) warned = p.Stage[at..];
         });
@@ -721,16 +721,16 @@ public partial class ResultWindow
             }
             InvalidatePrefetch(_index);
             RbViewResult.IsChecked = true;   // 끝나면 결과 보기
-            _statusAfterLoad = Loc.T("다시 렌더링했어요 — 결과물이 갱신됐어요 (검열 제거 + 식자, 채색은 그대로)") + seedNote + warned;
+            _statusAfterLoad = Loc.T("다시 렌더링했다냥 — 결과물이 갱신됐다냥 (검열 제거 + 식자, 채색은 그대로)") + seedNote + warned;
             LoadPage(_index, fit: false);   // 상태 줄은 LoadPage가 읽기를 마친 뒤 _statusAfterLoad로 바꾼다
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            TxtStatus.Text = Loc.T("취소했어요 — 결과물은 그대로예요");
+            TxtStatus.Text = Loc.T("취소했다냥 — 결과물은 그대로다냥");
         }
         catch (Exception ex)
         {
-            TxtStatus.Text = Loc.T("실패: ") + ex.Message;
+            TxtStatus.Text = Loc.T("실패다냥: ") + ex.Message;
         }
         finally
         {
@@ -746,7 +746,7 @@ public partial class ResultWindow
     {
         if (_maskMat == null || _busy || _loading) return;
         int px = Cv2.CountNonZero(_maskMat);
-        if (px == 0) { TxtStatus.Text = Loc.T("마스크가 비어 있어요 — 지울 곳을 칠해 주세요"); return; }
+        if (px == 0) { TxtStatus.Text = Loc.T("마스크가 비어 있다냥 — 지울 곳을 칠해 줘냥"); return; }
         string engineMode = EngineMode;
         using var mask = PipelineRunner.Grown(_maskMat, GrowPx);
         if (mask.Size() != _img.Size()) Cv2.Resize(mask, mask, _img.Size(), 0, 0, InterpolationFlags.Nearest);   // 마스크는 결과물 사본 위에 칠했으니 보통 같은 크기
@@ -755,7 +755,7 @@ public partial class ResultWindow
         _redoCts?.Dispose();
         _redoCts = new CancellationTokenSource();
         var ct = _redoCts.Token;
-        ShowLoading(true, Loc.F($"{px:N0}px 지우는 중..."));
+        ShowLoading(true, Loc.F($"{px:N0}px 지우는 중이다냥..."));
         var before = _img.Clone();
         var status = new Progress<string>(m => ShowLoading(true, m));
         try
@@ -775,19 +775,19 @@ public partial class ResultWindow
             _sexMarks = []; _sexSaved = []; ClearSexPieces();   // 조각이 없어졌다 — 그 조각들에 고른 성별도 같이
             RefreshManualMaskBase();
             RbViewResult.IsChecked = true;
-            TxtStatus.Text = Loc.F($"지웠어요 ({px:N0}px) — 마음에 들면 [저장]을 눌러주세요");
+            TxtStatus.Text = Loc.F($"지웠다냥 ({px:N0}px) — 마음에 들면 [저장]을 눌러 줘냥");
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             try { if (before.Size() == _img.Size()) { before.CopyTo(_img); InvalidateBitmap(); } } catch { }
             before.Dispose();
-            TxtStatus.Text = Loc.T("취소했어요 — 결과물은 그대로예요");
+            TxtStatus.Text = Loc.T("취소했다냥 — 결과물은 그대로다냥");
         }
         catch (Exception ex)
         {
             try { if (before.Size() == _img.Size()) { before.CopyTo(_img); InvalidateBitmap(); } } catch { }   // 반쯤 고친 그림을 남기지 않는다
             before.Dispose();
-            TxtStatus.Text = Loc.T("실패: ") + ex.Message;
+            TxtStatus.Text = Loc.T("실패다냥: ") + ex.Message;
         }
         finally { _busy = false; ShowLoading(false); Redraw(); UpdateModeButtons(); DisposeRunnerIfClosed(); }
     }

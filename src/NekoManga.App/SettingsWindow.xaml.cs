@@ -81,7 +81,7 @@ public partial class SettingsWindow
         {
             var (v, name, tooOld) = t.Result;
             // 케플러·페르미는 'nvidia-old'로 감지되지만 구형 묶음도 못 돌린다 — "CUDA 12.6 빌드"라고 적으면 될 것처럼 읽힌다
-            string Label() => tooOld ? Loc.T("너무 오래된 그래픽카드예요 (채색 엔진은 쓸 수 없어요 — 번역·기본 검열 제거는 CPU로 돼요)") : v switch { "nvidia" => Loc.T("NVIDIA (RTX 20 이상 → CUDA 13 빌드)"), "nvidia-old" => Loc.T("NVIDIA 구형 (GTX 10 이하 → CUDA 12.6 빌드)"), "amd" => Loc.T("AMD Radeon (→ ROCm 빌드, Windows 11 필요)"), _ => Loc.T("전용 그래픽카드 없음") };
+            string Label() => tooOld ? Loc.T("너무 오래된 그래픽카드다냥 (채색 엔진은 못 쓴다냥 — 번역·기본 검열 제거는 CPU로 된다냥)") : v switch { "nvidia" => Loc.T("NVIDIA (RTX 20 이상 → CUDA 13 빌드)"), "nvidia-old" => Loc.T("NVIDIA 구형 (GTX 10 이하 → CUDA 12.6 빌드)"), "amd" => Loc.T("AMD Radeon (→ ROCm 빌드, Windows 11 필요)"), _ => Loc.T("전용 그래픽카드 없음") };
             // Bind — 창을 띄운 채 언어를 바꿔도 따라가게(이 글은 창이 뜰 때 한 번만 지어진다)
             Dispatcher.Invoke(() => UiText.Bind(TxtGpuDetected, System.Windows.Controls.TextBlock.TextProperty, () => Loc.T("감지됨: ") + (name.Length > 0 ? name + " — " : "") + Label()));
         });
@@ -100,6 +100,7 @@ public partial class SettingsWindow
         SelectComboByTag(CmbTranslator, s.TranslateEngine);
         SelectComboByTag(CmbSource, s.TranslateSource);
         SelectComboByTag(CmbTarget, s.TranslateTarget);
+        ChkBubbleOnly.IsChecked = s.TranslateBubbleOnly;
 
         // 식자 글꼴: 설치된 글꼴 목록을 채우고 현재 값을 고른다 (편집 가능 — 직접 입력도 됨)
         foreach (var f in System.Drawing.FontFamily.Families.Select(f => f.Name).OrderBy(n => n))
@@ -227,6 +228,7 @@ public partial class SettingsWindow
         s.TranslateEngine = ComboTag(CmbTranslator, s.TranslateEngine);
         s.TranslateSource = ComboTag(CmbSource, s.TranslateSource);
         s.TranslateTarget = ComboTag(CmbTarget, s.TranslateTarget);
+        s.TranslateBubbleOnly = ChkBubbleOnly.IsChecked == true;
         s.DeepLApiKey = TxtDeepLKey.Text.Trim();
         s.DeepSeekApiKey = TxtDeepSeekKey.Text.Trim();
         s.DeepSeekModel = (CmbDeepSeekModel.Text ?? "").Trim();
@@ -236,7 +238,7 @@ public partial class SettingsWindow
         if (!string.IsNullOrWhiteSpace(CmbLetterFont.Text)) s.LetterFontFamily = CmbLetterFont.Text.Trim();
         s.LetterBold = ChkLetterBold.IsChecked == true;
         s.LetterSizeScale = ParseD(TxtLetterSize.Text, s.LetterSizeScale, 0.3, 3.0);
-        s.LetterColorHex = NormalizeHex(TxtLetterColor.Text);
+        s.LetterColorHex = AppSettings.IsAutoColor(TxtLetterColor.Text) ? AppSettings.LetterColorAuto : NormalizeHex(TxtLetterColor.Text, "#000000");
         s.LetterOutlineScale = ParseD(TxtLetterOutline.Text, s.LetterOutlineScale, 0, 4.0);
         s.LetterOutlineColorHex = NormalizeHex(TxtLetterOutlineColor.Text, "#FFFFFF");
         s.LetterAlign = ComboTag(CmbLetterAlign, s.LetterAlign);
@@ -429,11 +431,11 @@ public partial class SettingsWindow
         // 삭제는 Application.Shutdown으로 끝난다 — 그 길은 메인 창의 '멈추고 닫을까요?'에 '아니요'라고 해도 끝난다(닫기 취소를 무시한다). 작업 중에는 먼저 막는다
         if (Owner is MainWindow { IsJobRunning: true })
         {
-            MessageBox.Show(Loc.T("작업이 도는 중이에요 — 작업이 끝난 뒤에(또는 [멈추기] 뒤에) 삭제해 주세요."), "NekoManga", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(Loc.T("작업이 도는 중이다냥 — 끝난 뒤에 삭제해 줘냥."), "NekoManga", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
         var r = MessageBox.Show(
-            Loc.T("NekoManga를 삭제할까요?\n(내려받은 AI 구성요소 폴더는 남아요 — 직접 지워주세요)"),
+            Loc.T("NekoManga를 삭제할까냥?\n(구성요소 폴더는 남는다냥 — 직접 지워 줘냥)"),
             Loc.T("삭제 확인"), MessageBoxButton.YesNo, MessageBoxImage.Warning);
         if (r != MessageBoxResult.Yes) return;
         try
@@ -443,7 +445,7 @@ public partial class SettingsWindow
         }
         catch (Exception ex)
         {
-            MessageBox.Show(Loc.F($"삭제 실행 실패: {ex.Message}\n설치형(Setup.exe)으로 설치했을 때만 쓸 수 있어요."),
+            MessageBox.Show(Loc.F($"삭제 실행 실패다냥: {ex.Message}\n설치형(Setup.exe)으로 설치했을 때만 쓸 수 있다냥."),
                 "NekoManga", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }

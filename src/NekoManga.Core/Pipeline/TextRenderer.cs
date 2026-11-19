@@ -33,7 +33,7 @@ public static class TextRenderer
         settings ??= new AppSettings();
         using var mat = ImgIo.Read(imagePath, ImreadModes.Color);
         if (mat.Empty())
-            throw new InvalidDataException(Loc.F($"이미지를 읽지 못했어요: {Path.GetFileName(imagePath)}"));
+            throw new InvalidDataException(Loc.F($"이미지를 읽지 못했다냥: {Path.GetFileName(imagePath)}"));
 
         // 다시 식자(결과 창 [다시 식자], --reletter)는 박제한 원본 크기로 환산한다. 원본 파일에 기대면 원고 폴더를 옮기거나 원본을 지운 뒤에는
         // 비율 1이 되어, 채색으로 식자 전 원고의 크기가 원본과 달라진 쪽에서 글이 엉뚱한 자리에 그려지거나 이미지 밖으로 나가 아무 알림 없이 빠졌다
@@ -46,7 +46,7 @@ public static class TextRenderer
         // 저장 폴더는 ImgIo.Write가 만든다. 여기서 Directory.CreateDirectory(Path.GetDirectoryName(outPath)!)를 하면 폴더 없이 파일 이름만 준
         // 출력(--reletter <결과.png> out.png)에서 GetDirectoryName이 ""라 그림을 다 그린 뒤 저장 직전에 던졌다 (AppSettings.Save와 같은 함정).
         if (!ImgIo.Write(outPath, outMat))
-            throw new IOException(Loc.F($"결과 저장에 실패했어요: {outPath}"));
+            throw new IOException(Loc.F($"결과 저장에 실패했다냥: {outPath}"));
     }
 
     /// <summary>식자 전 원고(img)에 블록들을 그린 새 그림을 돌려준다 — 파일을 거치지 않는다. RenderBlocks와 결과 창의 편집 화면이 같이 쓴다
@@ -74,9 +74,9 @@ public static class TextRenderer
             var b = blocks[bi];
             if (layouts[bi].Size <= 0) continue;
 
-            // 글자 색: 블록별 지정 > 설정 전역 > 원문 색 자동
+            // 글자 색: 블록별 지정 > 설정 전역(기본 검정, "auto"면 원문 색 자동). 설정이 비어도 검정(ParseColor의 fallback) — 2026-11-18
             var color = !string.IsNullOrWhiteSpace(b.ColorOverride) ? ParseColor(b.ColorOverride)
-                : string.IsNullOrWhiteSpace(settings.LetterColorHex) ? ParseColor(b.FontColorHex)
+                : AppSettings.IsAutoColor(settings.LetterColorHex) ? ParseColor(b.FontColorHex)
                 : ParseColor(settings.LetterColorHex);
             drawnSizes[bi] = DrawBlock(g, b, layouts[bi], color, settings, draw: bi != skip);
         }
@@ -278,6 +278,7 @@ public static class TextRenderer
         }
         try
         {
+            blocks = blocks.Select(ClampText).ToList();
             int n = blocks.Count;
             var allRects = blocks.Select(b => new RectangleF(
                 (float)(b.X1 * scaleX), (float)(b.Y1 * scaleY),
@@ -862,11 +863,23 @@ public static class TextRenderer
         return mat;
     }
 
+    /// <summary>한 블록의 글 길이 상한 — GDI+ 글 API(MeasureString·AddString)는 문자열 하나가 32K자쯤을 넘으면 "A generic error occurred in GDI+"로 던진다
+    /// (실측 2026-11-18: 32,000자 통과·32,500자 실패, 글자 크기와 무관). 번역기가 폭주한 32,772자 한 어절("아아아…", 35p)에서 장 전체가 실패했다.
+    /// 풍선 글은 수백 자가 상한이라 여기서 잘라도 정상 글은 바뀌지 않는다. 자리 계산(PlanCore)과 그리기(DrawBlock)가 같은 블록을 보게 둘 다에서 자른다.</summary>
+    internal const int MaxTextChars = 4000;
+
+    private static TextBlockInfo ClampText(TextBlockInfo b)
+    {
+        if (b.Translation.Length <= MaxTextChars) return b;
+        int cut = char.IsHighSurrogate(b.Translation[MaxTextChars - 1]) ? MaxTextChars - 1 : MaxTextChars;
+        return b with { Translation = b.Translation[..cut] };
+    }
+
     /// <summary>블록 하나를 그리고 그린 글자 크기(px)를 돌려준다. draw가 false면 크기만 구한다.</summary>
     /// <param name="linesOut">그린(그릴) 줄들을 여기에 담는다 — 없으면 null.</param>
     private static float DrawBlock(Graphics g, TextBlockInfo b, BlockLayout plan, Color color, AppSettings s, bool draw = true, List<string>? linesOut = null)
     {
-        b = NormalizeNewlines(b);
+        b = NormalizeNewlines(ClampText(b));
         var (family, style) = ResolveStyle(b, s);
         // 블록별 지정이 없으면(빈 문자열) 페이지 기본 설정을 따른다
         var alignName = string.IsNullOrEmpty(b.Align) ? s.LetterAlign : b.Align;

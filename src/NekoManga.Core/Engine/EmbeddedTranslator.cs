@@ -53,18 +53,18 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         string imagePath, string workDir, IProgress<string>? status, CancellationToken ct, string? stem = null)
     {
         if (!IsReady)
-            throw new FileNotFoundException(Loc.T("내장 엔진 모델이 없어요. 설정 → 구성요소에서 설치해 주세요."));
+            throw new FileNotFoundException(Loc.T("내장 엔진 모델이 없다냥. 설정 → 구성요소에서 설치해 줘냥."));
 
         using var img = ImgIo.Read(imagePath, ImreadModes.Color);
         if (img.Empty())
-            throw new InvalidDataException(Loc.F($"이미지를 읽지 못했어요: {Path.GetFileName(imagePath)}"));
+            throw new InvalidDataException(Loc.F($"이미지를 읽지 못했다냥: {Path.GetFileName(imagePath)}"));
 
         // 진단: NEKO_TIMING=<파일>이면 단계별로 걸린 시간을 적는다 (어디가 느린지 볼 때)
         var clock = System.Diagnostics.Stopwatch.StartNew();
         var laps = new List<string>();
         void Lap(string name) { laps.Add($"{name}={clock.ElapsedMilliseconds}ms"); clock.Restart(); }
 
-        status?.Report(Loc.T("말풍선 찾는 중"));
+        status?.Report(Loc.T("말풍선 찾는 중이다냥"));
         var det = await Task.Run(() => _detector.Detect(img), ct);
         Lap("감지");   // loc:none
         using var textMask = det.TextMask;
@@ -101,7 +101,7 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
             ct.ThrowIfCancellationRequested();
             if (crops.Count > 0)
             {
-                status?.Report(Loc.F($"글자 읽는 중 ({crops.Count}개 말풍선)"));
+                status?.Report(Loc.F($"글자 읽는 중이다냥 ({crops.Count}개 말풍선)"));
                 var texts = await Task.Run(() => _ocr.RecognizeBatch(crops), ct);
                 for (int i = 0; i < texts.Length; i++)
                 {
@@ -118,12 +118,30 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         }
         Lap($"글자 읽기({detBlocks.Count}블록)");   // loc:none
 
+        // ── 말풍선 밖의 효과음은 번역하지 않는다 (TranslateBubbleOnly, 2026-11-18 사용자 "번역은 말풍선 안에 있는 것만") ──
+        // 풍선 밖으로 보이고(BubbleSolver.IsInBubble — 닫힌 테두리도 단색 바탕도 없다) 글이 효과음처럼 생긴(LooksLikeSfx) 블록은 번역기에 보내지 않고
+        // 지우지도 식자하지도 않는다. 그런 글은 번역기가 폭주하기 쉽고(95자 "あぁ、あぁ......あああ…" → 32,772자, 35p) 식자해도 그림을 가린다.
+        // 풍선 판정만으로 거르지 않는 까닭: 실제 원고 448블록에서 테두리 규칙은 65%만 풍선으로 봐(이 작가는 테두리가 닫히지 않는 풍선이 많다) 대사가 빠졌다 — 두 조건을 같이 건다.
+        int outsideBubble = 0;
+        if (settings.TranslateBubbleOnly && blocks.Count > 0)
+        {
+            var kept = new List<(DetectedBlock Box, string Text)>();
+            foreach (var (b, text) in blocks)
+            {
+                var rect = new Rect(b.X1, b.Y1, b.X2 - b.X1, b.Y2 - b.Y1);
+                if (LooksLikeSfx(text) && !await Task.Run(() => BubbleSolver.IsInBubble(img, textMask, rect), ct)) outsideBubble++;
+                else kept.Add((b, text));
+            }
+            blocks = kept;
+        }
+        Lap($"풍선 밖 글 거르기({outsideBubble}블록 제외)");   // loc:none
+
         // ── 번역 (배치) ──
         IReadOnlyList<string> translations = Array.Empty<string>();
         if (blocks.Count > 0)
         {
             var engine = TranslatorFactory.EngineLabel(settings);
-            status?.Report(Loc.F($"번역 중 ({blocks.Count}개 말풍선 · {engine})"));
+            status?.Report(Loc.F($"번역 중이다냥 ({blocks.Count}개 말풍선 · {engine})"));
             var translator = TranslatorFactory.Create(settings);
             // 느린 LLM 엔진은 한 페이지에 1~2분씩 걸린다 — 멈춘 게 아니라는 걸 알 수 있게 경과 초를 띄운다
             using var tick = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -136,7 +154,7 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
                     {
                         await Task.Delay(5000, tick.Token);
                         var sec = (int)(DateTime.UtcNow - started).TotalSeconds;
-                        status?.Report(Loc.F($"번역 중 ({blocks.Count}개 말풍선 · {engine} {sec}초)"));
+                        status?.Report(Loc.F($"번역 중이다냥 ({blocks.Count}개 말풍선 · {engine} {sec}초)"));
                     }
                 }
                 catch (OperationCanceledException) { }
@@ -153,7 +171,7 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         Lap($"번역({blocks.Count}개·{TranslatorFactory.EngineLabel(settings)})");   // loc:none
 
         // ── 글자 색 추출 + 글자 지우기 ──
-        status?.Report(Loc.T("글자 지우는 중"));
+        status?.Report(Loc.T("글자 지우는 중이다냥"));
         var result = new List<TextBlockInfo>();
         using var lamaMask = new Mat(img.Rows, img.Cols, MatType.CV_8UC1, Scalar.Black);
         bool needLama = false;
@@ -177,7 +195,7 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
 
             var tr = i < translations.Count ? translations[i] : "";
             if (string.IsNullOrWhiteSpace(tr)) tr = text;
-            tr = PolishTranslation(tr, settings.TranslateTarget);
+            tr = TameRunaway(PolishTranslation(tr, settings.TranslateTarget), text);
             result.Add(new TextBlockInfo(
                 b.X1, b.Y1, b.X2, b.Y2, text, tr,
                 EstimateFontSize(rect, tr.Length),
@@ -188,7 +206,7 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         Lap("글자 지우기(단색)");   // loc:none
         if (needLama)
         {
-            status?.Report(Loc.T("배경 복원 중 (LaMa)"));
+            status?.Report(Loc.T("배경 복원 중이다냥 (LaMa)"));
             await Task.Run(() => _lama.Inpaint(img, lamaMask), ct);
             Lap("배경 복원(LaMa)");   // loc:none
         }
@@ -206,6 +224,55 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
     /// 일본어 전각 느낌표·물음표는 반각으로. 세로쓰기 기호가 가로 식자에서 긴 막대로 그려지는 것을 막는다.
     /// 중국어가 목표면 반각이 아니라 중국어 조판의 전각 부호로 맞춘다(<see cref="PolishChinese"/>). 일본어가 목표면 손대지 않는다.
     /// 목표 언어 코드는 settings.json 값 그대로 온다(설정 창에는 ko·en뿐) — 어느 언어인지는 <see cref="LangCode"/>가 정한다.</summary>
+    /// <summary><see cref="TameRunaway"/>의 상한 — 번역문은 원문의 이 배를 넘지 않고(짧은 원문은 최소 글자 수까지), 같은 글자는 이 수까지만 이어진다.
+    /// 한국어는 일본어보다 글자 수가 비슷하거나 적어 4배면 정상 번역은 걸리지 않는다(지금까지의 식자 블록 537개 가운데 150자를 넘은 것은 폭주한 둘뿐).</summary>
+    internal const int RunawayRatio = 4, RunawayMinChars = 60, MaxRepeat = 8;
+
+    /// <summary>폭주한 번역문을 억제한다 — LLM 번역기가 늘인 소리("あああ…")를 되풀이하다 토큰 상한까지 채우면 한 어절 32,757자가 온다(DeepSeek, 2026-11-18 35p).
+    /// 그 길이는 GDI+ 글 API의 한계(32K자)를 넘어 식자가 "A generic error occurred in GDI+"로 던졌고, 식자해도 풍선에 들어갈 글이 아니다.
+    /// 원문의 <see cref="RunawayRatio"/>배(최소 <see cref="RunawayMinChars"/>자) 안이면 그대로 둔다. 넘으면 같은 글자가 <see cref="MaxRepeat"/> 넘게 이어진 것을
+    /// 그 수로 접고, 그래도 길면 상한에서 자른다(서로게이트 쌍은 가르지 않는다). 식자기도 따로 길이를 막는다(TextRenderer.MaxTextChars) — 다른 길로 온 글 때문에.</summary>
+    internal static string TameRunaway(string tr, string source)
+    {
+        int limit = Math.Max(RunawayMinChars, RunawayRatio * source.Length);
+        if (tr.Length <= limit) return tr;
+        var sb = new System.Text.StringBuilder(limit);
+        int run = 0;
+        for (int i = 0; i < tr.Length; i++)
+        {
+            run = i > 0 && tr[i] == tr[i - 1] ? run + 1 : 1;
+            if (run <= MaxRepeat) sb.Append(tr[i]);
+        }
+        if (sb.Length > limit) sb.Length = char.IsHighSurrogate(sb[limit - 1]) ? limit - 1 : limit;
+        return sb.ToString();
+    }
+
+    /// <summary>원문이 효과음·늘인 소리처럼 생겼는가 — 한자가 있거나 문장부호(、。？！「」)가 있으면 대사. 같은 글자(장음 포함)가 셋 넘게 이어지거나("あああ", "はーーー"),
+    /// 작은 글자·장음·기호를 뺀 알맹이가 한 글자 이하면("あ", "ぐっっ", "はーっ...") 효과음. 그 밖은 대사("はい", "それを", "...じゃあ"는 남긴다).
+    /// 풍선 밖 판정과 **같이** 써서 번역에서 뺀다(TranslateBubbleOnly). 실제 원고 448블록의 풍선 밖 판정 157블록 가운데 이것으로 거른 것과 남긴 것은 notes/translate-letter.md.</summary>
+    public static bool LooksLikeSfx(string source)
+    {
+        var s = source.Trim();
+        if (s.Length == 0) return true;
+        foreach (var ch in s)
+            if (ch is >= '一' and <= '鿿') return false;   // 한자 = 대사
+        int run = 1;
+        for (int i = 1; i < s.Length; i++)
+        {
+            run = s[i] == s[i - 1] && Array.IndexOf(RunBreakers, s[i]) < 0 ? run + 1 : 1;   // "..."·"……"는 되풀이가 아니다
+            if (run >= 3) return true;   // "あああ"·"はーーー" — 폭주하는 꼴
+        }
+        if (s.IndexOfAny(SentenceMarks) >= 0) return false;
+        int core = 0;
+        foreach (var ch in s)
+            if (!SfxFiller.Contains(ch)) core++;
+        return core <= 1;
+    }
+
+    private static readonly char[] SentenceMarks = ['、', '。', '？', '?', '！', '!', '「', '」', '『', '』'];
+    private static readonly char[] RunBreakers = ['.', '…', '・', '、', '。', '!', '?', '！', '？', ' ', '　'];
+    private const string SfxFiller = "ー〜～~♡♥…・.,、。!?！？ 　\n\tっッぁぃぅぇぉゃゅょゎァィゥェォャュョヮ゛゜゙゚";
+
     internal static string PolishTranslation(string tr, string targetLang)
     {
         // 일본어로 옮길 때는 ー·〜·！？·・・・·‥ 가 전부 맞는 표기다 — 하나도 바꾸지 않는다 (ja-JP·jpn 같은 꼴도 같다)

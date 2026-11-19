@@ -46,7 +46,7 @@ public class CumDetector(OnnxEnv env, string? comfyRoot = null)
     /// <summary>조각 둘레에 질내사정의 흔적이 있는 정도(0~1) — 사정 계열 태그 점수의 최댓값을 창 둘에서 재어 높은 쪽. 모델이 없으면 예외(호출자가 IsReady를 먼저 본다).</summary>
     public float Score(Mat bgr, Rect piece)
     {
-        var model = Model ?? throw new FileNotFoundException(Loc.F($"엔진 모델이 없어요: {ModelFile} — 설정 → 구성요소에서 설치해 주세요."));
+        var model = Model ?? throw new FileNotFoundException(Loc.F($"엔진 모델이 없다냥: {ModelFile} — 설정 → 구성요소에서 설치해 줘냥."));
         float best = 0; Rect last = default;
         foreach (double k in WindowScales)
         {

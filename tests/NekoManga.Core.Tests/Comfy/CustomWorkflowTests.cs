@@ -79,7 +79,7 @@ public class CustomWorkflowTests
 
         // 앱이 원고를 넣을 LoadImage와 결과를 받을 SaveImage가 켜진 채로 있어야 한다 — 꺼짐(2)·우회(4)는 없는 것과 같다
         var ex = Assert.Throws<InvalidDataException>(() => CustomWorkflow.Load(path));
-        Assert.StartsWith(missing + " 노드가 없어요", ex.Message);
+        Assert.StartsWith(missing + " 노드가 없다냥", ex.Message);
     }
 
     [Fact]
@@ -108,7 +108,7 @@ public class CustomWorkflowTests
         // 노드 자리의 값이 객체가 아니면(글자·참거짓·배열·숫자·null) 워크플로가 아니다 — 앞의 노드가 멀쩡해도 마찬가지.
         // 설정 창은 메시지를 그대로 띄우므로 .NET의 영어 메시지 대신 어느 항목이 노드가 아닌지 알려야 한다
         var ex = Assert.Throws<InvalidDataException>(() => CustomWorkflow.Load(path));
-        Assert.StartsWith("워크플로 파일이 아니에요", ex.Message);
+        Assert.StartsWith("워크플로 파일이 아니다냥", ex.Message);
         Assert.Contains($"'{key}'", ex.Message);
     }
 
@@ -125,7 +125,7 @@ public class CustomWorkflowTests
 
         // class_type이 노드 이름(글자)이 아니면 없는 것과 같다 — 같은 안내 메시지
         var ex = Assert.Throws<InvalidDataException>(() => CustomWorkflow.Load(path));
-        Assert.StartsWith("API 포맷이 아니에요", ex.Message);
+        Assert.StartsWith("API 포맷이 아니다냥", ex.Message);
     }
 
     [Fact]
@@ -156,7 +156,7 @@ public class CustomWorkflowTests
 
         // 손으로 고친 파일에서만 생기는 꼴이다 — 설정 창은 메시지를 그대로 띄우므로 .NET의 영어 예외 대신 사람이 읽을 InvalidDataException이어야 한다
         var ex = Assert.Throws<InvalidDataException>(() => CustomWorkflow.Load(path));
-        Assert.StartsWith("워크플로 파일을 읽지 못했어요", ex.Message);
+        Assert.StartsWith("워크플로 파일을 읽지 못했다냥", ex.Message);
         // 어디가 틀렸는지는 원래 예외만 안다 — 화면은 메시지만 보여 주므로 그 말을 끝에 붙여 둔다
         Assert.EndsWith($"(자세히: {ex.InnerException!.Message})", ex.Message);
     }
@@ -227,7 +227,7 @@ public class CustomWorkflowTests
 
         // 실행 직전의 변환·서버 점검에서 나던 영어 예외도 사람이 읽을 InvalidDataException으로 — 작업 시작 오류에 그대로 보인다
         var ex = Assert.Throws<InvalidDataException>(() => CustomWorkflow.Resolve(loaded, BundledRegenObjectInfo()));
-        Assert.StartsWith("워크플로를 이 ComfyUI에 맞게 바꾸지 못했어요", ex.Message);
+        Assert.StartsWith("워크플로를 이 ComfyUI에 맞게 바꾸지 못했다냥", ex.Message);
         Assert.EndsWith($"(자세히: {ex.InnerException!.Message})", ex.Message);
     }
 
@@ -241,7 +241,7 @@ public class CustomWorkflowTests
 
         // 손으로 고치다 노드의 id를 지운 파일 — 변환기 안의 NullReferenceException이 그대로 나가지 않고 무엇이 빠졌는지 알린다
         var ex = Assert.Throws<InvalidDataException>(() => CustomWorkflow.Resolve(loaded, BundledRegenObjectInfo()));
-        Assert.StartsWith("워크플로 파일을 읽지 못했어요", ex.Message);
+        Assert.StartsWith("워크플로 파일을 읽지 못했다냥", ex.Message);
         Assert.Contains("id가 없는 노드", ex.Message);
     }
 
@@ -273,8 +273,8 @@ public class CustomWorkflowTests
         var ex = Assert.Throws<InvalidDataException>(() => CustomWorkflow.Resolve(loaded, info));
 
         // 사람이 읽을 InvalidDataException이되 '손으로 고친 파일' 탓으로 단정하지 않고, 원래 예외의 말을 붙여 원인이 보이게 한다
-        Assert.StartsWith("워크플로를 이 ComfyUI에 맞게 바꾸지 못했어요", ex.Message);
-        Assert.DoesNotContain("워크플로 파일을 읽지 못했어요", ex.Message);
+        Assert.StartsWith("워크플로를 이 ComfyUI에 맞게 바꾸지 못했다냥", ex.Message);
+        Assert.DoesNotContain("워크플로 파일을 읽지 못했다냥", ex.Message);
         Assert.IsType<InvalidOperationException>(ex.InnerException);
         Assert.EndsWith($"(자세히: {raw.Message})", ex.Message);
     }
@@ -287,7 +287,7 @@ public class CustomWorkflowTests
     [InlineData(typeof(InvalidDataException), false)]        // 이미 사람이 읽을 안내다
     public void IsMalformed_OnlyJsonShapeErrorsAreRewritten(Type exception, bool expected)
     {
-        // NullReferenceException은 파일 꼴이 아니라 코드 결함의 신호다 — '파일을 읽지 못했어요'로 바꿔 보이면 원인을 못 찾는다
+        // NullReferenceException은 파일 꼴이 아니라 코드 결함의 신호다 — '파일을 읽지 못했다냥'로 바꿔 보이면 원인을 못 찾는다
         Assert.Equal(expected, CustomWorkflow.IsMalformed((Exception)Activator.CreateInstance(exception)!));
     }
 

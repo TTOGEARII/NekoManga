@@ -19,7 +19,7 @@ public static class AutoTune
             (VramMb > 0 ? $" · VRAM {VramMb / 1024.0:0.#}GB" : "") +
             (RamGb > 0 ? $" · RAM {RamGb:0}GB" : "");
         public string Summary => Changes.Count == 0
-            ? Loc.T("지금 설정이 이 PC에 맞아요 — 바꿀 것이 없어요.")
+            ? Loc.T("지금 설정이 이 PC에 맞는다냥 — 바꿀 것이 없다냥.")
             : string.Join("\n", Changes.Select(c => $"• {c.Label}: {c.From} → {c.To}  ({c.Why})"));
     }
 
@@ -56,9 +56,9 @@ public static class AutoTune
         bool gpuUsable = vendor is "nvidia" or "nvidia-old" or "amd"
                          && (vendor != "amd" || name.Length == 0 || SystemCheck.LooksRocmSupported(name))
                          && !gpuTooOld;
-        string why = vendor == "none" ? Loc.T("전용 그래픽카드가 없어요")
-                   : gpuTooOld ? Loc.T("그래픽카드가 너무 오래돼 채색 엔진을 돌릴 수 없어요")
-                   : Loc.T("엔진 빌드가 이 그래픽카드를 지원하지 않아요");
+        string why = vendor == "none" ? Loc.T("전용 그래픽카드가 없다냥")
+                   : gpuTooOld ? Loc.T("그래픽카드가 너무 오래돼 채색 엔진을 돌릴 수 없다냥")
+                   : Loc.T("엔진 빌드가 이 그래픽카드를 지원하지 않는다냥");
         if (!gpuUsable)
         {
             if (s.EnableAutoColor) ch.Add(new("color-off", Loc.T("자동 채색"), Loc.T("켬"), Loc.T("끔"), why, x => x.EnableAutoColor = false));
@@ -92,7 +92,7 @@ public static class AutoTune
 
         // 엔진 상주: GPU를 못 쓰면 켤 이유가 없고, RAM이 16GB 미만이면 ComfyUI(실측 최대 13GB)를 평소엔 꺼 두는 게 낫다
         string? warmWhy = !gpuUsable ? why
-                        : ram > 0 && ram < 15.5 ? Loc.F($"RAM {ram:0}GB — 엔진이 메모리를 10GB 넘게 써서 평소엔 꺼 두는 게 나아요") : null;
+                        : ram > 0 && ram < 15.5 ? Loc.F($"RAM {ram:0}GB — 엔진이 메모리를 10GB 넘게 써서 평소엔 꺼 두는 게 낫다냥") : null;
         if (warmWhy != null)
         {
             if (s.PrewarmComfyOnLaunch) ch.Add(new("prewarm-off", Loc.T("엔진 미리 켜기"), Loc.T("켬"), Loc.T("끔"), warmWhy, x => x.PrewarmComfyOnLaunch = false));

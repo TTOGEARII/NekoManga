@@ -850,12 +850,32 @@ public class TextRendererTests
     }
 
     [Theory]
+    [InlineData(40000, true)]    // 공백 없는 한 어절 4만 자 — GDI+는 32K자쯤에서 "A generic error occurred in GDI+"를 던진다(2026-11-18, 35p)
+    [InlineData(33000, false)]   // 어절들로 된 긴 글
+    public void RenderBlocks_TextBeyondGdiPlusLimit_IsClampedAndDrawn(int chars, bool singleWord)
+    {
+        using var t = new TempDir();
+        using var page = SolidPage(600, 800);
+        SavePng(page, t.At("in.png"));
+        var text = singleWord ? new string('아', chars) : string.Concat(Enumerable.Repeat("아아 ", chars / 3));
+        Assert.True(text.Length > TextRenderer.MaxTextChars);
+        var block = Manual(50, 50, 550, 300, text);
+
+        TextRenderer.RenderBlocks(t.At("in.png"), t.At("in.png"), new[] { block }, t.At("out.png"), Arial());
+
+        using var after = LoadColor(t.At("out.png"));
+        using var changed = ChangedMask(page, after);
+        Assert.True(Cv2.CountNonZero(changed) > 50);   // 던지지 않고 글을 그렸다
+    }
+
+    [Theory]
     [InlineData("#FF0000", "#00FF00", "#0000FF", "red")]   // 블록별 지정이 가장 우선
     [InlineData("", "#00FF00", "#0000FF", "green")]        // 다음은 설정의 전역 색
-    [InlineData("", "", "#0000FF", "blue")]                // 둘 다 비면 원문 글자 색
-    [InlineData("", "", "#00ff00", "green")]               // 소문자 16진수도 읽는다
-    [InlineData("", "", "blue", "black")]                  // 읽을 수 없는 색은 검정
-    public void RenderBlocks_TextColor_BlockOverrideThenSettingThenSourceColor(string blockColor, string settingColor, string sourceColor, string expected)
+    [InlineData("", "", "#0000FF", "black")]               // 설정이 비면 검정 — 원문 색을 따라가지 않는다(2026-11-18, 기본 검정)
+    [InlineData("", "auto", "#0000FF", "blue")]            // 설정이 auto면 원문 글자 색
+    [InlineData("", "AUTO", "#00ff00", "green")]           // auto는 대소문자 무관, 소문자 16진수도 읽는다
+    [InlineData("", "auto", "blue", "black")]              // 읽을 수 없는 원문 색은 검정
+    public void RenderBlocks_TextColor_BlockOverrideThenSetting_AutoFollowsSourceColor(string blockColor, string settingColor, string sourceColor, string expected)
     {
         using var t = new TempDir();
         using var page = SolidPage(600, 800);

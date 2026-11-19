@@ -74,7 +74,7 @@ public partial class ResultWindow
     }
 
     private void UpdateRegenHeader(bool own) =>
-        TxtRegenHdr.Text = (SeedLocked ? Loc.T("🔒 시드 고정 · ") : "") + (own ? Loc.T("✎ 이 페이지 값 사용 중 — 펼쳐서 확인·수정") : Loc.T("⚙ 설정값 그대로 — 펼쳐서 이 페이지만 바꾸기"));
+        TxtRegenHdr.Text = (SeedLocked ? Loc.T("🔒 시드 고정 · ") : "") + (own ? Loc.T("✎ 이 장 값 사용 중 — 펼쳐서 확인한다냥") : Loc.T("⚙ 설정값 그대로 — 펼쳐서 이 장만 바꾼다냥"));
 
     // ── 재생성 시드의 기록·고정 (2026-11-15, 사용자 "이 시드를 저장하는게 따로 있을까?") ──
     // 재생성이 쓴 시드는 러너가 그 장의 마스크 사이드카에 적는다(MaskSidecar.RegenSeeds, 영역 순서대로). 여기서는 보여 주고, 체크하면 고정(SeedLock)을 사이드카에 바로 적는다 —
@@ -93,10 +93,10 @@ public partial class ResultWindow
         ChkRgSeedLock.IsChecked = locked;
         TxtRgSeed.IsEnabled = !locked;   // 고정 중에는 위 시드 칸을 쓰지 않는다 — 어느 시드로 도는지 헷갈리지 않게
         string shown = has ? _maskSc!.RegenSeeds!.Replace(",", ", ") : "";
-        TxtRgLastSeed.Text = _maskSc == null ? Loc.T("이 장에는 저장 마스크가 없어 시드를 적어 둘 곳이 없어요 (검토를 거쳐 돌린 장만 적혀요)")
-            : !has ? Loc.T("아직 적힌 시드가 없어요 — 이 장을 재생성으로 한 번 그리면 적혀요")
-            : locked ? Loc.F($"🔒 {shown} — 이 장은 늘 이 시드로 그려요 (위 시드 칸은 쓰지 않아요, 창을 닫아도 남아요)")
-            : Loc.F($"지난 재생성 시드 {shown} — 체크하면 다음에도 이 시드로 그려요");
+        TxtRgLastSeed.Text = _maskSc == null ? Loc.T("이 장에는 저장 마스크가 없어 시드를 적을 곳이 없다냥")
+            : !has ? Loc.T("아직 적힌 시드가 없다냥 — 재생성으로 한 번 그리면 적힌다냥")
+            : locked ? Loc.F($"🔒 {shown} — 이 장은 늘 이 시드로 그린다냥 (창을 닫아도 남는다냥)")
+            : Loc.F($"지난 재생성 시드 {shown} — 체크하면 다음에도 이 시드로 그린다냥");
     }
 
     private void ChkRgSeedLock_Click(object sender, RoutedEventArgs e)
@@ -109,18 +109,18 @@ public partial class ResultWindow
             var outPath = _refs[_index].OutPath;
             // 디스크의 지금 값에 고정 여부만 바꿔 적는다 — 이 창이 장을 읽은 뒤에 러너가 고친 것(확인·'고친 장' 표시·시드)을 읽어 둔 옛 값으로 되돌리지 않게
             if (MaskSidecar.Load(outPath) is not { } onDisk)
-                throw new IOException(Loc.T("마스크 정보(.mask.json)를 읽지 못했어요 — 잠시 뒤 다시 해 주세요"));
+                throw new IOException(Loc.T("마스크 정보(.mask.json)를 읽지 못했다냥 — 잠시 뒤 다시 해 줘냥"));
             // 같은 원고의 사이드카인가 — 이 창이 읽은 뒤에 러너가 원고 경로를 고쳐 적었을 수 있어(폴더를 옮긴 원고) 경로가 다르면 이름·길이로 본다
             if (!string.Equals(onDisk.Source, _maskSc.Source, StringComparison.OrdinalIgnoreCase) && !onDisk.MatchesSource(WaitKey))
-                throw new InvalidOperationException(Loc.T("이 자리의 마스크 정보가 다른 원고의 것으로 바뀌었어요 — 장을 다시 열어 주세요"));
+                throw new InvalidOperationException(Loc.T("이 자리의 마스크 정보가 다른 원고의 것으로 바뀌었다냥 — 장을 다시 열어 줘냥"));
             _maskSc = _maskSc with { RegenSeeds = onDisk.RegenSeeds, SeedLock = onDisk.SeedLock };   // 칸은 디스크의 지금 값을 따른다 — 아래에서 실패해도 꺼진 체크가 켜진 채 남지 않게
-            if (want && MaskSidecar.ParseSeeds(onDisk.RegenSeeds).Count == 0) throw new InvalidOperationException(Loc.T("이 장에 적힌 시드가 없어요 (방금 다시 그리는 중이면 끝난 뒤에 해 주세요)"));
+            if (want && MaskSidecar.ParseSeeds(onDisk.RegenSeeds).Count == 0) throw new InvalidOperationException(Loc.T("이 장에 적힌 시드가 없다냥 (그리는 중이면 끝난 뒤에 해 줘냥)"));
             (onDisk with { SeedLock = want }).Save(outPath);
             _maskSc = _maskSc with { SeedLock = want };
-            TxtStatus.Text = want ? Loc.F($"이 장의 시드를 고정했어요 ({onDisk.RegenSeeds!.Replace(",", ", ")}) — [지우기]·묶음·[시작] 모두 이 시드로 그려요")
-                                  : Loc.T("시드 고정을 풀었어요 — 다음 재생성은 위 시드 칸의 값으로 그려요 (-1 = 랜덤)");
+            TxtStatus.Text = want ? Loc.F($"이 장의 시드를 고정했다냥 ({onDisk.RegenSeeds!.Replace(",", ", ")}) — 다음에도 이 시드로 그린다냥")
+                                  : Loc.T("시드 고정을 풀었다냥 — 다음은 위 시드 칸의 값으로 그린다냥 (-1 = 랜덤)");
         }
-        catch (Exception ex) { TxtStatus.Text = Loc.T("시드 고정을 저장하지 못했어요: ") + ex.Message; }
+        catch (Exception ex) { TxtStatus.Text = Loc.T("시드 고정을 저장하지 못했다냥: ") + ex.Message; }
         RefreshSeedLockUi();
         UpdateRegenHeader(_regenPerPage.ContainsKey(_index));
     }
@@ -152,7 +152,7 @@ public partial class ResultWindow
         if (_loading) return;   // 읽는 중 — 칸은 아직 떠난 장의 값이다
         _regenPerPage.Remove(_index);
         LoadRegenFields();
-        TxtStatus.Text = Loc.T("이 페이지의 재생성 값을 설정값으로 되돌렸어요");
+        TxtStatus.Text = Loc.T("이 장의 재생성 값을 설정값으로 되돌렸다냥");
     }
 
     // ── 지우기 ──────────────────────────────────────────────
@@ -174,6 +174,6 @@ public partial class ResultWindow
         BtnUndo.IsEnabled = _undo.Count > 0 || (LetterMode && _letterUndo.Count > 0);
         RefreshManualMaskBase();   // 저장 마스크 없는 장의 마스크 보기 바닥도 되돌린 결과물로
         Redraw();
-        TxtStatus.Text = Loc.T("되돌렸어요");
+        TxtStatus.Text = Loc.T("되돌렸다냥");
     }
 }

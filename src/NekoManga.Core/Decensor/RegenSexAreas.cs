@@ -75,7 +75,7 @@ public static class RegenSexAreas
     /// <summary>자리 마스크들을 그림 한 장의 채널로 — 첫 자리 = red, 둘째 = green, 셋째 = blue(<see cref="Channels"/>). 올릴 PNG의 재료(호출자가 해제).</summary>
     public static Mat Pack(IReadOnlyList<RegenTagArea> areas)
     {
-        if (areas.Count is < 1 or > 3) throw new ArgumentException(Loc.T("자리는 하나에서 셋까지예요."), nameof(areas));
+        if (areas.Count is < 1 or > 3) throw new ArgumentException(Loc.T("자리는 하나에서 셋까지다냥."), nameof(areas));
         using var none = new Mat(areas[0].Mask.Size(), MatType.CV_8UC1, Scalar.Black);
         Mat At(int i) => i < areas.Count ? areas[i].Mask : none;
         var packed = new Mat();

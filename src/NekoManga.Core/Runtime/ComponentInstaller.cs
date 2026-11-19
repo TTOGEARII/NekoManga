@@ -84,7 +84,7 @@ public class ComponentInstaller(AppSettings settings)
         Directory.CreateDirectory(settings.RuntimeRoot);
         // 연결한 폴더에 ComfyUI가 없으면 연결이 틀린 것이다 — RuntimeRoot에 하나 더 받아도 앱은 연결한 쪽을 돌리므로 쓰이지 않는다
         if (c.Id == ComponentCatalog.ComfyPortable.Id && !OwnsPython)
-            throw new InvalidOperationException(Loc.F($"연결한 폴더에 ComfyUI가 없어요: {settings.LinkedComfyRoot}\n설정 → 구성요소 → 기존 설치 연결의 ComfyUI 경로를 고치거나, 비워서 앱이 새로 받게 해 주세요."));
+            throw new InvalidOperationException(Loc.F($"연결한 폴더에 ComfyUI가 없다냥: {settings.LinkedComfyRoot}\n설정 → 구성요소 → 기존 설치 연결의 경로를 고치거나 비워 줘냥."));
         // 이미 있던 것인가 — 패키지가 딸린 구성요소는 파일이 있으면 다시 받지 않고(v1.13.0까지의 설치: 패키지만 빠졌다),
         // 연결한 ComfyUI에서는 앱이 지금 새로 넣는 것에만 패키지를 깐다
         bool had = c.HasDeps && File.Exists(Resolve(c.Probe));
@@ -102,7 +102,7 @@ public class ComponentInstaller(AppSettings settings)
                 {
                     var tmp = Resolve($"tmp/{c.Id}.zip");
                     await DownloadAsync(c, tmp, progress, ct);
-                    progress.Report(new(c.Id, Loc.T("압축 푸는 중..."), 99, 0, 0));
+                    progress.Report(new(c.Id, Loc.T("압축 푸는 중이다냥..."), 99, 0, 0));
                     ExtractZip(tmp, Resolve(c.Target), c.StripRootFolder);
                     File.Delete(tmp);
                 }
@@ -128,7 +128,7 @@ public class ComponentInstaller(AppSettings settings)
                     // 임시 파일 이름에 벤더를 넣는다 — 받다 만 NVIDIA .part에 AMD 묶음을 이어 붙이면 깨진 7z가 된다
                     var tmp = Resolve(isComfy ? $"tmp/{c.Id}-{vendor}.7z" : $"tmp/{c.Id}.7z");
                     if (!File.Exists(tmp)) await DownloadAsync(c, tmp, progress, ct);   // 지난번에 다 받고 풀다가 멈췄으면 다시 받지 않는다
-                    progress.Report(new(c.Id, Loc.T("압축 푸는 중... (수 분 걸려요)"), 99, 0, 0));
+                    progress.Report(new(c.Id, Loc.T("압축 푸는 중이다냥... (수 분 걸린다냥)"), 99, 0, 0));
                     await Extract7zAsync(tmp, Resolve(c.Target), ct);
                     File.Delete(tmp);
                 }
@@ -188,8 +188,8 @@ public class ComponentInstaller(AppSettings settings)
     {
         var python = Resolve($"{ComponentCatalog.ComfyDirName}/python_embeded/python.exe");
         if (!File.Exists(python))
-            throw new FileNotFoundException(Loc.T("ComfyUI의 파이썬(python.exe)이 없습니다. 구성요소 설치 순서를 확인하세요."), python);
-        progress.Report(new(c.Id, Loc.T("파이썬 패키지 설치 중... (1~2분 걸려요)"), 99, 0, 0));
+            throw new FileNotFoundException(Loc.T("ComfyUI의 파이썬(python.exe)이 없다냥. 구성요소 설치 순서를 확인하라냥."), python);
+        progress.Report(new(c.Id, Loc.T("파이썬 패키지 설치 중이다냥... (1~2분 걸린다냥)"), 99, 0, 0));
 
         string[] pip = ["-s", "-m", "pip"];
         var (listExit, listed) = await RunProcess(python, [.. pip, "list", "--format=freeze", "--disable-pip-version-check"], ct);
@@ -226,7 +226,7 @@ public class ComponentInstaller(AppSettings settings)
     {
         var tail = output.Trim();
         if (tail.Length > 600) tail = "…" + tail[^600..];
-        return new InvalidOperationException(Loc.F($"{Loc.T(c.DisplayName)} 파이썬 패키지 설치 실패 (exit {exit}): {tail}"));
+        return new InvalidOperationException(Loc.F($"{Loc.T(c.DisplayName)} 파이썬 패키지 설치 실패다냥 (exit {exit}): {tail}"));
     }
 
     /// <summary>이 구성요소가 대체한 옛 파일을 지운다 (예: 만화판 LaMa 설치 뒤 Carve lama_fp32.onnx 208MB — 업그레이드 설치에 죽은 파일로 남는다).
@@ -273,7 +273,7 @@ public class ComponentInstaller(AppSettings settings)
             {
                 stuck = Size(part) > before ? 0 : stuck + 1;
                 if (stuck > MaxResumes) throw;
-                progress.Report(new(c.Id, Loc.F($"연결이 끊겼어요 — 이어받는 중 ({Math.Max(1, stuck)}/{MaxResumes})"), 0, 0, 0));
+                progress.Report(new(c.Id, Loc.F($"연결이 끊겼다냥 — 이어받는 중 ({Math.Max(1, stuck)}/{MaxResumes})"), 0, 0, 0));
                 await Task.Delay(RetryDelay * Math.Max(1, stuck), ct);
             }
         }
@@ -281,14 +281,14 @@ public class ComponentInstaller(AppSettings settings)
         // 해시가 적힌 구성요소는 받은 파일을 확인한다 — 남의 저장소에서 받는 모델은 주소가 그대로여도 내용이 바뀌거나 중간에 깨질 수 있다
         if (c.Sha256 is { Length: > 0 } expected)
         {
-            progress.Report(new(c.Id, Loc.T("받은 파일 확인 중..."), 99, 0, 0));
+            progress.Report(new(c.Id, Loc.T("받은 파일 확인 중이다냥..."), 99, 0, 0));
             string actual;
             await using (var fs = new FileStream(part, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20))
                 actual = Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(fs, ct));
             if (!string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
             {
                 File.Delete(part);
-                throw new InvalidDataException(Loc.F($"{Loc.T(c.DisplayName)} 파일이 깨졌거나 배포본이 바뀌었어요 (해시 불일치) — 다시 시도해 주세요."));
+                throw new InvalidDataException(Loc.F($"{Loc.T(c.DisplayName)} 파일이 깨졌거나 배포본이 바뀌었다냥 (해시 불일치) — 다시 시도해 줘냥."));
             }
         }
         File.Move(part, dest, overwrite: true);
@@ -326,7 +326,7 @@ public class ComponentInstaller(AppSettings settings)
                 }
                 if (code is not (502 or 503 or 504) || attempt >= 3) break;
                 resp.Dispose();
-                progress.Report(new(c.Id, Loc.F($"서버가 잠깐 응답하지 않아요 (HTTP {code}) — 다시 시도 {attempt + 1}/3"), 0, 0, 0));
+                progress.Report(new(c.Id, Loc.F($"서버가 잠깐 응답하지 않는다냥 (HTTP {code}) — 다시 시도 {attempt + 1}/3"), 0, 0, 0));
                 idle.CancelAfter(Timeout.InfiniteTimeSpan);
                 await Task.Delay(TimeSpan.FromSeconds(4 * (attempt + 1)), ct);
             }
@@ -335,15 +335,15 @@ public class ComponentInstaller(AppSettings settings)
             {
                 existing = 0; // 서버가 이어받기를 지원하지 않음 — 처음부터
             }
-            var civitaiHint = c.UseCivitaiKey ? Loc.T(" — civitai 로그인 필요 모델일 수 있어요. 설정에서 civitai API 키를 넣어주세요.") : "";
+            var civitaiHint = c.UseCivitaiKey ? Loc.T(" — civitai 로그인이 필요한 모델일 수 있다냥. 설정에서 civitai API 키를 넣어 줘냥.") : "";
             if (!resp.IsSuccessStatusCode)
             {
                 var hint = (int)resp.StatusCode is 401 or 403 ? civitaiHint : "";
-                throw new DownloadRejectedException(Loc.F($"{Loc.T(c.DisplayName)} 다운로드 실패 (HTTP {(int)resp.StatusCode}){hint}"));
+                throw new DownloadRejectedException(Loc.F($"{Loc.T(c.DisplayName)} 다운로드 실패다냥 (HTTP {(int)resp.StatusCode}){hint}"));
             }
             // 로그인이 필요한 모델은 200으로 로그인 쪽을 주기도 한다 — 그것을 모델 이름으로 저장하면 '설치됨'인데 쓸 수 없다
             if (string.Equals(resp.Content.Headers.ContentType?.MediaType, "text/html", StringComparison.OrdinalIgnoreCase))
-                throw new DownloadRejectedException(Loc.F($"{Loc.T(c.DisplayName)} 다운로드 실패 — 파일 대신 웹 페이지가 왔어요{civitaiHint}"));
+                throw new DownloadRejectedException(Loc.F($"{Loc.T(c.DisplayName)} 다운로드 실패다냥 — 파일 대신 웹 페이지가 왔다냥{civitaiHint}"));
 
             long? length = resp.Content.Headers.ContentLength;
             long total = (length ?? 0) + existing;
@@ -373,11 +373,11 @@ public class ComponentInstaller(AppSettings settings)
             }
             // 서버가 알린 길이보다 덜 오고 끝났으면 끊긴 것이다 — 덜 받은 파일을 다 받은 것으로 옮기지 않는다
             if (length is > 0 && done < existing + length.Value)
-                throw new IOException(Loc.F($"{Loc.T(c.DisplayName)} — 받는 도중 연결이 끊겼어요."));
+                throw new IOException(Loc.F($"{Loc.T(c.DisplayName)} — 받는 도중 연결이 끊겼다냥."));
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            throw new TimeoutException(Loc.F($"{Loc.T(c.DisplayName)} — 서버가 {(int)IdleTimeout.TotalSeconds}초 동안 응답하지 않았어요."));
+            throw new TimeoutException(Loc.F($"{Loc.T(c.DisplayName)} — 서버가 {(int)IdleTimeout.TotalSeconds}초 동안 응답하지 않았다냥."));
         }
     }
 
@@ -417,7 +417,7 @@ public class ComponentInstaller(AppSettings settings)
     {
         var sevenZip = Resolve(ComponentCatalog.SevenZip.Target);
         if (!File.Exists(sevenZip))
-            throw new FileNotFoundException(Loc.T("7zr.exe가 없습니다. 구성요소 설치 순서를 확인하세요."), sevenZip);
+            throw new FileNotFoundException(Loc.T("7zr.exe가 없다냥. 구성요소 설치 순서를 확인하라냥."), sevenZip);
         Directory.CreateDirectory(destDir);
         var psi = new ProcessStartInfo
         {
@@ -432,6 +432,6 @@ public class ComponentInstaller(AppSettings settings)
         using var p = Process.Start(psi)!;
         await p.WaitForExitAsync(ct);
         if (p.ExitCode != 0)
-            throw new InvalidOperationException(Loc.F($"7z 압축 해제 실패 (exit {p.ExitCode}): {await p.StandardError.ReadToEndAsync(ct)}"));
+            throw new InvalidOperationException(Loc.F($"7z 압축 해제 실패다냥 (exit {p.ExitCode}): {await p.StandardError.ReadToEndAsync(ct)}"));
     }
 }

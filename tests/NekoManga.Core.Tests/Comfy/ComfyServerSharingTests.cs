@@ -649,7 +649,7 @@ public class ComfyServerSharingTests
         // 상태 문구도 따라온다: 깨우는 중 → 다른 NekoManga의 것을 기다리는 중 → (그것이 죽어 우리가 띄웠으니) 다시 깨우는 중.
         // 되돌리지 않으면 자기 서버가 깨어나는 1~2분 내내 '다른 NekoManga가 깨우는 중…'이 남는다
         Assert.Equal(3, said.Count);
-        Assert.Contains("채색 엔진 깨우는 중", said[0]);
+        Assert.Contains("엔진 깨우는 중", said[0]);
         Assert.Contains("다른 NekoManga", said[1]);
         Assert.Equal(said[0], said[2]);
         second.Release();

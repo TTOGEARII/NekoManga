@@ -19,7 +19,7 @@
         <!-- 창 전체에 깔리는 은은한 톤망점 (원고 질감) — 메인·설정 창과 동일 -->
         <Rectangle Fill="{DynamicResource MangaDots}" Grid.RowSpan="4" IsHitTestVisible="False"/>
 
-        <ui:TitleBar Grid.Row="0" Title="처음 준비 중이에요" ShowMinimize="False" ShowMaximize="False">
+        <ui:TitleBar Grid.Row="0" Title="처음 준비 중이다냥" ShowMinimize="False" ShowMaximize="False">
             <ui:TitleBar.Icon>
                 <ui:ImageIcon Source="{DynamicResource NekoLogo}"/>
             </ui:TitleBar.Icon>
@@ -33,9 +33,9 @@
                           SelectionChanged="UiLanguage_Changed" ToolTip="화면 언어"/>
                 <Image Source="{DynamicResource NekoLogo}" Width="52" Height="52" DockPanel.Dock="Left" Margin="0,0,14,0" VerticalAlignment="Center"/>
                 <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="AI 엔진을 준비할게요" FontSize="19" FontWeight="Bold" Foreground="{DynamicResource NekoText}"/>
+                    <TextBlock Text="AI 엔진을 준비한다냥" FontSize="19" FontWeight="Bold" Foreground="{DynamicResource NekoText}"/>
                     <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,0"
-                               Text="채색·번역에 필요한 구성요소를 자동으로 내려받아요. 모델이 커서(전체 약 20GB) 처음 한 번은 시간이 걸려요 — 중간에 꺼도 이어받아요."/>
+                               Text="필요한 구성요소를 자동으로 내려받는다냥.&#10;· 모델이 커서(약 20GB) 처음 한 번은 오래 걸린다냥 — 중간에 꺼도 이어받는다냥."/>
                 </StackPanel>
             </DockPanel>
 
@@ -56,7 +56,7 @@
                         <Border Style="{StaticResource MangaTag}" Margin="0,0,10,0" VerticalAlignment="Center"><TextBlock Style="{StaticResource MangaTagText}" Text="PC 점검"/></Border>
                         <TextBlock Text="그래픽카드" Style="{StaticResource FieldLabel}"/>
                         <ComboBox x:Name="CmbGpu" Width="250" HorizontalAlignment="Left" SelectionChanged="CmbGpu_Changed"
-                                  ToolTip="채색 엔진(ComfyUI) 묶음을 그래픽카드에 맞는 빌드로 받아요. 보통은 자동 감지면 돼요.">
+                                  ToolTip="엔진(ComfyUI)을 그래픽카드에 맞는 빌드로 받는다냥. 보통은 자동 감지면 된다냥.">
                             <ComboBoxItem Tag="auto" Content="자동 감지"/>
                             <ComboBoxItem Tag="nvidia" Content="NVIDIA RTX 20 이상"/>
                             <ComboBoxItem Tag="nvidia-old" Content="NVIDIA GTX 10 이하 (구형)"/>
@@ -79,8 +79,8 @@
                     <DockPanel>
                         <Border Style="{StaticResource MangaTag}" Margin="0,0,10,0" VerticalAlignment="Center"><TextBlock Style="{StaticResource MangaTagText}" Text="이 PC 맞춤"/></Border>
                         <CheckBox x:Name="ChkTune" IsChecked="True" Foreground="{DynamicResource NekoText}" FontWeight="SemiBold" VerticalAlignment="Center"
-                                  Content="이 PC 사양에 맞춰 설정을 자동으로 조정하기 (권장)"
-                                  ToolTip="준비 시작을 누를 때 아래 항목을 바꿔요. 나중에 설정 → 엔진 탭의 [이 PC에 맞게 조정]으로 다시 할 수 있어요."/>
+                                  Content="이 PC 사양에 맞춰 설정을 자동으로 조정한다냥 (권장)"
+                                  ToolTip="준비 시작을 누를 때 아래 항목을 바꾼다냥. 나중에 설정 → 엔진의 [이 PC에 맞게 조정]으로 다시 할 수 있다냥."/>
                     </DockPanel>
                     <TextBlock x:Name="TxtTuneHw" Style="{StaticResource HintText}" Margin="0,6,0,0"/>
                     <TextBlock x:Name="TxtTune" Style="{StaticResource HintText}" Margin="0,2,0,0" TextWrapping="Wrap"/>
@@ -92,8 +92,8 @@
                 <!-- 채색에만 쓰는 것(태거·IPAdapter)은 골라 받는다 — 재생성 검열 제거에 드는 것은 늘 받는다 (2026-11-18 사용자 결정) -->
                 <CheckBox x:Name="ChkColor" IsChecked="True" Foreground="{DynamicResource NekoText}" FontWeight="SemiBold" VerticalAlignment="Center"
                           Checked="ChkColor_Changed" Unchecked="ChkColor_Changed"
-                          Content="채색도 설치 (약 5GB 더 받아요)"
-                          ToolTip="자동 채색과 표지 색 참조에 쓰는 태거·IPAdapter 모델이에요. 끄면 번역과 검열 제거(기본·재생성)에 드는 것만 받아요. 나중에 이 창에서 다시 체크해 받을 수 있어요."/>
+                          Content="채색도 설치한다냥 (약 5GB 더)"
+                          ToolTip="자동 채색·표지 색 참조에 쓰는 태거·IPAdapter 모델이다냥. 끄면 번역과 검열 제거에 드는 것만 받는다냥. 나중에 다시 받을 수 있다냥."/>
             </DockPanel>
         </StackPanel>
 

@@ -323,7 +323,7 @@ public class SystemCheckTests
     [InlineData("NVIDIA Quadro FX 3800", true)]
     [InlineData("Tesla C2075", true)]
     [InlineData("Tesla M2090", true)]
-    // 맥스웰 — 같은 번호대에 섞여 있지만 구형 묶음이 돈다(드라이버만 올리면 된다). 여기서 틀리면 멀쩡한 카드에 "쓸 수 없어요"라고 말한다
+    // 맥스웰 — 같은 번호대에 섞여 있지만 구형 묶음이 돈다(드라이버만 올리면 된다). 여기서 틀리면 멀쩡한 카드에 "못 쓴다냥"라고 말한다
     [InlineData("NVIDIA GeForce GTX 750 Ti", false)]
     [InlineData("NVIDIA GeForce GTX 750", false)]
     [InlineData("NVIDIA GeForce GTX 745", false)]
@@ -466,7 +466,7 @@ public class SystemCheckTests
     {
         var items = SystemCheck.NvidiaItems(old, Cards(["NVIDIA GeForce GTX 680:2048"], "474.11"), ["NVIDIA GeForce GTX 680"]);
 
-        // 예전에는 "474.11 — CUDA 12.6 런타임은 528 이상이 필요해요. 최신 GeForce 드라이버로 올린 뒤 재부팅하세요" + [드라이버 받기] — 이 카드에는 그런 드라이버가 없다
+        // 예전에는 "474.11 — CUDA 12.6 런타임은 528 이상이 필요하다냥. 최신 GeForce 드라이버로 올린 뒤 재부팅하세요" + [드라이버 받기] — 이 카드에는 그런 드라이버가 없다
         var item = Assert.Single(items);
         Assert.Equal("그래픽카드", item.Title);
         Assert.False(item.Ok);
@@ -482,27 +482,27 @@ public class SystemCheckTests
     [Fact]
     public void NvidiaItems_FermiCardWithoutNvidiaSmi_SaysTooOldInsteadOfInstallDriver()
     {
-        // 페르미의 마지막 드라이버(39x)는 nvidia-smi를 PATH에 두지 않는다 — "드라이버를 설치해 주세요"가 아니라 레지스트리 이름으로 알려 준다
+        // 페르미의 마지막 드라이버(39x)는 nvidia-smi를 PATH에 두지 않는다 — "드라이버를 설치해 줘냥"가 아니라 레지스트리 이름으로 알려 준다
         var item = Assert.Single(SystemCheck.NvidiaItems(old: true, [], ["NVIDIA GeForce GTX 580"]));
 
         Assert.Equal(("그래픽카드", false, true), (item.Title, item.Ok, item.Blocking));
         Assert.StartsWith("NVIDIA GeForce GTX 580", item.Detail);
         Assert.Contains("너무 오래된 그래픽카드", item.Detail);
-        Assert.DoesNotContain("설치해 주세요", item.Detail);
+        Assert.DoesNotContain("설치해 줘냥", item.Detail);
     }
 
     [Fact]
     public void NvidiaItems_OldCardTraceWithUnrecognizedAdapter_KeepsDriverGuidance()
     {
         // 검수 지적: GTX 770을 새 카드로 바꾼 직후 — nvidia-smi는 없고 레지스트리에는 옛 카드의 흔적 + 드라이버 없는 새 카드(기본 어댑터).
-        // "너무 오래됐어요"가 아니라 v1.8.2처럼 드라이버를 설치하라고 하고 받는 곳을 준다
+        // "너무 오래됐다냥"가 아니라 v1.8.2처럼 드라이버를 설치하라고 하고 받는 곳을 준다
         var swapped = Assert.Single(SystemCheck.NvidiaItems(old: true, [], ["NVIDIA GeForce GTX 770", "Microsoft Basic Display Adapter"]));
-        Assert.Equal(new SystemCheck.Item("NVIDIA 드라이버", false, true, "NVIDIA 드라이버를 찾지 못했어요 (nvidia-smi 없음). 드라이버를 설치해 주세요.", SystemCheck.DriverUrl, "드라이버 받기"), swapped);
+        Assert.Equal(new SystemCheck.Item("NVIDIA 드라이버", false, true, "NVIDIA 드라이버를 찾지 못했다냥 (nvidia-smi 없음). 드라이버를 설치해 줘냥.", SystemCheck.DriverUrl, "드라이버 받기"), swapped);
 
         // 옛 드라이버(474)의 nvidia-smi가 GT 710만 적는데 다른 어댑터가 있다 — 새 카드를 같이 꽂았을 수 있다. 드라이버를 올리라는 예전 안내 그대로
         var items = SystemCheck.NvidiaItems(old: true, Cards(["GeForce GT 710:2048"], "474.11"), ["NVIDIA GeForce GT 710", "Microsoft Basic Display Adapter"]);
         var driver = items.Single(i => i.Title == "NVIDIA 드라이버");
-        Assert.Contains("528 이상이 필요해요", driver.Detail);
+        Assert.Contains("528 이상이 필요하다냥", driver.Detail);
         Assert.Equal(SystemCheck.DriverUrl, driver.FixUrl);
         Assert.DoesNotContain(items, i => i.Detail.Contains("너무 오래된"));
     }
@@ -516,21 +516,21 @@ public class SystemCheckTests
         Assert.True(tooOld.HasBlocking);
         Assert.Contains("너무 오래된 그래픽카드", tooOld.Summary);
         // 해결할 항목이 없는데 "위 항목을 해결한 뒤 [다시 확인]…"·"위 조건을 해결한 뒤…"를 붙였다(검수 지적) — 새 카드를 막 단 경우에 할 일만 남긴다
-        Assert.Equal("번역·검열 감지·기본 복원은 영향 없이 설치돼요. 새 그래픽카드를 방금 달았다면 그 카드의 드라이버를 설치한 뒤 [다시 확인]을 눌러 주세요.", tooOld.BlockedNote);
+        Assert.Equal("번역·검열 감지·기본 복원은 영향 없이 설치된다냥. 새 그래픽카드를 방금 달았다면 드라이버를 설치한 뒤 [다시 확인]을 눌러 줘냥.", tooOld.BlockedNote);
         Assert.DoesNotContain("해결한 뒤", tooOld.LeftoverNote);
-        Assert.Contains("채색 엔진을 쓸 수 없어", tooOld.LeftoverNote);
+        Assert.Contains("채색 엔진을 못 써", tooOld.LeftoverNote);
 
         // 드라이버만 올리면 되는 카드(지원 세대 GTX 1660 + 옛 드라이버)는 v1.8.2의 문구 그대로
         var fixable = SystemCheck.CheckForComfy("auto", Cards(["NVIDIA GeForce GTX 1660 SUPER:6144"], "552.44"), ["NVIDIA GeForce GTX 1660 SUPER"]);
         Assert.False(fixable.GpuTooOld);
         Assert.True(fixable.HasBlocking);
-        Assert.Equal("번역·검열 감지·기본 복원은 영향 없이 설치돼요. 위 항목을 해결한 뒤 [다시 확인]을 누르면 엔진 묶음도 이어서 받아요.", fixable.BlockedNote);
-        Assert.Equal("내장 엔진은 준비됐어요. 채색 엔진은 위 조건을 해결한 뒤 [다시 확인] → [준비 시작!]으로 받아요.", fixable.LeftoverNote);
+        Assert.Equal("번역·검열 감지·기본 복원은 영향 없이 설치된다냥. 위 항목을 해결한 뒤 [다시 확인]을 누르면 엔진도 이어서 받는다냥.", fixable.BlockedNote);
+        Assert.Equal("내장 엔진은 준비됐다냥. 채색 엔진은 위 조건을 해결한 뒤 [다시 확인] → [준비 시작!]으로 받는다냥.", fixable.LeftoverNote);
 
         // 카드를 바꾼 직후로 보이면 '너무 오래됨'이 아니다 — 드라이버 안내와 예전 뒷말
         var swapped = SystemCheck.CheckForComfy("auto", [], ["NVIDIA GeForce GTX 770", "Microsoft Basic Display Adapter"]);
         Assert.False(swapped.GpuTooOld);
-        Assert.Contains(swapped.Items, i => !i.Ok && i.FixUrl == SystemCheck.DriverUrl && i.Detail.Contains("드라이버를 설치해 주세요"));
+        Assert.Contains(swapped.Items, i => !i.Ok && i.FixUrl == SystemCheck.DriverUrl && i.Detail.Contains("드라이버를 설치해 줘냥"));
         Assert.Equal(fixable.BlockedNote, swapped.BlockedNote);
 
         // 다른 벤더를 골랐으면 NVIDIA 카드가 옛것이어도 이 표시는 서지 않는다
@@ -545,7 +545,7 @@ public class SystemCheckTests
 
         var driver = items.Single(i => i.Title == "NVIDIA 드라이버");
         Assert.False(driver.Ok);
-        Assert.Contains("528 이상이 필요해요", driver.Detail);
+        Assert.Contains("528 이상이 필요하다냥", driver.Detail);
         Assert.Equal(SystemCheck.DriverUrl, driver.FixUrl);
         Assert.True(items.Single(i => i.Title == "그래픽카드").Ok);
         Assert.DoesNotContain(items, i => i.Detail.Contains("너무 오래된"));
@@ -581,7 +581,7 @@ public class SystemCheckTests
     public void Report_SummarizesOnlyFailedItemsByKind()
     {
         var report = new SystemCheck.Report([
-            new("NVIDIA 드라이버", false, true, "552.44 — 580 이상이 필요해요", SystemCheck.DriverUrl, "드라이버 받기"),
+            new("NVIDIA 드라이버", false, true, "552.44 — 580 이상이 필요하다냥", SystemCheck.DriverUrl, "드라이버 받기"),
             new("VRAM", false, false, "4GB — 6GB 미만", null, null),
             new("Visual C++ 런타임 (x64)", true, true, "14.40 (충분)", null, null),
             new("메모리(RAM)", true, false, "32GB", null, null),
@@ -594,7 +594,7 @@ public class SystemCheckTests
         Assert.Equal(2, lines.Length);
         Assert.StartsWith("✖", lines[0]);
         Assert.Contains("NVIDIA 드라이버", lines[0]);
-        Assert.Contains("580 이상이 필요해요", lines[0]);
+        Assert.Contains("580 이상이 필요하다냥", lines[0]);
         Assert.StartsWith("⚠", lines[1]);
         Assert.Contains("VRAM", lines[1]);
 
@@ -645,7 +645,7 @@ public class SystemCheckTests
         // 넘겨받은 목록으로 점검한다 — 기록된 사고 그대로(지원 세대 GTX 1660 + 옛 드라이버)
         Assert.NotNull(hint);
         Assert.Contains("552.44", hint);
-        Assert.Contains("580 이상이 필요해요", hint);
+        Assert.Contains("580 이상이 필요하다냥", hint);
         Assert.EndsWith($" (드라이버: {SystemCheck.DriverUrl}, VC++: {SystemCheck.VcRedistUrl})", hint);
     }
 
@@ -665,7 +665,7 @@ public class SystemCheckTests
         Assert.Contains("너무 오래된 그래픽카드", hint);
         Assert.DoesNotContain(SystemCheck.VcRedistUrl, hint);
         // 새 카드를 막 단 경우에 쓸 드라이버 주소만 남긴다
-        Assert.EndsWith($" 새 그래픽카드를 방금 달았다면 그 카드의 드라이버를 설치한 뒤 다시 시도해 주세요 (드라이버: {SystemCheck.DriverUrl})", hint);
+        Assert.EndsWith($" 새 그래픽카드를 방금 달았다면 드라이버를 설치한 뒤 다시 시도해 줘냥 (드라이버: {SystemCheck.DriverUrl})", hint);
     }
 
     [Fact]

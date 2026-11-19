@@ -24,10 +24,10 @@ public partial class PipelineRunner
         if (toReview.Count > 0)
         {
             bool go = await ReviewMasks!(toReview, ct);
-            if (!go) throw new OperationCanceledException(Loc.T("사용자가 검토 창에서 취소했어요."));
+            if (!go) throw new OperationCanceledException(Loc.T("검토 창에서 취소했다냥."));
             if (settings.CollectCorrections)
                 try { SaveCorrections(toReview); }
-                catch (Exception ex) { cx.Progress.Report(new(toReview[0].File, Loc.F($"학습 재료 저장 실패: {ex.Message}"), 48)); }
+                catch (Exception ex) { cx.Progress.Report(new(toReview[0].File, Loc.F($"학습 재료 저장 실패다냥: {ex.Message}"), 48)); }
             foreach (var pg in toReview) SaveMaskSidecar(cx, pg, confirmed: true, edited: pg.AutoMask != null && !MasksEqual(pg.AutoMask, pg.Mask!));
         }
         for (int i = 0; i < pages.Count; i++)
@@ -135,7 +135,7 @@ public partial class PipelineRunner
                 if (px == 0 || pg.Skip || pg.StoredConfirmed)
                 {
                     // 마스크가 없거나(검열 없음) 이미 확인된 마스크면 기다리지 않고 바로 2차 — 사용자 요청 "마스크 없는 페이지는 바로 넘어가게"
-                    if (px == 0 && !pg.Skip) cx.Progress.Report(new(pg.File, Loc.T("검열 없음 — 바로 진행"), 49));
+                    if (px == 0 && !pg.Skip) cx.Progress.Report(new(pg.File, Loc.T("검열 없음 — 바로 진행한다냥"), 49));
                     await queue.Writer.WriteAsync(pg, ct);
                     continue;
                 }
@@ -143,7 +143,7 @@ public partial class PipelineRunner
                 {
                     // 사이드카를 못 썼으면(디스크 가득·권한) 결과 창 마스크 탭이 열리지 않아 검토가 불가능하다. 검토를 켠 사용자는 오탐을 거르려는 것이니
                     // 자동 마스크로 그냥 지우지 않고 그 장을 실패로 둔다 — 원인을 고치고 다시 돌리면 된다 (검열 없는 장은 위에서 이미 통과)
-                    Fail(cx, pg, new IOException(Loc.T("검열 마스크를 저장하지 못해 검토할 수 없어요 — 출력 폴더의 공간·권한을 확인한 뒤 다시 돌려 주세요") + (pg.SidecarError != null ? " (" + pg.SidecarError + ")" : "")));
+                    Fail(cx, pg, new IOException(Loc.T("검열 마스크를 저장하지 못해 검토할 수 없다냥 — 출력 폴더의 공간·권한을 확인한 뒤 다시 돌려 줘냥") + (pg.SidecarError != null ? " (" + pg.SidecarError + ")" : "")));
                     continue;
                 }
                 Interlocked.Increment(ref open);
@@ -177,7 +177,7 @@ public partial class PipelineRunner
             ReloadMaskFromSidecar(pg);   // 결과 창의 '마스크 수정' 탭이 고쳐 저장한 마스크·건너뜀을 받아 온다
             if (settings.CollectCorrections)
                 try { SaveCorrections([pg]); }
-                catch (Exception ex) { cx.Progress.Report(new(pg.File, Loc.F($"학습 재료 저장 실패: {ex.Message}"), 48)); }
+                catch (Exception ex) { cx.Progress.Report(new(pg.File, Loc.F($"학습 재료 저장 실패다냥: {ex.Message}"), 48)); }
             MarkSidecarConfirmed(cx, pg);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
@@ -200,9 +200,9 @@ public partial class PipelineRunner
         if (!string.Equals(Path.GetExtension(outPath), ".png", StringComparison.OrdinalIgnoreCase))
             outPath = Path.ChangeExtension(outPath, ".png");   // --result 모드는 보던 파일(원본 그대로 복사본 jpg)을 OutPath로 넘긴다 — 결과는 항상 png (사이드카 이름은 같다)
         // json이 잠겨 있으면(결과 창이 막 저장한 것을 백신·동기화가 쥠) 기다렸다 다시 읽고, 끝내 못 읽으면 잠김을 알린다 — '없어요'가 아니다
-        var sc = LoadSidecarWaitingOutLock(outPath, brokenThrows: false) ?? throw new FileNotFoundException(Loc.T("이 페이지의 저장된 마스크가 없어요 — 먼저 한 번 돌려야 해요."));
-        if (!sc.MatchesSource(file)) throw new InvalidOperationException(Loc.T("이 이름의 저장 마스크는 다른 원고의 것이에요 — 먼저 한 번 돌려야 해요."));
-        if (!MaskSidecar.HasPre(outPath)) throw new FileNotFoundException(Loc.T("검열 제거 전 원고(.pre.png)가 없어요 — 먼저 한 번 돌려야 해요."));
+        var sc = LoadSidecarWaitingOutLock(outPath, brokenThrows: false) ?? throw new FileNotFoundException(Loc.T("이 장의 저장된 마스크가 없다냥 — 먼저 한 번 돌려야 한다냥."));
+        if (!sc.MatchesSource(file)) throw new InvalidOperationException(Loc.T("이 이름의 저장 마스크는 다른 원고의 것이다냥 — 먼저 한 번 돌려야 한다냥."));
+        if (!MaskSidecar.HasPre(outPath)) throw new FileNotFoundException(Loc.T("검열 제거 전 원고(.pre.png)가 없다냥 — 먼저 한 번 돌려야 한다냥."));
         // 마스크는 준비(ComfyUI 기동 등) 전에 읽어 본다 — 사이드카가 지울 곳을 약속하는데('검열 없음' 표시가 아닌데) 그림으로 못 읽으면(0바이트·깨진 PNG)
         // 2차가 검열 제거를 건너뛰고 검열 제거 전 원고로 결과물을 덮은 뒤 '확인됨'까지 찍는다. 검열 제거를 끈 다시 돌리기는 마스크를 쓰지 않는다
         var mask = LoadMaskWaitingOutLock(outPath);
@@ -219,8 +219,8 @@ public partial class PipelineRunner
             // 이 원고의 식자 json에 보일 글이 있는데 식자 전 원고(base)를 못 찾았다(지워짐·못 읽는 자리) — 그대로 돌면 번역 글이 빠진 결과물로 덮고 '완료'라고 한다. 멈춘다.
             // (폴더를 옮긴 경우는 LetterSidecar.Load가 그 폴더의 base를 찾는다. 글이 전부 숨김이면 잃을 것이 없어 막지 않는다)
             if (lsc == null && letterRecord != null && letterRecord.BelongsTo(file, (sc.SrcW, sc.SrcH)) && letterRecord.Blocks.Any(b => !b.Hidden))
-                throw new FileNotFoundException(Loc.F($"식자 전 원고(.neko 폴더의 {Path.GetFileName(LetterSidecar.BasePathFor(outPath))})를 찾지 못했어요 — ") +
-                                                Loc.T("이대로 다시 렌더링하면 번역 글이 빠진 결과물로 덮여서 멈췄어요. [작업 시작]으로 이 장을 처음부터 다시 돌려 주세요."));
+                throw new FileNotFoundException(Loc.F($"식자 전 원고(.neko 폴더의 {Path.GetFileName(LetterSidecar.BasePathFor(outPath))})를 찾지 못했다냥 — ") +
+                                                Loc.T("이대로 다시 렌더링하면 번역 글이 빠진 결과물로 덮여서 멈췄다냥. [작업 시작]으로 처음부터 다시 돌려 줘냥."));
             // 결과 창 [지우기]·묶음 다시 렌더링(채색 없이 검열 제거·식자만): 채색된 장은 채색 뒤 그림에서 지워야 색을 잃지 않는다 — 식자한 장은 base(채색 뒤·식자 전),
             // 글자가 없어 식자 사이드카 없이 끝난 장은 결과물 자신이 그 그림이다(번역을 끄고 채색만 쓴 장이 전부 여기 — 전에는 pre에서 시작해 결과물을 흑백으로 덮었다, 2026-11-13 점검 1번).
             // 채색 안 한 장은 pre에서 — 잘못 지운 곳도 되살아난다. 채색했는지는 2차가 사이드카에 적어 둔 것을 따르고, 적힌 것이 없는 옛 결과만 그림으로 가린다(StartsFromColored).
@@ -234,7 +234,7 @@ public partial class PipelineRunner
                 // 적힌 것은 '채색됨'인데 식자 자료가 있으면서 못 쓴다(남의 것, 글이 전부 숨김인데 base가 없음) — pre에서 시작하면 채색본을 흑백으로 덮는다. 멈춘다.
                 // (식자 자료가 아예 없고 결과물만 지워진 경우는 시작할 그림이 pre뿐이라 그대로 간다)
                 else if (colored == null && letterJson && sc.Colorized == true)
-                    throw new FileNotFoundException(Loc.T("채색된 장인데 채색 뒤 그림(식자 전 원고 .base.png)을 쓸 수 없어요 — 흑백으로 덮지 않도록 멈췄어요. [작업 시작]으로 이 장을 처음부터 다시 돌려 주세요."));
+                    throw new FileNotFoundException(Loc.T("채색된 장인데 채색 뒤 그림(.base.png)을 쓸 수 없다냥 — 흑백으로 덮지 않도록 멈췄다냥. [작업 시작]으로 처음부터 다시 돌려 줘냥."));
             }
         }
         catch { mask?.Dispose(); throw; }
@@ -329,7 +329,7 @@ public partial class PipelineRunner
         public string? Error { get; set; }
         /// <summary>치명적이지 않은 문제(사이드카 저장 실패 등) — '완료' 줄에 함께 보인다.</summary>
         public string? Warning { get; set; }
-        /// <summary>2차가 행에 보고한 끝 줄("완료"/"검열 없음 — 원본 그대로", 경고 제외) — 2차 뒤에 경고가 생기면 같은 줄을 다시 보내는 데 쓴다.</summary>
+        /// <summary>2차가 행에 보고한 끝 줄("완료"/"검열 없음 — 원본 그대로다냥", 경고 제외) — 2차 뒤에 경고가 생기면 같은 줄을 다시 보내는 데 쓴다.</summary>
         public string FinalStage { get; set; } = Loc.T("완료");
 
         public void DisposeMats() { Mask?.Dispose(); Mask = null; AutoMask?.Dispose(); AutoMask = null; Kinds?.Dispose(); Kinds = null; }

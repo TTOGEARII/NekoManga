@@ -196,7 +196,7 @@ public class MaskPendingTests
         using var t = new TempDir(); var s = DecensorOn(t);
         var (src, outPath) = Slot(t, s, "01.jpg", pending: true);
         var first = MaskSidecar.Load(outPath)!;
-        var progress = new HookedProgress(p => p.Stage == "식자 중", () =>
+        var progress = new HookedProgress(p => p.Stage == "식자 중이다냥", () =>
         {
             while (DateTime.Now == first.SavedAt) Thread.Sleep(1);   // 저장 시각이 반드시 달라지게
             using var again = RectMask(W, H, new Rect(20, 20, 10, 10));
@@ -206,7 +206,7 @@ public class MaskPendingTests
         using (var runner = Runner(s))
             await runner.RedoPageAsync(src, progress, CancellationToken.None, options: DecensorOnly);
 
-        Assert.Contains(progress.Items, p => p.Stage == "식자 중");   // 전제: 끼어드는 자리를 지났다
+        Assert.Contains(progress.Items, p => p.Stage == "식자 중이다냥");   // 전제: 끼어드는 자리를 지났다
         Assert.True(MaskSidecar.IsPendingFor(outPath, src));
     }
 
@@ -218,7 +218,7 @@ public class MaskPendingTests
         using var t = new TempDir(); var s = DecensorOn(t);
         var (src, outPath) = Slot(t, s, "01.jpg", pending: false);
         var first = MaskSidecar.Load(outPath)!;
-        var progress = new HookedProgress(p => p.Stage == "식자 중", () =>
+        var progress = new HookedProgress(p => p.Stage == "식자 중이다냥", () =>
         {
             while (DateTime.Now == first.SavedAt) Thread.Sleep(1);
             using var again = RectMask(W, H, new Rect(20, 20, 10, 10));
@@ -228,7 +228,7 @@ public class MaskPendingTests
         using (var runner = Runner(s))
             await runner.RedoPageAsync(src, progress, CancellationToken.None, options: DecensorOnly);
 
-        Assert.Contains(progress.Items, p => p.Stage == "식자 중");   // 전제: 끼어드는 자리를 지났다
+        Assert.Contains(progress.Items, p => p.Stage == "식자 중이다냥");   // 전제: 끼어드는 자리를 지났다
         Assert.True(MaskSidecar.IsPendingFor(outPath, src));
     }
 
@@ -357,7 +357,7 @@ public class MaskPendingTests
         var a = Slot(t, s, "01.jpg", pending: true);
         var b = Slot(t, s, "02.jpg", pending: true);
         var aResult = File.ReadAllBytes(a.OutPath);
-        var progress = new HookedProgress(p => p.File == a.Src && p.Stage == "식자 중", () => throw new TaskCanceledException("시간 초과"));
+        var progress = new HookedProgress(p => p.File == a.Src && p.Stage == "식자 중이다냥", () => throw new TaskCanceledException("시간 초과"));
 
         (int Done, int Failed) r;
         using (var runner = Runner(s))

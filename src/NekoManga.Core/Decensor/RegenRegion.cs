@@ -25,7 +25,8 @@ public static class RegenRegion
 
     /// <summary>성별의 **근거로만** 쓰는 약한 부위 상자의 하한. 영역의 모양과 종류는 임계(RegenRegionConf, 기본 0.12) 이상의 상자만 정하고,
     /// 그 아래 ~ 이 값까지의 상자는 조각의 성별(<see cref="PieceSex"/>)을 가릴 때만 본다.
-    /// 시험 원고 23쪽(2026-11-15, 그림은 안 봄): 삽입 장면의 가려진 쪽이 0.07·0.12로 잡혔고, 남성 부위만 있는 장에는 여성 상자가 0.03에서도 하나도 없었다.</summary>
+    /// 시험 원고 23쪽(2026-11-15, 그림은 안 봄): 삽입 장면의 가려진 쪽이 0.07·0.12로 잡혔고, 남성 부위만 있는 장에는 여성 상자가 0.03에서도 하나도 없었다.
+    /// 임계 이상의 뚜렷한 상자가 한쪽에 있으면 다른 쪽의 약한 상자는 밀린다(2026-11-19, <see cref="PieceSex"/>).</summary>
     public const double WeakConf = 0.05;
 
     /// <summary>성별 지도(<see cref="RegenRegionInfo.SexMap"/>)의 값 — 조각 픽셀에 그 조각의 성별. 근거가 양쪽이거나 없는 조각은 BothCode(남녀 태그 자리).</summary>
@@ -111,7 +112,7 @@ public static class RegenRegion
             bool allTiny = list.All(Tiny);
             var info = list.Select(p =>
             {
-                var auto = PieceSex(p.Box, parts, pad);
+                var auto = PieceSex(p.Box, parts, pad, strongConf);
                 // 티끌 = 작고, 근거가 없고, 사용자가 고르지도 않은 조각. 작아도 다른 성별로 잡힌 조각은 진짜 부위일 수 있어 뺄 수 없다
                 bool speck = !allTiny && Tiny(p) && !p.ByUser && auto == RegenKind.Unknown && !cumMarked.ContainsKey(p.C);   // 사정을 고른 조각도 사용자가 고른 조각이다 — 티끌로 빠지면 그 표시가 말없이 버려진다(검수)
                 return new RegenPiece(p.Box, p.Area, p.ByUser ? marked[p.C] : auto, p.ByUser, speck, AnchorOf(labels, p.C, p.Box), auto);
@@ -152,11 +153,18 @@ public static class RegenRegion
     /// 감지한 쪽만 넣으면(v1.9.1) 삽입 장면의 가려진 쪽이 안 그려진다 — 그래서 **검열 조각마다** 근거를 본다. 한 조각에 양쪽 근거가 있거나 아무 근거도 없으면 가려진 다른 쪽이 있을 수 있다:
     /// 시험 원고에서 삽입 장면은 남성 0.59 + 같은 조각에 여성 0.07, 여성 0.27 + 옆 조각에는 아무 상자 없음(그 장은 '여자 것만 그려진다'는 보고가 있던 장이다)으로 나타났다.
     /// 임계(0.12) 이상의 상자가 하나도 없어도 약한 근거가 한쪽뿐이면 그쪽이다 — 사용자 원고 05·06쪽은 남성이 0.11·0.06으로만 잡혔다(전에는 그런 영역을 남녀 태그로 보냈다).
-    /// 조각을 여백까지 넓혀 보는 것은 다시 그리는 사각형(상자 + 여백)과 같은 범위라서다 — 상자 바로 밖에 걸친 조각도 그 부위의 것이다.</summary>
-    internal static RegenKind PieceSex(Rect piece, IReadOnlyList<BodyPart> parts, double pad)
+    /// 조각을 여백까지 넓혀 보는 것은 다시 그리는 사각형(상자 + 여백)과 같은 범위라서다 — 상자 바로 밖에 걸친 조각도 그 부위의 것이다.
+    /// 뚜렷한(임계 <paramref name="strongConf"/> 이상) 상자가 한쪽에만 있으면 다른 쪽의 약한 상자는 세지 않는다(2026-11-19 사용자 결정): 사용자 원고 28쪽은 남성 0.74 상자의 조각에
+    /// 여성 0.07 상자가 3px 옆에서 여백으로 걸쳐 남녀 태그가 같이 들어갔고, 같은 시드 15번 전부 남성 부위 윗부분이 살결로 메워졌다(시드·CN 강도와 무관).
+    /// 그 대신 2026-11-15의 삽입 장면(남성 0.59 + 여성 0.07)도 남성 태그만 받는다 — 가려진 쪽은 결과 창의 조각 표시로 고른다. 약한 상자끼리면 전과 같다(둘 다 → Both).</summary>
+    internal static RegenKind PieceSex(Rect piece, IReadOnlyList<BodyPart> parts, double pad, double strongConf)
     {
-        bool Near(int cls) => parts.Any(p => p.Cls == cls && p.Conf >= WeakConf && Overlaps(Padded(p.Box, pad), piece));
-        bool male = Near(BodyPartDetector.ClsPenis), female = Near(BodyPartDetector.ClsPussy);
+        bool Near(int cls, double floor) => parts.Any(p => p.Cls == cls && p.Conf >= floor && Overlaps(Padded(p.Box, pad), piece));
+        // 점수는 float, 임계는 double — BuildRegions와 같이 float로 맞춰 견준다. 임계를 WeakConf 아래로 내려도 근거의 하한은 WeakConf(그 아래는 잡음)
+        double strong = Math.Max((double)(float)strongConf, WeakConf);
+        bool maleStrong = Near(BodyPartDetector.ClsPenis, strong), femaleStrong = Near(BodyPartDetector.ClsPussy, strong);
+        if (maleStrong != femaleStrong) return maleStrong ? RegenKind.Male : RegenKind.Female;   // 뚜렷한 상자가 한쪽뿐 — 다른 쪽의 약한 상자는 밀린다
+        bool male = Near(BodyPartDetector.ClsPenis, WeakConf), female = Near(BodyPartDetector.ClsPussy, WeakConf);
         return male && female ? RegenKind.Both : male ? RegenKind.Male : female ? RegenKind.Female : RegenKind.Unknown;
     }
 

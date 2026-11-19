@@ -112,7 +112,7 @@ public partial class PipelineRunner
                 var client = new ComfyClient(_server.BaseUrl);
                 wf = CustomWorkflow.Resolve(wf, await client.GetObjectInfoAsync(ct));   // 화면 포맷 변환 + 없는 노드·파일 점검
                 var outDir = Path.Combine(settings.ComfyRoot, "ComfyUI", "output");
-                status?.Report(Loc.T("커스텀 워크플로로 복원 중..."));
+                status?.Report(Loc.T("커스텀 워크플로로 복원 중이다냥..."));
                 await ComfyCustomDecensorAsync(client, outDir, wf, img, mask, 902, ct);
                 return;
             }
@@ -122,7 +122,7 @@ public partial class PipelineRunner
                 await _server.EnsureRunningAsync(status, ct);
                 var client = new ComfyClient(_server.BaseUrl);
                 var outDir = Path.Combine(settings.ComfyRoot, "ComfyUI", "output");
-                status?.Report(Loc.T("검열 자리 재생성 중 (SDXL)..."));
+                status?.Report(Loc.T("검열 자리 재생성 중이다냥 (SDXL)..."));
                 try { await ComfyRegenDecensorAsync(client, outDir, img, plan!, 901, ct, regenSettings, status); }
                 finally { foreach (var rg in plan!) rg.Dispose(); }
                 return;
@@ -131,12 +131,12 @@ public partial class PipelineRunner
             {
                 var lama = new LamaInpainter(_onnx);   // 보완으로 찾은 자리(CensorKind.Legacy)만 LaMa로
                 if (!Aletheia.InpainterReady) throw new InvalidOperationException(AletheiaDecensor.InpainterMissing);
-                status?.Report(Loc.T("복원 중..."));
+                status?.Report(Loc.T("복원 중이다냥..."));
                 Aletheia.Repair(img, mask, kinds, lama);
                 return;
             }
             default:
-                throw new ArgumentException(Loc.F($"알 수 없는 복원 방식: {mode} (Basic | ComfyRegen | ComfyCustom)"), nameof(mode));
+                throw new ArgumentException(Loc.F($"알 수 없는 복원 방식이다냥: {mode} (Basic | ComfyRegen | ComfyCustom)"), nameof(mode));
         }
     }
 
@@ -254,12 +254,12 @@ public partial class PipelineRunner
             var pid = await client.QueuePromptAsync(prepared.Prompt, ct);
             r = await client.WaitAsync(pid, comfyOutputDir, TimeSpan.FromMinutes(30), ct);
             if (r.OutputFiles.Count == 0)
-                throw new InvalidOperationException(Loc.T("커스텀 워크플로 결과 파일이 없어요 — SaveImage 노드가 결과를 저장하는지 확인해 주세요."));
+                throw new InvalidOperationException(Loc.T("커스텀 워크플로 결과 파일이 없다냥 — SaveImage 노드가 결과를 저장하는지 확인해 줘냥."));
             outImg = ImgIo.Read(r.OutputFiles[^1], ImreadModes.Color);
         }
         finally { WorkFolders.RemoveComfyFiles(settings.ComfyRoot, r?.OutputFiles, outPrefix, up); }   // 읽었으니 ComfyUI 폴더에는 남기지 않는다(실패·멈춤이어도 올린 입력과 그사이 저장된 출력은 지운다)
         using var outImgOwner = outImg;
-        if (outImg.Empty()) throw new InvalidDataException(Loc.T("커스텀 워크플로 결과를 읽지 못했어요."));
+        if (outImg.Empty()) throw new InvalidDataException(Loc.T("커스텀 워크플로 결과를 읽지 못했다냥."));
         using var resized = outImg.Width == img.Width && outImg.Height == img.Height
             ? outImg.Clone()
             : outImg.Resize(new OpenCvSharp.Size(img.Width, img.Height), 0, 0, InterpolationFlags.Lanczos4);
@@ -279,11 +279,11 @@ public partial class PipelineRunner
         var models = Path.Combine(settings.ComfyRoot, "ComfyUI", "models");
         var ck = Path.Combine(models, "checkpoints", settings.ColorCheckpoint);
         var cn = Path.Combine(models, "controlnet", settings.ColorControlNet);
-        if (!File.Exists(ck)) return Loc.F($"채색 체크포인트가 없어요: {ck}\n설정 → 구성요소에서 받거나, 설정 → 엔진의 체크포인트를 ComfyUI models\\checkpoints 안의 파일 이름으로 맞춰 주세요.");
-        if (!File.Exists(cn)) return Loc.F($"채색 ControlNet이 없어요: {cn}\n설정 → 구성요소에서 받거나, 설정 → 엔진의 ControlNet을 ComfyUI models\\controlnet 안의 파일 이름으로 맞춰 주세요.");
+        if (!File.Exists(ck)) return Loc.F($"채색 체크포인트가 없다냥: {ck}\n설정 → 구성요소에서 받거나 설정 → 엔진의 체크포인트 이름을 맞춰 줘냥.");
+        if (!File.Exists(cn)) return Loc.F($"채색 ControlNet이 없다냥: {cn}\n설정 → 구성요소에서 받거나 설정 → 엔진의 ControlNet 이름을 맞춰 줘냥.");
         var installer = new Runtime.ComponentInstaller(settings);
         if (!File.Exists(installer.Resolve(Runtime.ComponentCatalog.NodeWd14.Probe)) || !File.Exists(installer.Resolve(Runtime.ComponentCatalog.NodeCustomScripts.Probe)))
-            return Loc.T("채색에 쓰는 노드가 설치되지 않았어요 — 설정 → 구성요소에서 '채색도 설치'를 체크하고 받아 주세요.");
+            return Loc.T("채색에 쓰는 노드가 없다냥 — 설정 → 구성요소에서 '채색도 설치'를 체크하고 받아 줘냥.");
         return null;
     }
 
@@ -304,9 +304,9 @@ public partial class PipelineRunner
             cn = Path.Combine(cnDir, settings.RegenControlNet);
         }
         if (!File.Exists(ck))
-            throw new FileNotFoundException(Loc.F($"재생성 체크포인트가 없어요: {ck}\n설정 → 검열 제거 → 고급 옵션의 '재생성 체크포인트'를 ComfyUI models\\checkpoints 안의 파일 이름으로 맞춰 주세요."));
+            throw new FileNotFoundException(Loc.F($"재생성 체크포인트가 없다냥: {ck}\n설정 → 검열 제거 → 고급 옵션의 체크포인트 이름을 맞춰 줘냥."));
         if (!File.Exists(cn))
-            throw new FileNotFoundException(Loc.F($"재생성 ControlNet이 없어요: {cn}\n설정 → 검열 제거 → 고급 옵션의 '재생성 ControlNet'을 ComfyUI models\\controlnet 안의 파일 이름으로 맞춰 주세요."));
+            throw new FileNotFoundException(Loc.F($"재생성 ControlNet이 없다냥: {cn}\n설정 → 검열 제거 → 고급 옵션의 ControlNet 이름을 맞춰 줘냥."));
     }
 
     /// <summary>재생성 v3 검열제거(2026-11-12) — 영역(RegenPlanFor)마다 그 주변을 잘라(RegenCrop.WindowFor, 기본 1024) 두 PNG(알파=영역 / 알파=조각)를 올리고
@@ -330,7 +330,7 @@ public partial class PipelineRunner
             // 자리별 태그(RegenTagsPerPiece): 남녀 조각이 이 그림에 같이 있으면 자리마다 그 성별의 태그만 — 나눌 것이 없으면 null(영역 하나에 한 줄)
             var areas = RegenSexAreas.For(region, w, rs);
             using var areasOwner = new Disposables(areas);
-            status?.Report(Loc.F($"재생성 중 ({k + 1}/{regions.Count}, {(areas != null ? RegenSexAreas.Note(areas, rs) + (RegenTags.CumUsed(RegenKind.Both, false, rs, region.Cum) ? Loc.T(" + 사정") : "") : RegenTags.Note(region.Sex, region.Sure, rs, region.Cum))})"));   // 어느 태그로 그리는지 보이게 — 남성 부위에 여성 태그가 들어갔는지 사용자가 알 수 있다
+            status?.Report(Loc.F($"재생성 중이다냥 ({k + 1}/{regions.Count}, {(areas != null ? RegenSexAreas.Note(areas, rs) + (RegenTags.CumUsed(RegenKind.Both, false, rs, region.Cum) ? Loc.T(" + 사정") : "") : RegenTags.Note(region.Sex, region.Sure, rs, region.Cum))})"));   // 어느 태그로 그리는지 보이게 — 남성 부위에 여성 태그가 들어갔는지 사용자가 알 수 있다
             using var tight = rs.RegenEraseTight ? RegenRegion.TightenErase(img, region.Erase) : null;   // 막대 픽셀만 지우기(기본)
             var (crop, cropRegion, cropErase) = RegenCrop.CropAndScale(img, region.Region, tight ?? region.Erase, w);
             using (crop) using (cropRegion) using (cropErase)
@@ -355,13 +355,13 @@ public partial class PipelineRunner
                         areaUp, areas?.Select(a => a.Tags).ToList());
                     var pid = await client.QueuePromptAsync(graph, ct);
                     r = await client.WaitAsync(pid, comfyOutputDir, TimeSpan.FromMinutes(20), ct);
-                    if (r.OutputFiles.Count == 0) throw new InvalidOperationException(Loc.T("재생성 결과 파일이 없어요."));
+                    if (r.OutputFiles.Count == 0) throw new InvalidOperationException(Loc.T("재생성 결과 파일이 없다냥."));
                     outImg = ImgIo.Read(r.OutputFiles[^1], ImreadModes.Color);
                 }
                 // 읽었으니 ComfyUI 폴더에는 남기지 않는다 — 영역마다 입력 둘·출력 하나가 쌓였다(실측 2026-11-13: output\nm_* 566MB). 실패·멈춤이어도 올린 입력은 지운다
                 finally { WorkFolders.RemoveComfyFiles(settings.ComfyRoot, r?.OutputFiles, outPrefix, up, eraseUp, areaUp); }
                 using var outImgOwner = outImg;
-                if (outImg.Empty()) throw new InvalidDataException(Loc.T("재생성 결과를 읽지 못했어요."));
+                if (outImg.Empty()) throw new InvalidDataException(Loc.T("재생성 결과를 읽지 못했다냥."));
                 using var back = outImg.Size() == w.Window.Size ? outImg.Clone() : outImg.Resize(w.Window.Size, 0, 0, InterpolationFlags.Lanczos4);
                 // 영역(+엣지가 닿는 범위)만 창 자리에 — 나머지 픽셀은 원본 그대로
                 using var regionRoi = new Mat(region.Region, w.Window);

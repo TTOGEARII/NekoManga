@@ -100,4 +100,85 @@ public class BubbleSolverTests
         using var changed = ChangedMask(before, page, 0);
         Assert.Equal(0, Cv2.CountNonZero(changed));
     }
+
+    // ── 말풍선 안의 글인가 (번역을 풍선 안으로 좁히기, 2026-11-18) ──
+
+    [Theory]
+    [InlineData("ellipse")]   // 타원 풍선
+    [InlineData("box")]       // 네모 해설 상자도 닫힌 테두리다
+    [InlineData("gray")]      // 옅은 회색 바탕의 풍선
+    public void IsInBubble_ClosedOutlineAroundText_True(string kind)
+    {
+        using var page = SolidPage(600, 500, 200);
+        using var mask = EmptyMask(page);
+        if (kind == "box") DrawBox(page, new Rect(210, 185, 180, 130));
+        else DrawBubble(page, 300, 250, 90, 60, fill: kind == "gray" ? 215 : 255);
+        var glyphs = DrawGlyphs(page, mask, 266, 225, 4, 3);   // 글 덩어리(68×50)의 가운데 = 풍선 가운데
+        DilateLikeDetector(mask);
+        using var before = page.Clone();
+
+        Assert.True(BubbleSolver.IsInBubble(page, mask, RectOf(BlockOf(glyphs, 4))));
+
+        using var changed = ChangedMask(before, page, 0);   // 판정만 한다 — 그림은 그대로
+        Assert.Equal(0, Cv2.CountNonZero(changed));
+    }
+
+    [Fact]
+    public void IsInBubble_ShortWordInBigBubble_True()
+    {
+        // "え?" 같은 짧은 글은 풍선이 글보다 훨씬 크다 — 블록 배율로만 창을 잡으면 풍선 테두리가 창 밖으로 나가 풍선 밖으로 오판한다.
+        // 창은 쪽 크기에 비례한 최소 크기를 가진다(BubbleSolver.IsInBubble)
+        using var page = SolidPage(600, 500);
+        using var mask = EmptyMask(page);
+        DrawBubble(page, 300, 250, 75, 50);
+        var glyphs = DrawGlyphs(page, mask, 293, 243, 1, 1);
+        DilateLikeDetector(mask);
+
+        Assert.True(BubbleSolver.IsInBubble(page, mask, RectOf(BlockOf(glyphs, 4))));
+    }
+
+    [Theory]
+    [InlineData("hatching")]   // 빗금 그림 위의 글
+    [InlineData("panel")]      // 글을 감싸는 닫힌 선이 칸 테두리뿐이고 칸 안은 그림
+    public void IsInBubble_TextDrawnOverArt_False(string kind)
+    {
+        using var page = SolidPage(600, 500, 255);
+        using var mask = EmptyMask(page);
+        if (kind == "hatching")
+            for (int k = -500; k < 600; k += 9) Cv2.Line(page, new Point(k, 0), new Point(k + 500, 500), Scalar.Black, 2);
+        if (kind == "panel")
+        {
+            DrawBox(page, new Rect(40, 40, 520, 420));
+            for (int k = -500; k < 600; k += 9) Cv2.Line(page, new Point(k, 40), new Point(k + 420, 460), Scalar.Black, 2);   // 칸 안은 그림
+        }
+        var glyphs = DrawGlyphs(page, mask, 250, 210, 4, 3);
+        DilateLikeDetector(mask);
+
+        Assert.False(BubbleSolver.IsInBubble(page, mask, RectOf(BlockOf(glyphs, 4)), out var why));
+        Assert.NotEqual(BubbleSolver.BubbleVerdict.Bubble, why);
+    }
+
+    [Fact]
+    public void IsInBubble_PlainBackgroundWithoutOutline_TrueAsPlain()
+    {
+        // 테두리 없는 흰 바탕의 글 — 테두리를 못 읽은 풍선일 수도, 풍선 없는 대사일 수도 있다. 실제 원고에서 테두리 규칙만으로는 대사가 빠져(2026-11-18)
+        // 바탕이 단색이면(지금 글자 지우기가 LaMa 없이 칠하는 조건) 번역한다 — 그림 위에 그려진 글만 거른다
+        using var page = SolidPage(600, 500, 255);
+        using var mask = EmptyMask(page);
+        var glyphs = DrawGlyphs(page, mask, 250, 210, 4, 3);
+        DilateLikeDetector(mask);
+
+        Assert.True(BubbleSolver.IsInBubble(page, mask, RectOf(BlockOf(glyphs, 4)), out var why));
+        Assert.Equal(BubbleSolver.BubbleVerdict.PlainBackground, why);
+    }
+
+    [Fact]
+    public void IsInBubble_NoTextInMask_False()
+    {
+        using var page = SolidPage(600, 500);
+        using var mask = EmptyMask(page);
+        DrawBubble(page, 300, 250, 90, 60);
+
+        Assert.False(BubbleSolver.IsInBubble(page, mask, new Rect(246, 206, 76, 58)));
+    }
 }

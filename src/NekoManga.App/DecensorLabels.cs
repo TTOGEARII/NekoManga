@@ -17,30 +17,30 @@ internal static class DecensorLabels
         // 경우마다 온 문장으로 적는다 — "찾" + "아요."처럼 낱말 중간에서 이어 붙이면 다른 언어로 옮길 수 없다(Loc)
         "Auto" => assist switch
         {
-            "None" => Loc.T("Aletheia Lens가 막대·모자이크를 찾아요."),
-            _ when !censorNetInstalled => Loc.T("Aletheia Lens가 막대·모자이크를 찾아요. (전용 AI가 설치돼 있지 않아 보완은 쉬어요)"),
-            "WhiteMosaic" => Loc.T("Aletheia Lens가 막대·모자이크를 찾고, 전용 AI가 놓친 흰 막대선·모자이크를 보완해요."),
-            "All" => Loc.T("Aletheia Lens가 막대·모자이크를 찾고, 전용 AI가 찾은 것(흰·검·모자이크)도 전부 합쳐요."),
-            _ => Loc.T("Aletheia Lens가 막대·모자이크를 찾고, 전용 AI가 놓친 가는 흰 막대선을 보완해요."),
+            "None" => Loc.T("Aletheia Lens가 막대·모자이크를 찾는다냥."),
+            _ when !censorNetInstalled => Loc.T("Aletheia Lens가 막대·모자이크를 찾는다냥. (전용 AI가 없어 보완은 쉰다냥)"),
+            "WhiteMosaic" => Loc.T("Aletheia Lens가 막대·모자이크를 찾고, 전용 AI가 흰 막대선·모자이크를 보완한다냥."),
+            "All" => Loc.T("Aletheia Lens가 막대·모자이크를 찾고, 전용 AI가 찾은 것도 전부 합친다냥."),
+            _ => Loc.T("Aletheia Lens가 막대·모자이크를 찾고, 전용 AI가 가는 흰 막대선을 보완한다냥."),
         },
-        "BlackBar" => Loc.T("Aletheia Lens가 찾은 막대 중 검은 것만 써요."),
-        "WhiteBar" => censorNetInstalled ? Loc.T("Aletheia Lens가 찾은 막대 중 흰 것에, 전용 AI가 찾은 가는 흰 막대선을 더해요.")
-            : Loc.T("Aletheia Lens가 찾은 막대 중 흰 것에, 흰 막대 규칙 감지를 더해요. (전용 AI를 설치하면 잘못 잡는 곳이 줄어요)"),
-        "Mosaic" => Loc.T("Aletheia Lens가 찾은 모자이크만 써요."),
-        _ => Loc.T("Aletheia Lens가 찾은 막대 중 색 있는 것에, 색 검열 규칙 감지를 더해요."),
+        "BlackBar" => Loc.T("Aletheia Lens가 찾은 막대 중 검은 것만 쓴다냥."),
+        "WhiteBar" => censorNetInstalled ? Loc.T("Aletheia Lens가 찾은 흰 막대에 전용 AI의 흰 막대선을 더한다냥.")
+            : Loc.T("Aletheia Lens가 찾은 흰 막대에 규칙 감지를 더한다냥. (전용 AI를 설치하면 오탐이 준다냥)"),
+        "Mosaic" => Loc.T("Aletheia Lens가 찾은 모자이크만 쓴다냥."),
+        _ => Loc.T("Aletheia Lens가 찾은 색 막대에 색 검열 규칙 감지를 더한다냥."),
     };
 
     /// <summary>② 지우기 — 무엇으로 복원하는지. GPU 방식을 골랐으면 Aletheia 복원이 안 쓰인다는 점을 덧붙인다.</summary>
     public static string Fix(string mode, string target, string assist, string assistRepair)
     {
-        string tail = Loc.T(" Aletheia 복원을 쓰려면 '기본'을 고르세요.");
+        string tail = Loc.T(" Aletheia 복원을 쓰려면 '기본'을 고르라냥.");
         return mode switch
         {
-            "ComfyRegen" => Loc.T("SDXL 재생성(ComfyUI·GPU)으로 다시 그려요.") + tail,
-            "ComfyCustom" => Loc.T("내 ComfyUI 워크플로(GPU)로 지워요.") + tail,
-            _ => Loc.T("Aletheia Lens 복원 — 막대는 막대 모델, 모자이크는 모자이크 모델로 지워요.") +
+            "ComfyRegen" => Loc.T("SDXL 재생성(ComfyUI·GPU)으로 다시 그린다냥.") + tail,
+            "ComfyCustom" => Loc.T("내 ComfyUI 워크플로(GPU)로 지운다냥.") + tail,
+            _ => Loc.T("Aletheia Lens 복원 — 막대는 막대 모델, 모자이크는 모자이크 모델로 지운다냥.") +
                  (HasAssist(target, assist)
-                     ? (assistRepair == "Aletheia" ? Loc.T(" 보완으로 찾은 자리도 Aletheia 막대 모델로 지워요.") : Loc.T(" 보완으로 찾은 자리만 LaMa로 지워요."))
+                     ? (assistRepair == "Aletheia" ? Loc.T(" 보완으로 찾은 자리도 Aletheia 막대 모델로 지운다냥.") : Loc.T(" 보완으로 찾은 자리만 LaMa로 지운다냥."))
                      : ""),
         };
     }

@@ -48,12 +48,12 @@
                             <TextBlock Style="{StaticResource CardTitle}" Text="🎨 자동 채색"/>
                             <Border x:Name="BadgeColor" Background="#33FFB020" CornerRadius="0"
                                     Padding="6,1" Margin="8,0,0,0" Visibility="Collapsed"
-                                    ToolTip="이 기능은 ComfyUI가 필요해요 — 설정 → 구성요소에서 설치해 주세요 (약 11GB)">
-                                <TextBlock Text="⚠ ComfyUI 설치 필요" FontSize="10.5" Foreground="#FFCF6E"/>
+                                    ToolTip="ComfyUI가 필요하다냥 — 설정 → 구성요소에서 설치해 줘냥 (약 11GB)">
+                                <TextBlock Text="⚠ ComfyUI 설치가 필요하다냥" FontSize="10.5" Foreground="#FFCF6E"/>
                             </Border>
                         </StackPanel>
                         <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,0"
-                                   Text="흑백 원고를 AI가 풀컬러로"/>
+                                   Text="흑백 원고를 AI가 풀컬러로 그린다냥"/>
                     </StackPanel>
                 </DockPanel>
             </Border>
@@ -67,12 +67,12 @@
                             <TextBlock Style="{StaticResource CardTitle}" Text="🙈 검열 제거"/>
                             <Border x:Name="BadgeDecensor" Background="#33FFB020" CornerRadius="0"
                                     Padding="6,1" Margin="8,0,0,0" Visibility="Collapsed"
-                                    ToolTip="재생성·커스텀 모드는 ComfyUI가 필요해요 — 기본 모드는 바로 쓸 수 있어요">
-                                <TextBlock Text="⚠ GPU 복원 모드: ComfyUI 필요" FontSize="10.5" Foreground="#FFCF6E"/>
+                                    ToolTip="재생성·커스텀은 ComfyUI가 필요하다냥 — 기본은 바로 쓸 수 있다냥">
+                                <TextBlock Text="⚠ GPU 복원 모드: ComfyUI가 필요하다냥" FontSize="10.5" Foreground="#FFCF6E"/>
                             </Border>
                         </StackPanel>
                         <TextBlock x:Name="HintDecensor" Style="{StaticResource HintText}" Margin="0,4,0,0"
-                                   Text="모자이크를 찾아 자연스럽게 복원"/>
+                                   Text="검열을 찾아 자연스럽게 복원한다냥"/>
                     </StackPanel>
                 </DockPanel>
             </Border>
@@ -84,7 +84,7 @@
                     <StackPanel>
                         <TextBlock Style="{StaticResource CardTitle}" Text="💬 번역"/>
                         <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,0"
-                                   Text="말풍선을 읽고 한국어로 식자까지 · 내장 AI"/>
+                                   Text="말풍선을 읽고 한국어로 식자까지 한다냥 · 내장 AI"/>
                     </StackPanel>
                 </DockPanel>
             </Border>
@@ -99,12 +99,12 @@
                 <!-- 검토 대기 페이지가 있을 때만: 전부 현재 마스크 그대로 검열 제거로 보낸다 (2026-10-21 페이지별 검토) -->
                 <ui:Button x:Name="BtnProceedAll" Click="BtnProceedAll_Click" Visibility="Collapsed"
                            Margin="0,6,0,0" Padding="22,6" HorizontalAlignment="Stretch" Appearance="Caution"
-                           Content="대기 중 전부 진행" ToolTip="검토 대기 중인 장을 지금 마스크 그대로 검열 제거로 보내요"/>
+                           Content="대기 중 전부 진행" ToolTip="검토 대기 중인 장을 지금 마스크 그대로 검열 제거로 보낸다냥"/>
                 <!-- 끝난 장의 마스크를 고쳐 저장해 둔 것이 있을 때만: 그 장들만 검열 제거·식자를 다시 한다 (2026-11-13 사용자 요청 — 끝나면 또 고쳐 반복) -->
                 <ui:Button x:Name="BtnRerenderEdited" Click="BtnRerenderEdited_Click" Visibility="Collapsed"
                            Margin="0,6,0,0" Padding="22,6" HorizontalAlignment="Stretch" Appearance="Caution"
                            Content="고친 장 다시 렌더링"
-                           ToolTip="마스크를 고쳐 저장한 장만 검열 제거·식자를 다시 해요 — ⚙ 설정의 검열 제거 방식으로 돌고, 채색은 그대로 둬요"/>
+                           ToolTip="마스크를 고친 장만 검열 제거·식자를 다시 한다냥 — ⚙ 설정의 방식으로 돌고 채색은 그대로다냥"/>
             </StackPanel>
         </Grid>
 
@@ -119,7 +119,7 @@
                     <Rectangle Fill="{DynamicResource MangaGrid}"/>
                     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                         <Image Source="{DynamicResource NekoLogo}" Width="96" Height="96" HorizontalAlignment="Center"/>
-                        <TextBlock Text="만화 이미지나 폴더를 여기에 끌어다 놓으세요" FontSize="16"
+                        <TextBlock Text="만화 이미지나 폴더를 여기에 끌어다 놓으라냥" FontSize="16"
                                    Margin="0,16,0,0" HorizontalAlignment="Center" FontWeight="SemiBold"
                                    Foreground="{DynamicResource NekoText}"/>
                         <TextBlock Text="png · jpg · webp 지원" Style="{StaticResource HintText}"
@@ -224,13 +224,13 @@
                                Padding="14,6" Margin="8,0,0,0"/>
                     <ui:Button x:Name="BtnSort" Content="이름순 정렬" Click="BtnSort_Click" Padding="14,6" Margin="8,0,0,0"/>
                     <ui:Button x:Name="BtnRemoveSel" Content="선택 삭제" Click="BtnRemoveSel_Click" Padding="14,6" Margin="8,0,0,0"
-                               ToolTip="목록에서만 빠져요 (파일은 그대로) — Delete 키로도 돼요"/>
+                               ToolTip="목록에서만 뺀다냥 (파일은 그대로) — Delete 키로도 된다냥"/>
                     <ui:Button x:Name="BtnClear" Content="목록 비우기" Click="BtnClear_Click" Padding="14,6" Margin="8,0,0,0"/>
                     <ui:Button x:Name="BtnUpdate" Content="🎀 새 버전!" Click="BtnUpdate_Click"
                                Appearance="Caution" Padding="14,6" Margin="8,0,0,0" Visibility="Collapsed"/>
                 </StackPanel>
                 <TextBlock x:Name="TxtStatus" DockPanel.Dock="Right" VerticalAlignment="Center"
-                           Foreground="{DynamicResource NekoHint}" Text="준비 완료 ♪"/>
+                           Foreground="{DynamicResource NekoHint}" Text="준비 완료다냥 ♪"/>
                 <Border/>
             </DockPanel>
         </Border>

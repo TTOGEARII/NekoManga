@@ -357,7 +357,7 @@ public class PipelineRunnerResultOwnerTests
         var apart = (await RunAsync(s, png)).FinalOf(png).Error;
 
         Assert.NotNull(apart);
-        Assert.Contains("둘 중 하나의 파일 이름을 바꿔 주세요.", apart);
+        Assert.Contains("둘 중 하나의 파일 이름을 바꿔 줘냥.", apart);
         Assert.DoesNotContain("지운 뒤", apart);
         Assert.DoesNotContain("출력 폴더를", apart);
 
@@ -368,8 +368,8 @@ public class PipelineRunnerResultOwnerTests
         var together = (await RunAsync(EnginelessSettings(t2, fixedOutputRoot ? t2.At("결과") : ""), jpg2, png2)).FinalOf(png2).Error;
         Assert.NotNull(together);
         Assert.Contains("같은 폴더의 다른 원고(01.jpg)", together);
-        Assert.EndsWith("둘 중 하나의 파일 이름을 바꿔 주세요.", together);
-        Assert.EndsWith("둘 중 하나의 파일 이름을 바꿔 주세요.", apart);
+        Assert.EndsWith("둘 중 하나의 파일 이름을 바꿔 줘냥.", together);
+        Assert.EndsWith("둘 중 하나의 파일 이름을 바꿔 줘냥.", apart);
 
         // 안내대로 이름을 바꾸면 둘 다 돈다
         var renamed = t.At("vol1", "01b.png");
@@ -488,7 +488,7 @@ public class PipelineRunnerResultOwnerTests
         Assert.Contains("⚠", done.Stage);
         Assert.Contains("vol1_01_jpg.owner", done.Stage);
         Assert.Contains("주인 표시 없이 남아", done.Stage);   // 무슨 일이 따르는지: 기록이 없으니 예전처럼 덮일 수 있다
-        Assert.Contains("묻지 않고 덮여요", done.Stage);
+        Assert.Contains("묻지 않고 덮인다냥", done.Stage);
         Assert.Equal(File.ReadAllBytes(a), File.ReadAllBytes(PipelineRunner.AsIsPathFor(outPath, a)));
         AssertNoTempFiles(Path.GetDirectoryName(outPath)!);
     }
@@ -566,10 +566,10 @@ public class PipelineRunnerResultOwnerTests
 
         Assert.NotNull(warning);
         Assert.Contains("vol1_01_jpg.owner", warning);
-        Assert.Contains("고쳐 쓰지도 지우지도 못했어요", warning);
+        Assert.Contains("고치지도 지우지도 못했다냥", warning);
         Assert.Contains("건너뛰고", warning);                     // 다음에 이 원고는 막히고
-        Assert.Contains("이 결과가 덮여요", warning);             // 그 원고는 덮는다
-        Assert.Contains("그 파일을 지워 주세요", warning);
+        Assert.Contains("이 결과가 덮인다냥", warning);             // 그 원고는 덮는다
+        Assert.Contains("그 파일을 지워 줘냥", warning);
         Assert.Equal(a, ResultOwner.Load(outPath)!.Source);       // 잠금이 풀린 뒤에도 남의 기록 그대로다 — 경고한 대로
         AssertNoTempFiles(t.Root);
     }
@@ -691,7 +691,7 @@ public class PipelineRunnerResultOwnerTests
         var done = log.FinalOf(b);
         Assert.Null(done.Error);
         Assert.Equal(File.ReadAllBytes(b), File.ReadAllBytes(PipelineRunner.AsIsPathFor(outPath, b)));
-        Assert.Contains("고쳐 쓰지도 지우지도 못했어요", done.Stage);   // 결과는 썼고, 끝내 잠긴 기록은 무슨 일이 따르는지 경고한다
+        Assert.Contains("고치지도 지우지도 못했다냥", done.Stage);   // 결과는 썼고, 끝내 잠긴 기록은 무슨 일이 따르는지 경고한다
     }
 
     [Fact]

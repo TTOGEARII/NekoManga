@@ -69,7 +69,7 @@ public partial class App : Application
             try
             {
                 System.Windows.MessageBox.Show(
-                    Loc.T("예상하지 못한 오류가 났어요 — 방금 하던 동작은 끝나지 않았을 수 있어요. 도는 작업은 계속돼요.\n\n") +
+                    Loc.T("예상 못 한 오류가 났다냥 — 방금 동작은 끝나지 않았을 수 있다냥. 도는 작업은 계속된다냥.\n\n") +
                     Loc.F($"{e.Exception.GetType().Name}: {e.Exception.Message}\n\n자세한 기록: {CrashLogPath}"),
                     "NekoManga", MessageBoxButton.OK, MessageBoxImage.Warning);
             }

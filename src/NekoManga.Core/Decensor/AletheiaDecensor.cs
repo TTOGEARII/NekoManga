@@ -35,8 +35,8 @@ public sealed class AletheiaDecensor(AppSettings settings, OnnxEnv env)
     public bool DetectorReady => _detector.IsReady;
     public bool InpainterReady => _inpainter.IsReady;
 
-    public static string DetectorMissing => Loc.T("검열 감지 모델(Aletheia Lens)이 아직 설치되지 않았어요 — 설정 → 구성요소에서 받아주세요.");
-    public static string InpainterMissing => Loc.T("검열 복원 모델(Aletheia Lens)이 아직 설치되지 않았어요 — 설정 → 구성요소에서 받아주세요.");
+    public static string DetectorMissing => Loc.T("검열 감지 모델(Aletheia Lens)이 아직 없다냥 — 설정 → 구성요소에서 받아 줘냥.");
+    public static string InpainterMissing => Loc.T("검열 복원 모델(Aletheia Lens)이 아직 없다냥 — 설정 → 구성요소에서 받아 줘냥.");
 
     private enum Tone { Dark, Bright, Color }
 
@@ -234,7 +234,7 @@ public sealed class AletheiaDecensor(AppSettings settings, OnnxEnv env)
     public string Repair(Mat img, Mat mask, Mat? kinds, LamaInpainter lama)
     {
         if (!_inpainter.IsReady) throw new FileNotFoundException(InpainterMissing);
-        if (mask.Type() != MatType.CV_8UC1 || mask.Size() != img.Size()) throw new ArgumentException(Loc.T("마스크는 그림과 같은 크기의 8비트 한 채널이어야 해요."), nameof(mask));
+        if (mask.Type() != MatType.CV_8UC1 || mask.Size() != img.Size()) throw new ArgumentException(Loc.T("마스크는 그림과 같은 크기의 8비트 한 채널이어야 한다냥."), nameof(mask));
         using var bin = new Mat();
         Cv2.Threshold(mask, bin, 0, 255, ThresholdTypes.Binary);
         using var labels = new Mat();
@@ -309,7 +309,7 @@ public sealed class AletheiaDecensor(AppSettings settings, OnnxEnv env)
             if (nLegacy > 0)
             {
                 if (!lama.IsReady)
-                    throw new FileNotFoundException(Loc.T("복원 모델(LaMa)이 없어요 — 설정 → 구성요소에서 설치해 주세요."));
+                    throw new FileNotFoundException(Loc.T("복원 모델(LaMa)이 없다냥 — 설정 → 구성요소에서 설치해 줘냥."));
                 lama.Inpaint(img, legacyM);
             }
             return Loc.F($"막대 {nBar}·모자이크 {nMosaic}·기존 방식(LaMa) {nLegacy}");

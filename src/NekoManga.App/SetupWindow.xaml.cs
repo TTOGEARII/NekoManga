@@ -180,7 +180,7 @@ public partial class SetupWindow
         // 연결해 둔 ComfyUI가 있으면 그쪽에 깔리는 것을 알린다 — 사용자의 ComfyUI 폴더에 모델·노드가 더해진다(ComponentInstaller.Resolve)
         var linked = App.Settings.LinkedComfyRoot.Trim();
         TxtRoot.Text = Loc.F($"설치 폴더: {App.Settings.RuntimeRoot}")
-            + (linked.Length > 0 ? "\n" + Loc.F($"채색·재생성에 쓰는 ComfyUI의 모델·노드는 연결해 둔 ComfyUI에 설치돼요: {linked}") : "");
+            + (linked.Length > 0 ? "\n" + Loc.F($"채색·재생성에 쓰는 ComfyUI의 모델·노드는 연결해 둔 ComfyUI에 설치된다냥: {linked}") : "");
         try
         {
             var missing = ComponentCatalog.All.Where(c => _installer.IsWanted(c) && !_installer.IsInstalled(c)).ToList();
@@ -196,9 +196,9 @@ public partial class SetupWindow
             bool onlyRuntimeShort = shortDrives.All(d => string.Equals(d, runtimeDrive, StringComparison.OrdinalIgnoreCase));
             var shortNames = string.Join(", ", shortDrives);
             TxtSpace.Text = needed == 0
-                ? Loc.F($"이 위치에 모두 설치돼 있어요 · 드라이브 여유 {freeGb:0}GB")
+                ? Loc.F($"이 위치에 모두 설치돼 있다냥 · 드라이브 여유 {freeGb:0}GB")
                 : Loc.F($"필요 공간 약 {needGb:0.#}GB  /  드라이브 여유 {freeGb:0}GB")
-                  + (ok ? "" : onlyRuntimeShort ? Loc.T("  ⚠ 공간이 부족해요 — 다른 드라이브를 골라주세요") : Loc.F($"  ⚠ {shortNames} 드라이브의 공간이 부족해요"));
+                  + (ok ? "" : onlyRuntimeShort ? Loc.T("  ⚠ 공간이 부족하다냥 — 다른 드라이브를 골라 줘냥") : Loc.F($"  ⚠ {shortNames} 드라이브의 공간이 부족하다냥"));
             TxtSpace.Foreground = ok
                 ? (System.Windows.Media.Brush)FindResource("NekoText")
                 : System.Windows.Media.Brushes.IndianRed;
@@ -259,7 +259,7 @@ public partial class SetupWindow
     {
         bool needComfy = _rows.Any(r => r.Component.ForComfy && r.Needed);
         if (!needComfy) { PnlReq.Visibility = Visibility.Collapsed; _req = null; return false; }
-        TxtReqTitle.Text = Loc.T("PC 점검 중..."); PnlReq.Visibility = Visibility.Visible;
+        TxtReqTitle.Text = Loc.T("PC 점검 중이다냥..."); PnlReq.Visibility = Visibility.Visible;
         if (CmbGpu.SelectedItem == null)
             foreach (ComboBoxItem it in CmbGpu.Items) if ((string)it.Tag == App.Settings.GpuVendor) { CmbGpu.SelectedItem = it; break; }
         var vendor = App.Settings.GpuVendor;
@@ -270,12 +270,12 @@ public partial class SetupWindow
         BtnReqVc.Visibility = r.Items.Any(i => !i.Ok && i.FixUrl == SystemCheck.VcRedistUrl) ? Visibility.Visible : Visibility.Collapsed;
         if (r.HasBlocking)
         {
-            TxtReqTitle.Text = Loc.T("✖ 채색 엔진(ComfyUI)을 쓰려면 먼저 해야 할 일이 있어요");
+            TxtReqTitle.Text = Loc.T("✖ 채색 엔진(ComfyUI)을 쓰려면 먼저 할 일이 있다냥");
             TxtReq.Text = r.Summary + "\n" + r.BlockedNote;   // 너무 오래된 카드에는 "위 항목을 해결한 뒤…"를 붙이지 않는다(Report.BlockedNote)
         }
         else if (r.HasWarning)
         {
-            TxtReqTitle.Text = Loc.T("⚠ PC 점검 — 설치는 되지만 참고하세요");
+            TxtReqTitle.Text = Loc.T("⚠ PC 점검 — 설치는 되지만 참고하라냥");
             TxtReq.Text = r.Summary;
         }
         else
@@ -310,7 +310,7 @@ public partial class SetupWindow
         if (_running) return;
         if (s_installing)
         {
-            UiText.Bind(TxtNote, System.Windows.Controls.TextBlock.TextProperty, () => Loc.T("이미 설치가 진행 중이에요 — 끝난 뒤에 이 창을 다시 열어 주세요."));
+            UiText.Bind(TxtNote, System.Windows.Controls.TextBlock.TextProperty, () => Loc.T("이미 설치가 진행 중이다냥 — 끝난 뒤에 이 창을 다시 열어 줘냥."));
             return;
         }
         _running = s_installing = true;
@@ -337,14 +337,14 @@ public partial class SetupWindow
             bool blocked = await CheckRequirementsAsync(smi);
             string? detectedVendor = smi != null ? await Task.Run(async () => SystemCheck.DetectVendor(await smi).Vendor) : null;
             if (blocked)
-                foreach (var row in _rows.Where(r => r.Component.ForComfy && r.Needed)) { row.Needed = false; row.Blocked = true; row.Status = Loc.T("조건 미충족 — 위 안내 참고"); }
+                foreach (var row in _rows.Where(r => r.Component.ForComfy && r.Needed)) { row.Needed = false; row.Blocked = true; row.Status = Loc.T("조건 미충족 — 위 안내를 보라냥"); }
 
             // PC 사양 맞춤 설정 적용 (체크돼 있을 때만; demo는 저장 안 함)
             if (ChkTune.IsChecked == true && _tune is { Changes.Count: > 0 })
             {
                 AutoTune.Apply(App.Settings, _tune);
                 if (!_demo) App.Settings.Save();
-                TxtTune.Text = Loc.F($"적용했어요:\n{_tune.Summary}");
+                TxtTune.Text = Loc.F($"적용했다냥:\n{_tune.Summary}");
             }
             // 채색을 빼고 설치하면 자동 채색도 꺼 둔다 — 켜진 채로 두면 첫 작업이 '채색에 쓰는 노드가 설치되지 않았어요'로 멈춘다.
             // 채색 쪽이 이미 깔려 있으면(체크만 끈 경우) 그대로 둔다
@@ -356,9 +356,9 @@ public partial class SetupWindow
 
             foreach (var row in _rows.Where(r => r.Needed).ToList())
             {
-                row.Status = Loc.T("내려받는 중");
+                row.Status = Loc.T("내려받는 중이다냥");
                 try { await _installer.InstallAsync(row.Component, progress, CancellationToken.None, detectedVendor); }
-                catch { row.Status = Loc.T("실패 — 다시 시도해 주세요"); row.Percent = 0; throw; }
+                catch { row.Status = Loc.T("실패 — 다시 시도해 줘냥"); row.Percent = 0; throw; }
                 // 끝난 뒤에 내린다 — 예전에는 받기 전에 내려서, 실패한 구성요소가 다시 눌러도 건너뛰어지고 나머지만 깔린 채 '준비 끝!'이 나왔다
                 row.Needed = false;
                 comfyTouched |= row.Component.ForComfy;
@@ -370,8 +370,8 @@ public partial class SetupWindow
             // 연결한 ComfyUI는 앱이 끄지 않는다(StopStaleEngineAsync) — 켜져 있으면 새로 넣은 노드를 모르므로 다시 켜라고 알린다
             bool restartLinked = comfyTouched && !string.IsNullOrWhiteSpace(App.Settings.LinkedComfyRoot);
             UiText.Bind(TxtNote, System.Windows.Controls.TextBlock.TextProperty, () => leftover ? (_req ?? new SystemCheck.Report([])).LeftoverNote
-                                                                     : Loc.T("준비 끝! 이제 바로 쓸 수 있어요 (ﾉ´ヮ`)ﾉ*:･ﾟ✧")
-                                                                       + (restartLinked ? "\n" + Loc.T("연결해 둔 ComfyUI가 켜져 있으면 껐다 켜 주세요 — 새로 받은 노드는 다시 켜야 보여요.") : ""));
+                                                                     : Loc.T("준비 끝이다냥! 이제 바로 쓸 수 있다냥 (ﾉ´ヮ`)ﾉ*:･ﾟ✧")
+                                                                       + (restartLinked ? "\n" + Loc.T("연결해 둔 ComfyUI가 켜져 있으면 껐다 켜 줘냥 — 새 노드는 다시 켜야 보인다냥.") : ""));
             UiText.Bind(BtnSkip, System.Windows.Controls.ContentControl.ContentProperty, () => Loc.T("시작하기"));
             if (leftover) { foreach (var row in _rows.Where(r => r.Blocked)) { row.Blocked = false; row.Needed = true; row.Status = Loc.T("필요"); } BtnInstall.IsEnabled = true; }
             else UiText.Bind(BtnInstall, System.Windows.Controls.ContentControl.ContentProperty, () => Loc.T("모두 준비됨 ✓"));
@@ -379,7 +379,7 @@ public partial class SetupWindow
         catch (Exception ex)
         {
             var problem = ex.Message;
-            UiText.Bind(TxtNote, System.Windows.Controls.TextBlock.TextProperty, () => Loc.F($"문제가 생겼어요: {problem}"));
+            UiText.Bind(TxtNote, System.Windows.Controls.TextBlock.TextProperty, () => Loc.F($"문제가 생겼다냥: {problem}"));
             // 조건이 안 맞아 건너뛴 행도 '필요'로 되돌린다 — 그대로 두면 다시 눌러도 건너뛴다
             foreach (var row in _rows.Where(r => r.Blocked)) { row.Blocked = false; row.Needed = true; row.Status = Loc.T("필요"); }
             BtnInstall.IsEnabled = true;

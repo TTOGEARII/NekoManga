@@ -82,7 +82,7 @@ public partial class MaskReviewWindow
         _cur = r;
         _img?.Dispose(); _disp?.Dispose();
         _img = NekoManga.Core.ImgIo.Read(r.Page.WorkPath, ImreadModes.Color);
-        if (_img.Empty()) { TxtStatus.Text = Loc.T("원고를 읽지 못했어요: ") + r.Page.WorkPath; return; }
+        if (_img.Empty()) { TxtStatus.Text = Loc.T("원고를 읽지 못했다냥: ") + r.Page.WorkPath; return; }
         _dispScale = Math.Min(1.0, (double)DispMax / Math.Max(_img.Width, _img.Height));
         _disp = new Mat();
         Cv2.Resize(_img, _disp, new OpenCvSharp.Size((int)Math.Round(_img.Width * _dispScale), (int)Math.Round(_img.Height * _dispScale)), 0, 0, InterpolationFlags.Area);
@@ -92,7 +92,7 @@ public partial class MaskReviewWindow
         BtnPrev.IsEnabled = LstPages.SelectedIndex > 0;
         BtnNext.IsEnabled = LstPages.SelectedIndex < _rows.Count - 1;
         Redraw();
-        TxtStatus.Text = Loc.F($"{r.Name} — 감지: {r.Page.Summary}. 빨간 곳이 지워져요. 놓친 검열은 칠하고, 잘못 잡힌 곳은 지우개로 지우세요.");
+        TxtStatus.Text = Loc.F($"{r.Name} — 감지: {r.Page.Summary}. 빨간 곳이 지워진다냥. 놓친 곳은 칠하고 잘못 잡힌 곳은 지우라냥.");
     }
 
     private void BtnPrev_Click(object sender, RoutedEventArgs e) { if (LstPages.SelectedIndex > 0) LstPages.SelectedIndex--; }

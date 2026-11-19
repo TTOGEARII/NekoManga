@@ -35,7 +35,7 @@ public class ComfyClient(string baseUrl)
         using var r = await Http.GetAsync($"{baseUrl}/object_info", ct);
         r.EnsureSuccessStatusCode();
         return JsonNode.Parse(await r.Content.ReadAsStringAsync(ct)) as JsonObject
-               ?? throw new InvalidDataException(Loc.T("ComfyUI의 노드 정보(/object_info)를 읽지 못했어요."));
+               ?? throw new InvalidDataException(Loc.T("ComfyUI의 노드 정보(/object_info)를 읽지 못했다냥."));
     }
 
     public async Task<string> UploadImageAsync(byte[] png, string fileName, CancellationToken ct)
@@ -64,7 +64,7 @@ public class ComfyClient(string baseUrl)
                 new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"), ct);
             var text = await resp.Content.ReadAsStringAsync(ct);
             if (!resp.IsSuccessStatusCode)
-                throw new InvalidOperationException(Loc.F($"워크플로 검증 실패: {Truncate(ExplainRejection(text), 2000)}"));
+                throw new InvalidOperationException(Loc.F($"워크플로 검증 실패다냥: {Truncate(ExplainRejection(text), 2000)}"));
             return JsonNode.Parse(text)!["prompt_id"]!.GetValue<string>();
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -90,7 +90,7 @@ public class ComfyClient(string baseUrl)
         var node = Str((err["extra_info"] as JsonObject)?["class_type"]);
         if (node.Length == 0 && System.Text.RegularExpressions.Regex.Match(message, "node (.+?) does not exist") is { Success: true } m) node = m.Groups[1].Value;
         if (node.Length > 0 && (Str(err["type"]) == "missing_node_type" || message.Contains("does not exist")))
-            return Loc.F($"채색 엔진(ComfyUI)에 '{node}' 노드가 없어요 — 설정 → 구성요소에서 설치를 마친 뒤, 설정 → 엔진에서 엔진을 껐다가 다시 시도해 주세요.");
+            return Loc.F($"엔진(ComfyUI)에 '{node}' 노드가 없다냥 — 설정 → 구성요소에서 설치한 뒤 엔진을 껐다 켜 줘냥.");
 
         var lines = new List<string>();
         if (root["node_errors"] is JsonObject nodes)
@@ -102,7 +102,7 @@ public class ComfyClient(string baseUrl)
                     var info = e?["extra_info"] as JsonObject;
                     var value = info?["received_value"] is { } rv ? (Str(rv) is { Length: > 0 } s ? s : rv.ToJsonString()) : "";
                     lines.Add(Str(e?["type"]) == "value_not_in_list"
-                        ? Loc.F($"{cls}: '{value}'을(를) 채색 엔진에서 찾을 수 없어요 ({Str(info?["input_name"])}) — 모델 파일이면 설정 → 구성요소에서 받거나 설정에 적은 파일 이름을 확인해 주세요.")
+                        ? Loc.F($"{cls}: '{value}'을(를) 엔진에서 찾을 수 없다냥 ({Str(info?["input_name"])}) — 설정 → 구성요소에서 받거나 파일 이름을 확인해 줘냥.")
                         : $"{cls}: {Str(e?["message"])} ({Str(e?["details"])})");
                 }
             }
@@ -170,7 +170,7 @@ public class ComfyClient(string baseUrl)
             if (statusStr == "error")
             {
                 var msg = ExtractError(status);
-                throw new InvalidOperationException(Loc.F($"채색 엔진 실행 오류: {msg}"));
+                throw new InvalidOperationException(Loc.F($"엔진 실행 오류다냥: {msg}"));
             }
             if (!completed) continue;
 
@@ -192,7 +192,7 @@ public class ComfyClient(string baseUrl)
                 }
             return new ComfyResult(files, texts);
         }
-        throw new TimeoutException(Loc.T("채색 작업이 제한 시간을 넘겼어요."));
+        throw new TimeoutException(Loc.T("작업이 제한 시간을 넘겼다냥."));
     }
 
     private static string ExtractError(JsonNode? status)
@@ -215,7 +215,7 @@ public class ComfyClient(string baseUrl)
                     }
         }
         catch { }
-        return Loc.F($"원인 미상 (로그 확인: {ComfyServer.LogPath})");
+        return Loc.F($"원인 미상이다냥 (로그: {ComfyServer.LogPath})");
     }
 
     private static string Truncate(string s, int n) => s.Length <= n ? s : s[..n] + "…";

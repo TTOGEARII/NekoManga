@@ -7,6 +7,77 @@ namespace NekoManga.Core.Tests;
 /// <summary>내장 번역 파이프라인의 정적 판정·뒷손질(EmbeddedTranslator) — 모델 없이 문자열과 합성 조각만으로 본다.</summary>
 public class EmbeddedTranslatorTests
 {
+    // ── 폭주한 번역문 억제 (2026-11-18: DeepSeek가 95자 원문 "あぁ、あぁ......あ、あああ…"를 32,772자 "아아아…"로 — GDI+ 32K 한계에 식자가 던졌다) ──
+
+    [Fact]
+    public void TameRunaway_RepeatedCharacterFlood_CollapsesRunsAndCapsLength()
+    {
+        var source = "あぁ、あぁ......あ、" + new string('あ', 80);   // 95자
+        var tr = "'아아, 아아......아, " + new string('아', 32750);
+
+        var tamed = EmbeddedTranslator.TameRunaway(tr, source);
+
+        Assert.True(tamed.Length <= EmbeddedTranslator.RunawayRatio * source.Length, tamed.Length.ToString());
+        Assert.StartsWith("'아아, 아아......아, ", tamed);
+        Assert.DoesNotContain(new string('아', EmbeddedTranslator.MaxRepeat + 1), tamed);
+        Assert.Contains(new string('아', EmbeddedTranslator.MaxRepeat), tamed);   // 늘인 소리는 남긴다 — 통째로 지우지 않는다
+    }
+
+    [Fact]
+    public void TameRunaway_CyclingFlood_CappedByLength()
+    {
+        // 두 글자가 번갈아 되풀이되면 같은 글자 접기로는 안 줄어든다 — 길이 상한이 받는다
+        var source = "あっあっ";
+        var tr = string.Concat(Enumerable.Repeat("아앗", 20000));
+
+        var tamed = EmbeddedTranslator.TameRunaway(tr, source);
+
+        Assert.Equal(EmbeddedTranslator.RunawayMinChars, tamed.Length);   // 원문이 짧으면 최소 상한
+    }
+
+    [Theory]
+    [InlineData("결국 해버렸네~", "とうとうしちゃったねぇ")]
+    [InlineData("아아아아아아아아아아아아", "あああああ")]     // 상한 안이면 되풀이도 그대로(원문보다 길어도 4배 안)
+    [InlineData("", "あ")]
+    [InlineData("긴 번역문이지만 원문도 길다", "")]       // 원문이 비면 최소 상한만 — 짧은 글은 그대로
+    public void TameRunaway_NormalTranslation_Unchanged(string tr, string source)
+    {
+        Assert.Equal(tr, EmbeddedTranslator.TameRunaway(tr, source));
+    }
+
+    // ── 효과음처럼 생긴 원문 (풍선 밖 판정과 같이 번역에서 뺀다) ──
+
+    [Theory]
+    [InlineData("あぁ、あぁ......あ、あああああああ", true)]   // 35p — 폭주한 원문(같은 글자 셋 넘게)
+    [InlineData("はーーーーーー", true)]
+    [InlineData("あ", true)]
+    [InlineData("ぐっっ", true)]
+    [InlineData("はーっ...", true)]
+    [InlineData("〜〜〜〜〜〜", true)]
+    [InlineData("", true)]
+    [InlineData("はい", false)]            // 짧은 대사는 남긴다
+    [InlineData("それを", false)]
+    [InlineData("...じゃあ", false)]
+    [InlineData("いや、", false)]          // 문장부호 = 대사
+    [InlineData("どんなこと想像して?", false)]   // 한자 = 대사
+    [InlineData("だめっこれムリっ", false)]
+    [InlineData("キュンッキュンッ", false)]   // 알맹이가 셋 — 효과음이지만 번역해도 해롭지 않다
+    public void LooksLikeSfx_RepeatsAndSingleSoundsOnly(string source, bool expected)
+    {
+        Assert.Equal(expected, EmbeddedTranslator.LooksLikeSfx(source));
+    }
+
+    [Fact]
+    public void TameRunaway_DoesNotSplitSurrogatePair()
+    {
+        var tr = new string('a', EmbeddedTranslator.RunawayMinChars - 1) + "😀" + new string('b', 500);
+
+        var tamed = EmbeddedTranslator.TameRunaway(tr, "");
+
+        Assert.False(char.IsHighSurrogate(tamed[^1]));
+        Assert.True(tamed.Length <= EmbeddedTranslator.RunawayMinChars);
+    }
+
     [Theory]
     // 장음 기호·물결표는 가로 식자에서 긴 막대로 그려지므로 ~로 바꾼다
     [InlineData("또ー!?", "ko", "또~!?")]
