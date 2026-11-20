@@ -308,6 +308,14 @@ public class AppSettings
     public bool KeepComfyWarm { get; set; } = true;
 
     // ── 저장/로드 ──────────────────────────────────────────────
+    /// <summary>이 파일을 저장한 앱의 설정 판 — <see cref="Save"/>가 <see cref="CurrentSettingsVersion"/>으로 찍는다. 0 = 이 칸이 생기기 전(v1.15.0까지)에 저장된 파일, 또는 아직 저장하지 않은 새 설정.
+    /// 기본값이 바뀐 칸은 값만 보고는 '옛 기본값이 그대로 적힌 것'과 '사용자가 고른 것'을 가를 수 없어, 어느 판이 저장했는지로 가른다(MigrateLegacy — 그 판까지의 기본값과 똑같을 때만 새 기본값으로).
+    /// 2026-11-20 사용자 "다른 사람들이 릴리스 파일을 설치했을 때 기본값이 0.25가 되게": 코드의 기본값만 바꾸면 새로 설치한 사람만 받고, 업데이트한 사람의 settings.json에는 옛 기본값이 적혀 있어 그대로였다.</summary>
+    public int SettingsVersion { get; set; } = 0;
+
+    /// <summary>지금 앱의 설정 판. 기본값을 바꾸고 옛 파일의 값을 옮겨야 할 때 1 올리고 MigrateLegacy에 그 판의 규칙을 더한다. 1 = v1.15.1(1단계 CN 강도의 옛 기본값 0·0.5 → 0.25).</summary>
+    public const int CurrentSettingsVersion = 1;
+
     [JsonIgnore]
     public static string DataDir =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NekoManga");
@@ -468,6 +476,10 @@ public class AppSettings
             else if (hadFemaleTags || splitLegacyLine) RegenBodyTagsCum = "";
         }
         if (RegenInpaintControl is not ("Repaint" or "Lineart")) RegenInpaintControl = "Lineart";
+        // 1단계 CN 강도의 옛 기본값 옮기기(판 0 → 1, 2026-11-20): v1.9.0~v1.13.x는 0.5, v1.14.0~v1.14.1은 0이 기본이었고 저장하면 그 값이 파일에 적힌다.
+        // 판이 안 찍힌 파일에서 그 둘과 똑같은 값만 새 기본 0.25로 — 다른 값은 사용자가 고른 것. 그 뒤 사용자가 0이나 0.5로 돌려 저장하면 판이 찍혀 다시 옮기지 않는다.
+        // 클램프 앞에서 본다 — 손으로 적은 -1을 0으로 맞춘 뒤에 보면 옮겨져, 클램프 하한 시험(-1 → 0)과 어긋난다.
+        if (SettingsVersion < 1 && RegenInpaintCnStrength is 0.0 or 0.5) RegenInpaintCnStrength = 0.25;
         RegenInpaintCnStrength = Math.Clamp(RegenInpaintCnStrength, 0, 2);
         if (string.IsNullOrWhiteSpace(RegenSampler)) RegenSampler = "dpmpp_sde_gpu";
         if (string.IsNullOrWhiteSpace(RegenScheduler)) RegenScheduler = "karras";
@@ -488,10 +500,11 @@ public class AppSettings
     }
 
     /// <summary>설정을 저장한다 — 임시 파일에 다 쓴 뒤 바꿔치기한다(<see cref="ImgIo.WriteAllTextAtomic"/>). 제자리 쓰기는 파일을 비운 뒤 채워서,
-    /// 그 사이에 앱이 꺼지면 잘린 설정이 남았다(다음 실행이 그것을 못 읽는다).</summary>
+    /// 그 사이에 앱이 꺼지면 잘린 설정이 남았다(다음 실행이 그것을 못 읽는다). 쓰기 전에 <see cref="SettingsVersion"/>을 이 앱의 판으로 찍는다.</summary>
     public void Save()
     {
         if (_saveBlocked) return;   // 설정 파일을 잠겨서 못 읽은 실행 — 지금 쓰면 읽지 못한 멀쩡한 원본을 덮는다(Load가 알렸다)
+        SettingsVersion = CurrentSettingsVersion;   // 이 판까지의 옛 기본값 옮기기는 끝났다 — 다음 실행의 MigrateLegacy가 이 파일을 다시 옮기지 않는다(첫 실행의 저장도 찍어야 그 뒤 사용자가 고른 0이 남는다)
         // NEKO_SETTINGS가 디렉터리 없는 상대 파일명이면 폴더 부분이 ""다 → 전체 경로로 푼 뒤 쓴다(폴더는 쓰는 쪽이 만든다)
         ImgIo.WriteAllTextAtomic(Path.GetFullPath(SettingsPath), JsonSerializer.Serialize(this, JsonOpts));
     }

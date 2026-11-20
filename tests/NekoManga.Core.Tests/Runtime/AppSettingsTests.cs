@@ -227,6 +227,64 @@ public class AppSettingsTests
         Assert.Equal(0.6, s.RegenRegionGrow);
     }
 
+    // ── 설정 판(SettingsVersion, 2026-11-20 사용자 "다른 사람들이 릴리스 파일을 설치했을 때 기본값이 0.25가 되게") ──
+    // 기본값을 바꿔도 업데이트한 사람의 settings.json에는 옛 기본값이 그대로 적혀 있다. 값만 보고는 '옛 기본값'과 '사용자가 고른 값'을 가를 수 없어,
+    // 저장할 때 앱의 설정 판을 파일에 찍고, 판이 없는(옛) 파일에서 옛 기본값과 똑같은 값만 새 기본값으로 옮긴다.
+
+    [Theory]
+    [InlineData("0", 0.25)]     // v1.14.0~v1.14.1의 기본값
+    [InlineData("0.5", 0.25)]   // v1.9.0~v1.13.x의 기본값
+    [InlineData("0.3", 0.3)]    // 기본값이 아니었던 값은 사용자가 고른 것 — 그대로
+    [InlineData("1", 1.0)]
+    public void Load_FileWithoutSettingsVersion_MovesTheOldCnDefaultsTo025_KeepsChosenValues(string json, double expected)
+    {
+        using var t = new TempDir();
+        var s = LoadJson(t, $"{{\"RegenInpaintCnStrength\": {json}}}");
+        Assert.Equal(expected, s.RegenInpaintCnStrength);
+    }
+
+    [Theory]
+    [InlineData("0", 0.0)]
+    [InlineData("0.5", 0.5)]
+    public void Load_FileWithTheCurrentSettingsVersion_KeepsZeroAndHalf(string json, double expected)
+    {
+        // 판이 찍힌 뒤에 0이나 0.5로 돌려 둔 것은 사용자의 선택이다 — 읽을 때마다 옮기지 않는다
+        using var t = new TempDir();
+        var s = LoadJson(t, $"{{\"SettingsVersion\": {AppSettings.CurrentSettingsVersion}, \"RegenInpaintCnStrength\": {json}}}");
+        Assert.Equal(expected, s.RegenInpaintCnStrength);
+    }
+
+    [Fact]
+    public void Save_StampsTheCurrentSettingsVersion()
+    {
+        // 처음 저장(첫 실행)부터 판이 찍혀야 그 뒤 사용자가 0으로 바꾼 값이 다음 실행에서 0.25로 돌아가지 않는다
+        using var t = new TempDir();
+        var path = t.At("settings.json");
+        var s = new AppSettings();
+        Assert.Equal(0, s.SettingsVersion);   // 아직 저장하지 않은 새 설정 = 옛 파일과 같은 0
+
+        SaveTo(s, path);
+
+        using var doc = JsonDocument.Parse(File.ReadAllText(path));
+        Assert.Equal(AppSettings.CurrentSettingsVersion, doc.RootElement.GetProperty(nameof(AppSettings.SettingsVersion)).GetInt32());
+        Assert.Equal(AppSettings.CurrentSettingsVersion, LoadFrom(path).SettingsVersion);
+    }
+
+    [Fact]
+    public void Load_OldFile_ThenTheUserPicksZero_StaysZeroOnTheNextLoad()
+    {
+        // 옛 파일을 읽으면 0 → 0.25. 저장하면 판이 찍히므로, 그 뒤 사용자가 0으로 돌려 저장한 것은 다음 실행에서도 0
+        using var t = new TempDir();
+        var path = t.At("settings.json");
+        var s = LoadJson(t, "{\"RegenInpaintCnStrength\": 0}");
+        Assert.Equal(0.25, s.RegenInpaintCnStrength);
+
+        s.RegenInpaintCnStrength = 0;
+        SaveTo(s, path);
+
+        Assert.Equal(0, LoadFrom(path).RegenInpaintCnStrength);
+    }
+
 
     // ── 재생성 v3 (2026-11-12): 종류별 태그·자를 크기·인페인트 확장, 옛 한 줄 태그 이관 ──
 
