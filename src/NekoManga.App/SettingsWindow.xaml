@@ -386,11 +386,11 @@
                         </DockPanel>
                         <DockPanel Margin="0,6,0,0">
                             <TextBlock Text="조각 그리기 CN 강도 (0 ~ 2)" Style="{StaticResource FieldLabel}" Width="180"/>
-                            <TextBox x:Name="TxtRegenInpaintCnStr" Width="70" HorizontalAlignment="Left" ToolTip="1단계(조각 인페인트)의 ControlNet 강도다냥. 기본 0 — 올리면 막대 자리가 평평한 흰 칠로 메워질 수 있다냥"/>
+                            <TextBox x:Name="TxtRegenInpaintCnStr" Width="70" HorizontalAlignment="Left" ToolTip="1단계(조각 인페인트)의 ControlNet 강도다냥. 기본 0.25 — 0이면 주변 선의 안내 없이 채워 어색할 수 있고, 올릴수록 막대 자리가 평평한 흰 칠로 메워질 수 있다냥"/>
                         </DockPanel>
                         <DockPanel Margin="0,6,0,0">
                             <TextBlock Text="조각 그리기 ControlNet" Style="{StaticResource FieldLabel}" Width="180"/>
-                            <ComboBox x:Name="CmbRegenInpaintControl" MinWidth="340" HorizontalAlignment="Left" ToolTip="위의 조각 그리기 CN 강도가 0(기본)이면 1단계는 ControlNet 없이 그려서 이 선택은 효과가 없다냥">
+                            <ComboBox x:Name="CmbRegenInpaintControl" MinWidth="340" HorizontalAlignment="Left" ToolTip="위의 조각 그리기 CN 강도가 0이면 1단계는 ControlNet 없이 그려서 이 선택은 효과가 없다냥">
                                 <ComboBoxItem Tag="Lineart" Content="선화에 조각 자리를 검게 칠한다냥 (기본)" ToolTip="조각 자리를 검게 칠한 선화를 ControlNet에 넣는다냥. union이 아니면 늘 이 방식이다냥."/>
                                 <ComboBoxItem Tag="Repaint" Content="리페인트 — union promax의 repaint (실험용)" ToolTip="조각 자리를 비운 원고를 repaint로 넣는다냥. 실측에서는 더 나빴다냥 — 비교용이다냥."/>
                             </ComboBox>

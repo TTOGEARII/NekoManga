@@ -84,6 +84,32 @@ public partial class ResultWindow
     private bool _letterPreview;                  // true면 [다시 식자] 결과(_img)를 보여준다
     private bool _letterDirty;                    // 식자 탭에서 블록(글·위치·숨김·풍선 스타일)을 고쳤고 아직 사이드카·결과물에 반영하지 않았다 — 넘기거나 닫을 때 말없이 잃지 않게(2026-11-13 점검 16번)
 
+    /// <summary>안내 카드(두 탭의 단축키·조작 표)의 펼침 — 제목 띠(ToggleButton)를 누르면 두 탭이 같이 바뀌고 설정 <see cref="AppSettings.ResultGuideOpen"/>에 바로 남는다
+    /// (2026-11-20 사용자 "접었다 펼 수 있는 기능으로"). 늘 보이는 첫 줄(TxtDecensorHint·TxtLetterHint)은 접어도 남는다.
+    /// 코드가 IsChecked를 바꿀 때도 Checked/Unchecked가 오므로 _syncingGuide로 되돌아오지 않게 막는다.</summary>
+    private bool _syncingGuide;
+
+    private void Guide_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_syncingGuide) return;
+        bool open = ((System.Windows.Controls.Primitives.ToggleButton)sender).IsChecked == true;
+        ShowGuide(open);
+        if (App.Settings.ResultGuideOpen == open) return;
+        App.Settings.ResultGuideOpen = open;
+        try { App.Settings.Save(); } catch { /* 못 써도 이번 창은 바뀐다 — 다음 설정 저장 때 같이 남는다 */ }
+    }
+
+    private void ShowGuide(bool open)
+    {
+        _syncingGuide = true;
+        try
+        {
+            TglGuideMask.IsChecked = open; TglGuideLetter.IsChecked = open;
+            PnlGuideMask.Visibility = PnlGuideLetter.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+        }
+        finally { _syncingGuide = false; }
+    }
+
     public ResultWindow(IReadOnlyList<PageRef> pages, int startIndex,
         Func<string, bool>? confirmPage = null, Func<string, bool>? isWaiting = null, bool startOnMask = false, Func<string, bool>? isDone = null,
         Func<int>? confirmAll = null, Func<bool>? isJobRunning = null, bool canRerenderEdited = false)
@@ -103,6 +129,7 @@ public partial class ResultWindow
         foreach (var f in System.Drawing.FontFamily.Families.Select(f => f.Name).OrderBy(n => n))
             CmbLFont.Items.Add(f);
         var s = App.Settings;
+        ShowGuide(s.ResultGuideOpen);   // 안내 카드(단축키 표)의 펼침은 설정에 남는다 — 두 탭이 같이
         // '모델' 칸은 ⚙ 설정의 검열 제거 방식으로 시작한다(2026-11-13 사용자 결정). 전에는 늘 '기본'이라, 재생성으로 돌린 작업의 장을 낱장 [지우기]로 고치면
         // 직접 바꾸지 않는 한 기본 모델로 지워졌다([고친 장 모두 다시 렌더링]은 설정의 방식으로 돌아 둘이 어긋났다). 설정이 재생성·커스텀인데 ComfyUI가 없으면 바로 쓸 수 있는 '기본'으로 둔다
         var startMode = s.DecensorMode is "ComfyRegen" or "ComfyCustom" && !s.ComfyAvailable ? "Basic" : s.DecensorMode;

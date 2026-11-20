@@ -170,7 +170,7 @@ public class AppSettingsTests
     [InlineData(nameof(AppSettings.RegenDenoise), "0", 0.05)]
     [InlineData(nameof(AppSettings.RegenDenoise), "1.5", 1.0)]
     [InlineData(nameof(AppSettings.RegenCnStrength), "9", 2.0)]
-    [InlineData(nameof(AppSettings.RegenInpaintCnStrength), "-1", 0.0)]
+    [InlineData(nameof(AppSettings.RegenInpaintCnStrength), "-1", 0.0)]   // 클램프 하한(기본값 0.25와 다르다)
     [InlineData(nameof(AppSettings.RegenCnEnd), "1.2", 1.0)]
     [InlineData(nameof(AppSettings.RegenPreprocResolution), "100", 256.0)]
     [InlineData(nameof(AppSettings.RegenPreprocResolution), "99999", 4096.0)]
@@ -208,6 +208,13 @@ public class AppSettingsTests
         Assert.Equal(expected, Convert.ToDouble(Value(s, property)));
     }
 
+
+    [Fact]
+    public void Defaults_ResultGuideOpen_IsFalse_SoTheGuideCardStartsFolded()
+    {
+        // 결과 창의 안내 카드는 접힌 채로 시작한다(2026-11-20 사용자 "접었다 펼 수 있는 기능으로") — 펼치면 설정에 남아 다음 창도 펼쳐진다
+        Assert.False(new AppSettings().ResultGuideOpen);
+    }
 
     [Fact]
     public void Defaults_RegenRegion_WholeRegionOnWithEvaluatedValues()

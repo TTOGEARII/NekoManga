@@ -12,11 +12,69 @@
          Grid 별 행 대신 DockPanel을 쓴다 — 창이 작아져도 아래 버튼 바가 먼저 자리를 잡아 잘려 사라지지 않는다 (Grid * 행에서는 실제로 잘렸다).
          컨트롤의 x:Name과 이벤트는 그대로다 — 코드 비하인드는 이름으로만 찾는다. -->
     <ui:FluentWindow.Resources>
-        <!-- 패널의 묶음 제목 -->
+        <!-- 패널의 묶음 = 카드(2026-11-20 사용자 "영역을 좀더 가독성 있게 구분"): 먹선 테두리 + 먹색 제목 띠(재생성 칸의 꼬리표와 같은 결). 제목만 있던 때는 묶음의 경계가 안 보였다.
+             카드 = SideCard > StackPanel > (SideCardHead > SideTitle) + SideBody -->
+        <Style x:Key="SideCard" TargetType="Border">
+            <Setter Property="BorderBrush" Value="{DynamicResource NekoStroke}"/>
+            <Setter Property="BorderThickness" Value="1.5"/>
+            <Setter Property="Background" Value="{DynamicResource NekoCard}"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
+        </Style>
+        <Style x:Key="SideCardHead" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource NekoStroke}"/>
+            <Setter Property="Padding" Value="10,3"/>
+        </Style>
         <Style x:Key="SideTitle" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{DynamicResource NekoPink}"/>
+            <Setter Property="Foreground" Value="{DynamicResource NekoBg}"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="12.5"/>
+        </Style>
+        <Style x:Key="SideBody" TargetType="StackPanel">
+            <Setter Property="Margin" Value="10,8,10,4"/>
+        </Style>
+        <!-- 접이식 카드의 제목 띠(안내 카드, 2026-11-20): 띠 전체가 단추, 오른쪽 끝에 ▸/▾. Focusable=False — Space는 손 도구다(단추에 포커스가 가면 Space가 단추를 누른다) -->
+        <Style x:Key="SideCardToggle" TargetType="ToggleButton">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border Background="{DynamicResource NekoStroke}" Padding="10,3">
+                            <DockPanel>
+                                <TextBlock x:Name="Arrow" DockPanel.Dock="Right" Text="▸" Foreground="{DynamicResource NekoBg}" FontWeight="Bold" FontSize="12.5" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                <ContentPresenter VerticalAlignment="Center"/>
+                            </DockPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Arrow" Property="Text" Value="▾"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- 단축키 표(사용자 "B : 브러시, E : 지우개 꼴로"): 왼쪽 키캡(바닥색 + 옅은 테두리 — 어두운 테마에서 바닥색만으로는 안 보인다) + 오른쪽 설명 -->
+        <Style x:Key="KeyCap" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource NekoCanvas}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource NekoHint}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="3"/>
+            <Setter Property="Padding" Value="7,0"/>
+            <Setter Property="Margin" Value="0,2,10,2"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="KeyCapText" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource NekoText}"/>
+            <Setter Property="FontSize" Value="11.5"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Margin" Value="0,12,0,4"/>
+            <Setter Property="TextAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="KeyDesc" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource NekoText}"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
         </Style>
         <!-- 칸 이름 (왼쪽 최소 폭 — 고정 폭이면 영어 "Outline color"가 잘린다, 검수 2026-11-19) -->
         <Style x:Key="SideLabel" TargetType="TextBlock">
@@ -89,85 +147,153 @@
                         SelectionChanged="TabMode_Changed">
                 <!-- 검열 지우기 = 마스크 편집 한 방식 (2026-11-11, 사용자 요청으로 '마스크 수정' 탭과 합침).
                      마스크 보기: 검열 제거 전 원고(.pre.png) 위 빨간 마스크를 칠한다(저장 마스크가 없는 장은 결과물 위 빈 마스크).
-                     [지우기]는 이 장만 검열 제거·식자를 다시 한다 — 채색은 돌리지 않는다(사용자 결정). 끝나면 결과 보기로 바뀐다. -->
+                     [지우기]는 이 장만 검열 제거·식자를 다시 한다 — 채색은 돌리지 않는다(사용자 결정). 끝나면 결과 보기로 바뀐다.
+                     묶음마다 카드(먹선 테두리 + 먹색 제목 띠, SideCard/SideCardHead/SideBody)로 나눈다 — 2026-11-20 사용자 "영역을 좀더 가독성 있게 구분". 제목만 있던 때는 묶음의 경계가 안 보였다. -->
                 <TabItem x:Name="TabDecensor" Header="🙈 검열 지우기">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <StackPanel Margin="4,6,8,4">
-                            <TextBlock x:Name="TxtDecensorHint" Style="{StaticResource HintText}" TextWrapping="Wrap"
-                                       Text="빨간 곳이 지워진다냥.&#10;· B 칠하기 · E 지우개 · L 다각형 · [ ] 브러시 · Ctrl+Z 되돌리기"/>
+                            <!-- 안내: 접이식(2026-11-20 사용자 "접었다 펼 수 있는 기능으로") — 제목 띠가 단추(SideCardToggle), 펼침은 설정 ResultGuideOpen에 남고 두 탭이 같이 움직인다(코드 ShowGuide).
+                                 첫 줄은 늘 보이고 단축키 표(키캡 | 설명 — 사용자 "B : 브러시, E : 지우개 꼴로")만 접힌다. 다시 렌더링 안내는 코드가 TxtDecensorHint에 줄을 덧붙인다 -->
+                            <Border Style="{StaticResource SideCard}">
+                                <StackPanel>
+                                    <ToggleButton x:Name="TglGuideMask" Style="{StaticResource SideCardToggle}" Checked="Guide_Toggled" Unchecked="Guide_Toggled">
+                                        <TextBlock Text="안내" Style="{StaticResource SideTitle}"/>
+                                    </ToggleButton>
+                                    <StackPanel Style="{StaticResource SideBody}">
+                                        <TextBlock x:Name="TxtDecensorHint" Style="{StaticResource HintText}" TextWrapping="Wrap"
+                                                   Text="빨간 곳이 지워진다냥."/>
+                                        <Grid x:Name="PnlGuideMask" Visibility="Collapsed" Margin="0,6,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
+                                            <Border Grid.Row="0" Style="{StaticResource KeyCap}"><TextBlock Text="B" Style="{StaticResource KeyCapText}"/></Border>
+                                            <TextBlock Grid.Row="0" Grid.Column="1" Text="브러시로 칠하기" Style="{StaticResource KeyDesc}"/>
+                                            <Border Grid.Row="1" Style="{StaticResource KeyCap}"><TextBlock Text="E" Style="{StaticResource KeyCapText}"/></Border>
+                                            <TextBlock Grid.Row="1" Grid.Column="1" Text="지우개" Style="{StaticResource KeyDesc}"/>
+                                            <Border Grid.Row="2" Style="{StaticResource KeyCap}"><TextBlock Text="L" Style="{StaticResource KeyCapText}"/></Border>
+                                            <TextBlock Grid.Row="2" Grid.Column="1" Text="다각형 (Enter 닫기 · Esc 취소)" Style="{StaticResource KeyDesc}"/>
+                                            <Border Grid.Row="3" Style="{StaticResource KeyCap}"><TextBlock Text="[ ]" Style="{StaticResource KeyCapText}"/></Border>
+                                            <TextBlock Grid.Row="3" Grid.Column="1" Text="브러시 크기" Style="{StaticResource KeyDesc}"/>
+                                            <Border Grid.Row="4" Style="{StaticResource KeyCap}"><TextBlock Text="Ctrl+Z" Style="{StaticResource KeyCapText}"/></Border>
+                                            <TextBlock Grid.Row="4" Grid.Column="1" Text="되돌리기" Style="{StaticResource KeyDesc}"/>
+                                            <Border Grid.Row="5" Style="{StaticResource KeyCap}"><TextBlock Text="Ctrl+D" Style="{StaticResource KeyCapText}"/></Border>
+                                            <TextBlock Grid.Row="5" Grid.Column="1" Text="마스크 전부 지우기" Style="{StaticResource KeyDesc}"/>
+                                            <Border Grid.Row="6" Style="{StaticResource KeyCap}"><TextBlock Text="Space" Style="{StaticResource KeyCapText}"/></Border>
+                                            <TextBlock Grid.Row="6" Grid.Column="1" Text="누른 채 끌면 화면 이동" Style="{StaticResource KeyDesc}"/>
+                                        </Grid>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
 
-                            <TextBlock Text="보기" Style="{StaticResource SideTitle}"/>
-                            <StackPanel Orientation="Horizontal">
-                                <RadioButton x:Name="RbViewMask" Content="🎭 마스크 보기" IsChecked="True" GroupName="View" Style="{StaticResource SideRadio}" Checked="View_Changed"
-                                             ToolTip="검열 제거 전 원고에 지울 곳(빨강)을 칠한다냥"/>
-                                <RadioButton x:Name="RbViewResult" Content="👁 결과 보기" GroupName="View" Style="{StaticResource SideRadio}" Checked="View_Changed"
-                                             ToolTip="지금 결과물을 본다냥 (칠하기는 마스크 보기에서)"/>
-                            </StackPanel>
+                            <Border Style="{StaticResource SideCard}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SideCardHead}"><TextBlock Text="보기" Style="{StaticResource SideTitle}"/></Border>
+                                    <StackPanel Style="{StaticResource SideBody}" Orientation="Horizontal" Margin="10,8,10,8">
+                                        <RadioButton x:Name="RbViewMask" Content="🎭 마스크 보기" IsChecked="True" GroupName="View" Style="{StaticResource SideRadio}" Checked="View_Changed"
+                                                     ToolTip="검열 제거 전 원고에 지울 곳(빨강)을 칠한다냥"/>
+                                        <RadioButton x:Name="RbViewResult" Content="👁 결과 보기" GroupName="View" Style="{StaticResource SideRadio}" Checked="View_Changed"
+                                                     ToolTip="지금 결과물을 본다냥 (칠하기는 마스크 보기에서)"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
 
-                            <TextBlock Text="도구" Style="{StaticResource SideTitle}"/>
-                            <StackPanel Orientation="Horizontal">
-                                <RadioButton x:Name="RbMAdd" Content="🖌 칠하기" IsChecked="True" GroupName="MaskTool" ToolTip="B" Style="{StaticResource SideRadio}" Checked="MaskTool_Changed"/>
-                                <RadioButton x:Name="RbMErase" Content="🧽 지우개" GroupName="MaskTool" ToolTip="E" Style="{StaticResource SideRadio}" Checked="MaskTool_Changed"/>
-                                <RadioButton x:Name="RbMPoly" Content="⬠ 다각형" GroupName="MaskTool" ToolTip="L — 꼭짓점을 찍고 더블클릭/Enter로 닫는다냥" Style="{StaticResource SideRadio}" Checked="MaskTool_Changed"/>
-                            </StackPanel>
-                            <DockPanel Style="{StaticResource SideRow}" Margin="0,6,0,0">
-                                <TextBlock Text="브러시" Style="{StaticResource SideLabel}"/>
-                                <TextBlock x:Name="TxtMBrush" DockPanel.Dock="Right" Text="24px" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="8,0,0,0" MinWidth="44"/>
-                                <Slider x:Name="SldMBrush" Minimum="4" Maximum="120" Value="24" VerticalAlignment="Center" ToolTip="브러시 반지름(원본 px) — [ ] 키로도 바꾼다냥"/>
-                            </DockPanel>
-                            <DockPanel Style="{StaticResource SideRow}">
-                                <TextBlock Text="다각형" Style="{StaticResource SideLabel}" ToolTip="다각형을 닫을 때 안쪽의 그 톤만 마스크에 더한다냥 (브러시는 늘 전체)"/>
-                                <WrapPanel>
-                                    <RadioButton x:Name="RbDarkOnly" Content="검은 부분만" IsChecked="True" GroupName="Tone" Style="{StaticResource SideRadio}"/>
-                                    <RadioButton x:Name="RbWhiteOnly" Content="흰 부분만" GroupName="Tone" Style="{StaticResource SideRadio}"/>
-                                    <RadioButton x:Name="RbWholeRect" Content="도형 전체" GroupName="Tone" Style="{StaticResource SideRadio}"/>
-                                </WrapPanel>
-                            </DockPanel>
+                            <Border Style="{StaticResource SideCard}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SideCardHead}"><TextBlock Text="도구" Style="{StaticResource SideTitle}"/></Border>
+                                    <StackPanel Style="{StaticResource SideBody}">
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                            <RadioButton x:Name="RbMAdd" Content="🖌 칠하기" IsChecked="True" GroupName="MaskTool" ToolTip="B" Style="{StaticResource SideRadio}" Checked="MaskTool_Changed"/>
+                                            <RadioButton x:Name="RbMErase" Content="🧽 지우개" GroupName="MaskTool" ToolTip="E" Style="{StaticResource SideRadio}" Checked="MaskTool_Changed"/>
+                                            <RadioButton x:Name="RbMPoly" Content="⬠ 다각형" GroupName="MaskTool" ToolTip="L — 꼭짓점을 찍고 더블클릭/Enter로 닫는다냥" Style="{StaticResource SideRadio}" Checked="MaskTool_Changed"/>
+                                        </StackPanel>
+                                        <DockPanel Style="{StaticResource SideRow}">
+                                            <TextBlock Text="브러시" Style="{StaticResource SideLabel}"/>
+                                            <TextBlock x:Name="TxtMBrush" DockPanel.Dock="Right" Text="24px" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="8,0,0,0" MinWidth="44"/>
+                                            <Slider x:Name="SldMBrush" Minimum="4" Maximum="120" Value="24" VerticalAlignment="Center" ToolTip="브러시 반지름(원본 px) — [ ] 키로도 바꾼다냥"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SideRow}">
+                                            <TextBlock Text="다각형" Style="{StaticResource SideLabel}" ToolTip="다각형을 닫을 때 안쪽의 그 톤만 마스크에 더한다냥 (브러시는 늘 전체)"/>
+                                            <WrapPanel>
+                                                <RadioButton x:Name="RbDarkOnly" Content="검은 부분만" IsChecked="True" GroupName="Tone" Style="{StaticResource SideRadio}"/>
+                                                <RadioButton x:Name="RbWhiteOnly" Content="흰 부분만" GroupName="Tone" Style="{StaticResource SideRadio}"/>
+                                                <RadioButton x:Name="RbWholeRect" Content="도형 전체" GroupName="Tone" Style="{StaticResource SideRadio}"/>
+                                            </WrapPanel>
+                                        </DockPanel>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
 
-                            <TextBlock Text="지우기" Style="{StaticResource SideTitle}"/>
-                            <DockPanel Style="{StaticResource SideRow}">
-                                <TextBlock Text="모델" Style="{StaticResource SideLabel}"/>
-                                <ComboBox x:Name="CmbEngine" VerticalAlignment="Center" SelectionChanged="CmbEngine_Changed">
-                                    <ComboBoxItem x:Name="ItemEngineBasic" Tag="Basic" Content="기본 — Aletheia 복원 (빠름)" IsSelected="True" ToolTip="내장 복원 모델 — 주변 그림에 맞춰 채운다냥 (항상 같은 결과)"/>
-                                    <ComboBoxItem Tag="ComfyRegen" Content="재생성 (SDXL·GPU)" ToolTip="내장 재생성 레시피로 다시 그린다냥"/>
-                                    <ComboBoxItem Tag="ComfyCustom" Content="커스텀 ComfyUI" ToolTip="설정 → 검열 제거의 커스텀 워크플로 파일"/>
-                                </ComboBox>
-                            </DockPanel>
-                            <DockPanel Style="{StaticResource SideRow}">
-                                <TextBlock Text="여유(px)" Style="{StaticResource SideLabel}"/>
-                                <TextBox x:Name="TxtGrow" Text="0" Width="64" HorizontalAlignment="Left" VerticalAlignment="Center"
-                                         ToolTip="지울 때 마스크를 이만큼 넓힌다냥 — 0이면 저장 마스크 그대로"/>
-                            </DockPanel>
+                            <Border Style="{StaticResource SideCard}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SideCardHead}"><TextBlock Text="지우기" Style="{StaticResource SideTitle}"/></Border>
+                                    <StackPanel Style="{StaticResource SideBody}">
+                                        <DockPanel Style="{StaticResource SideRow}">
+                                            <TextBlock Text="모델" Style="{StaticResource SideLabel}"/>
+                                            <ComboBox x:Name="CmbEngine" VerticalAlignment="Center" SelectionChanged="CmbEngine_Changed">
+                                                <ComboBoxItem x:Name="ItemEngineBasic" Tag="Basic" Content="기본 — Aletheia 복원 (빠름)" IsSelected="True" ToolTip="내장 복원 모델 — 주변 그림에 맞춰 채운다냥 (항상 같은 결과)"/>
+                                                <ComboBoxItem Tag="ComfyRegen" Content="재생성 (SDXL·GPU)" ToolTip="내장 재생성 레시피로 다시 그린다냥"/>
+                                                <ComboBoxItem Tag="ComfyCustom" Content="커스텀 ComfyUI" ToolTip="설정 → 검열 제거의 커스텀 워크플로 파일"/>
+                                            </ComboBox>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SideRow}">
+                                            <TextBlock Text="여유(px)" Style="{StaticResource SideLabel}"/>
+                                            <TextBox x:Name="TxtGrow" Text="0" Width="64" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                                     ToolTip="지울 때 마스크를 이만큼 넓힌다냥 — 0이면 저장 마스크 그대로"/>
+                                        </DockPanel>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
 
-                            <TextBlock Text="마스크" Style="{StaticResource SideTitle}"/>
-                            <WrapPanel>
-                                <ui:Button Content="자동 감지로" Click="BtnMReset_Click" Padding="10,4" Margin="0,0,8,6" ToolTip="이 장의 마스크를 자동 감지 결과로 되돌린다냥"/>
-                                <ui:Button Content="전부 지우기" Click="BtnMClear_Click" Padding="10,4" Margin="0,0,8,6" ToolTip="Ctrl+D"/>
-                                <CheckBox x:Name="ChkMSkip" Content="이 페이지는 검열 없음" Style="{StaticResource SideCheck}" Margin="0,0,0,6"
-                                          Checked="ChkMSkip_Changed" Unchecked="ChkMSkip_Changed"
-                                          ToolTip="마스크가 있어도 검열 제거를 건너뛴다냥"/>
-                            </WrapPanel>
-                            <TextBlock x:Name="TxtMaskInfo" Foreground="{DynamicResource NekoPink}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                            <Border Style="{StaticResource SideCard}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SideCardHead}"><TextBlock Text="마스크" Style="{StaticResource SideTitle}"/></Border>
+                                    <StackPanel Style="{StaticResource SideBody}">
+                                        <WrapPanel>
+                                            <ui:Button Content="자동 감지로" Click="BtnMReset_Click" Padding="10,4" Margin="0,0,8,6" ToolTip="이 장의 마스크를 자동 감지 결과로 되돌린다냥"/>
+                                            <ui:Button Content="전부 지우기" Click="BtnMClear_Click" Padding="10,4" Margin="0,0,8,6" ToolTip="Ctrl+D"/>
+                                            <CheckBox x:Name="ChkMSkip" Content="이 페이지는 검열 없음" Style="{StaticResource SideCheck}" Margin="0,0,0,6"
+                                                      Checked="ChkMSkip_Changed" Unchecked="ChkMSkip_Changed"
+                                                      ToolTip="마스크가 있어도 검열 제거를 건너뛴다냥"/>
+                                        </WrapPanel>
+                                        <TextBlock x:Name="TxtMaskInfo" Foreground="{DynamicResource NekoPink}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
 
                             <!-- 조각의 성별(2026-11-15, 모델 = 재생성일 때만): 그림 위의 남/여 표시를 한꺼번에 바꾼다. 표시 하나만 바꾸려면 그 표시를 누른다 -->
-                            <StackPanel x:Name="PnlSexAll" Visibility="Collapsed">
-                                <TextBlock Text="부위 성별" Style="{StaticResource SideTitle}"
-                                           ToolTip="조각마다 남·여 태그를 가려 넣는다냥. 그림 위의 표시를 누르면 바뀐다냥(남성 → 여성 → 남녀 → 자동). 고른 것은 마스크와 함께 저장된다냥. ?는 모르는 조각이니 골라 줘냥"/>
-                                <WrapPanel>
-                                    <ui:Button Content="모두 남성" Tag="Male" Click="BtnSexAll_Click" Padding="8,4" Margin="0,0,6,6" ToolTip="이 장의 모든 조각을 남성으로 고른다냥"/>
-                                    <ui:Button Content="모두 여성" Tag="Female" Click="BtnSexAll_Click" Padding="8,4" Margin="0,0,6,6" ToolTip="이 장의 모든 조각을 여성으로 고른다냥"/>
-                                    <ui:Button Content="자동으로" Tag="Auto" Click="BtnSexAll_Click" Padding="8,4" Margin="0,0,6,6" ToolTip="직접 고른 것을 전부 지우고 자동 판단으로 되돌린다냥"/>
-                                </WrapPanel>
-                            </StackPanel>
+                            <Border x:Name="PnlSexAll" Style="{StaticResource SideCard}" Visibility="Collapsed">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SideCardHead}">
+                                        <TextBlock Text="부위 성별" Style="{StaticResource SideTitle}"
+                                                   ToolTip="조각마다 남·여 태그를 가려 넣는다냥. 그림 위의 표시를 누르면 바뀐다냥(남성 → 여성 → 남녀 → 자동). 고른 것은 마스크와 함께 저장된다냥. ?는 모르는 조각이니 골라 줘냥"/>
+                                    </Border>
+                                    <StackPanel Style="{StaticResource SideBody}">
+                                        <WrapPanel>
+                                            <ui:Button Content="모두 남성" Tag="Male" Click="BtnSexAll_Click" Padding="8,4" Margin="0,0,6,6" ToolTip="이 장의 모든 조각을 남성으로 고른다냥"/>
+                                            <ui:Button Content="모두 여성" Tag="Female" Click="BtnSexAll_Click" Padding="8,4" Margin="0,0,6,6" ToolTip="이 장의 모든 조각을 여성으로 고른다냥"/>
+                                            <ui:Button Content="자동으로" Tag="Auto" Click="BtnSexAll_Click" Padding="8,4" Margin="0,0,6,6" ToolTip="직접 고른 것을 전부 지우고 자동 판단으로 되돌린다냥"/>
+                                        </WrapPanel>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
 
                             <!-- 재생성(SDXL)일 때만: 이 장에만 쓰는 프롬프트·수치 (설정에는 저장 안 함, 장마다 따로 기억). 접이식 — 기본은 접힘, 머리글에 '이 장 값 사용 중' 표시 -->
-                            <Border x:Name="PnlRegen" Visibility="Collapsed" Margin="0,12,0,0" BorderThickness="1"
-                                    BorderBrush="{DynamicResource NekoStroke}" Background="{DynamicResource NekoCard}">
+                            <Border x:Name="PnlRegen" Style="{StaticResource SideCard}" Visibility="Collapsed">
                                 <Expander x:Name="ExpRegen" IsExpanded="False" Padding="8,4,8,8">
                                     <Expander.Header>
                                         <StackPanel>
-                                            <Border Style="{StaticResource MangaTag}" HorizontalAlignment="Left"><TextBlock Style="{StaticResource MangaTagText}" Text="재생성 설정 — 이 페이지만"/></Border>
-                                            <TextBlock x:Name="TxtRegenHdr" Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,4,0,0" Text="⚙ 설정값 그대로"/>
+                                            <Border Style="{StaticResource MangaTag}" HorizontalAlignment="Left" Margin="0,4,0,4"><TextBlock Style="{StaticResource MangaTagText}" Text="재생성 설정 — 이 페이지만"/></Border>
+                                            <TextBlock x:Name="TxtRegenHdr" Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,0,0,0" Text="⚙ 설정값 그대로"/>
                                         </StackPanel>
                                     </Expander.Header>
                                     <StackPanel Margin="0,4,0,0">
@@ -208,156 +334,222 @@
                 <TabItem x:Name="TabLetter" Header="💬 식자 다시 하기">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <StackPanel Margin="4,6,8,4">
-                            <TextBlock x:Name="TxtLetterHint" Style="{StaticResource HintText}" TextWrapping="Wrap"
-                                       Text="풍선을 클릭해 고르고 끌어 옮긴다냥.&#10;· 두 번 클릭하면 글을 고친다냥.&#10;· 다 고치면 [다시 식자]를 누르라냥."/>
+                            <!-- 안내: 접이식(검열 지우기 탭과 같은 상태) — 한 줄은 늘 보이고 조작 표(마우스·키 | 설명)만 접힌다 -->
+                            <Border Style="{StaticResource SideCard}">
+                                <StackPanel>
+                                    <ToggleButton x:Name="TglGuideLetter" Style="{StaticResource SideCardToggle}" Checked="Guide_Toggled" Unchecked="Guide_Toggled">
+                                        <TextBlock Text="안내" Style="{StaticResource SideTitle}"/>
+                                    </ToggleButton>
+                                    <StackPanel Style="{StaticResource SideBody}">
+                                        <TextBlock x:Name="TxtLetterHint" Style="{StaticResource HintText}" TextWrapping="Wrap"
+                                                   Text="풍선을 골라 고치고, 다 고치면 [다시 식자]를 누르라냥."/>
+                                        <Grid x:Name="PnlGuideLetter" Visibility="Collapsed" Margin="0,6,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
+                                            <Border Grid.Row="0" Style="{StaticResource KeyCap}"><TextBlock Text="클릭" Style="{StaticResource KeyCapText}"/></Border>
+                                            <TextBlock Grid.Row="0" Grid.Column="1" Text="풍선 고르기" Style="{StaticResource KeyDesc}"/>
+                                            <Border Grid.Row="1" Style="{StaticResource KeyCap}"><TextBlock Text="끌기" Style="{StaticResource KeyCapText}"/></Border>
+                                            <TextBlock Grid.Row="1" Grid.Column="1" Text="옮기기 (손잡이는 크기·돌리기)" Style="{StaticResource KeyDesc}"/>
+                                            <Border Grid.Row="2" Style="{StaticResource KeyCap}"><TextBlock Text="두 번 클릭" Style="{StaticResource KeyCapText}"/></Border>
+                                            <TextBlock Grid.Row="2" Grid.Column="1" Text="글 고치기 (Ctrl+Enter 끝 · Esc 취소)" Style="{StaticResource KeyDesc}"/>
+                                            <Border Grid.Row="3" Style="{StaticResource KeyCap}"><TextBlock Text="Ctrl+Z" Style="{StaticResource KeyCapText}"/></Border>
+                                            <TextBlock Grid.Row="3" Grid.Column="1" Text="되돌리기" Style="{StaticResource KeyDesc}"/>
+                                            <Border Grid.Row="4" Style="{StaticResource KeyCap}"><TextBlock Text="Ctrl+Y" Style="{StaticResource KeyCapText}"/></Border>
+                                            <TextBlock Grid.Row="4" Grid.Column="1" Text="다시 실행" Style="{StaticResource KeyDesc}"/>
+                                            <Border Grid.Row="5" Style="{StaticResource KeyCap}"><TextBlock Text="Delete" Style="{StaticResource KeyCapText}"/></Border>
+                                            <TextBlock Grid.Row="5" Grid.Column="1" Text="고른 풍선 숨기기" Style="{StaticResource KeyDesc}"/>
+                                        </Grid>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
 
                             <!-- 선택한 풍선의 글자 속성 (포토샵의 문자 패널처럼: 풍선을 고르고 값을 바꾸면 그 풍선에만, 그림에 바로 보인다). 크기·외곽선의 px는 결과 그림의 픽셀이다. -->
-                            <TextBlock Text="선택한 풍선" Style="{StaticResource SideTitle}"/>
-                            <ComboBox x:Name="CmbBlocks" SelectionChanged="CmbBlocks_Changed" Margin="0,0,0,6"/>
-                            <!-- 여러 줄: Enter로 줄을 나눈다(풍선을 두 번 클릭해 그 자리에서 고치는 것과 같은 글) -->
-                            <TextBox x:Name="TxtBlockText" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="56" MaxHeight="120" VerticalScrollBarVisibility="Auto"
-                                     TextChanged="TxtBlockText_Changed" Margin="0,0,0,6"/>
-                            <WrapPanel>
-                                <ui:Button x:Name="BtnBlockAdd" Content="＋ 새 글 넣기" Click="BtnBlockAdd_Click" Padding="10,4" Margin="0,0,6,6"
-                                           ToolTip="누른 뒤 글을 넣을 곳을 클릭하라냥 (Esc로 취소)"/>
-                                <ui:Button x:Name="BtnBlockHide" Content="이 블록 숨기기" Click="BtnBlockHide_Click" Padding="10,4" Margin="0,0,6,6"/>
-                                <ui:Button x:Name="BtnBlockReset" Content="속성 초기화" Click="BtnBlockReset_Click" Padding="10,4" Margin="0,0,6,6"
-                                           ToolTip="이 풍선의 속성을 자동·페이지 설정으로 되돌린다냥 (글과 자리는 그대로)"/>
-                            </WrapPanel>
+                            <Border Style="{StaticResource SideCard}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SideCardHead}"><TextBlock Text="선택한 풍선" Style="{StaticResource SideTitle}"/></Border>
+                                    <StackPanel Style="{StaticResource SideBody}">
+                                        <ComboBox x:Name="CmbBlocks" SelectionChanged="CmbBlocks_Changed" Margin="0,0,0,6"/>
+                                        <!-- 여러 줄: Enter로 줄을 나눈다(풍선을 두 번 클릭해 그 자리에서 고치는 것과 같은 글) -->
+                                        <TextBox x:Name="TxtBlockText" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="56" MaxHeight="120" VerticalScrollBarVisibility="Auto"
+                                                 TextChanged="TxtBlockText_Changed" Margin="0,0,0,6"/>
+                                        <WrapPanel>
+                                            <ui:Button x:Name="BtnBlockAdd" Content="＋ 새 글 넣기" Click="BtnBlockAdd_Click" Padding="10,4" Margin="0,0,6,6"
+                                                       ToolTip="누른 뒤 글을 넣을 곳을 클릭하라냥 (Esc로 취소)"/>
+                                            <ui:Button x:Name="BtnBlockHide" Content="이 블록 숨기기" Click="BtnBlockHide_Click" Padding="10,4" Margin="0,0,6,6"/>
+                                            <ui:Button x:Name="BtnBlockReset" Content="속성 초기화" Click="BtnBlockReset_Click" Padding="10,4" Margin="0,0,6,6"
+                                                       ToolTip="이 풍선의 속성을 자동·페이지 설정으로 되돌린다냥 (글과 자리는 그대로)"/>
+                                        </WrapPanel>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
 
-                            <TextBlock Text="글자" Style="{StaticResource SideTitle}"/>
-                            <DockPanel Style="{StaticResource SideRow}">
-                                <TextBlock Text="글꼴" Style="{StaticResource SideLabel}"/>
-                                <ComboBox x:Name="CmbBFont" VerticalAlignment="Center" SelectionChanged="BlockStyle_Changed"/>
-                            </DockPanel>
-                            <DockPanel Style="{StaticResource SideRow}">
-                                <TextBlock Text="크기" Style="{StaticResource SideLabel}"/>
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBox x:Name="TxtBSize" Width="64" VerticalAlignment="Center" Tag="1"
-                                             TextChanged="BlockStyle_Changed" PreviewKeyDown="NumBox_PreviewKeyDown" PreviewMouseWheel="NumBox_MouseWheel"
-                                             ToolTip="글자 크기(px)다냥. ↑↓ 키나 휠로 1씩(Shift는 10씩)"/>
-                                    <TextBlock Text="px" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="4,0,0,0"/>
-                                    <CheckBox x:Name="ChkBSizeAuto" Content="자동" Style="{StaticResource SideCheck}" Margin="12,0,0,0"
-                                              Checked="BlockStyle_Changed" Unchecked="BlockStyle_Changed"
-                                              ToolTip="켜면 풍선에 맞춰 크기를 정한다냥. 숫자를 적으면 꺼진다냥"/>
+                            <Border Style="{StaticResource SideCard}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SideCardHead}"><TextBlock Text="글자" Style="{StaticResource SideTitle}"/></Border>
+                                    <StackPanel Style="{StaticResource SideBody}">
+                                        <DockPanel Style="{StaticResource SideRow}">
+                                            <TextBlock Text="글꼴" Style="{StaticResource SideLabel}"/>
+                                            <ComboBox x:Name="CmbBFont" VerticalAlignment="Center" SelectionChanged="BlockStyle_Changed"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SideRow}">
+                                            <TextBlock Text="크기" Style="{StaticResource SideLabel}"/>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBox x:Name="TxtBSize" Width="64" VerticalAlignment="Center" Tag="1"
+                                                         TextChanged="BlockStyle_Changed" PreviewKeyDown="NumBox_PreviewKeyDown" PreviewMouseWheel="NumBox_MouseWheel"
+                                                         ToolTip="글자 크기(px)다냥. ↑↓ 키나 휠로 1씩(Shift는 10씩)"/>
+                                                <TextBlock Text="px" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                                                <CheckBox x:Name="ChkBSizeAuto" Content="자동" Style="{StaticResource SideCheck}" Margin="12,0,0,0"
+                                                          Checked="BlockStyle_Changed" Unchecked="BlockStyle_Changed"
+                                                          ToolTip="켜면 풍선에 맞춰 크기를 정한다냥. 숫자를 적으면 꺼진다냥"/>
+                                            </StackPanel>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SideRow}">
+                                            <TextBlock Text="굵기" Style="{StaticResource SideLabel}"/>
+                                            <StackPanel Orientation="Horizontal">
+                                                <ComboBox x:Name="CmbBBold" Width="132" VerticalAlignment="Center" SelectionChanged="BlockStyle_Changed">
+                                                    <ComboBoxItem Tag="-1" Content="페이지 설정" IsSelected="True"/>
+                                                    <ComboBoxItem Tag="1" Content="굵게"/>
+                                                    <ComboBoxItem Tag="0" Content="보통"/>
+                                                </ComboBox>
+                                                <CheckBox x:Name="ChkBItalic" Content="기울임" Style="{StaticResource SideCheck}" Margin="12,0,0,0"
+                                                          Checked="BlockStyle_Changed" Unchecked="BlockStyle_Changed"/>
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </StackPanel>
                                 </StackPanel>
-                            </DockPanel>
-                            <DockPanel Style="{StaticResource SideRow}">
-                                <TextBlock Text="굵기" Style="{StaticResource SideLabel}"/>
-                                <StackPanel Orientation="Horizontal">
-                                    <ComboBox x:Name="CmbBBold" Width="124" VerticalAlignment="Center" SelectionChanged="BlockStyle_Changed">
-                                        <ComboBoxItem Tag="-1" Content="페이지 설정" IsSelected="True"/>
-                                        <ComboBoxItem Tag="1" Content="굵게"/>
-                                        <ComboBoxItem Tag="0" Content="보통"/>
-                                    </ComboBox>
-                                    <CheckBox x:Name="ChkBItalic" Content="기울임" Style="{StaticResource SideCheck}" Margin="12,0,0,0"
-                                              Checked="BlockStyle_Changed" Unchecked="BlockStyle_Changed"/>
-                                </StackPanel>
-                            </DockPanel>
+                            </Border>
 
-                            <TextBlock Text="배치" Style="{StaticResource SideTitle}"/>
-                            <DockPanel Style="{StaticResource SideRow}">
-                                <TextBlock Text="정렬" Style="{StaticResource SideLabel}"/>
-                                <ComboBox x:Name="CmbBAlign" Width="124" HorizontalAlignment="Left" VerticalAlignment="Center" SelectionChanged="BlockStyle_Changed">
-                                    <ComboBoxItem Tag="" Content="페이지 설정" IsSelected="True"/>
-                                    <ComboBoxItem Tag="Left" Content="왼쪽"/>
-                                    <ComboBoxItem Tag="Center" Content="가운데"/>
-                                    <ComboBoxItem Tag="Right" Content="오른쪽"/>
-                                </ComboBox>
-                            </DockPanel>
-                            <DockPanel Style="{StaticResource SideRow}">
-                                <TextBlock Text="줄간격" Style="{StaticResource SideLabel}"/>
-                                <!-- WrapPanel: 영어("Manual line break")는 한 줄에 안 들어가 체크박스가 잘렸다(캡처 확인 2026-11-19) — 좁으면 다음 줄로 -->
-                                <WrapPanel Orientation="Horizontal">
-                                    <TextBox x:Name="TxtBLineSp" Width="56" VerticalAlignment="Center" Tag="0.05"
-                                             TextChanged="BlockStyle_Changed" PreviewKeyDown="NumBox_PreviewKeyDown" PreviewMouseWheel="NumBox_MouseWheel"
-                                             ToolTip="줄 간격 배율(1 = 기본) — 비우면 페이지 설정이다냥"/>
-                                    <TextBlock Text="×" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="4,0,0,0"/>
-                                    <CheckBox x:Name="ChkBManualLines" Content="줄 직접 나누기" Style="{StaticResource SideCheck}" Margin="12,0,0,0" VerticalAlignment="Center"
-                                              Checked="ChkBManualLines_Changed" Unchecked="ChkBManualLines_Changed"
-                                              ToolTip="켜면 Enter로 나눈 줄 그대로 그린다냥. 끄면 자동으로 나눈다냥"/>
-                                </WrapPanel>
-                            </DockPanel>
-                            <DockPanel Style="{StaticResource SideRow}">
-                                <TextBlock Text="회전" Style="{StaticResource SideLabel}"/>
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBox x:Name="TxtBRot" Width="56" VerticalAlignment="Center" Tag="1"
-                                             TextChanged="BlockStyle_Changed" PreviewKeyDown="NumBox_PreviewKeyDown" PreviewMouseWheel="NumBox_MouseWheel"
-                                             ToolTip="돌리는 각도(-180~180°) — 위 동그란 손잡이를 끌어도 된다냥"/>
-                                    <TextBlock Text="°" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                            <Border Style="{StaticResource SideCard}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SideCardHead}"><TextBlock Text="배치" Style="{StaticResource SideTitle}"/></Border>
+                                    <StackPanel Style="{StaticResource SideBody}">
+                                        <DockPanel Style="{StaticResource SideRow}">
+                                            <TextBlock Text="정렬" Style="{StaticResource SideLabel}"/>
+                                            <ComboBox x:Name="CmbBAlign" Width="132" HorizontalAlignment="Left" VerticalAlignment="Center" SelectionChanged="BlockStyle_Changed">
+                                                <ComboBoxItem Tag="" Content="페이지 설정" IsSelected="True"/>
+                                                <ComboBoxItem Tag="Left" Content="왼쪽"/>
+                                                <ComboBoxItem Tag="Center" Content="가운데"/>
+                                                <ComboBoxItem Tag="Right" Content="오른쪽"/>
+                                            </ComboBox>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SideRow}">
+                                            <TextBlock Text="줄간격" Style="{StaticResource SideLabel}"/>
+                                            <!-- WrapPanel: 영어("Manual line break")는 한 줄에 안 들어가 체크박스가 잘렸다(캡처 확인 2026-11-19) — 좁으면 다음 줄로 -->
+                                            <WrapPanel Orientation="Horizontal">
+                                                <TextBox x:Name="TxtBLineSp" Width="56" VerticalAlignment="Center" Tag="0.05"
+                                                         TextChanged="BlockStyle_Changed" PreviewKeyDown="NumBox_PreviewKeyDown" PreviewMouseWheel="NumBox_MouseWheel"
+                                                         ToolTip="줄 간격 배율(1 = 기본) — 비우면 페이지 설정이다냥"/>
+                                                <TextBlock Text="×" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                                                <CheckBox x:Name="ChkBManualLines" Content="줄 직접 나누기" Style="{StaticResource SideCheck}" Margin="12,0,0,0" VerticalAlignment="Center"
+                                                          Checked="ChkBManualLines_Changed" Unchecked="ChkBManualLines_Changed"
+                                                          ToolTip="켜면 Enter로 나눈 줄 그대로 그린다냥. 끄면 자동으로 나눈다냥"/>
+                                            </WrapPanel>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SideRow}">
+                                            <TextBlock Text="회전" Style="{StaticResource SideLabel}"/>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBox x:Name="TxtBRot" Width="56" VerticalAlignment="Center" Tag="1"
+                                                         TextChanged="BlockStyle_Changed" PreviewKeyDown="NumBox_PreviewKeyDown" PreviewMouseWheel="NumBox_MouseWheel"
+                                                         ToolTip="돌리는 각도(-180~180°) — 위 동그란 손잡이를 끌어도 된다냥"/>
+                                                <TextBlock Text="°" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </StackPanel>
                                 </StackPanel>
-                            </DockPanel>
+                            </Border>
 
-                            <TextBlock Text="색 · 외곽선" Style="{StaticResource SideTitle}"/>
-                            <DockPanel Style="{StaticResource SideRow}">
-                                <TextBlock Text="글자 색" Style="{StaticResource SideLabel}"/>
-                                <StackPanel Orientation="Horizontal">
-                                    <Border x:Name="SwBColor" Width="22" Height="22" CornerRadius="3" BorderBrush="{DynamicResource NekoStroke}" BorderThickness="1"
-                                            Cursor="Hand" VerticalAlignment="Center" Margin="0,0,6,0" MouseLeftButtonUp="Swatch_Click"
-                                            Tag="{Binding ElementName=TxtBColor}" ToolTip="색 고르기"/>
-                                    <TextBox x:Name="TxtBColor" Width="92" VerticalAlignment="Center" TextChanged="BlockStyle_Changed"
-                                             ToolTip="#RRGGBB — 비우면 페이지 설정이다냥"/>
+                            <Border Style="{StaticResource SideCard}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SideCardHead}"><TextBlock Text="색 · 외곽선" Style="{StaticResource SideTitle}"/></Border>
+                                    <StackPanel Style="{StaticResource SideBody}">
+                                        <DockPanel Style="{StaticResource SideRow}">
+                                            <TextBlock Text="글자 색" Style="{StaticResource SideLabel}"/>
+                                            <StackPanel Orientation="Horizontal">
+                                                <Border x:Name="SwBColor" Width="22" Height="22" CornerRadius="3" BorderBrush="{DynamicResource NekoStroke}" BorderThickness="1"
+                                                        Cursor="Hand" VerticalAlignment="Center" Margin="0,0,6,0" MouseLeftButtonUp="Swatch_Click"
+                                                        Tag="{Binding ElementName=TxtBColor}" ToolTip="색 고르기"/>
+                                                <TextBox x:Name="TxtBColor" Width="92" VerticalAlignment="Center" TextChanged="BlockStyle_Changed"
+                                                         ToolTip="#RRGGBB — 비우면 페이지 설정이다냥"/>
+                                            </StackPanel>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SideRow}">
+                                            <TextBlock Text="외곽선" Style="{StaticResource SideLabel}"/>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBox x:Name="TxtBOut" Width="56" VerticalAlignment="Center" Tag="0.5"
+                                                         TextChanged="BlockStyle_Changed" PreviewKeyDown="NumBox_PreviewKeyDown" PreviewMouseWheel="NumBox_MouseWheel"
+                                                         ToolTip="외곽선 두께(px)다냥. 0이면 없음. ↑↓ 키나 휠로 0.5씩(Shift는 5씩)"/>
+                                                <TextBlock Text="px" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                                                <CheckBox x:Name="ChkBOutAuto" Content="자동" Style="{StaticResource SideCheck}" Margin="12,0,0,0"
+                                                          Checked="BlockStyle_Changed" Unchecked="BlockStyle_Changed"
+                                                          ToolTip="켜면 페이지 기본 외곽선을 따른다냥. 숫자를 적으면 꺼진다냥"/>
+                                            </StackPanel>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SideRow}">
+                                            <TextBlock Text="외곽선 색" Style="{StaticResource SideLabel}"/>
+                                            <StackPanel Orientation="Horizontal">
+                                                <Border x:Name="SwBOutColor" Width="22" Height="22" CornerRadius="3" BorderBrush="{DynamicResource NekoStroke}" BorderThickness="1"
+                                                        Cursor="Hand" VerticalAlignment="Center" Margin="0,0,6,0" MouseLeftButtonUp="Swatch_Click"
+                                                        Tag="{Binding ElementName=TxtBOutColor}" ToolTip="색 고르기"/>
+                                                <TextBox x:Name="TxtBOutColor" Width="92" VerticalAlignment="Center" TextChanged="BlockStyle_Changed"
+                                                         ToolTip="#RRGGBB — 비우면 페이지 설정이다냥"/>
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </StackPanel>
                                 </StackPanel>
-                            </DockPanel>
-                            <DockPanel Style="{StaticResource SideRow}">
-                                <TextBlock Text="외곽선" Style="{StaticResource SideLabel}"/>
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBox x:Name="TxtBOut" Width="56" VerticalAlignment="Center" Tag="0.5"
-                                             TextChanged="BlockStyle_Changed" PreviewKeyDown="NumBox_PreviewKeyDown" PreviewMouseWheel="NumBox_MouseWheel"
-                                             ToolTip="외곽선 두께(px)다냥. 0이면 없음. ↑↓ 키나 휠로 0.5씩(Shift는 5씩)"/>
-                                    <TextBlock Text="px" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="4,0,0,0"/>
-                                    <CheckBox x:Name="ChkBOutAuto" Content="자동" Style="{StaticResource SideCheck}" Margin="12,0,0,0"
-                                              Checked="BlockStyle_Changed" Unchecked="BlockStyle_Changed"
-                                              ToolTip="켜면 페이지 기본 외곽선을 따른다냥. 숫자를 적으면 꺼진다냥"/>
-                                </StackPanel>
-                            </DockPanel>
-                            <DockPanel Style="{StaticResource SideRow}">
-                                <TextBlock Text="외곽선 색" Style="{StaticResource SideLabel}"/>
-                                <StackPanel Orientation="Horizontal">
-                                    <Border x:Name="SwBOutColor" Width="22" Height="22" CornerRadius="3" BorderBrush="{DynamicResource NekoStroke}" BorderThickness="1"
-                                            Cursor="Hand" VerticalAlignment="Center" Margin="0,0,6,0" MouseLeftButtonUp="Swatch_Click"
-                                            Tag="{Binding ElementName=TxtBOutColor}" ToolTip="색 고르기"/>
-                                    <TextBox x:Name="TxtBOutColor" Width="92" VerticalAlignment="Center" TextChanged="BlockStyle_Changed"
-                                             ToolTip="#RRGGBB — 비우면 페이지 설정이다냥"/>
-                                </StackPanel>
-                            </DockPanel>
+                            </Border>
 
                             <!-- 이 장의 모든 풍선에 쓰는 기본값 — 풍선에 따로 정한 값이 이긴다 -->
-                            <TextBlock Text="페이지 전체 기본" Style="{StaticResource SideTitle}" Margin="0,18,0,4"/>
-                            <DockPanel Style="{StaticResource SideRow}">
-                                <TextBlock Text="글꼴" Style="{StaticResource SideLabel}"/>
-                                <ComboBox x:Name="CmbLFont" IsEditable="True" VerticalAlignment="Center"/>
-                            </DockPanel>
-                            <DockPanel Style="{StaticResource SideRow}">
-                                <TextBlock Text="크기 배율" Style="{StaticResource SideLabel}"/>
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBox x:Name="TxtLSize" Width="56" VerticalAlignment="Center"
-                                             ToolTip="자동 글자 크기에 곱하는 배율(1 = 그대로)이다냥. px로 정한 풍선은 안 따른다냥"/>
-                                    <TextBlock Text="×" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="4,0,0,0"/>
-                                    <CheckBox x:Name="ChkLBold" Content="굵게" Style="{StaticResource SideCheck}" Margin="12,0,0,0"/>
+                            <Border Style="{StaticResource SideCard}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SideCardHead}"><TextBlock Text="페이지 전체 기본" Style="{StaticResource SideTitle}"/></Border>
+                                    <StackPanel Style="{StaticResource SideBody}">
+                                        <DockPanel Style="{StaticResource SideRow}">
+                                            <TextBlock Text="글꼴" Style="{StaticResource SideLabel}"/>
+                                            <ComboBox x:Name="CmbLFont" IsEditable="True" VerticalAlignment="Center"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SideRow}">
+                                            <TextBlock Text="크기 배율" Style="{StaticResource SideLabel}"/>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBox x:Name="TxtLSize" Width="56" VerticalAlignment="Center"
+                                                         ToolTip="자동 글자 크기에 곱하는 배율(1 = 그대로)이다냥. px로 정한 풍선은 안 따른다냥"/>
+                                                <TextBlock Text="×" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                                                <CheckBox x:Name="ChkLBold" Content="굵게" Style="{StaticResource SideCheck}" Margin="12,0,0,0"/>
+                                            </StackPanel>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SideRow}">
+                                            <TextBlock Text="글자 색" Style="{StaticResource SideLabel}"/>
+                                            <StackPanel Orientation="Horizontal">
+                                                <Border x:Name="SwLColor" Width="22" Height="22" CornerRadius="3" BorderBrush="{DynamicResource NekoStroke}" BorderThickness="1"
+                                                        Cursor="Hand" VerticalAlignment="Center" Margin="0,0,6,0" MouseLeftButtonUp="Swatch_Click"
+                                                        Tag="{Binding ElementName=TxtLColor}" ToolTip="색 고르기"/>
+                                                <TextBox x:Name="TxtLColor" Width="92" VerticalAlignment="Center" ToolTip="#RRGGBB — 기본 검정, auto면 원문 색이다냥"/>
+                                            </StackPanel>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SideRow}">
+                                            <TextBlock Text="외곽선" Style="{StaticResource SideLabel}"/>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBox x:Name="TxtLOutScale" Width="56" VerticalAlignment="Center"
+                                                         ToolTip="외곽선 두께 배율(1 = 기본, 0 = 없음)이다냥"/>
+                                                <TextBlock Text="×" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="4,0,8,0"/>
+                                                <Border x:Name="SwLOutColor" Width="22" Height="22" CornerRadius="3" BorderBrush="{DynamicResource NekoStroke}" BorderThickness="1"
+                                                        Cursor="Hand" VerticalAlignment="Center" Margin="0,0,6,0" MouseLeftButtonUp="Swatch_Click"
+                                                        Tag="{Binding ElementName=TxtLOutColor}" ToolTip="색 고르기"/>
+                                                <TextBox x:Name="TxtLOutColor" Width="92" VerticalAlignment="Center" ToolTip="외곽선 색 #RRGGBB"/>
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </StackPanel>
                                 </StackPanel>
-                            </DockPanel>
-                            <DockPanel Style="{StaticResource SideRow}">
-                                <TextBlock Text="글자 색" Style="{StaticResource SideLabel}"/>
-                                <StackPanel Orientation="Horizontal">
-                                    <Border x:Name="SwLColor" Width="22" Height="22" CornerRadius="3" BorderBrush="{DynamicResource NekoStroke}" BorderThickness="1"
-                                            Cursor="Hand" VerticalAlignment="Center" Margin="0,0,6,0" MouseLeftButtonUp="Swatch_Click"
-                                            Tag="{Binding ElementName=TxtLColor}" ToolTip="색 고르기"/>
-                                    <TextBox x:Name="TxtLColor" Width="92" VerticalAlignment="Center" ToolTip="#RRGGBB — 기본 검정, auto면 원문 색이다냥"/>
-                                </StackPanel>
-                            </DockPanel>
-                            <DockPanel Style="{StaticResource SideRow}">
-                                <TextBlock Text="외곽선" Style="{StaticResource SideLabel}"/>
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBox x:Name="TxtLOutScale" Width="56" VerticalAlignment="Center"
-                                             ToolTip="외곽선 두께 배율(1 = 기본, 0 = 없음)이다냥"/>
-                                    <TextBlock Text="×" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" Margin="4,0,8,0"/>
-                                    <Border x:Name="SwLOutColor" Width="22" Height="22" CornerRadius="3" BorderBrush="{DynamicResource NekoStroke}" BorderThickness="1"
-                                            Cursor="Hand" VerticalAlignment="Center" Margin="0,0,6,0" MouseLeftButtonUp="Swatch_Click"
-                                            Tag="{Binding ElementName=TxtLOutColor}" ToolTip="색 고르기"/>
-                                    <TextBox x:Name="TxtLOutColor" Width="92" VerticalAlignment="Center" ToolTip="외곽선 색 #RRGGBB"/>
-                                </StackPanel>
-                            </DockPanel>
+                            </Border>
                         </StackPanel>
                     </ScrollViewer>
                 </TabItem>
