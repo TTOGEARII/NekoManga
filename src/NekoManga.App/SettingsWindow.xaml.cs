@@ -206,6 +206,7 @@ public partial class SettingsWindow
         s.RegenInpaintControl = ComboTag(CmbRegenInpaintControl, s.RegenInpaintControl);
         s.RegenInpaintCnStrength = ParseD(TxtRegenInpaintCnStr.Text, s.RegenInpaintCnStrength, 0, 2);
         s.RegenEraseTight = ChkRegenEraseTight.IsChecked == true;
+        s.RegenWhiteRetries = ParseI(TxtRegenWhiteRetries.Text, s.RegenWhiteRetries, 0, 5);
         s.RegenWholeRegion = ChkRegenWhole.IsChecked == true;
         s.RegenRegionConf = ParseD(TxtRegenRegionConf.Text, s.RegenRegionConf, 0.01, 0.9);
         s.RegenRegionPad = ParseD(TxtRegenRegionPad.Text, s.RegenRegionPad, 0, 1);
@@ -260,7 +261,7 @@ public partial class SettingsWindow
         void R(System.Windows.Controls.TextBox tb, double min, double max, bool isInt)
         {
             string Fmt(double v) => isInt ? ((int)Math.Round(v)).ToString() : v.ToString(CultureInfo.InvariantCulture);
-            tb.ToolTip = $"{Fmt(min)} ~ {Fmt(max)}";
+            tb.ToolTip ??= $"{Fmt(min)} ~ {Fmt(max)}";   // XAML에 설명 툴팁이 있으면 그것을 둔다(범위는 칸 이름에 있다) — 전에는 늘 덮어써 설명이 안 보였다(검수 2026-11-20)
             tb.Tag = tb.Text;
             tb.LostFocus += (_, _) =>
             {
@@ -277,7 +278,7 @@ public partial class SettingsWindow
         R(TxtBarAspect, 1.0, 10.0, false); R(TxtBarMinArea, 50, 500_000, true); R(TxtBlockSize, 2, 64, true); R(TxtThreshold, 1, 80, true);
         R(TxtMaskGrow, 0, 64, true); R(TxtCustomReach, 0, 512, true);
         R(TxtRegenDenoise, 0.05, 1.0, false); R(TxtRegenSteps, 1, 150, true); R(TxtRegenCfg, 0, 30, false);
-        R(TxtRegenCnStr, 0, 2, false); R(TxtRegenCnEnd, 0, 1, false); R(TxtRegenCrop, 512, 2048, true); R(TxtRegenInpaintGrow, 0, 64, true); R(TxtRegenInpaintCnStr, 0, 2, false);
+        R(TxtRegenCnStr, 0, 2, false); R(TxtRegenCnEnd, 0, 1, false); R(TxtRegenCrop, 512, 2048, true); R(TxtRegenInpaintGrow, 0, 64, true); R(TxtRegenInpaintCnStr, 0, 2, false); R(TxtRegenWhiteRetries, 0, 5, true);
         R(TxtRegenRegionConf, 0.01, 0.9, false); R(TxtRegenRegionPad, 0, 1, false); R(TxtRegenRegionGrow, 0, 3, false);
         // 엔진
         R(TxtAdvPort, 1024, 65535, true); R(TxtAdvCnLineStr, 0, 2, false); R(TxtAdvCnLineEnd, 0, 1, false);

@@ -198,6 +198,8 @@ public class AppSettingsTests
     [InlineData(nameof(AppSettings.RegenCropSize), "9999", 2048.0)]
     [InlineData(nameof(AppSettings.RegenInpaintGrow), "-1", 0.0)]
     [InlineData(nameof(AppSettings.RegenInpaintGrow), "99", 64.0)]
+    [InlineData(nameof(AppSettings.RegenWhiteRetries), "-1", 0.0)]
+    [InlineData(nameof(AppSettings.RegenWhiteRetries), "99", 5.0)]
     public void Load_OutOfRangeNumber_ClampedToNearestBound(string property, string json, double expected)
     {
         using var t = new TempDir();
@@ -214,6 +216,13 @@ public class AppSettingsTests
     {
         // 결과 창의 안내 카드는 접힌 채로 시작한다(2026-11-20 사용자 "접었다 펼 수 있는 기능으로") — 펼치면 설정에 남아 다음 창도 펼쳐진다
         Assert.False(new AppSettings().ResultGuideOpen);
+    }
+
+    [Fact]
+    public void Defaults_RegenWhiteRetries_IsTwo_SoAFlatWhitePieceIsRedrawnUpToTwice()
+    {
+        // 2026-11-20: 1단계가 막대 자리를 평평한 흰 칠로 메우는 조각이 어느 CN 강도에서든 3분의 1쯤(같은 시드 A/B 5·6·7/22, 새 시드 5/14) — 재서 다시 그린다. 한 번에 1~2분이라 2회까지
+        Assert.Equal(2, new AppSettings().RegenWhiteRetries);
     }
 
     [Fact]

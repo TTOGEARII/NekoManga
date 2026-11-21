@@ -314,10 +314,12 @@ public partial class PipelineRunner
     /// 1단계가 지우는 범위는 기본으로 조각 안의 검은 막대 픽셀만(RegenEraseTight), 태그(RegenTags.For)는 한쪽 성별로 정해진 영역에만 그쪽을, 나머지는 남녀를 같이 넣는다(RegenTagsBySex, 2026-11-15)
     /// — 2026-11-13 사용자 판정. 조각의 성별이 섞인 영역은 설정(RegenTagsPerPiece)이 켜져 있으면 자리마다 그 성별의 태그를 따로 넣는다(RegenSexAreas — 자리 마스크 PNG를 하나 더 올린다).
     /// 영역은 순서대로 돈다(ComfyUI 큐 하나).
-    /// 영역마다 쓴 시드를 순서대로 돌려준다(<see cref="RegenSeedFor"/>) — 2차가 사이드카에 적는다. <paramref name="lockedSeeds"/>: 이 장에 고정해 둔 시드.</summary>
+    /// 결과에 평평한 흰 조각이 남으면(RegenWhiteCheck) 첫 시드에서 끌어낸 시드로 설정 횟수(RegenWhiteRetries)까지 다시 그려 덜 흰 것을 고른다(2026-11-20) — 올린 입력은 그대로 쓰고 그래프만 다시 보낸다.
+    /// 영역마다 쓴(고른) 시드를 순서대로 돌려준다(<see cref="RegenSeedFor"/>) — 2차가 사이드카에 적는다. <paramref name="lockedSeeds"/>: 이 장에 고정해 둔 시드 — 사용자가 붙잡은 결과라 다시 그리지 않는다.
+    /// <paramref name="retryLocked"/>: 고정한 시드로 첫 시도를 재현한 뒤에도 흰 조각을 다시 그린다 — 호출부는 저장소 밖의 A/B 하네스(scratchpad regenab)뿐이다(지금 결과를 첫 시도로 두고 재시도의 효과만 본다).</summary>
     internal async Task<List<long>> ComfyRegenDecensorAsync(ComfyClient client, string comfyOutputDir,
         Mat img, IReadOnlyList<RegenRegionInfo> regions, int pageIdx, CancellationToken ct, AppSettings? regenSettings = null, IProgress<string>? status = null,
-        IReadOnlyList<long>? lockedSeeds = null)
+        IReadOnlyList<long>? lockedSeeds = null, bool retryLocked = false)
     {
         var rs = regenSettings ?? settings;
         int reach = RegenRegion.PasteReach(rs);
@@ -336,9 +338,7 @@ public partial class PipelineRunner
             using (crop) using (cropRegion) using (cropErase)
             {
                 string? up = null, eraseUp = null, areaUp = null;
-                ComfyClient.ComfyResult? r = null;
-                var outPrefix = NextOutputPrefix("regenout");
-                Mat outImg;
+                Mat? best = null; List<double> bestWhite = []; long bestSeed = 0;
                 try
                 {
                     up = await client.UploadImageAsync(MosaicDetector.ToMaskedPng(crop, cropRegion), $"nm_regen_{_tag}_{pageIdx}_{k}.png", ct);
@@ -349,29 +349,71 @@ public partial class PipelineRunner
                         Cv2.ImEncode(".png", packed, out var areaPng);
                         areaUp = await client.UploadImageAsync(areaPng, $"nm_regenarea_{_tag}_{pageIdx}_{k}.png", ct);
                     }
-                    long seed = RegenSeedFor(rs, lockedSeeds, k);
-                    seeds.Add(seed);
-                    var graph = WorkflowBuilder.BuildRegenCrop(rs, up, eraseUp, outPrefix, RegenTags.For(region.Sex, region.Sure, rs, region.Cum), w.SendW, w.SendH, seed,
-                        areaUp, areas?.Select(a => a.Tags).ToList());
-                    var pid = await client.QueuePromptAsync(graph, ct);
-                    r = await client.WaitAsync(pid, comfyOutputDir, TimeSpan.FromMinutes(20), ct);
-                    if (r.OutputFiles.Count == 0) throw new InvalidOperationException(Loc.T("재생성 결과 파일이 없다냥."));
-                    outImg = ImgIo.Read(r.OutputFiles[^1], ImreadModes.Color);
+                    long first = RegenSeedFor(rs, lockedSeeds, k);
+                    // 흰 조각 다시 그리기(2026-11-20, RegenWhiteCheck): 결과에 평평한 흰 조각이 남으면 첫 시드에서 끌어낸 시드로 다시 그려 덜 흰 것을 고른다 — 올린 입력은 그대로 쓰고 그래프의 시드만 바뀐다.
+                    // 고정한 시드는 사용자가 붙잡은 결과라 다시 그리지 않는다(하네스는 retryLocked로 첫 시도만 적어 둔 시드로 재현하고 흰 조각을 다시 그린다)
+                    bool locked = lockedSeeds != null && k < lockedSeeds.Count;
+                    int retries = locked && !retryLocked ? 0 : rs.RegenWhiteRetries;
+                    var tags = RegenTags.For(region.Sex, region.Sure, rs, region.Cum);
+                    var areaTags = areas?.Select(a => a.Tags).ToList();
+                    using var eraseWin = new Mat(region.Erase, w.Window);
+                    using var tightWin = tight != null ? new Mat(tight, w.Window) : null;
+                    for (int attempt = 0; attempt <= retries; attempt++)
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        long seed = RegenWhiteCheck.RetrySeed(first, attempt);
+                        if (attempt > 0) status?.Report(Loc.F($"다시 그리는 중이다냥 ({k + 1}/{regions.Count}, 흰 조각 {RegenWhiteCheck.FlatWhiteCount(bestWhite)}개 → 새 시드 {attempt}/{retries})"));
+                        Mat back;
+                        try { back = await RunRegenGraphAsync(client, comfyOutputDir, rs, up, eraseUp, areaUp, areaTags, tags, w, seed, ct); }
+                        catch (Exception ex) when (attempt > 0 && !ct.IsCancellationRequested)
+                        {
+                            // 다시 그리다 실패(ComfyUI 거절·시간 초과·결과 없음)하면 첫 결과를 버리지 않는다 — 이미 전과 같은 그림이 있다(검수 2026-11-20). 취소는 그대로 올린다
+                            status?.Report(Loc.F($"다시 그리기를 멈췄다냥 ({k + 1}/{regions.Count}) — {ex.Message}"));
+                            break;
+                        }
+                        List<double> white;
+                        try { white = retries > 0 ? RegenWhiteCheck.PieceWhiteRatios(back, eraseWin, tightWin) : []; }
+                        catch { back.Dispose(); throw; }
+                        if (best == null || RegenWhiteCheck.IsBetter(white, bestWhite)) { best?.Dispose(); best = back; bestWhite = white; bestSeed = seed; }
+                        else back.Dispose();
+                        if (RegenWhiteCheck.FlatWhiteCount(bestWhite) == 0) break;
+                    }
                 }
-                // 읽었으니 ComfyUI 폴더에는 남기지 않는다 — 영역마다 입력 둘·출력 하나가 쌓였다(실측 2026-11-13: output\nm_* 566MB). 실패·멈춤이어도 올린 입력은 지운다
-                finally { WorkFolders.RemoveComfyFiles(settings.ComfyRoot, r?.OutputFiles, outPrefix, up, eraseUp, areaUp); }
-                using var outImgOwner = outImg;
-                if (outImg.Empty()) throw new InvalidDataException(Loc.T("재생성 결과를 읽지 못했다냥."));
-                using var back = outImg.Size() == w.Window.Size ? outImg.Clone() : outImg.Resize(w.Window.Size, 0, 0, InterpolationFlags.Lanczos4);
+                catch { best?.Dispose(); throw; }
+                // 읽었으니 ComfyUI 폴더에는 남기지 않는다 — 영역마다 입력 둘(셋)이 쌓였다(실측 2026-11-13: output\nm_* 566MB). 실패·멈춤이어도 올린 입력은 지운다(출력은 시도마다 RunRegenGraphAsync가 치운다)
+                finally { WorkFolders.RemoveComfyFiles(settings.ComfyRoot, null, null, up, eraseUp, areaUp); }
+                using var bestOwner = best!;
+                seeds.Add(bestSeed);
                 // 영역(+엣지가 닿는 범위)만 창 자리에 — 나머지 픽셀은 원본 그대로
                 using var regionRoi = new Mat(region.Region, w.Window);
                 using var take = new Mat();
                 Cv2.Dilate(regionRoi, take, Cv2.GetStructuringElement(MorphShapes.Ellipse, new OpenCvSharp.Size(reach * 2 + 1, reach * 2 + 1)));
                 using var dst = new Mat(img, w.Window);
-                back.CopyTo(dst, take);
+                best.CopyTo(dst, take);
             }
         }
         return seeds;
+    }
+
+    /// <summary>재생성 그래프를 한 번 돌려 창 크기의 결과를 돌려준다(없으면 던진다) — 출력 파일은 읽은 뒤 바로 치운다(올린 입력은 호출부가 시도를 다 마친 뒤 치운다).</summary>
+    private async Task<Mat> RunRegenGraphAsync(ComfyClient client, string comfyOutputDir, AppSettings rs, string up, string eraseUp, string? areaUp, List<string>? areaTags,
+        string tags, RegenWindow w, long seed, CancellationToken ct)
+    {
+        var outPrefix = NextOutputPrefix("regenout");
+        ComfyClient.ComfyResult? r = null;
+        Mat outImg;
+        try
+        {
+            var graph = WorkflowBuilder.BuildRegenCrop(rs, up, eraseUp, outPrefix, tags, w.SendW, w.SendH, seed, areaUp, areaTags);
+            var pid = await client.QueuePromptAsync(graph, ct);
+            r = await client.WaitAsync(pid, comfyOutputDir, TimeSpan.FromMinutes(20), ct);
+            if (r.OutputFiles.Count == 0) throw new InvalidOperationException(Loc.T("재생성 결과 파일이 없다냥."));
+            outImg = ImgIo.Read(r.OutputFiles[^1], ImreadModes.Color);
+        }
+        finally { WorkFolders.RemoveComfyFiles(settings.ComfyRoot, r?.OutputFiles, outPrefix); }
+        using var outImgOwner = outImg;
+        if (outImg.Empty()) throw new InvalidDataException(Loc.T("재생성 결과를 읽지 못했다냥."));
+        return outImg.Size() == w.Window.Size ? outImg.Clone() : outImg.Resize(w.Window.Size, 0, 0, InterpolationFlags.Lanczos4);
     }
 
     /// <summary>재생성 영역 k의 1단계 시드 — 이 장에 고정해 둔 시드가 있으면 그것(영역 순서대로), 없으면 설정의 시드, 그것도 -1이면 새로 뽑는다.

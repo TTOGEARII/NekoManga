@@ -15,12 +15,19 @@ namespace NekoManga.Core.Tests;
 /// 서버도 모델도 없다: 올린 파일은 가짜가 임시 폴더의 input에 쓰고, 출력은 가짜가 만든 회색 그림이다. (완료를 2초 간격으로 묻는 길이라 2초쯤 걸린다.)</summary>
 public class RegenAreaRunTests
 {
-    /// <summary>ComfyUI의 세 요청만 흉내 낸다: /upload/image(input 폴더에 쓴다), /prompt(그래프를 적고 SaveImage의 출력을 만든다), /history/{id}(완료).</summary>
+    /// <summary>ComfyUI의 세 요청만 흉내 낸다: /upload/image(input 폴더에 쓴다), /prompt(그래프를 적고 SaveImage의 출력을 만든다), /history/{id}(완료).
+    /// 프롬프트마다 번호(p1, p2, …)를 매기고 그래프를 전부 적어 둔다 — 흰 조각 재시도(2026-11-20)는 한 영역에 프롬프트를 여러 번 보낸다. 출력 색은 <see cref="OutputColor"/>(시도 번호 → 색, 기본 회색).</summary>
     private sealed class FakeComfy(string root) : HttpMessageHandler
     {
         public List<string> Uploads { get; } = [];
-        public JsonObject? Graph { get; private set; }
-        private string _output = "";
+        public List<JsonObject> Graphs { get; } = [];
+        /// <summary>마지막 그래프.</summary>
+        public JsonObject? Graph => Graphs.Count > 0 ? Graphs[^1] : null;
+        public int Prompts => Graphs.Count;
+        public Func<int, Scalar>? OutputColor { get; set; }
+        /// <summary>시도 번호 → true면 그 /prompt를 500으로 거절한다(재시도 중의 ComfyUI 오류 흉내).</summary>
+        public Func<int, bool>? FailPrompt { get; set; }
+        private readonly Dictionary<string, string> _outputs = new();
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
@@ -37,25 +44,33 @@ public class RegenAreaRunTests
             }
             else if (path == "/prompt")
             {
-                Graph = JsonNode.Parse(await request.Content!.ReadAsStringAsync(ct))!["prompt"]!.AsObject();
-                var (_, save) = Only(Graph, "SaveImage");
-                _output = Str(Inputs(save)["filename_prefix"]) + "_00001_.png";
-                // 자른 그림의 크기는 올린 영역 그림(LoadImage nm_regen_*)에서 — 1단계 CN 강도 0(기본, 2026-11-19)이면 EmptyImage 노드가 없다
-                var regionName = OfType(Graph, "LoadImage").Select(l => Str(Inputs(l.Node)["image"])).First(n => n.StartsWith("nm_regen_"));
+                var graph = JsonNode.Parse(await request.Content!.ReadAsStringAsync(ct))!["prompt"]!.AsObject();
+                string id;
+                lock (Graphs) { Graphs.Add(graph); id = $"p{Graphs.Count}"; }
+                if (FailPrompt?.Invoke(Graphs.Count - 1) == true)
+                    return new HttpResponseMessage(HttpStatusCode.InternalServerError) { Content = new StringContent("{\"error\": \"fake\"}", Encoding.UTF8, "application/json") };
+                var (_, save) = Only(graph, "SaveImage");
+                var output = Str(Inputs(save)["filename_prefix"]) + "_00001_.png";
+                // 자른 그림의 크기는 올린 영역 그림(LoadImage nm_regen_*)에서 — 1단계 CN 강도 0이면 EmptyImage 노드가 없다
+                var regionName = OfType(graph, "LoadImage").Select(l => Str(Inputs(l.Node)["image"])).First(n => n.StartsWith("nm_regen_"));
                 using var region = ImgIo.Read(Path.Combine(root, "ComfyUI", "input", regionName), ImreadModes.Color);
                 Directory.CreateDirectory(Path.Combine(root, "ComfyUI", "output"));
-                using var gray = new Mat(region.Rows, region.Cols, MatType.CV_8UC3, new Scalar(128, 128, 128));
-                ImgIo.Write(Path.Combine(root, "ComfyUI", "output", _output), gray);
-                json = new JsonObject { ["prompt_id"] = "p1" }.ToJsonString();
+                using var fill = new Mat(region.Rows, region.Cols, MatType.CV_8UC3, OutputColor?.Invoke(Graphs.Count - 1) ?? new Scalar(128, 128, 128));
+                ImgIo.Write(Path.Combine(root, "ComfyUI", "output", output), fill);
+                lock (Graphs) _outputs[id] = output;
+                json = new JsonObject { ["prompt_id"] = id }.ToJsonString();
             }
-            else if (path == "/history/p1")
+            else if (path.StartsWith("/history/", StringComparison.Ordinal))
             {
+                var id = path["/history/".Length..];
+                string output;
+                lock (Graphs) output = _outputs[id];
                 json = new JsonObject
                 {
-                    ["p1"] = new JsonObject
+                    [id] = new JsonObject
                     {
                         ["status"] = new JsonObject { ["status_str"] = "success", ["completed"] = true },
-                        ["outputs"] = new JsonObject { ["20"] = new JsonObject { ["images"] = new JsonArray(new JsonObject { ["filename"] = _output, ["subfolder"] = "", ["type"] = "output" }) } },
+                        ["outputs"] = new JsonObject { ["20"] = new JsonObject { ["images"] = new JsonArray(new JsonObject { ["filename"] = output, ["subfolder"] = "", ["type"] = "output" }) } },
                     },
                 }.ToJsonString();
             }
@@ -130,6 +145,145 @@ public class RegenAreaRunTests
             Assert.Contains(expected ? "manga, pussy, cum in pussy" : "manga, pussy", prompts);
             Assert.DoesNotContain(expected ? "manga, pussy" : "manga, pussy, cum in pussy", prompts);
             Assert.Equal(expected, notes.Any(n => n.Contains("사정")));
+        }
+        finally { foreach (var r in plan) r.Dispose(); }
+    }
+
+    // ── 흰 조각 자동 재시도 (2026-11-20, 사용자 "또 흰색으로 칠해진다" → "조치 진행해줘") ──
+    // 1단계가 막대 자리를 평평한 흰 칠로 메우는 조각이 어느 CN 강도에서든 3분의 1쯤 나온다(같은 시드 A/B 두 번: 5·6·7/22, 5/14). 결과를 재서(RegenWhiteCheck) 흰 조각이 있으면
+    // 첫 시드에서 끌어낸 시드로 다시 그리고(RetrySeed — 설정의 시드를 고정한 사람도 같은 결과), 덜 흰 것을 고른다. 시도마다 올린 입력은 그대로 쓰고 출력만 다시 받는다.
+
+    private static (AppSettings s, FakeComfy fake, ComfyClient client) WhiteRetrySetup(TempDir t, int retries)
+    {
+        var s = EnginelessSettings(t);
+        s.LinkedComfyRoot = t.At("comfy");
+        s.RegenTagsBySex = true; s.RegenSeed = 7; s.RegenEraseTight = false; s.RegenWhiteRetries = retries;
+        s.RegenPrompt = "manga"; s.RegenBodyTagsMale = "penis"; s.RegenBodyTagsFemale = "pussy";
+        var fake = new FakeComfy(s.ComfyRoot);
+        return (s, fake, new ComfyClient("http://127.0.0.1:1", fake));
+    }
+
+    private static readonly Scalar Gray = new(128, 128, 128);
+
+    [Fact]
+    public async Task ComfyRegenDecensorAsync_FlatWhitePiece_RetriesWithADerivedSeed_AndKeepsTheDrawnResult()
+    {
+        using var t = new TempDir();
+        var (s, fake, client) = WhiteRetrySetup(t, retries: 2);
+        fake.OutputColor = attempt => attempt == 0 ? Scalar.White : Gray;   // 첫 시도는 흰 칠, 두 번째는 그림
+        using var runner = new PipelineRunner(s);
+        using var img = new Mat(600, 800, MatType.CV_8UC3, Scalar.White);
+        using var mask = RectMask(800, 600, new Rect(200, 200, 120, 30));
+        var plan = runner.RegenPlanFor(img, mask, null, marks: [new SexMark(new Point(260, 215), RegenKind.Female)]);
+        try
+        {
+            var notes = new List<string>();
+            var seeds = await runner.ComfyRegenDecensorAsync(client, Path.Combine(s.ComfyRoot, "ComfyUI", "output"), img, plan, 3, CancellationToken.None, status: new SyncProgress(notes.Add));
+
+            Assert.Equal(2, fake.Prompts);
+            long second = RegenWhiteCheck.RetrySeed(7, 1);
+            Assert.Equal([second], seeds);   // 사이드카에는 고른 결과를 만든 시드가 남는다 — 시드 고정으로 그대로 재현된다
+            Assert.Contains(second, OfType(fake.Graphs[1], "KSampler").Select(n => Inputs(n.Node)["seed"]!.GetValue<long>()));
+            Assert.Contains(notes, n => n.Contains("흰"));
+            Assert.Equal(new Vec3b(128, 128, 128), img.At<Vec3b>(215, 260));
+            // 두 시도의 출력과 올린 입력 전부를 치운다
+            Assert.Equal(2, fake.Uploads.Count);
+            Assert.Empty(Directory.GetFiles(Path.Combine(s.ComfyRoot, "ComfyUI", "input")));
+            Assert.Empty(Directory.GetFiles(Path.Combine(s.ComfyRoot, "ComfyUI", "output")));
+        }
+        finally { foreach (var r in plan) r.Dispose(); }
+    }
+
+    [Fact]
+    public async Task ComfyRegenDecensorAsync_EveryAttemptWhite_StopsAtTheLimit_AndKeepsTheFirst()
+    {
+        using var t = new TempDir();
+        var (s, fake, client) = WhiteRetrySetup(t, retries: 2);
+        fake.OutputColor = _ => Scalar.White;
+        using var runner = new PipelineRunner(s);
+        using var img = new Mat(600, 800, MatType.CV_8UC3, Gray);
+        using var mask = RectMask(800, 600, new Rect(200, 200, 120, 30));
+        var plan = runner.RegenPlanFor(img, mask, null, marks: [new SexMark(new Point(260, 215), RegenKind.Female)]);
+        try
+        {
+            var seeds = await runner.ComfyRegenDecensorAsync(client, Path.Combine(s.ComfyRoot, "ComfyUI", "output"), img, plan, 3, CancellationToken.None);
+
+            Assert.Equal(3, fake.Prompts);   // 첫 시도 + 재시도 2
+            Assert.Equal([7L], seeds);       // 전부 똑같이 희면 첫 결과
+            Assert.Equal(new Vec3b(255, 255, 255), img.At<Vec3b>(215, 260));
+        }
+        finally { foreach (var r in plan) r.Dispose(); }
+    }
+
+    [Theory]
+    [InlineData(0, false, 1)]   // 재시도 0 = 끔 — 흰 결과를 그대로 받는다
+    [InlineData(2, false, 1)]   // 시드를 고정한 장은 그 시드의 결과를 바꾸지 않는다(사용자가 붙잡은 결과)
+    [InlineData(2, true, 2)]    // 하네스: 첫 시도는 적어 둔 시드로 재현하고 흰 조각만 다시
+    public async Task ComfyRegenDecensorAsync_LockedSeedOrRetriesOff_RetriesOnlyWhenAsked(int retries, bool retryLocked, int prompts)
+    {
+        using var t = new TempDir();
+        var (s, fake, client) = WhiteRetrySetup(t, retries);
+        fake.OutputColor = attempt => attempt == 0 ? Scalar.White : Gray;
+        using var runner = new PipelineRunner(s);
+        using var img = new Mat(600, 800, MatType.CV_8UC3, Gray);
+        using var mask = RectMask(800, 600, new Rect(200, 200, 120, 30));
+        var plan = runner.RegenPlanFor(img, mask, null, marks: [new SexMark(new Point(260, 215), RegenKind.Female)]);
+        try
+        {
+            var seeds = await runner.ComfyRegenDecensorAsync(client, Path.Combine(s.ComfyRoot, "ComfyUI", "output"), img, plan, 3, CancellationToken.None, lockedSeeds: [11L], retryLocked: retryLocked);
+
+            Assert.Equal(prompts, fake.Prompts);
+            Assert.Equal([prompts == 2 ? RegenWhiteCheck.RetrySeed(11, 1) : 11L], seeds);
+        }
+        finally { foreach (var r in plan) r.Dispose(); }
+    }
+
+    [Fact]
+    public async Task ComfyRegenDecensorAsync_RetryAttemptFails_KeepsTheFirstResultInsteadOfFailingThePage()
+    {
+        // 다시 그리다 ComfyUI가 거절·시간 초과하면 첫 결과(전과 같은 그림)를 버리지 않는다 — 몇 분을 그려 놓고 장 전체를 실패로 두면 더 나쁘다(검수 2026-11-20)
+        using var t = new TempDir();
+        var (s, fake, client) = WhiteRetrySetup(t, retries: 2);
+        fake.OutputColor = _ => Scalar.White;
+        fake.FailPrompt = attempt => attempt == 1;
+        using var runner = new PipelineRunner(s);
+        using var img = new Mat(600, 800, MatType.CV_8UC3, Gray);
+        using var mask = RectMask(800, 600, new Rect(200, 200, 120, 30));
+        var plan = runner.RegenPlanFor(img, mask, null, marks: [new SexMark(new Point(260, 215), RegenKind.Female)]);
+        try
+        {
+            var notes = new List<string>();
+            var seeds = await runner.ComfyRegenDecensorAsync(client, Path.Combine(s.ComfyRoot, "ComfyUI", "output"), img, plan, 3, CancellationToken.None, status: new SyncProgress(notes.Add));
+
+            Assert.Equal(2, fake.Prompts);   // 실패한 재시도 뒤에는 더 보내지 않는다
+            Assert.Equal([7L], seeds);
+            Assert.Equal(new Vec3b(255, 255, 255), img.At<Vec3b>(215, 260));
+            Assert.Contains(notes, n => n.Contains("멈췄다"));
+            Assert.Empty(Directory.GetFiles(Path.Combine(s.ComfyRoot, "ComfyUI", "input")));
+            Assert.Empty(Directory.GetFiles(Path.Combine(s.ComfyRoot, "ComfyUI", "output")));
+        }
+        finally { foreach (var r in plan) r.Dispose(); }
+    }
+
+    [Fact]
+    public async Task ComfyRegenDecensorAsync_DefaultTightErase_WhitePieceStillRetries()
+    {
+        // 기본값(막대만 지우기)에서는 막대 픽셀만 잰다 — 검은 픽셀이 없는 조각은 TightenErase가 통째로 남기므로 흰 결과가 그대로 흰 조각으로 잡힌다
+        using var t = new TempDir();
+        var (s, fake, client) = WhiteRetrySetup(t, retries: 2);
+        s.RegenEraseTight = true;
+        fake.OutputColor = attempt => attempt == 0 ? Scalar.White : Gray;
+        using var runner = new PipelineRunner(s);
+        using var img = new Mat(600, 800, MatType.CV_8UC3, Scalar.White);
+        using var mask = RectMask(800, 600, new Rect(200, 200, 120, 30));
+        var plan = runner.RegenPlanFor(img, mask, null, marks: [new SexMark(new Point(260, 215), RegenKind.Female)]);
+        try
+        {
+            var seeds = await runner.ComfyRegenDecensorAsync(client, Path.Combine(s.ComfyRoot, "ComfyUI", "output"), img, plan, 3, CancellationToken.None);
+
+            Assert.Equal(2, fake.Prompts);
+            Assert.Equal([RegenWhiteCheck.RetrySeed(7, 1)], seeds);
+            Assert.Equal(new Vec3b(128, 128, 128), img.At<Vec3b>(215, 260));
         }
         finally { foreach (var r in plan) r.Dispose(); }
     }

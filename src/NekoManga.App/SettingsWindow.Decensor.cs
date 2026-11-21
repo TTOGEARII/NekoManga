@@ -151,6 +151,7 @@ public partial class SettingsWindow
         SelectComboByTag(CmbRegenInpaintControl, s.RegenInpaintControl);
         TxtRegenInpaintCnStr.Text = s.RegenInpaintCnStrength.ToString(CultureInfo.InvariantCulture);
         ChkRegenEraseTight.IsChecked = s.RegenEraseTight;
+        TxtRegenWhiteRetries.Text = s.RegenWhiteRetries.ToString();
         ChkRegenWhole.IsChecked = s.RegenWholeRegion;
         TxtRegenRegionConf.Text = s.RegenRegionConf.ToString(CultureInfo.InvariantCulture);
         TxtRegenRegionPad.Text = s.RegenRegionPad.ToString(CultureInfo.InvariantCulture);

@@ -219,6 +219,10 @@ public class AppSettings
     /// 기본 켬(2026-11-13 사용자 판정): 원고 4쪽 × 후보 4개(지금 / 막대만 / 막대만+남녀 태그 / 남녀 태그만, 시드 고정)를 나란히 보고 "막대만+남녀 태그가 제일 잘 나왔다".
     /// 조각 안 선 밀도가 빈 면으로 메워지던 조각 0.029→0.235, 손으로 쥔 장면 0.046→0.139. 끄면 v1.9.1까지처럼 마스크 통째를 지운다. 짝이 되는 태그 쪽은 RegenTagsBySex.</summary>
     public bool RegenEraseTight { get; set; } = true;
+    /// <summary>재생성 결과에 '평평한 흰 조각'(막대 자리의 ≥235 픽셀 비율 0.6 이상, RegenWhiteCheck)이 남으면 새 시드로 이만큼 더 그려 덜 흰 것을 고른다. 0 = 끔.
+    /// 기본 2(2026-11-20 사용자 "또 흰색으로 칠해진다" → 조치): 흰 조각은 어느 CN 강도에서든 3분의 1쯤 나오는 시드 운이라(같은 시드 A/B 5·6·7/22, 새 시드 5/14) 설정으로는 줄지 않는다.
+    /// 한 번 더 그릴 때마다 영역 하나에 1~2분이 든다(사용자 GPU 실측 117~161초). 시드를 고정한 장은 다시 그리지 않는다(사용자가 붙잡은 결과). 재시도 시드는 첫 시드에서 끌어낸다(RegenWhiteCheck.RetrySeed — 설정의 시드를 고정해도 같은 결과).</summary>
+    public int RegenWhiteRetries { get; set; } = 2;
     /// <summary>부위 검출 임계 — 영역의 모양은 검열 조각과 겹치는 검출만 넓히므로 낮아도 모양에는 비용이 없다. 다만 조각 성별에서는 '뚜렷한 상자'의 기준이라(RegenRegion.PieceSex, 2026-11-19)
     /// 내리면 다른 성별의 약한 상자가 뚜렷한 상자로 올라와 남녀 태그가 늘어난다(28쪽의 여성 0.07은 0.07 이하로 내리면 다시 남녀 태그).</summary>
     public double RegenRegionConf { get; set; } = 0.12;
@@ -481,6 +485,7 @@ public class AppSettings
         // 클램프 앞에서 본다 — 손으로 적은 -1을 0으로 맞춘 뒤에 보면 옮겨져, 클램프 하한 시험(-1 → 0)과 어긋난다.
         if (SettingsVersion < 1 && RegenInpaintCnStrength is 0.0 or 0.5) RegenInpaintCnStrength = 0.25;
         RegenInpaintCnStrength = Math.Clamp(RegenInpaintCnStrength, 0, 2);
+        RegenWhiteRetries = Math.Clamp(RegenWhiteRetries, 0, 5);
         if (string.IsNullOrWhiteSpace(RegenSampler)) RegenSampler = "dpmpp_sde_gpu";
         if (string.IsNullOrWhiteSpace(RegenScheduler)) RegenScheduler = "karras";
         CnLineartStrength = Math.Clamp(CnLineartStrength, 0, 2);
