@@ -30,7 +30,12 @@ public record TextBlockInfo(
     string OutlineColor = "",      // 외곽선 색 #RRGGBB — 비면 쪽 설정
     bool Hidden = false,           // 결과 창 [이 블록 숨기기] — 지우지 않고 그리지만 않는다(되살릴 수 있게). 옛 json에는 없다 → false
     bool ManualLines = false,      // 줄을 직접 나눴다 — Translation의 줄바꿈 그대로 그리고 자동 줄 나눔을 하지 않는다(결과 창에서 제자리 글 고치기·[줄 직접 나누기])
-    bool Added = false);           // 결과 창 [새 글 넣기]로 넣은 블록 — 원문이 없다. 지우면 숨기지 않고 목록에서 뺀다
+    bool Added = false)            // 결과 창 [새 글 넣기]로 넣은 블록 — 원문이 없다. 지우면 숨기지 않고 목록에서 뺀다
+{
+    /// <summary>결과 창 식자 탭이 번역 글 위에 보여 주는 원문(OCR 글) — 앞뒤 빈칸·줄 바꿈을 뗀다(2026-11-26 사용자 요청).
+    /// 빈 글이면 창이 칸을 접는다: [새 글 넣기]로 만든 글은 원문이 ""이고, 옛 json에 칸이 없으면 null로 들어온다.</summary>
+    public string ShownSource() => SourceText?.Trim() ?? "";
+}
 
 public record PageTranslation(string InpaintedPath, IReadOnlyList<TextBlockInfo> Blocks);
 

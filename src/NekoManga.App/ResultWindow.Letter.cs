@@ -266,6 +266,7 @@ public partial class ResultWindow
         if (_letterBlocks.Count > 0) CmbBlocks.SelectedIndex = 0;
         TxtBlockText.Text = _letterBlocks.Count > 0 ? _letterBlocks[0].Translation : "";
         if (_letterBlocks.Count > 0) LoadBlockStyleUi(_letterBlocks[0]);
+        else ShowBlockSource(null);   // 블록이 없는 장(읽지 못한 장)에서 앞 장의 원문이 남지 않게 — 글 칸을 비우는 윗줄과 짝(검수 2026-11-26)
         _syncingBlockUi = false;
     }
 
@@ -306,9 +307,10 @@ public partial class ResultWindow
         return t.Length == 7 && t[1..].All(Uri.IsHexDigit) ? t.ToUpperInvariant() : fallback;
     }
 
-    /// <summary>선택한 풍선의 속성을 칸에 채운다 (_syncingBlockUi 상태에서 호출). 자동인 크기·외곽선은 지금 그려진 값을 보여 준다(ShowAutoValues).</summary>
+    /// <summary>선택한 풍선의 속성(과 원문 칸)을 칸에 채운다 (_syncingBlockUi 상태에서 호출). 자동인 크기·외곽선은 지금 그려진 값을 보여 준다(ShowAutoValues).</summary>
     private void LoadBlockStyleUi(TextBlockInfo b)
     {
+        ShowBlockSource(b);
         ComboBoxItem? font = null;
         foreach (ComboBoxItem it in CmbBFont.Items)
             if (string.Equals((string?)it.Tag, b.FontFamily, StringComparison.OrdinalIgnoreCase)) { font = it; break; }
@@ -330,6 +332,15 @@ public partial class ResultWindow
         TxtBRot.Text = Num(b.RotationDeg, "0.#");
         ShowAutoValues(force: true);
         UpdateSwatches();
+    }
+
+    /// <summary>고른 풍선의 원문(OCR 글)을 번역 글 칸 위에 보여 준다(2026-11-26 사용자 요청 — 번역을 고칠 때 원문을 보며 고치게).
+    /// 원문이 없으면([새 글 넣기]로 만든 글, 또는 블록이 없어 null) 칸을 접는다.</summary>
+    private void ShowBlockSource(TextBlockInfo? b)
+    {
+        var src = b?.ShownSource() ?? "";
+        TxtBlockSource.Text = src;
+        PnlBlockSource.Visibility = src.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>자동인 크기·외곽선 칸에 지금 그려진 값(px)을 적는다 — 그 숫자에서 고쳐 나갈 수 있게. 치는 중인 칸은 건드리지 않는다(force가 아니면).</summary>
@@ -629,6 +640,13 @@ public partial class ResultWindow
             }
 
             host.Children.Add(new System.Windows.Shapes.Rectangle { IsHitTestVisible = false, SnapsToDevicePixels = true });   // 테두리 — StyleBoxes가 칠한다
+            // 상자에 마우스를 올리면 원문(OCR 글)이 뜬다 — 풍선을 고르지 않고도 어느 대사인지 본다(2026-11-26 사용자 요청). 원문이 없는 글([새 글 넣기])은 안 띄운다
+            if (b.ShownSource() is { Length: > 0 } srcTip)
+                host.ToolTip = new System.Windows.Controls.TextBlock
+                {
+                    Text = srcTip, TextWrapping = TextWrapping.Wrap, MaxWidth = 360,
+                    Language = System.Windows.Markup.XmlLanguage.GetLanguage("ja-JP"),   // 원문은 대개 일본어(manga-ocr) — 한국어 화면에서도 한자를 일본 글꼴 자형으로(원문 칸과 같게)
+                };
 
             if (i == _editBlock)
             {

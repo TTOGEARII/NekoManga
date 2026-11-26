@@ -355,6 +355,7 @@
                                                 <RowDefinition Height="Auto"/>
                                                 <RowDefinition Height="Auto"/>
                                                 <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
                                             </Grid.RowDefinitions>
                                             <Border Grid.Row="0" Style="{StaticResource KeyCap}"><TextBlock Text="클릭" Style="{StaticResource KeyCapText}"/></Border>
                                             <TextBlock Grid.Row="0" Grid.Column="1" Text="풍선 고르기" Style="{StaticResource KeyDesc}"/>
@@ -368,6 +369,8 @@
                                             <TextBlock Grid.Row="4" Grid.Column="1" Text="다시 실행" Style="{StaticResource KeyDesc}"/>
                                             <Border Grid.Row="5" Style="{StaticResource KeyCap}"><TextBlock Text="Delete" Style="{StaticResource KeyCapText}"/></Border>
                                             <TextBlock Grid.Row="5" Grid.Column="1" Text="고른 풍선 숨기기" Style="{StaticResource KeyDesc}"/>
+                                            <Border Grid.Row="6" Style="{StaticResource KeyCap}"><TextBlock Text="올리기" Style="{StaticResource KeyCapText}"/></Border>
+                                            <TextBlock Grid.Row="6" Grid.Column="1" Text="풍선의 원문 보기 (툴팁)" Style="{StaticResource KeyDesc}"/>
                                         </Grid>
                                     </StackPanel>
                                 </StackPanel>
@@ -379,6 +382,13 @@
                                     <Border Style="{StaticResource SideCardHead}"><TextBlock Text="선택한 풍선" Style="{StaticResource SideTitle}"/></Border>
                                     <StackPanel Style="{StaticResource SideBody}">
                                         <ComboBox x:Name="CmbBlocks" SelectionChanged="CmbBlocks_Changed" Margin="0,0,0,6"/>
+                                        <!-- 원문(OCR 글, 2026-11-26 사용자 요청): 번역 글을 고칠 때 원문을 보며 고치게. 읽기 전용이지만 골라 복사할 수 있다 — 원문이 없는 글([새 글 넣기])은 ShowBlockSource가 접는다 -->
+                                        <DockPanel x:Name="PnlBlockSource" Style="{StaticResource SideRow}" Visibility="Collapsed">
+                                            <TextBlock Text="원문" Style="{StaticResource SideLabel}" DockPanel.Dock="Top" MinWidth="0" Margin="0,0,0,2"/>
+                                            <TextBox x:Name="TxtBlockSource" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="72" VerticalScrollBarVisibility="Auto"
+                                                     Foreground="{DynamicResource NekoHint}" ToolTip="번역 전 원문이다냥 — 골라서 복사할 수 있다냥"
+                                                     Language="ja-JP"/>   <!-- 원문은 대개 일본어 — 한국어 화면에서도 한자를 일본 글꼴 자형으로 (창의 xml:lang은 일본어 화면에서만 건다, i18n.md) -->
+                                        </DockPanel>
                                         <!-- 여러 줄: Enter로 줄을 나눈다(풍선을 두 번 클릭해 그 자리에서 고치는 것과 같은 글) -->
                                         <TextBox x:Name="TxtBlockText" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="56" MaxHeight="120" VerticalScrollBarVisibility="Auto"
                                                  TextChanged="TxtBlockText_Changed" Margin="0,0,0,6"/>
