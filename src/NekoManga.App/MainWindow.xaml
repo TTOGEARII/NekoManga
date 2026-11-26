@@ -222,6 +222,16 @@
                     <ui:Button Content="📂 결과 폴더" Click="BtnOpenOutput_Click" Padding="14,6" Margin="8,0,0,0"/>
                     <ui:Button x:Name="BtnViewResult" Content="🔍 결과 보기·수정" Click="BtnViewResult_Click"
                                Padding="14,6" Margin="8,0,0,0"/>
+                    <!-- 번역 검수 표(2026-11-26): CSV로 내보내 엑셀에서 '번역' 칸을 고친 뒤 들여오면 그 장들을 다시 식자한다(MainWindow.ReviewSheet.cs). 왼쪽 클릭에도 메뉴가 열린다 -->
+                    <ui:Button x:Name="BtnReviewSheet" Content="📑 번역 표" Click="BtnReviewSheet_Click" Padding="14,6" Margin="8,0,0,0"
+                               ToolTip="번역을 CSV로 내보내 엑셀에서 고친 뒤 들여오면 그 장들을 다시 식자한다냥">
+                        <ui:Button.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="내보내기 (CSV)…" Click="ReviewExport_Click"/>
+                                <MenuItem Header="들여와 고친 글 적용 (CSV)…" Click="ReviewImport_Click"/>
+                            </ContextMenu>
+                        </ui:Button.ContextMenu>
+                    </ui:Button>
                     <ui:Button x:Name="BtnSort" Content="이름순 정렬" Click="BtnSort_Click" Padding="14,6" Margin="8,0,0,0"/>
                     <ui:Button x:Name="BtnRemoveSel" Content="선택 삭제" Click="BtnRemoveSel_Click" Padding="14,6" Margin="8,0,0,0"
                                ToolTip="목록에서만 뺀다냥 (파일은 그대로) — Delete 키로도 된다냥"/>

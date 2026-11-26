@@ -30,7 +30,8 @@ public record TextBlockInfo(
     string OutlineColor = "",      // 외곽선 색 #RRGGBB — 비면 쪽 설정
     bool Hidden = false,           // 결과 창 [이 블록 숨기기] — 지우지 않고 그리지만 않는다(되살릴 수 있게). 옛 json에는 없다 → false
     bool ManualLines = false,      // 줄을 직접 나눴다 — Translation의 줄바꿈 그대로 그리고 자동 줄 나눔을 하지 않는다(결과 창에서 제자리 글 고치기·[줄 직접 나누기])
-    bool Added = false)            // 결과 창 [새 글 넣기]로 넣은 블록 — 원문이 없다. 지우면 숨기지 않고 목록에서 뺀다
+    bool Added = false,            // 결과 창 [새 글 넣기]로 넣은 블록 — 원문이 없다. 지우면 숨기지 않고 목록에서 뺀다
+    bool Sfx = false)              // 풍선 밖 효과음(2026-11-26 시험 기능, SfxMode=Replace): 원문을 지우고 그 자리에 굵게 덮는다 — 풍선을 재지 않고 자리에 맞춘 크기, 세로면 글자를 쌓는다(TextRenderer.SfxStyle). 옛 json에는 없다 → false
 {
     /// <summary>결과 창 식자 탭이 번역 글 위에 보여 주는 원문(OCR 글) — 앞뒤 빈칸·줄 바꿈을 뗀다(2026-11-26 사용자 요청).
     /// 빈 글이면 창이 칸을 접는다: [새 글 넣기]로 만든 글은 원문이 ""이고, 옛 json에 칸이 없으면 null로 들어온다.</summary>
@@ -38,6 +39,9 @@ public record TextBlockInfo(
 }
 
 public record PageTranslation(string InpaintedPath, IReadOnlyList<TextBlockInfo> Blocks);
+
+/// <summary>감지한 글 블록의 역할(2026-11-26): 대사 | 풍선 밖 효과음(지우고 번역으로 덮는다 — 시험 중) | 뺀다(풍선 밖 효과음을 그대로 두는 옛 동작).</summary>
+public enum BlockRole { Dialogue, Sfx, Drop }
 
 /// <summary>내장 번역 파이프라인: 감지(CTD) → OCR(manga-ocr) → 번역 → 글자 지우기(단색 풍선/LaMa).
 /// BallonsTranslator 없이 전부 프로세스 안(ONNX Runtime)에서 돈다.</summary>
@@ -123,25 +127,32 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         }
         Lap($"글자 읽기({detBlocks.Count}블록)");   // loc:none
 
-        // ── 말풍선 밖의 효과음은 번역하지 않는다 (TranslateBubbleOnly, 2026-11-18 사용자 "번역은 말풍선 안에 있는 것만") ──
-        // 풍선 밖으로 보이고(BubbleSolver.IsInBubble — 닫힌 테두리도 단색 바탕도 없다) 글이 효과음처럼 생긴(LooksLikeSfx) 블록은 번역기에 보내지 않고
-        // 지우지도 식자하지도 않는다. 그런 글은 번역기가 폭주하기 쉽고(95자 "あぁ、あぁ......あああ…" → 32,772자, 35p) 식자해도 그림을 가린다.
+        // ── 풍선 밖 효과음 가르기 (TranslateBubbleOnly, 2026-11-18 사용자 "번역은 말풍선 안에 있는 것만" / SfxMode, 2026-11-26 시험 기능 — CarrotMangaTranslator 참고) ──
+        // 풍선 밖으로 보이고(BubbleSolver.IsInBubble — 닫힌 테두리도 단색 바탕도 없다) 글이 효과음처럼 생긴(LooksLikeSfx) 블록은 대사가 아니다(Decide):
+        // SfxMode=Keep이면 번역기에 보내지 않고 지우지도 식자하지도 않는다(그런 글은 번역기가 폭주하기 쉽고 식자해도 그림을 가린다),
+        // Replace면 용어집·내장 사전·번역기로 짧게 옮겨 원문을 지우고 그 자리에 굵게 덮는다(TextBlockInfo.Sfx).
         // 풍선 판정만으로 거르지 않는 까닭: 실제 원고 448블록에서 테두리 규칙은 65%만 풍선으로 봐(이 작가는 테두리가 닫히지 않는 풍선이 많다) 대사가 빠졌다 — 두 조건을 같이 건다.
-        int outsideBubble = 0;
-        if (settings.TranslateBubbleOnly && blocks.Count > 0)
+        var roles = new List<BlockRole>(blocks.Count);
+        int outsideBubble = 0, sfxCount = 0;
         {
             var kept = new List<(DetectedBlock Box, string Text)>();
             foreach (var (b, text) in blocks)
             {
                 var rect = new Rect(b.X1, b.Y1, b.X2 - b.X1, b.Y2 - b.Y1);
-                if (LooksLikeSfx(text) && !await Task.Run(() => BubbleSolver.IsInBubble(img, textMask, rect), ct)) outsideBubble++;
-                else kept.Add((b, text));
+                bool looks = settings.TranslateBubbleOnly && LooksLikeSfx(text);
+                bool inBubble = !looks || await Task.Run(() => BubbleSolver.IsInBubble(img, textMask, rect), ct);   // 그림 분석은 효과음 꼴일 때만
+                var role = Decide(looks, inBubble, settings);
+                if (role == BlockRole.Drop) { outsideBubble++; continue; }
+                kept.Add((b, text));
+                roles.Add(role);
+                if (role == BlockRole.Sfx) sfxCount++;
             }
             blocks = kept;
             // 거른 수를 진행 줄에 남긴다 — 다른 작가의 원고에서 대사가 빠지면 OCR 실패인지 이 거르기인지 가릴 길이 있어야 한다(검수 2026-11-19)
             if (outsideBubble > 0) status?.Report(Loc.F($"풍선 밖 효과음 {outsideBubble}개는 번역하지 않는다냥"));
+            if (sfxCount > 0) status?.Report(Loc.F($"효과음 {sfxCount}개는 지우고 번역으로 덮는다냥 (시험 중)"));
         }
-        Lap($"풍선 밖 글 거르기({outsideBubble}블록 제외)");   // loc:none
+        Lap($"풍선 밖 글 거르기({outsideBubble}블록 제외, 효과음 {sfxCount})");   // loc:none
 
         // ── 번역 (배치) ──
         IReadOnlyList<string> translations = Array.Empty<string>();
@@ -168,9 +179,7 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
             });
             try
             {
-                translations = await translator.TranslateAsync(
-                    blocks.Select(b => b.Text).ToList(),
-                    settings.TranslateSource, settings.TranslateTarget, ct);
+                translations = await TranslateBlocksAsync(translator, blocks, roles, Glossary.Parse(settings.TranslateGlossary), ct);
             }
             finally { tick.Cancel(); await ticker; }
         }
@@ -182,11 +191,15 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         var result = new List<TextBlockInfo>();
         using var lamaMask = new Mat(img.Rows, img.Cols, MatType.CV_8UC1, Scalar.Black);
         bool needLama = false;
+        int sfxSkipped = 0;
 
         for (int i = 0; i < blocks.Count; i++)
         {
             var (b, text) = blocks[i];
             var rect = new Rect(b.X1, b.Y1, b.X2 - b.X1, b.Y2 - b.Y1);
+            bool sfx = roles[i] == BlockRole.Sfx;
+            // 검증에 걸려 못 옮긴 효과음("")은 지우지도 덮지도 않는다 — 설명문이나 원문 글자가 굵게 덮이는 것보다 원문 그대로가 낫다(검수 2026-11-26)
+            if (sfx && (i >= translations.Count || string.IsNullOrWhiteSpace(translations[i]))) { sfxSkipped++; continue; }
 
             string color = SampleTextColor(img, textMask, rect);
 
@@ -206,10 +219,19 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
             result.Add(new TextBlockInfo(
                 b.X1, b.Y1, b.X2, b.Y2, text, tr,
                 EstimateFontSize(rect, tr.Length),
-                Vertical: rect.Height > rect.Width * 1.3,
-                color));
+                // 효과음은 Carrot처럼 높이가 폭의 1.5배를 넘으면 세로(글자를 쌓는다), 대사는 전처럼 1.3배(한국어는 어차피 가로로 그린다 — 풍선 재기에만 쓴다)
+                Vertical: rect.Height > rect.Width * (sfx ? 1.5 : 1.3),
+                color, Sfx: sfx));
+        }
+        // 앞 쪽 문맥(TranslateCarryContext): 이 쪽의 대사(원문→번역)를 다음 쪽의 LLM 번역에 참고로 넘긴다 — 최근 ContextLines줄만. 효과음은 넣지 않는다
+        if (settings.TranslateCarryContext)
+        {
+            foreach (var r in result)
+                if (!r.Sfx && r.Translation != r.SourceText) _recent.Add((r.SourceText, r.Translation));   // 못 옮겨 원문으로 둔 줄은 문맥에 넣지 않는다(LLM이 원문을 두라고 배운다 — 검수 2026-11-26)
+            if (_recent.Count > ContextLines) _recent.RemoveRange(0, _recent.Count - ContextLines);
         }
 
+        if (sfxSkipped > 0) status?.Report(Loc.F($"효과음 {sfxSkipped}개는 옮기지 못해 그대로 둔다냥"));
         Lap("글자 지우기(단색)");   // loc:none
         if (needLama)
         {
@@ -225,6 +247,80 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         if (Environment.GetEnvironmentVariable("NEKO_TIMING") is { Length: > 0 } timing)
             try { File.AppendAllText(timing, Path.GetFileName(imagePath) + ": " + string.Join(", ", laps) + Environment.NewLine); } catch { }
         return new PageTranslation(outPath, result);
+    }
+
+    /// <summary>앞 쪽의 대사(원문→번역) — 한 작업(러너가 쪽마다 같은 EmbeddedTranslator를 쓴다) 안에서 다음 쪽의 LLM 번역에 문맥으로 넘긴다(TranslateCarryContext).</summary>
+    private readonly List<(string Source, string Translation)> _recent = new();
+    /// <summary>문맥으로 넘기는 최근 대사 줄 수 — 한두 쪽 분량. 더 길면 프롬프트만 커지고 LLM이 옛 줄을 번역해 버리는 일이 는다.</summary>
+    internal const int ContextLines = 30;
+
+    /// <summary>블록의 역할(2026-11-26): 풍선 밖이면서 효과음 꼴일 때만 SfxMode를 따른다 — Replace면 지우고 덮을 효과음, Keep이면 전처럼 뺀다. 그 밖은 대사.
+    /// TranslateBubbleOnly가 꺼져 있으면 가르지 않고 전부 대사다(옛 동작).</summary>
+    internal static BlockRole Decide(bool looksSfx, bool inBubble, AppSettings s)
+    {
+        if (!s.TranslateBubbleOnly || !looksSfx || inBubble) return BlockRole.Dialogue;
+        return s.SfxMode == "Replace" ? BlockRole.Sfx : BlockRole.Drop;
+    }
+
+    /// <summary>대사와 효과음을 따로 번역한다(2026-11-26). 대사: 용어집 + 앞 쪽 문맥. 효과음: 용어집(원문이 그대로 한 항목) → 내장 사전(SfxDictionary) → 번역기에 효과음 지시문으로.
+    /// 돌려주는 목록은 blocks와 같은 순서·길이. 못 옮긴 줄은 ""(호출부가 원문으로 둔다).</summary>
+    private async Task<IReadOnlyList<string>> TranslateBlocksAsync(ITranslator translator, IReadOnlyList<(DetectedBlock Box, string Text)> blocks,
+        IReadOnlyList<BlockRole> roles, IReadOnlyList<(string Source, string Target)> glossary, CancellationToken ct)
+    {
+        var result = new string[blocks.Count];
+        var dialogue = new List<int>();
+        var pendingSfx = new List<int>();
+        for (int i = 0; i < blocks.Count; i++)
+        {
+            if (roles[i] != BlockRole.Sfx) { dialogue.Add(i); continue; }
+            var text = blocks[i].Text.Trim();
+            var hit = glossary.FirstOrDefault(g => g.Source == text).Target ?? SfxDictionary.Lookup(text, settings.TranslateTarget);
+            if (hit != null) result[i] = hit; else pendingSfx.Add(i);
+        }
+        if (dialogue.Count > 0)
+        {
+            var opts = new TranslateOptions(glossary, settings.TranslateCarryContext ? _recent.ToArray() : [], Sfx: false);
+            var tr = await TranslateCheckedAsync(translator, dialogue.Select(i => blocks[i].Text).ToList(), opts, settings.TranslateSource, settings.TranslateTarget, ct);
+            for (int k = 0; k < dialogue.Count; k++) result[dialogue[k]] = tr[k];
+        }
+        if (pendingSfx.Count > 0)
+        {
+            var tr = await TranslateCheckedAsync(translator, pendingSfx.Select(i => blocks[i].Text).ToList(), new TranslateOptions(glossary, [], Sfx: true), settings.TranslateSource, settings.TranslateTarget, ct);
+            for (int k = 0; k < pendingSfx.Count; k++) result[pendingSfx[k]] = tr[k];
+        }
+        return result;
+    }
+
+    /// <summary>번역하고 검증한다(TranslationCheck — Carrot처럼 목표 언어 글자가 없거나 원문 글자가 남거나 효과음이 길면 거부). 걸린 줄만 LLM에 한 번 더 묻고(Google·DeepL은 같은 답이 오므로 묻지 않는다),
+    /// 그래도 걸리면 Google(<paramref name="fallback"/> — 시험은 가짜를 넣는다)로 메운다. 끝내 못 옮긴 줄: 대사는 처음 답 그대로(비면 "" — 호출부가 원문으로 둔다), 효과음은 ""(호출부가 지우지도 덮지도 않는다 — 검수 2026-11-26).</summary>
+    internal static async Task<string[]> TranslateCheckedAsync(ITranslator translator, IReadOnlyList<string> texts, TranslateOptions opts, string sourceLang, string targetLang,
+        CancellationToken ct, ITranslator? fallback = null)
+    {
+        var first = await translator.TranslateAsync(texts, sourceLang, targetLang, opts, ct);
+        var result = texts.Select((_, i) => i < first.Count ? first[i] ?? "" : "").ToArray();
+        bool Ok(int i, string tr) => TranslationCheck.IsAcceptable(PolishTranslation(tr, targetLang), targetLang, opts.Sfx, texts[i]);
+        var bad = Enumerable.Range(0, texts.Count).Where(i => !Ok(i, result[i])).ToList();
+        if (bad.Count > 0 && translator is LlmTranslator)
+        {
+            var again = await translator.TranslateAsync(bad.Select(i => texts[i]).ToList(), sourceLang, targetLang, opts, ct);
+            for (int k = 0; k < bad.Count; k++)
+                if (k < again.Count && Ok(bad[k], again[k] ?? "")) result[bad[k]] = again[k];
+            bad = bad.Where(i => !Ok(i, result[i])).ToList();
+        }
+        if (bad.Count > 0 && translator is not GoogleTranslator)
+        {
+            try
+            {
+                var fb = await (fallback ?? new GoogleTranslator()).TranslateAsync(bad.Select(i => texts[i]).ToList(), sourceLang, targetLang, opts, ct);
+                for (int k = 0; k < bad.Count; k++)
+                    if (k < fb.Count && Ok(bad[k], fb[k] ?? "")) result[bad[k]] = fb[k];
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch { }   // Google 오류 — 처음 답으로 둔다
+            bad = bad.Where(i => !Ok(i, result[i])).ToList();
+        }
+        if (opts.Sfx) foreach (var i in bad) result[i] = "";
+        return result;
     }
 
     /// <summary><see cref="TameRunaway"/>의 상한 — 번역문은 원문의 이 배를 넘지 않고(짧은 원문은 최소 글자 수까지), 같은 글자는 이 수까지만 이어진다.

@@ -79,6 +79,19 @@ public class EmbeddedTranslatorTests
         Assert.Equal(expected, EmbeddedTranslator.LooksLikeSfx(source));
     }
 
+    // 효과음 식자(시험 중, 2026-11-26): 풍선 밖 + 효과음 꼴인 블록만 SfxMode를 따른다 — Replace면 지우고 덮을 효과음, Keep이면 전처럼 뺀다
+    [Theory]
+    [InlineData(true, false, "Replace", true, BlockRole.Sfx)]
+    [InlineData(true, false, "Keep", true, BlockRole.Drop)]
+    [InlineData(true, true, "Replace", true, BlockRole.Dialogue)]    // 풍선 안이면 대사
+    [InlineData(false, false, "Replace", true, BlockRole.Dialogue)]  // 효과음 꼴이 아니면 대사
+    [InlineData(true, false, "Replace", false, BlockRole.Dialogue)]  // '전부 대사로'(TranslateBubbleOnly 끔)
+    public void Decide_SfxOnlyWhenOutsideBubbleAndSoundLike_ModeChoosesReplaceOrDrop(bool looksSfx, bool inBubble, string mode, bool bubbleOnly, BlockRole expected)
+    {
+        var s = new AppSettings { SfxMode = mode, TranslateBubbleOnly = bubbleOnly };
+        Assert.Equal(expected, EmbeddedTranslator.Decide(looksSfx, inBubble, s));
+    }
+
     [Fact]
     public void TameRunaway_DoesNotSplitSurrogatePair()
     {

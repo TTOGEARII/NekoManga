@@ -78,7 +78,13 @@ public static class TextRenderer
             var color = !string.IsNullOrWhiteSpace(b.ColorOverride) ? ParseColor(b.ColorOverride)
                 : AppSettings.IsAutoColor(settings.LetterColorHex) ? ParseColor(b.FontColorHex)
                 : ParseColor(settings.LetterColorHex);
-            drawnSizes[bi] = DrawBlock(g, b, layouts[bi], color, settings, draw: bi != skip);
+            // 글 자리 아래 그림이 어두우면(투명 풍선·검은 바탕 — 풍선을 못 재 블록 자리에 그리는 글) 글자 색과 외곽선 색을 서로 바꾼다(2026-11-26 사용자 "바탕 밝기에 따라 자동 반전").
+            // 블록에 색을 직접 적었거나(사용자의 선택) 글자 색이 원문 자동이면(이미 원문 색을 따른다) 그대로. 흰 풍선은 LaMa가 메운 자리도 213~223이라 바뀌지 않는다. 두께는 그대로.
+            Color? outline = null;
+            if (settings.LetterAutoContrast && string.IsNullOrWhiteSpace(b.ColorOverride) && string.IsNullOrWhiteSpace(b.OutlineColor)
+                && !AppSettings.IsAutoColor(settings.LetterColorHex) && DarkBehind(img, layouts[bi].Rect))
+                (color, outline) = (ParseColor(settings.LetterOutlineColorHex, Color.White), color);
+            drawnSizes[bi] = DrawBlock(g, b, layouts[bi], color, settings, draw: bi != skip, outlineColor: outline);
         }
         return ToMat(bmp);
     }
@@ -86,12 +92,30 @@ public static class TextRenderer
     /// <summary>쪽 설정(자동 두께)이 그 크기(px)의 글자에 그리는 외곽선 두께(px) — 결과 창이 "지금 값"으로 보여 준다. 글자 밖으로 보이는 폭(펜 폭의 절반).</summary>
     public static double AutoOutlinePx(double sizePx, AppSettings s) => OutlineOf(null, s, (float)sizePx).Pen / 2;
 
-    /// <summary>외곽선의 펜 폭(px)과 색 — 블록에 적은 값이 쪽 설정을 이긴다. 펜은 글자 윤곽에 걸쳐 그려 절반이 글자 밖으로 보인다.</summary>
-    private static (float Pen, Color Color) OutlineOf(TextBlockInfo? b, AppSettings s, float size)
+    /// <summary>외곽선의 펜 폭(px)과 색 — 블록에 적은 값이 쪽 설정을 이긴다. 펜은 글자 윤곽에 걸쳐 그려 절반이 글자 밖으로 보인다.
+    /// <paramref name="colorOverride"/>는 자동 반전(Render)이 넘기는 색(글자 색이었던 것) — 있으면 블록·쪽 설정의 외곽선 색 대신 쓴다.</summary>
+    private static (float Pen, Color Color) OutlineOf(TextBlockInfo? b, AppSettings s, float size, Color? colorOverride = null)
     {
         float pen = b is { OutlinePx: >= 0 } ? (float)(2 * Math.Min(b.OutlinePx, 100))
             : s.LetterOutlineScale > 0 ? (float)(Math.Max(2.5f, size / 7f) * Math.Clamp(s.LetterOutlineScale, 0, 4)) : 0;
-        return (pen, ParseColor(b?.OutlineColor ?? "", ParseColor(s.LetterOutlineColorHex, Color.White)));
+        return (pen, colorOverride ?? ParseColor(b?.OutlineColor ?? "", ParseColor(s.LetterOutlineColorHex, Color.White)));
+    }
+
+    /// <summary>자동 반전(AppSettings.LetterAutoContrast)의 기준 — 글 자리 아래 그림의 평균 밝기(B·G·R 평균)가 이 값 미만이면 어두운 바탕.
+    /// 128은 가운데다: 흰 풍선(LaMa가 메운 자리도 213~223)·보통 톤(30~50% 망점 = 128~180)은 위라 전과 같고, 검은 바탕·짙은 그림만 아래로 떨어진다.</summary>
+    internal const int DarkBehindMax = 128;
+
+    /// <summary>글이 놓이는 자리(<paramref name="rect"/>, 결과 그림 좌표) 아래의 그림이 어두운가 — 그림 안에 걸친 부분만 잰다(Cv2.Mean).
+    /// 자리가 그림 밖이거나 비었으면 false(모르면 바꾸지 않는다).</summary>
+    internal static bool DarkBehind(Mat img, RectangleF rect)
+    {
+        int x1 = Math.Clamp((int)Math.Floor(rect.Left), 0, img.Cols), x2 = Math.Clamp((int)Math.Ceiling(rect.Right), 0, img.Cols);
+        int y1 = Math.Clamp((int)Math.Floor(rect.Top), 0, img.Rows), y2 = Math.Clamp((int)Math.Ceiling(rect.Bottom), 0, img.Rows);
+        if (x2 - x1 < 1 || y2 - y1 < 1) return false;
+        using var roi = new Mat(img, new Rect(x1, y1, x2 - x1, y2 - y1));
+        var m = Cv2.Mean(roi);
+        double gray = img.Channels() >= 3 ? (m.Val0 + m.Val1 + m.Val2) / 3 : m.Val0;
+        return gray < DarkBehindMax;
     }
 
     /// <summary>세로쓰기 블록을 말풍선의 실제 흰 폭까지 가로로 넓힌다.
@@ -309,6 +333,13 @@ public static class TextRenderer
                     rect = visible;
                 }
                 if (b.Hidden || rect.Width < 4 || rect.Height < 4 || string.IsNullOrWhiteSpace(b.Translation)) continue;   // 숨긴 블록은 자리도 크기도 없다(Size 0) → 그리지 않는다
+                if (b.Sfx)
+                {
+                    // 효과음(시험 중): 풍선이 없다 — 블록 자리 그대로, 자리에 맞춘 크기(SfxCap)에서 들어가는 가장 큰 크기로 고정한다(아래의 공통 크기·이웃 넘침 규칙 밖)
+                    rects[i] = rect; wraps[i] = rect.Width; round[i] = false;
+                    fits[i] = LargestFit(g, SfxStyle(b), new BlockLayout(rect, SfxCap(rect, b), rect.Width, false), settings);
+                    continue;
+                }
 
                 // 감지 블록은 '글자가 있던 자리'라 풍선보다 작다. 세로쓰기는 글자 기둥만 잡혀 아주 좁기도 하다(실측 26px).
                 // 원고에서 풍선의 실제 흰 폭·높이를 재서 넓힌다. 다른 블록 영역은 벽으로 삼는다 — 결합 풍선은 내부가 이어져
@@ -379,8 +410,9 @@ public static class TextRenderer
             // 조금만 걸친 블록은 넣는다 — v1.8.2까지 결과 창 편집 미리보기는 두 축에 한 비율을 써서 채색한 쪽의 가장자리 블록이 몇 px씩 걸쳤는데, 그것까지 빼면
             // 미리보기의 글자 크기가 최종 식자와 달라졌다(채색 비율로 합성한 4,000쪽 중 122쪽). 지금은 미리보기도 축별 비율(LetterScale)이라 최종과 같은 블록이 걸친다.
             // 걸친 블록의 크기도 아래에서 다른 블록처럼 자기 맞춤 크기와 공통 크기 가운데 작은 쪽이다.
-            var sorted = fits.Where((f, i) => f > 0 && !partial[i]).OrderBy(f => f).ToList();
-            if (sorted.Count == 0) sorted = fits.Where(f => f > 0).OrderBy(f => f).ToList();
+            // 효과음(Sfx)은 자리에 맞춘 제 크기라 공통 크기에 끼지 않는다 — 작은 효과음 몇 개가 중앙값을 끌어내려 대사가 깨알 글씨가 된다(2026-11-26)
+            var sorted = fits.Where((f, i) => f > 0 && !partial[i] && !blocks[i].Sfx).OrderBy(f => f).ToList();
+            if (sorted.Count == 0) sorted = fits.Where((f, i) => f > 0 && !blocks[i].Sfx).OrderBy(f => f).ToList();
             float common = sorted.Count == 0 ? 16 : sorted[sorted.Count / 2];
             common = Math.Min(common, img.Rows * CommonSizeOfPage);
             if (commonSize > 0) common = (float)commonSize;   // 붙든 값 — 블록이 바뀌어도 그대로(위 CommonSize)
@@ -393,9 +425,9 @@ public static class TextRenderer
                 float size = 0;
                 // 블록에 적은 크기(px, 결과 그림의 픽셀)는 풍선에 맞추지 않고 그대로 쓴다. 배율(StyleScale)만 있던 때는 풍선에 맞춘 크기가 상한이라
                 // 좁은 풍선은 줄여도 그대로였고, 키운 것도 그릴 때 자리에 맞춰 다시 줄었다("이 풍선만" 크기가 안 먹는다는 2026-11-17 사용자 보고).
-                bool fixedSize = fits[i] > 0 && blocks[i].SizePx > 0;
+                bool fixedSize = fits[i] > 0 && (blocks[i].SizePx > 0 || blocks[i].Sfx);
                 if (fixedSize)
-                    size = (float)Math.Clamp(blocks[i].SizePx, 4, 1000);
+                    size = blocks[i].SizePx > 0 ? (float)Math.Clamp(blocks[i].SizePx, 4, 1000) : fits[i];   // 효과음은 자리에 맞춘 크기 그대로(공통 크기와 무관)
                 else if (fits[i] > 0)
                 {
                     // 블록별 배율(이 풍선만 크게/작게)은 공통 크기에 곱한다. 크게 한 블록은 풍선에 맞춘 크기도 그만큼 넘게 둔다.
@@ -449,7 +481,7 @@ public static class TextRenderer
         try
         {
             static DetectedBlock Box(RectangleF r) => new((int)r.Left, (int)r.Top, (int)Math.Ceiling(r.Right), (int)Math.Ceiling(r.Bottom), 1f, false);
-            bool Usable(int i) => !blocks[i].ManualRect && !blocks[i].Hidden && rects[i].Width >= 4 && rects[i].Height >= 4
+            bool Usable(int i) => !blocks[i].ManualRect && !blocks[i].Hidden && !blocks[i].Sfx && rects[i].Width >= 4 && rects[i].Height >= 4   // 효과음은 풍선이 아니다(검수 2026-11-26)
                 && rects[i].Left >= 0 && rects[i].Top >= 0 && rects[i].Right <= img.Cols && rects[i].Bottom <= img.Rows;
             for (int i = 0; i < blocks.Count; i++)
             {
@@ -594,7 +626,7 @@ public static class TextRenderer
     /// <summary>어절을 꺾지 않고 풍선 안에 들어가는 가장 큰 글자 크기. 어떤 크기로도 안 들어가면 최소 크기.</summary>
     private static float LargestFit(Graphics g, TextBlockInfo b, BlockLayout box, AppSettings s)
     {
-        b = NormalizeNewlines(b);
+        b = SfxStyle(NormalizeNewlines(b));
         var (family, style) = ResolveStyle(b, s);
         var words = new WordMetrics(g, family, style, b.Translation, s);
         float spacing = LineSpacing(b, s);
@@ -682,6 +714,42 @@ public static class TextRenderer
                 if (family.IsStyleAvailable(cand)) { style = cand; break; }
         }
         return (family, style);
+    }
+
+    /// <summary>효과음 블록(TextBlockInfo.Sfx, 2026-11-26 시험 기능)의 그리기 꼴: 기본 굵게(블록에 보통/굵게를 적었으면 그대로), 세로(높이 > 폭×1.5)면 글자를 한 줄에 하나씩 쌓는다(빈칸은 뺀다 — ManualLines).
+    /// 줄을 직접 나눈 세로 효과음은 그 줄 그대로. 효과음이 아니면 그대로 돌려준다. PlanCore(크기 재기)와 DrawBlock(그리기)이 같은 변환을 쓴다(두 번 거쳐도 같다).</summary>
+    internal static TextBlockInfo SfxStyle(TextBlockInfo b)
+    {
+        if (!b.Sfx) return b;
+        int bold = b.BoldOverride < 0 ? 1 : b.BoldOverride;
+        if (b.Vertical && !b.ManualLines)
+        {
+            var chars = b.Translation.Where(c => !char.IsWhiteSpace(c)).Select(c => c.ToString());
+            return b with { Translation = string.Join("\n", chars), ManualLines = true, BoldOverride = bold };
+        }
+        return bold == b.BoldOverride ? b : b with { BoldOverride = bold };
+    }
+
+    /// <summary>효과음의 글자 크기 상한 — 풍선이 없으니 블록 자리에 맞춘다: 가로는 자리 높이의 85%와 글자당 폭, 세로는 자리 폭의 90%와 글자당 높이 가운데 작은 쪽.
+    /// 여기서 시작해 LargestFit이 자리에 들어가는 가장 큰 크기를 고른다.</summary>
+    private static float SfxCap(RectangleF rect, TextBlockInfo b)
+    {
+        // 줄을 직접 나눈 효과음은 그 줄 수·가장 긴 줄로 잰다(글자 수로 재면 "두근\n두근"의 상한이 반으로 — 검수 2026-11-26)
+        var lines = b.ManualLines ? b.Translation.Split('\n').Select(l => l.Count(c => !char.IsWhiteSpace(c))).ToList() : null;
+        int chars = Math.Max(1, b.Translation.Count(c => !char.IsWhiteSpace(c)));
+        float cap;
+        if (b.Vertical)
+        {
+            int n = Math.Max(1, lines?.Count ?? chars);   // 세로는 한 줄에 한 글자
+            cap = Math.Min(rect.Width * 0.9f, rect.Height / n * 0.95f);
+        }
+        else
+        {
+            int n = Math.Max(1, lines?.Count ?? 1);
+            int widest = Math.Max(1, lines?.Max() ?? chars);
+            cap = Math.Min(rect.Height * 0.85f / n, rect.Width / widest * 1.05f);
+        }
+        return Math.Clamp(cap, MinSize, 1000);
     }
 
     /// <summary>줄 간격 배율: 블록별 지정이 없으면(0) 페이지 기본 설정.</summary>
@@ -877,9 +945,10 @@ public static class TextRenderer
 
     /// <summary>블록 하나를 그리고 그린 글자 크기(px)를 돌려준다. draw가 false면 크기만 구한다.</summary>
     /// <param name="linesOut">그린(그릴) 줄들을 여기에 담는다 — 없으면 null.</param>
-    private static float DrawBlock(Graphics g, TextBlockInfo b, BlockLayout plan, Color color, AppSettings s, bool draw = true, List<string>? linesOut = null)
+    private static float DrawBlock(Graphics g, TextBlockInfo b, BlockLayout plan, Color color, AppSettings s, bool draw = true, List<string>? linesOut = null,
+        Color? outlineColor = null)   // outlineColor: 자동 반전이 넘기는 외곽선 색(글자 색이었던 것)
     {
-        b = NormalizeNewlines(ClampText(b));
+        b = SfxStyle(NormalizeNewlines(ClampText(b)));
         var (family, style) = ResolveStyle(b, s);
         // 블록별 지정이 없으면(빈 문자열) 페이지 기본 설정을 따른다
         var alignName = string.IsNullOrEmpty(b.Align) ? s.LetterAlign : b.Align;
@@ -896,7 +965,7 @@ public static class TextRenderer
             linesOut?.AddRange(lines);
             if (draw)
                 DrawLines(g, lines, family, style, size, size * LineAdvanceEm * spacing, words.SpaceAt(size), plan.Rect, align, color,
-                    OutlineOf(b, s, size), (float)b.RotationDeg, plan.Fixed);
+                    OutlineOf(b, s, size, outlineColor), (float)b.RotationDeg, plan.Fixed);
             return size;
         }
         float wrapWidth = Math.Min(plan.Rect.Width * WordOverflowAllow, Math.Max(plan.Rect.Width, plan.MaxWrap));

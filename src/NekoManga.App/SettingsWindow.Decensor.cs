@@ -17,8 +17,6 @@ namespace NekoManga.App;
 // 재생성 모델·커스텀 워크플로 파일 고르기, 고급 옵션 채우기·기본값 복원
 public partial class SettingsWindow
 {
-    private void BtnDecensorAdv_Click(object sender, RoutedEventArgs e) => ToggleAdv(PnlDecensorAdv, BtnDecensorAdv);
-    private void BtnManualDetect_Click(object sender, RoutedEventArgs e) => ToggleAdv(PnlManualDetect, BtnManualDetect);
 
     /// <summary>생성자가 값을 다 채운 뒤에만 화면을 맞춘다 — XAML 초기화·값 채우기 중의 SelectionChanged는 아직 없는 컨트롤을 건드린다.</summary>
     private bool _decensorUiReady;

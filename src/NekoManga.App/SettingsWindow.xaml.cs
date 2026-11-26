@@ -100,7 +100,9 @@ public partial class SettingsWindow
         SelectComboByTag(CmbTranslator, s.TranslateEngine);
         SelectComboByTag(CmbSource, s.TranslateSource);
         SelectComboByTag(CmbTarget, s.TranslateTarget);
-        ChkBubbleOnly.IsChecked = s.TranslateBubbleOnly;
+        SelectComboByTag(CmbSfxMode, s.TranslateBubbleOnly ? s.SfxMode : "Dialogue");   // 풍선 밖 효과음: Keep/Replace(시험 중)/Dialogue(= 전부 대사로, TranslateBubbleOnly 끔)
+        TxtGlossary.Text = s.TranslateGlossary.Replace("\n", Environment.NewLine);
+        ChkCarryContext.IsChecked = s.TranslateCarryContext;
 
         // 식자 글꼴: 설치된 글꼴 목록을 채우고 현재 값을 고른다 (편집 가능 — 직접 입력도 됨)
         foreach (var f in System.Drawing.FontFamily.Families.Select(f => f.Name).OrderBy(n => n))
@@ -111,6 +113,7 @@ public partial class SettingsWindow
         TxtLetterColor.Text = s.LetterColorHex;
         TxtLetterOutline.Text = s.LetterOutlineScale.ToString(CultureInfo.InvariantCulture);
         TxtLetterOutlineColor.Text = s.LetterOutlineColorHex;
+        ChkLetterAutoContrast.IsChecked = s.LetterAutoContrast;
         SelectComboByTag(CmbLetterAlign, s.LetterAlign);
         TxtLetterLineSp.Text = s.LetterLineSpacing.ToString(CultureInfo.InvariantCulture);
         TxtLetterWordSp.Text = s.LetterWordSpacing.ToString(CultureInfo.InvariantCulture);
@@ -229,7 +232,11 @@ public partial class SettingsWindow
         s.TranslateEngine = ComboTag(CmbTranslator, s.TranslateEngine);
         s.TranslateSource = ComboTag(CmbSource, s.TranslateSource);
         s.TranslateTarget = ComboTag(CmbTarget, s.TranslateTarget);
-        s.TranslateBubbleOnly = ChkBubbleOnly.IsChecked == true;
+        var sfx = ComboTag(CmbSfxMode, s.TranslateBubbleOnly ? s.SfxMode : "Dialogue");
+        s.TranslateBubbleOnly = sfx != "Dialogue";
+        if (sfx != "Dialogue") s.SfxMode = sfx;   // '대사처럼'을 골랐으면 SfxMode는 전 값 그대로(가르지 않으니 뜻이 없다)
+        s.TranslateGlossary = TxtGlossary.Text.Replace("\r\n", "\n").Trim();
+        s.TranslateCarryContext = ChkCarryContext.IsChecked == true;
         s.DeepLApiKey = TxtDeepLKey.Text.Trim();
         s.DeepSeekApiKey = TxtDeepSeekKey.Text.Trim();
         s.DeepSeekModel = (CmbDeepSeekModel.Text ?? "").Trim();
@@ -242,6 +249,7 @@ public partial class SettingsWindow
         s.LetterColorHex = AppSettings.IsAutoColor(TxtLetterColor.Text) ? AppSettings.LetterColorAuto : NormalizeHex(TxtLetterColor.Text, "#000000");
         s.LetterOutlineScale = ParseD(TxtLetterOutline.Text, s.LetterOutlineScale, 0, 4.0);
         s.LetterOutlineColorHex = NormalizeHex(TxtLetterOutlineColor.Text, "#FFFFFF");
+        s.LetterAutoContrast = ChkLetterAutoContrast.IsChecked == true;
         s.LetterAlign = ComboTag(CmbLetterAlign, s.LetterAlign);
         s.LetterLineSpacing = ParseD(TxtLetterLineSp.Text, s.LetterLineSpacing, 0.6, 3.0);
         s.LetterWordSpacing = ParseD(TxtLetterWordSp.Text, s.LetterWordSpacing, 0.3, 2.0);
@@ -325,23 +333,24 @@ public partial class SettingsWindow
             try { DragMove(); } catch { /* 버튼을 뗀 뒤 도착한 이벤트 */ }
     }
 
-    /// <summary>펼침 단추의 원문("▸ 고급 옵션 …") — 화살표만 바꿔 보여 주고, 글은 지금 언어로 다시 번역해 쓴다.
-    /// 보이는 글을 잘라 화살표를 붙이면 언어를 바꾼 뒤에도 옛 언어의 글이 남는다.</summary>
-    private readonly Dictionary<Wpf.Ui.Controls.Button, string> _advLabels = new();
-
-    private void ToggleAdv(System.Windows.Controls.Panel panel, Wpf.Ui.Controls.Button btn)
-    {
-        bool show = panel.Visibility != Visibility.Visible;
-        panel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-        if (!_advLabels.TryGetValue(btn, out var label))
-            _advLabels[btn] = label = UiText.SourceOf(btn, System.Windows.Controls.ContentControl.ContentProperty) ?? (string)btn.Content;
-        btn.Content = (show ? "▾" : "▸") + Loc.T(label)[1..];
-    }
-
     private void UiLanguage_Changed(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
         if (!IsLoaded) return;
         UiText.ApplyPicked(CmbUiLanguage, save: true);   // 테마처럼 고르는 즉시 저장·적용 — 아래 OnLanguageChanged가 코드가 넣은 글을 다시 채운다
+    }
+
+    /// <summary>글자 색·외곽선 색 칸 옆의 색 조각(2026-11-26 사용자 "글자색 설정할 때 색 팔레트로 설정할 수 있게") — 누르면 색 팔레트 창(ColorSwatch, 결과 창 식자 탭과 같은 것).</summary>
+    private void Swatch_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is System.Windows.Controls.Border { Tag: System.Windows.Controls.TextBox box }) ColorSwatch.Pick(this, box);
+    }
+
+    /// <summary>색 칸의 글이 바뀌면(손으로 적든 팔레트로 고르든) 조각을 그 색으로 — auto·빈 칸·색이 아닌 글이면 비운다.</summary>
+    private void ColorBox_Changed(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        if (SwLetterColor == null || SwLetterOutlineColor == null) return;   // InitializeComponent 도중
+        ColorSwatch.Paint(SwLetterColor, TxtLetterColor);
+        ColorSwatch.Paint(SwLetterOutlineColor, TxtLetterOutlineColor);
     }
 
     /// <summary>화면 언어가 바뀌었다 — XAML의 글은 UiText가 바꾸고, 여기서는 코드가 채운 글(요약·상태·펼침 단추)을 새 언어로 다시 채운다.</summary>
@@ -350,7 +359,6 @@ public partial class SettingsWindow
         if (!Dispatcher.CheckAccess()) { Dispatcher.InvokeAsync(OnLanguageChanged); return; }
         foreach (System.Windows.Controls.ComboBoxItem item in CmbUiLanguage.Items)
             if ((string)item.Tag == Loc.Lang && !item.IsSelected) item.IsSelected = true;   // 설치 창에서 바꿨을 때 이 칸도 맞춘다
-        foreach (var (btn, label) in _advLabels) btn.Content = ((string)btn.Content)[..1] + Loc.T(label)[1..];
         TxtAboutVersion.Text = Loc.F($"버전 v{new UpdateService().CurrentVersion}");
         RefreshDecensorUi();
         RefreshTrainStatus();

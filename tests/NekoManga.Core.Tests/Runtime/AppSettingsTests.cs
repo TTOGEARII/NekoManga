@@ -669,6 +669,33 @@ public class AppSettingsTests
         Assert.True(new AppSettings().TranslateBubbleOnly);
     }
 
+    [Fact]
+    public void Defaults_LetterAutoContrast_On()
+    {
+        // 2026-11-26 사용자: 바탕 밝기에 따라 글자색·외곽선색 자동 반전 — 그림 위·검은 바탕의 글이 흰 테두리 검은 글로 튀지 않게
+        Assert.True(new AppSettings().LetterAutoContrast);
+    }
+
+    // ── 효과음(시험 중)·용어집·문맥 (2026-11-26, CarrotMangaTranslator 참고) ──
+
+    [Fact]
+    public void Defaults_SfxKeep_GlossaryEmpty_CarryContextOn()
+    {
+        // 효과음 덮어쓰기는 시험 중 — 기본은 전처럼 풍선 밖 효과음을 그대로 둔다. 용어집은 비고, 앞 쪽 문맥 이어 보내기는 켬
+        var s = new AppSettings();
+        Assert.Equal("Keep", s.SfxMode);
+        Assert.Equal("", s.TranslateGlossary);
+        Assert.True(s.TranslateCarryContext);
+    }
+
+    [Fact]
+    public void Load_SfxMode_UnknownValueFallsBackToKeep_KnownValueKept()
+    {
+        using var t = new TempDir();
+        Assert.Equal("Keep", LoadJson(t, "{\"SfxMode\": \"Cover\"}").SfxMode);
+        Assert.Equal("Replace", LoadJson(t, "{\"SfxMode\": \"Replace\"}").SfxMode);
+    }
+
     // ── 식자 글자 색 ──
 
     [Fact]

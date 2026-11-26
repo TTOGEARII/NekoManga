@@ -14,6 +14,13 @@ public class AppSettings
     /// 효과음처럼 생긴(<see cref="Engine.EmbeddedTranslator.LooksLikeSfx"/>) 글은 번역·지움·식자하지 않고 그대로 둔다. 그런 글은 번역기가 폭주하기 쉽고 식자해도 그림을 가린다.
     /// 풍선 판정만으로 거르지 않는다 — 실제 원고에서 테두리가 닫히지 않는 풍선이 많아 대사가 빠진다(notes/translate-letter.md).</summary>
     public bool TranslateBubbleOnly { get; set; } = true;
+    /// <summary>풍선 밖 효과음을 어떻게 할까(2026-11-26, CarrotMangaTranslator 참고 — **시험 중**): "Keep"(기본 — 전처럼 그대로 둔다) | "Replace"(LaMa로 지우고 번역으로 덮는다:
+    /// 용어집 → 내장 의성어 사전 → 번역기, 굵게, 높이가 폭의 1.5배를 넘으면 글자를 세로로 쌓는다 — TextBlockInfo.Sfx). <see cref="TranslateBubbleOnly"/>가 꺼져 있으면 효과음을 가르지 않으니 뜻이 없다.</summary>
+    public string SfxMode { get; set; } = "Keep";
+    /// <summary>번역 용어집(2026-11-26) — 한 줄에 하나 "원문=번역"(탭으로 갈라도 된다, #은 주석). DeepSeek·Grok에는 지시문으로, Google·DeepL에는 원문의 용어를 번역어로 바꿔 보낸다. 효과음에도 먼저 쓴다.</summary>
+    public string TranslateGlossary { get; set; } = "";
+    /// <summary>앞 쪽의 대사(원문→번역, 최근 30줄)를 DeepSeek·Grok에 문맥으로 같이 보낸다(2026-11-26) — 인물의 말투·호칭이 쪽 사이에 흔들리지 않게. Google·DeepL은 쓰지 않는다.</summary>
+    public bool TranslateCarryContext { get; set; } = true;
 
     // ── 경로 ──────────────────────────────────────────────────
     /// <summary>ComfyUI·BallonsTranslator·모델이 설치되는 루트. 용량이 커서(약 15GB) 여유 있는 드라이브 권장.</summary>
@@ -285,6 +292,10 @@ public class AppSettings
     public string LetterOutlineColorHex { get; set; } = "#FFFFFF";
     /// <summary>외곽선 두께 배율. 0이면 외곽선 없음 (1.0 = 글자 크기의 1/7 정도).</summary>
     public double LetterOutlineScale { get; set; } = 1.0;
+    /// <summary>바탕이 어두우면 글자 색과 외곽선 색을 서로 바꿔 그린다(2026-11-26 사용자 "바탕 밝기에 따라 글자색·외곽선색 자동 반전") — 투명 풍선·검은 바탕의 글이
+    /// 흰 테두리 검은 글로 튀지 않고 검은 테두리 흰 글이 된다. 글이 놓이는 자리 아래 그림의 평균 밝기가 128 미만일 때(TextRenderer.DarkBehind).
+    /// 블록에 색을 직접 적었거나 글자 색이 auto면 바꾸지 않는다. 두께는 그대로다.</summary>
+    public bool LetterAutoContrast { get; set; } = true;
     /// <summary>식자 기본 정렬 — "Left"/"Center"/"Right". 블록별 지정이 없을 때 쓰인다.</summary>
     public string LetterAlign { get; set; } = "Center";
     /// <summary>식자 기본 기울임(이탤릭).</summary>
@@ -419,6 +430,7 @@ public class AppSettings
         TranslateTarget = TranslateTarget switch { "한국어" => "ko", "English" => "en", _ => TranslateTarget };   // loc:none
         // Papago 등 구 BT 엔진만 Google로 되돌린다 (DeepSeek·Grok은 유효).
         if (TranslateEngine is not ("Google" or "DeepL" or "DeepSeek" or "Grok")) TranslateEngine = "Google";
+        if (SfxMode is not ("Keep" or "Replace")) SfxMode = "Keep";   // 효과음(시험 중) — 모르는 값은 끔(전처럼 그대로 둔다)
         // 옛 '강력'(SDXL+LoRA)·DeepCream 모드는 2026-10-19 폐기 — 둘 다 기본(내장 LaMa)으로 돌린다
         // ComfyLama(엔진 LaMa)는 2026-11-12 사용자 선택으로 삭제 — 기본으로. '이전 방식' 감지 엔진(DecensorEngine)도 같이 삭제(옛 json의 키는 무시된다)
         if (DecensorMode is not ("Basic" or "ComfyRegen" or "ComfyCustom")) DecensorMode = "Basic";

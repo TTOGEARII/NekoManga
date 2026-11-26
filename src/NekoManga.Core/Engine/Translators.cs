@@ -8,6 +8,10 @@ public interface ITranslator
 {
     /// <summary>원문 목록을 같은 순서의 번역문 목록으로.</summary>
     Task<IReadOnlyList<string>> TranslateAsync(IReadOnlyList<string> texts, string sourceLang, string targetLang, CancellationToken ct);
+
+    /// <summary>용어집·앞 쪽 문맥·효과음 여부(<see cref="TranslateOptions"/>)를 같이 넘기는 꼴(2026-11-26) — 따로 받지 않는 번역기는 옵션 없는 쪽으로 간다.</summary>
+    Task<IReadOnlyList<string>> TranslateAsync(IReadOnlyList<string> texts, string sourceLang, string targetLang, TranslateOptions options, CancellationToken ct)
+        => TranslateAsync(texts, sourceLang, targetLang, ct);
 }
 
 /// <summary>구글 웹 번역 (무료 엔드포인트, 키 불필요). 기본 엔진.</summary>
@@ -40,6 +44,10 @@ public class GoogleTranslator : ITranslator
         }
         return results;
     }
+
+    /// <summary>용어집은 원문 치환으로 쓴다(지시문을 줄 수 없다 — Glossary.ApplySource). 문맥·효과음 지시는 쓰지 못한다.</summary>
+    public Task<IReadOnlyList<string>> TranslateAsync(IReadOnlyList<string> texts, string sourceLang, string targetLang, TranslateOptions options, CancellationToken ct)
+        => TranslateAsync(texts.Select(t => Glossary.ApplySource(t, options.Glossary)).ToList(), sourceLang, targetLang, ct);
 
     /// <summary>말풍선 하나를 번역해 달라는 요청 주소. 언어 코드는 <see cref="RequestCode"/>를 거친다.</summary>
     internal static string RequestUrl(string text, string sourceLang, string targetLang) =>
@@ -87,6 +95,10 @@ public class DeepLTranslator(string apiKey) : ITranslator
         return (root?["translations"] as JsonArray)?
             .Select(t => t?["text"]?.GetValue<string>() ?? "").ToList() ?? new List<string>();
     }
+
+    /// <summary>용어집은 원문 치환으로(Google과 같다). DeepL의 용어집 API는 쓰지 않는다 — 키마다 용어집을 올려 두는 절차가 더 든다.</summary>
+    public Task<IReadOnlyList<string>> TranslateAsync(IReadOnlyList<string> texts, string sourceLang, string targetLang, TranslateOptions options, CancellationToken ct)
+        => TranslateAsync(texts.Select(t => Glossary.ApplySource(t, options.Glossary)).ToList(), sourceLang, targetLang, ct);
 }
 
 /// <summary>OpenAI 호환 chat completions API를 쓰는 LLM 번역기 (DeepSeek·Grok·기타 호환 엔드포인트).
@@ -101,7 +113,10 @@ public class LlmTranslator(string endpoint, string apiKey, string model, string 
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(150) };
 
-    public async Task<IReadOnlyList<string>> TranslateAsync(IReadOnlyList<string> texts, string sourceLang, string targetLang, CancellationToken ct)
+    public Task<IReadOnlyList<string>> TranslateAsync(IReadOnlyList<string> texts, string sourceLang, string targetLang, CancellationToken ct)
+        => TranslateAsync(texts, sourceLang, targetLang, TranslateOptions.None, ct);
+
+    public async Task<IReadOnlyList<string>> TranslateAsync(IReadOnlyList<string> texts, string sourceLang, string targetLang, TranslateOptions options, CancellationToken ct)
     {
         var nonEmpty = texts.Select((t, i) => (t, i)).Where(x => !string.IsNullOrWhiteSpace(x.t)).ToList();
         if (nonEmpty.Count == 0) return texts.Select(_ => "").ToList();
@@ -109,10 +124,7 @@ public class LlmTranslator(string endpoint, string apiKey, string model, string 
         var srcName = LangName(sourceLang);
         var tgtName = LangName(targetLang);
         var numbered = string.Join("\n", nonEmpty.Select((x, k) => $"[{k + 1}] {x.t.Replace("\n", " ")}"));
-        var sys = $"You are a professional manga/comic translator. Translate each numbered line from {srcName} to {tgtName}. " +
-                  "Keep the natural, casual tone of manga dialogue. Lines are consecutive speech bubbles of one page, so use the others as context. " +
-                  $"Write the output entirely in {tgtName}: never leave {srcName} characters such as kana, kanji or the prolonged-sound mark ー in it (render stretched sounds with ~ or {tgtName} letters). " +
-                  "Output ONLY the translations, each prefixed with its number in [n] form, one per line. Do not add notes.";
+        var sys = BuildSystemPrompt(srcName, tgtName, options);
 
         // 본문은 길어야 수백 토큰이지만 추론 모델은 추론 토큰까지 여기서 쓴다 — 넉넉히 잡고 모자라면 키워서 한 번 더
         int maxTokens = Math.Clamp(1024 + nonEmpty.Count * 200, 2048, 8192);
@@ -183,7 +195,7 @@ public class LlmTranslator(string endpoint, string apiKey, string model, string 
         if (missing.Count > 0)
         {
             IReadOnlyList<string> fb = Array.Empty<string>();
-            try { fb = await new GoogleTranslator().TranslateAsync(missing.Select(k => nonEmpty[k].t).ToList(), sourceLang, targetLang, ct); }
+            try { fb = await new GoogleTranslator().TranslateAsync(missing.Select(k => nonEmpty[k].t).ToList(), sourceLang, targetLang, options, ct); }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch { }   // Google 타임아웃·오류 — 원문으로 둔다
             for (int m = 0; m < missing.Count; m++)
@@ -216,6 +228,32 @@ public class LlmTranslator(string endpoint, string apiKey, string model, string 
                 outp[n - 1] = m.Groups[3].Value.Trim();
         }
         return outp;
+    }
+
+    /// <summary>시스템 프롬프트(2026-11-26 용어집·문맥·효과음 — CarrotMangaTranslator 참고). 대사는 전과 같은 지시 + 용어집 표 + 앞 쪽 대사(참고용, 출력 금지).
+    /// 효과음(<see cref="TranslateOptions.Sfx"/>)은 짧은 의성어·의태어로(<see cref="TranslationCheck.SfxMaxChars"/>자 안, 설명·따옴표 없이) — 대사용 "한 쪽의 연속한 풍선" 문장은 뺀다.</summary>
+    internal static string BuildSystemPrompt(string srcName, string tgtName, TranslateOptions o)
+    {
+        var sb = new System.Text.StringBuilder();
+        if (o.Sfx)
+            sb.Append($"You are a professional manga translator. Each numbered line is a sound effect or onomatopoeia drawn on the artwork, in {srcName}. ")
+              .Append($"Translate each into the {tgtName} sound-effect expression a manga letterer would use: short (at most {TranslationCheck.SfxMaxChars} characters), no explanation, no quotation marks. ");
+        else
+            sb.Append($"You are a professional manga/comic translator. Translate each numbered line from {srcName} to {tgtName}. ")
+              .Append("Keep the natural, casual tone of manga dialogue. Lines are consecutive speech bubbles of one page, so use the others as context. ");
+        sb.Append($"Write the output entirely in {tgtName}: never leave {srcName} characters such as kana, kanji or the prolonged-sound mark ー in it (render stretched sounds with ~ or {tgtName} letters). ")
+          .Append("Output ONLY the translations, each prefixed with its number in [n] form, one per line. Do not add notes.");
+        if (o.Glossary.Count > 0)
+        {
+            sb.Append("\n\nGlossary (always translate these terms exactly as given):");
+            foreach (var (src, tgt) in o.Glossary) sb.Append('\n').Append(src).Append(" => ").Append(tgt);
+        }
+        if (o.Context.Count > 0)
+        {
+            sb.Append("\n\nContext from the previous pages, already translated — for reference only, do not translate or output these lines:");
+            foreach (var (src, tr) in o.Context) sb.Append('\n').Append(src.Replace("\n", " ")).Append(" => ").Append(tr.Replace("\n", " "));
+        }
+        return sb.ToString();
     }
 
     // 프롬프트에 넣을 이름일 뿐 언어 판정(LangCode)이 아니다 — zh-TW·zh-Hans 같은 꼴은 코드 그대로 넘어가 간체·번체 구분이 프롬프트에 남는다

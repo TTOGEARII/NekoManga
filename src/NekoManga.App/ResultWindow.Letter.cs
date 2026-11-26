@@ -263,7 +263,7 @@ public partial class ResultWindow
             // 글자 수로 자르지 않는다 — 항목은 폭에서 잘리면 XAML(ItemTemplate의 TextTrimming)이 "…"을 붙이고, 온 글은 툴팁에(2026-11-26, 전에는 22자에서 잘랐다).
             // 줄바꿈(직접 나눈 줄의 \n, 번역기가 준 \r\n)과 겹친 빈칸은 빈칸 하나로 — CR이 남으면 TextBlock이 줄을 바꿔 "…"이 둘째 줄에만 붙는다
             var t = string.Join(" ", _letterBlocks[i].Translation.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-            CmbBlocks.Items.Add($"{i + 1}. {(_letterBlocks[i].Hidden ? Loc.T("(숨김) ") : "")}{t}");
+            CmbBlocks.Items.Add($"{i + 1}. {(_letterBlocks[i].Hidden ? Loc.T("(숨김) ") : "")}{(_letterBlocks[i].Sfx ? Loc.T("[효과음] ") : "")}{t}");
         }
         if (_letterBlocks.Count > 0) CmbBlocks.SelectedIndex = 0;
         TxtBlockText.Text = _letterBlocks.Count > 0 ? _letterBlocks[0].Translation : "";
@@ -325,6 +325,7 @@ public partial class ResultWindow
         foreach (ComboBoxItem it in CmbBBold.Items)
             if ((string?)it.Tag == b.BoldOverride.ToString()) { CmbBBold.SelectedItem = it; break; }
         ChkBItalic.IsChecked = b.Italic;
+        ChkBSfx.IsChecked = b.Sfx;
         // 0 = 페이지 기본 따름 — 빈 칸으로 표시
         TxtBLineSp.Text = b.LineSpacing <= 0 ? "" : Num(b.LineSpacing, "0.##");
         TxtBColor.Text = b.ColorOverride;
@@ -388,6 +389,7 @@ public partial class ResultWindow
             Align = (CmbBAlign.SelectedItem as ComboBoxItem)?.Tag as string ?? b.Align,
             BoldOverride = int.TryParse((CmbBBold.SelectedItem as ComboBoxItem)?.Tag as string, out var bo) ? bo : b.BoldOverride,
             Italic = ChkBItalic.IsChecked == true,
+            Sfx = ChkBSfx.IsChecked == true,
             LineSpacing = string.IsNullOrWhiteSpace(TxtBLineSp.Text) ? 0 : D(TxtBLineSp.Text, b.LineSpacing, 0.6, 3.0),
             ColorOverride = HexOr(TxtBColor.Text, b.ColorOverride),
             OutlinePx = ChkBOutAuto.IsChecked == true ? -1 : D(TxtBOut.Text, b.OutlinePx, 0, 100),
@@ -443,31 +445,17 @@ public partial class ResultWindow
         box.CaretIndex = box.Text.Length;
     }
 
-    /// <summary>색 칸 옆의 색 조각을 누르면 색 고르기 창을 띄워 그 칸에 #RRGGBB로 적는다.</summary>
+    /// <summary>색 칸 옆의 색 조각을 누르면 색 고르기 창을 띄워 그 칸에 #RRGGBB로 적는다(ColorSwatch — 설정 창과 같이 쓴다).</summary>
     private void Swatch_Click(object sender, MouseButtonEventArgs e)
     {
-        if (sender is not Border { Tag: TextBox box }) return;
-        using var dlg = new System.Windows.Forms.ColorDialog { FullOpen = true, AnyColor = true };
-        var cur = ToMedia(HexOr(box.Text, ""), "#000000");
-        dlg.Color = System.Drawing.Color.FromArgb(cur.R, cur.G, cur.B);
-        var owner = new System.Windows.Forms.NativeWindow();
-        owner.AssignHandle(new System.Windows.Interop.WindowInteropHelper(this).Handle);
-        try
-        {
-            if (dlg.ShowDialog(owner) == System.Windows.Forms.DialogResult.OK)
-                box.Text = $"#{dlg.Color.R:X2}{dlg.Color.G:X2}{dlg.Color.B:X2}";
-        }
-        finally { owner.ReleaseHandle(); }
+        if (sender is Border { Tag: TextBox box }) ColorSwatch.Pick(this, box);
     }
 
     /// <summary>색 조각을 칸의 색으로 칠한다 — 빈 칸(자동·페이지 설정)이나 아직 색이 아닌 글이면 비운다.</summary>
     private void UpdateSwatches()
     {
         foreach (var (sw, box) in new[] { (SwBColor, TxtBColor), (SwBOutColor, TxtBOutColor), (SwLColor, TxtLColor), (SwLOutColor, TxtLOutColor) })
-        {
-            var hex = HexOr(box.Text, "");
-            sw.Background = hex.Length == 7 ? new SolidColorBrush(ToMedia(hex, "#000000")) : Brushes.Transparent;
-        }
+            ColorSwatch.Paint(sw, box);
     }
 
     private void TxtBlockText_Changed(object sender, TextChangedEventArgs e)

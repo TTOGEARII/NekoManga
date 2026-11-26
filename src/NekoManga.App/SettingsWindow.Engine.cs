@@ -17,7 +17,6 @@ namespace NekoManga.App;
 // ComfyUI 화면 열기, 내장 재생성 레시피 넣기·내보내기, 커스텀 워크플로 고르기(검열 제거 탭의 찾기 버튼도 함께 쓴다)
 public partial class SettingsWindow
 {
-    private void BtnEngineAdv_Click(object sender, RoutedEventArgs e) => ToggleAdv(PnlEngineAdv, BtnEngineAdv);
 
     // ── ComfyUI 화면 · 커스텀 워크플로 (2026-10-20) ──
     private async void BtnOpenComfyUi_Click(object sender, RoutedEventArgs e)

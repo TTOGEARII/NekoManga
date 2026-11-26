@@ -14,48 +14,7 @@
          컨트롤의 x:Name과 이벤트는 그대로다 — 코드 비하인드는 이름으로만 찾는다. -->
     <ui:FluentWindow.Resources>
         <local:SubtractConverter x:Key="Subtract"/>   <!-- 콤보 항목 MaxWidth = 콤보 폭 − 32 (CmbBlocks) -->
-        <!-- 패널의 묶음 = 카드(2026-11-20 사용자 "영역을 좀더 가독성 있게 구분"): 먹선 테두리 + 먹색 제목 띠(재생성 칸의 꼬리표와 같은 결). 제목만 있던 때는 묶음의 경계가 안 보였다.
-             카드 = SideCard > StackPanel > (SideCardHead > SideTitle) + SideBody -->
-        <Style x:Key="SideCard" TargetType="Border">
-            <Setter Property="BorderBrush" Value="{DynamicResource NekoStroke}"/>
-            <Setter Property="BorderThickness" Value="1.5"/>
-            <Setter Property="Background" Value="{DynamicResource NekoCard}"/>
-            <Setter Property="Margin" Value="0,0,0,10"/>
-        </Style>
-        <Style x:Key="SideCardHead" TargetType="Border">
-            <Setter Property="Background" Value="{DynamicResource NekoStroke}"/>
-            <Setter Property="Padding" Value="10,3"/>
-        </Style>
-        <Style x:Key="SideTitle" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{DynamicResource NekoBg}"/>
-            <Setter Property="FontWeight" Value="Bold"/>
-            <Setter Property="FontSize" Value="12.5"/>
-        </Style>
-        <Style x:Key="SideBody" TargetType="StackPanel">
-            <Setter Property="Margin" Value="10,8,10,4"/>
-        </Style>
-        <!-- 접이식 카드의 제목 띠(안내 카드, 2026-11-20): 띠 전체가 단추, 오른쪽 끝에 ▸/▾. Focusable=False — Space는 손 도구다(단추에 포커스가 가면 Space가 단추를 누른다) -->
-        <Style x:Key="SideCardToggle" TargetType="ToggleButton">
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Focusable" Value="False"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ToggleButton">
-                        <Border Background="{DynamicResource NekoStroke}" Padding="10,3">
-                            <DockPanel>
-                                <TextBlock x:Name="Arrow" DockPanel.Dock="Right" Text="▸" Foreground="{DynamicResource NekoBg}" FontWeight="Bold" FontSize="12.5" Margin="8,0,0,0" VerticalAlignment="Center"/>
-                                <ContentPresenter VerticalAlignment="Center"/>
-                            </DockPanel>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Arrow" Property="Text" Value="▾"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
+        <!-- 패널의 묶음 = 카드(2026-11-20 사용자 "영역을 좀더 가독성 있게 구분"): SideCard·SideCardHead·SideTitle·SideBody·SideCardToggle — 설정 창도 쓰게 App.xaml로 옮겼다(2026-11-26) -->
         <!-- 단축키 표(사용자 "B : 브러시, E : 지우개 꼴로"): 왼쪽 키캡(바닥색 + 옅은 테두리 — 어두운 테마에서 바닥색만으로는 안 보인다) + 오른쪽 설명 -->
         <Style x:Key="KeyCap" TargetType="Border">
             <Setter Property="Background" Value="{DynamicResource NekoCanvas}"/>
@@ -449,6 +408,10 @@
                                                           Checked="BlockStyle_Changed" Unchecked="BlockStyle_Changed"/>
                                             </StackPanel>
                                         </DockPanel>
+                                        <!-- 효과음(2026-11-26 시험 기능): 풍선 밖 효과음으로 가려진 블록 — 끄면 대사처럼(잘못 가려진 것), 켜면 [새 글 넣기]한 글도 효과음 꼴로 -->
+                                        <CheckBox x:Name="ChkBSfx" Content="효과음 (시험 중)" Style="{StaticResource SideCheck}" Margin="0,2,0,4"
+                                                  Checked="BlockStyle_Changed" Unchecked="BlockStyle_Changed"
+                                                  ToolTip="효과음으로 다룬다냥: 풍선을 재지 않고 자리에 맞춘 크기로 굵게, 세로면 글자를 쌓는다냥. 잘못 가려진 대사는 끄라냥"/>
                                     </StackPanel>
                                 </StackPanel>
                             </Border>

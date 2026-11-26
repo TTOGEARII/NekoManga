@@ -67,6 +67,53 @@
                 <Setter Property="FontSize" Value="12.5"/>
             </Style>
 
+            <!-- 패널의 묶음 = 카드(결과 창 2026-11-20 사용자 "영역을 좀더 가독성 있게 구분" → 설정 창도 2026-11-26): 먹선 테두리 + 먹색 제목 띠.
+                 카드 = SideCard > StackPanel > (SideCardHead > SideTitle) + SideBody. 접히는 카드는 제목 띠가 SideCardToggle(ToggleButton)이고 본문 Visibility를 IsChecked에 바인딩한다. -->
+            <Style x:Key="SideCard" TargetType="Border">
+                <Setter Property="BorderBrush" Value="{DynamicResource NekoStroke}"/>
+                <Setter Property="BorderThickness" Value="1.5"/>
+                <Setter Property="Background" Value="{DynamicResource NekoCard}"/>
+                <Setter Property="Margin" Value="0,0,0,10"/>
+            </Style>
+            <Style x:Key="SideCardHead" TargetType="Border">
+                <Setter Property="Background" Value="{DynamicResource NekoStroke}"/>
+                <Setter Property="Padding" Value="10,3"/>
+            </Style>
+            <Style x:Key="SideTitle" TargetType="TextBlock">
+                <Setter Property="Foreground" Value="{DynamicResource NekoBg}"/>
+                <Setter Property="FontWeight" Value="Bold"/>
+                <Setter Property="FontSize" Value="12.5"/>
+            </Style>
+            <Style x:Key="SideBody" TargetType="StackPanel">
+                <Setter Property="Margin" Value="10,8,10,4"/>
+            </Style>
+            <!-- 접이식 카드의 제목 띠: 띠 전체가 단추, 오른쪽 끝에 ▸/▾. Focusable=False — 결과 창의 Space는 손 도구다(단추에 포커스가 가면 Space가 단추를 누른다).
+                 글 Content를 그대로 넣어도 띠 색이 되게 Foreground·글꼴을 둔다(설정 창의 고급 옵션). 결과 창은 SideTitle TextBlock을 Content로 넣는다. -->
+            <Style x:Key="SideCardToggle" TargetType="ToggleButton">
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Focusable" Value="False"/>
+                <Setter Property="Foreground" Value="{DynamicResource NekoBg}"/>
+                <Setter Property="FontWeight" Value="Bold"/>
+                <Setter Property="FontSize" Value="12.5"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ToggleButton">
+                            <Border Background="{DynamicResource NekoStroke}" Padding="10,3">
+                                <DockPanel>
+                                    <TextBlock x:Name="Arrow" DockPanel.Dock="Right" Text="▸" Foreground="{DynamicResource NekoBg}" FontWeight="Bold" FontSize="12.5" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                    <ContentPresenter VerticalAlignment="Center"/>
+                                </DockPanel>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsChecked" Value="True">
+                                    <Setter TargetName="Arrow" Property="Text" Value="▾"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
             <Style TargetType="TextBlock" x:Key="SectionTitle">
                 <Setter Property="FontWeight" Value="SemiBold"/>
                 <Setter Property="FontSize" Value="15"/>

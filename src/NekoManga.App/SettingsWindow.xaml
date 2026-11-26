@@ -2,12 +2,95 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-        Title="설정" Height="640" Width="760"
+        Title="설정" Height="740" Width="1040" MinHeight="620" MinWidth="960"
         WindowStartupLocation="CenterOwner"
         ExtendsContentIntoTitleBar="True"
         WindowBackdropType="None"
         WindowCornerPreference="Round"
         Background="{DynamicResource NekoBg}">
+    <!-- 설정 창의 짜임(2026-11-26 사용자 "설정이 많아지며 가독성이 떨어진다 — 칸을 잘 나눠 달라" → 왼쪽 목록형 + 카드 + 설명은 한 줄과 툴팁):
+         왼쪽 세로 목록(SideNavTabs — 탭은 SettingsTabs 그대로라 코드·하네스의 SelectedIndex가 안 바뀐다) + 오른쪽 내용. 묶음은 결과 창과 같은 카드(App.xaml의 SideCard 계열).
+         칸 줄은 SetRow(이름 150px | 입력 | 범위) — 범위 "(0.3 ~ 4)"는 칸 이름에서 떼어 옅은 글로 둔다(이름이 두 줄로 꺾이던 것). 설명은 카드마다 한 줄, 칸별 자세한 설명은 그 칸의 ToolTip.
+         접히는 묶음(고급 옵션·규칙 감지기 세부)은 제목 띠가 ToggleButton(SideCardToggle)이고 본문 Visibility를 IsChecked에 바인딩한다 — 코드 없이 접힌다. x:Name과 이벤트는 전과 같다(코드 비하인드는 이름으로 찾는다). -->
+    <ui:FluentWindow.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <!-- 왼쪽 목록형 탭: 영어·일본어에서 위쪽 탭이 두 줄로 꺾이던 것도 사라진다. 고른 항목은 카드 제목 띠와 같은 먹색 띠 -->
+        <Style x:Key="SideNavTabs" TargetType="TabControl">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="TabStripPlacement" Value="Left"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="200"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TabPanel Grid.Column="0" IsItemsHost="True" Margin="0,6,12,0"/>
+                            <Border Grid.Column="1" Background="{DynamicResource NekoCard}"
+                                    BorderBrush="{DynamicResource NekoStroke}" BorderThickness="2" CornerRadius="0">
+                                <ContentPresenter ContentSource="SelectedContent"/>
+                            </Border>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="SideNavTab" TargetType="TabItem">
+            <Setter Property="Foreground" Value="{DynamicResource NekoText}"/>
+            <Setter Property="FontSize" Value="13.5"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="Bd" Background="Transparent" Padding="14,9" Margin="0,0,0,4" Cursor="Hand">
+                            <ContentPresenter x:Name="Hd" ContentSource="Header" VerticalAlignment="Center" Opacity="0.75"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource NekoCardHover}"/>
+                                <Setter TargetName="Hd" Property="Opacity" Value="1"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource NekoStroke}"/>
+                                <Setter TargetName="Hd" Property="Opacity" Value="1"/>
+                                <Setter Property="Foreground" Value="{DynamicResource NekoBg}"/>
+                                <Setter Property="FontWeight" Value="Bold"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- 칸 줄: 이름(폭 150, 넘치면 줄 바꿈) | 입력 | 범위(옅은 글) -->
+        <Style x:Key="SetRow" TargetType="DockPanel">
+            <Setter Property="Margin" Value="0,3,12,3"/>
+            <Setter Property="LastChildFill" Value="True"/>
+        </Style>
+        <Style x:Key="SetLabel" TargetType="TextBlock" BasedOn="{StaticResource FieldLabel}">
+            <Setter Property="Width" Value="150"/>
+        </Style>
+        <Style x:Key="SetRange" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource NekoHint}"/>
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="8,0,0,0"/>
+        </Style>
+        <!-- 카드의 설명 한 줄(본문 끝) -->
+        <Style x:Key="SetHint" TargetType="TextBlock" BasedOn="{StaticResource HintText}">
+            <Setter Property="Margin" Value="0,8,0,2"/>
+        </Style>
+        <!-- 접히는 카드의 제목 띠 — 결과 창의 것(Focusable=False: 거기선 Space가 손 도구)과 달리 키보드로도 펼 수 있게(검수 2026-11-26) -->
+        <Style x:Key="SetCardToggle" TargetType="ToggleButton" BasedOn="{StaticResource SideCardToggle}">
+            <Setter Property="Focusable" Value="True"/>
+        </Style>
+        <!-- 카드 본문 안의 작은 묶음 제목 -->
+        <Style x:Key="SetSub" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource NekoText}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,10,0,4"/>
+        </Style>
+    </ui:FluentWindow.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -19,789 +102,964 @@
 
         <ui:TitleBar Grid.Row="0" Title="설정 ⚙ (창을 닫으면 저장된다냥)" ShowMinimize="False" ShowMaximize="False"/>
 
-        <TabControl x:Name="SettingsTabs" Grid.Row="1" Margin="16,4,16,16">
+        <TabControl x:Name="SettingsTabs" Grid.Row="1" Margin="16,4,16,16" Style="{StaticResource SideNavTabs}">
 
             <!-- ── 채색 ── -->
-            <TabItem Header="🎨 채색">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="8,8,18,8">
-                        <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="품질 · 속도"/></Border>
-                        <UniformGrid Columns="2" Rows="4">
-                            <DockPanel Margin="0,4">
-                                <TextBlock Text="해상도 상한 MP (0.3 ~ 4)" Style="{StaticResource FieldLabel}" Width="150"/>
-                                <TextBox x:Name="TxtMegapixels" Width="90" HorizontalAlignment="Left"/>
-                            </DockPanel>
-                            <DockPanel Margin="0,4">
-                                <TextBlock Text="스텝 수 (5 ~ 100)" Style="{StaticResource FieldLabel}" Width="150"/>
-                                <TextBox x:Name="TxtSteps" Width="90" HorizontalAlignment="Left"/>
-                            </DockPanel>
-                            <DockPanel Margin="0,4">
-                                <TextBlock Text="CFG (1 ~ 15)" Style="{StaticResource FieldLabel}" Width="150"/>
-                                <TextBox x:Name="TxtCfg" Width="90" HorizontalAlignment="Left"/>
-                            </DockPanel>
-                            <DockPanel Margin="0,4">
-                                <TextBlock Text="Denoise (0.1 ~ 1)" Style="{StaticResource FieldLabel}" Width="150"/>
-                                <TextBox x:Name="TxtDenoise" Width="90" HorizontalAlignment="Left"/>
-                            </DockPanel>
-                            <DockPanel Margin="0,4">
-                                <TextBlock Text="샘플러" Style="{StaticResource FieldLabel}" Width="130"/>
-                                <ComboBox x:Name="CmbSampler" Width="190" HorizontalAlignment="Left">
-                                    <ComboBoxItem Content="dpmpp_sde_gpu"/>
-                                    <ComboBoxItem Content="dpmpp_2m"/>
-                                    <ComboBoxItem Content="euler_ancestral"/>
-                                </ComboBox>
-                            </DockPanel>
-                            <DockPanel Margin="0,4">
-                                <TextBlock Text="선화 합성 % (0 ~ 100)" Style="{StaticResource FieldLabel}" Width="150"/>
-                                <TextBox x:Name="TxtLineart" Width="90" HorizontalAlignment="Left"/>
-                            </DockPanel>
-                            <DockPanel Margin="0,4">
-                                <TextBlock Text="시드 (-1=랜덤)" Style="{StaticResource FieldLabel}" Width="130"/>
-                                <TextBox x:Name="TxtSeed" Width="130" HorizontalAlignment="Left"/>
-                            </DockPanel>
-                            <Border/>
-                        </UniformGrid>
-                        <TextBlock Style="{StaticResource HintText}"
-                                   Text="dpmpp_sde_gpu는 품질(장당 ~90초), dpmpp_2m은 속도(~55초)다냥.&#10;· 8GB VRAM이면 1.5MP를 넘기지 말라냥."/>
-
-                        <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="컬러 표지로 캐릭터 색 맞추기"/></Border>
-                        <DockPanel Margin="0,4">
-                            <!-- 미리보기 겸 드롭존 — 표지를 여기에 끌어다 놓으면 등록된다 -->
-                            <Border x:Name="RefDropZone" DockPanel.Dock="Left" Width="96" Height="128"
-                                    Background="{DynamicResource NekoCanvas}" CornerRadius="0" Margin="0,0,10,0"
-                                    BorderBrush="{DynamicResource NekoStroke}" BorderThickness="1"
-                                    AllowDrop="True" Drop="RefDropZone_Drop" DragOver="RefDropZone_DragOver">
-                                <Grid>
-                                    <TextBlock x:Name="TxtRefDropHint" Text="표지를&#10;끌어다&#10;놓으라냥"
-                                               HorizontalAlignment="Center" VerticalAlignment="Center"
-                                               TextAlignment="Center" Foreground="{DynamicResource NekoHint}"/>
-                                    <Image x:Name="ImgRefPreview" Stretch="Uniform" Margin="3"/>
-                                </Grid>
-                            </Border>
+            <TabItem Header="🎨 채색" Style="{StaticResource SideNavTab}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="14,12,14,4">
+                    <StackPanel>
+                        <Border Style="{StaticResource SideCard}">
                             <StackPanel>
-                                <DockPanel>
-                                    <ui:Button x:Name="BtnRefExtract" DockPanel.Dock="Right" Content="🎨 색 뽑기"
-                                               Click="BtnRefExtract_Click" Padding="12,4" Margin="8,0,0,0"/>
-                                    <ui:Button DockPanel.Dock="Right" Content="찾기" Click="BtnRefBrowse_Click" Padding="12,4" Margin="8,0,0,0"/>
-                                    <TextBox x:Name="TxtColorRefImage" TextChanged="TxtColorRefImage_Changed"/>
-                                </DockPanel>
-                                <TextBox x:Name="TxtColorRefTags" AcceptsReturn="True" MinLines="2" MaxLines="6" TextWrapping="Wrap" Margin="0,6,0,0"/>
-                                <DockPanel Margin="0,6,0,0">
-                                    <TextBlock Text="표지 반영 강도 (0 ~ 1.5)" Style="{StaticResource FieldLabel}" Width="150"/>
-                                    <TextBox x:Name="TxtRefStrength" Width="64" HorizontalAlignment="Left"/>
-                                </DockPanel>
+                                <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="품질 · 속도"/></Border>
+                                <StackPanel Style="{StaticResource SideBody}">
+                                    <UniformGrid Columns="2" Rows="4">
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="해상도 상한 MP" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtMegapixels" Width="80" HorizontalAlignment="Left" ToolTip="8GB VRAM이면 1.5MP를 넘기지 말라냥."/>
+                                            <TextBlock Text="0.3 ~ 4" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="스텝 수" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtSteps" Width="80" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="5 ~ 100" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="CFG" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtCfg" Width="80" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="1 ~ 15" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="Denoise" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtDenoise" Width="80" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="0.1 ~ 1" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="샘플러" Style="{StaticResource SetLabel}"/>
+                                            <ComboBox x:Name="CmbSampler" MinWidth="170" HorizontalAlignment="Left">
+                                                <ComboBoxItem Content="dpmpp_sde_gpu"/>
+                                                <ComboBoxItem Content="dpmpp_2m"/>
+                                                <ComboBoxItem Content="euler_ancestral"/>
+                                            </ComboBox>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="선화 합성 %" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtLineart" Width="80" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="0 ~ 100" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="시드" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtSeed" Width="100" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="-1 = 랜덤" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <Border/>
+                                    </UniformGrid>
+                                    <TextBlock Style="{StaticResource SetHint}" Text="dpmpp_sde_gpu는 품질(장당 ~90초), dpmpp_2m은 속도(~55초)다냥."/>
+                                </StackPanel>
                             </StackPanel>
-                        </DockPanel>
-                        <TextBlock Style="{StaticResource HintText}"
-                                   Text="표지를 등록하면 ① [색 뽑기]로 머리·눈·의상 색 태그를 뽑고, ② IPAdapter가 있으면 표지의 색·화풍을 직접 주입한다냥.&#10;· 반영 강도는 0.4~0.6을 권한다냥."/>
+                        </Border>
 
-                        <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="캐릭터 태그 (수동)"/></Border>
-                        <TextBox x:Name="TxtManualTags" AcceptsReturn="True" MinLines="2" MaxLines="6" TextWrapping="Wrap"/>
-                        <TextBlock Style="{StaticResource HintText}"
-                                   Text="예: blonde hair, amber eyes — 머리·눈 색을 적으면 채색이 일관된다냥."/>
+                        <Border Style="{StaticResource SideCard}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="컬러 표지로 캐릭터 색 맞추기"/></Border>
+                                <StackPanel Style="{StaticResource SideBody}">
+                                    <DockPanel Margin="0,2,0,0">
+                                        <!-- 미리보기 겸 드롭존 — 표지를 여기에 끌어다 놓으면 등록된다 -->
+                                        <Border x:Name="RefDropZone" DockPanel.Dock="Left" Width="96" Height="128"
+                                                Background="{DynamicResource NekoCanvas}" CornerRadius="0" Margin="0,0,12,0"
+                                                BorderBrush="{DynamicResource NekoStroke}" BorderThickness="1"
+                                                AllowDrop="True" Drop="RefDropZone_Drop" DragOver="RefDropZone_DragOver">
+                                            <Grid>
+                                                <TextBlock x:Name="TxtRefDropHint" Text="표지를&#10;끌어다&#10;놓으라냥"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                           TextAlignment="Center" Foreground="{DynamicResource NekoHint}"/>
+                                                <Image x:Name="ImgRefPreview" Stretch="Uniform" Margin="3"/>
+                                            </Grid>
+                                        </Border>
+                                        <StackPanel>
+                                            <DockPanel>
+                                                <ui:Button x:Name="BtnRefExtract" DockPanel.Dock="Right" Content="🎨 색 뽑기"
+                                                           Click="BtnRefExtract_Click" Padding="12,4" Margin="8,0,0,0"/>
+                                                <ui:Button DockPanel.Dock="Right" Content="찾기" Click="BtnRefBrowse_Click" Padding="12,4" Margin="8,0,0,0"/>
+                                                <TextBox x:Name="TxtColorRefImage" TextChanged="TxtColorRefImage_Changed"/>
+                                            </DockPanel>
+                                            <TextBox x:Name="TxtColorRefTags" AcceptsReturn="True" MinLines="2" MaxLines="6" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                            <DockPanel Style="{StaticResource SetRow}" Margin="0,6,0,0">
+                                                <TextBlock Text="표지 반영 강도" Style="{StaticResource SetLabel}"/>
+                                                <TextBox DockPanel.Dock="Left" x:Name="TxtRefStrength" Width="64" HorizontalAlignment="Left" ToolTip="반영 강도는 0.4~0.6을 권한다냥."/>
+                                                <TextBlock Text="0 ~ 1.5" Style="{StaticResource SetRange}"/>
+                                            </DockPanel>
+                                        </StackPanel>
+                                    </DockPanel>
+                                    <TextBlock Style="{StaticResource SetHint}" Text="표지를 등록하면 ① [색 뽑기]로 머리·눈·의상 색 태그를 뽑고, ② IPAdapter가 있으면 표지의 색·화풍을 직접 주입한다냥."/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
 
-                        <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="자동 태그에서 뺄 태그"/></Border>
-                        <TextBox x:Name="TxtExcludeTags"/>
-                        <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="부정 프롬프트"/></Border>
-                        <TextBox x:Name="TxtNegative" AcceptsReturn="True" MinLines="2" MaxLines="6" TextWrapping="Wrap"/>
+                        <Border Style="{StaticResource SideCard}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="태그 · 프롬프트"/></Border>
+                                <StackPanel Style="{StaticResource SideBody}">
+                                    <TextBlock Text="캐릭터 태그 (수동)" Style="{StaticResource SetSub}" Margin="0,0,0,4"/>
+                                    <TextBox x:Name="TxtManualTags" AcceptsReturn="True" MinLines="2" MaxLines="6" TextWrapping="Wrap"
+                                             ToolTip="예: blonde hair, amber eyes — 머리·눈 색을 적으면 채색이 일관된다냥."/>
+                                    <TextBlock Text="자동 태그에서 뺄 태그" Style="{StaticResource SetSub}"/>
+                                    <TextBox x:Name="TxtExcludeTags"/>
+                                    <TextBlock Text="부정 프롬프트" Style="{StaticResource SetSub}"/>
+                                    <TextBox x:Name="TxtNegative" AcceptsReturn="True" MinLines="2" MaxLines="6" TextWrapping="Wrap"/>
+                                    <TextBlock Style="{StaticResource SetHint}" Text="예: blonde hair, amber eyes — 머리·눈 색을 적으면 채색이 일관된다냥."/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
 
             <!-- ── 검열 제거 ── -->
-            <TabItem Header="🙈 검열 제거">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="8,8,18,8">
-                    <!-- 지금 설정 요약 (2026-11-09): 감지·복원 엔진이 따로 골라져 헷갈린다는 피드백 — 고른 값이 실제로 무엇을 돌리는지 두 줄로 풀어 보여 준다 -->
-                    <Border x:Name="CardFlow" Background="{DynamicResource NekoCard}"
-                            BorderBrush="{DynamicResource NekoStroke}" BorderThickness="2" CornerRadius="0"
-                            Padding="14,10" Margin="0,2,0,0">
-                        <StackPanel>
-                            <TextBlock Text="지금 설정으로는 이렇게 돈다냥" FontWeight="SemiBold" Foreground="{DynamicResource NekoText}"/>
-                            <DockPanel Margin="0,8,0,0">
-                                <TextBlock Text="① 찾기" FontWeight="SemiBold" Foreground="{DynamicResource NekoText}" Width="76" VerticalAlignment="Top"/>
-                                <TextBlock x:Name="TxtFlowFind" Foreground="{DynamicResource NekoText}" TextWrapping="Wrap" Text=""/>
-                            </DockPanel>
-                            <DockPanel Margin="0,4,0,0">
-                                <TextBlock Text="② 지우기" FontWeight="SemiBold" Foreground="{DynamicResource NekoText}" Width="76" VerticalAlignment="Top"/>
-                                <TextBlock x:Name="TxtFlowFix" Foreground="{DynamicResource NekoText}" TextWrapping="Wrap" Text=""/>
-                            </DockPanel>
-                        </StackPanel>
-                    </Border>
+            <TabItem Header="🙈 검열 제거" Style="{StaticResource SideNavTab}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="14,12,14,4">
+                    <StackPanel>
+                        <!-- 지금 설정 요약 (2026-11-09): 감지·복원 엔진이 따로 골라져 헷갈린다는 피드백 — 고른 값이 실제로 무엇을 돌리는지 두 줄로 풀어 보여 준다 -->
+                        <Border x:Name="CardFlow" Style="{StaticResource SideCard}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="지금 설정으로는 이렇게 돈다냥"/></Border>
+                                <StackPanel Style="{StaticResource SideBody}">
+                                    <DockPanel Margin="0,2,0,0">
+                                        <TextBlock Text="① 찾기" FontWeight="SemiBold" Foreground="{DynamicResource NekoText}" Width="76" VerticalAlignment="Top"/>
+                                        <TextBlock x:Name="TxtFlowFind" Foreground="{DynamicResource NekoText}" TextWrapping="Wrap" Text=""/>
+                                    </DockPanel>
+                                    <DockPanel Margin="0,4,0,4">
+                                        <TextBlock Text="② 지우기" FontWeight="SemiBold" Foreground="{DynamicResource NekoText}" Width="76" VerticalAlignment="Top"/>
+                                        <TextBlock x:Name="TxtFlowFix" Foreground="{DynamicResource NekoText}" TextWrapping="Wrap" Text=""/>
+                                    </DockPanel>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
 
-                    <!-- ── ① 검열 찾기 ── -->
-                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="① 검열 찾기"/></Border>
-                    <!-- 감지 엔진은 Aletheia Lens 하나 — '이전 방식'(전용 AI·규칙 감지기) 엔진 선택은 2026-11-12 사용자 선택으로 삭제 -->
-                    <DockPanel Margin="0,2,0,0">
-                        <TextBlock Text="무엇을 찾을까냥" Style="{StaticResource FieldLabel}" Width="130"/>
-                        <ComboBox x:Name="CmbDecensorTarget" MinWidth="430" HorizontalAlignment="Left"
-                                  SelectionChanged="CmbDecensorTarget_Changed">
-                            <ComboBoxItem Tag="Auto" Content="자동 — 전부 찾기 (권장)"/>
-                            <ComboBoxItem Tag="BlackBar" Content="검은색 막대(먹줄)만"/>
-                            <ComboBoxItem Tag="WhiteBar" Content="흰색 막대만"/>
-                            <ComboBoxItem Tag="Mosaic" Content="모자이크만"/>
-                            <ComboBoxItem Tag="Color" Content="색 검열만 (파란·빨간 막대·틴트 모자이크)"/>
-                        </ComboBox>
-                    </DockPanel>
-                    <!-- Aletheia + 자동일 때만: 놓치는 종류를 전용 AI(CensorNet)가 보완 -->
-                    <StackPanel x:Name="PnlAssist">
-                        <DockPanel Margin="0,6,0,0">
-                            <TextBlock Text="놓친 검열 보완" Style="{StaticResource FieldLabel}" Width="130"/>
-                            <ComboBox x:Name="CmbLegacyAssist" MinWidth="430" HorizontalAlignment="Left" SelectionChanged="DecensorUi_Changed">
-                                <ComboBoxItem Tag="White" Content="가는 흰 막대선만 전용 AI로 보완 (권장)"/>
-                                <ComboBoxItem Tag="WhiteMosaic" Content="흰 막대선 + 모자이크를 전용 AI로 보완"/>
-                                <ComboBoxItem Tag="All" Content="전용 AI가 찾은 것 전부 합치기 (흰·검·모자이크)"/>
-                                <ComboBoxItem Tag="None" Content="보완 안 함 — Aletheia Lens만"/>
-                            </ComboBox>
-                        </DockPanel>
-                        <TextBlock Style="{StaticResource HintText}"
-                                   Text="Aletheia Lens는 검은 막대는 잘 찾지만 가는 흰 막대선·모자이크를 놓치기도 한다냥.&#10;· 모자이크가 자주 남으면 '흰 막대선 + 모자이크'로 바꿔 보라냥."/>
+                        <!-- ── ① 검열 찾기 ── -->
+                        <Border Style="{StaticResource SideCard}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="① 검열 찾기"/></Border>
+                                <StackPanel Style="{StaticResource SideBody}">
+                                    <!-- 감지 엔진은 Aletheia Lens 하나 — '이전 방식'(전용 AI·규칙 감지기) 엔진 선택은 2026-11-12 사용자 선택으로 삭제 -->
+                                    <DockPanel Style="{StaticResource SetRow}">
+                                        <TextBlock Text="무엇을 찾을까냥" Style="{StaticResource SetLabel}"/>
+                                        <ComboBox x:Name="CmbDecensorTarget"
+                                                  SelectionChanged="CmbDecensorTarget_Changed">
+                                            <ComboBoxItem Tag="Auto" Content="자동 — 전부 찾기 (권장)"/>
+                                            <ComboBoxItem Tag="BlackBar" Content="검은색 막대(먹줄)만"/>
+                                            <ComboBoxItem Tag="WhiteBar" Content="흰색 막대만"/>
+                                            <ComboBoxItem Tag="Mosaic" Content="모자이크만"/>
+                                            <ComboBoxItem Tag="Color" Content="색 검열만 (파란·빨간 막대·틴트 모자이크)"/>
+                                        </ComboBox>
+                                    </DockPanel>
+                                    <!-- Aletheia + 자동일 때만: 놓치는 종류를 전용 AI(CensorNet)가 보완 -->
+                                    <StackPanel x:Name="PnlAssist">
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="놓친 검열 보완" Style="{StaticResource SetLabel}"/>
+                                            <ComboBox x:Name="CmbLegacyAssist" SelectionChanged="DecensorUi_Changed"
+                                                      ToolTip="Aletheia Lens는 검은 막대는 잘 찾지만 가는 흰 막대선·모자이크를 놓치기도 한다냥.&#10;· 모자이크가 자주 남으면 '흰 막대선 + 모자이크'로 바꿔 보라냥.">
+                                                <ComboBoxItem Tag="White" Content="가는 흰 막대선만 전용 AI로 보완 (권장)"/>
+                                                <ComboBoxItem Tag="WhiteMosaic" Content="흰 막대선 + 모자이크를 전용 AI로 보완"/>
+                                                <ComboBoxItem Tag="All" Content="전용 AI가 찾은 것 전부 합치기 (흰·검·모자이크)"/>
+                                                <ComboBoxItem Tag="None" Content="보완 안 함 — Aletheia Lens만"/>
+                                            </ComboBox>
+                                        </DockPanel>
+                                    </StackPanel>
+
+                                    <!-- 감지 모델 상태 — 설치 여부와 지금 맡은 일을 보여 준다 -->
+                                    <Border x:Name="CardCensorAi" Background="{DynamicResource NekoCanvas}"
+                                            BorderBrush="{DynamicResource NekoStroke}" BorderThickness="1" CornerRadius="0"
+                                            Padding="10,8" Margin="0,8,0,0">
+                                        <StackPanel>
+                                            <DockPanel>
+                                                <Ellipse x:Name="DotCensorAi" Width="12" Height="12" Fill="Gray" VerticalAlignment="Center"/>
+                                                <TextBlock x:Name="TxtCensorAi" Margin="10,0,0,0" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" TextWrapping="Wrap"
+                                                           Text="검열 감지 AI 상태 확인 중이다냥..."/>
+                                            </DockPanel>
+                                            <DockPanel x:Name="RowAssistAi" Margin="0,6,0,0">
+                                                <Ellipse x:Name="DotAssistAi" Width="12" Height="12" Fill="Gray" VerticalAlignment="Center"/>
+                                                <TextBlock x:Name="TxtAssistAi" Margin="10,0,0,0" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" TextWrapping="Wrap" Text=""/>
+                                            </DockPanel>
+                                            <TextBlock x:Name="TxtCensorAiHint" Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,6,0,0" Text=""/>
+                                            <ui:Button x:Name="BtnInstallCensorAi" Content="⬇ 검열 감지·복원 모델 설치"
+                                                       Click="BtnOpenSetup_Click" Padding="14,6" Margin="0,8,0,0"
+                                                       HorizontalAlignment="Left" Visibility="Collapsed"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- 마스크 확장: LaMa·GPU 방식처럼 넓은 마스크가 필요한 복원에만 쓴다 (Aletheia 복원은 원본처럼 1px) -->
+                                    <DockPanel Style="{StaticResource SetRow}" Margin="0,10,0,0">
+                                        <TextBlock Text="마스크 확장 px" Style="{StaticResource SetLabel}"/>
+                                        <TextBox DockPanel.Dock="Left" x:Name="TxtMaskGrow" Width="80" HorizontalAlignment="Left"
+                                                 ToolTip="찾은 영역 둘레를 이만큼 더 지운다냥.&#10;· 재생성·커스텀과 LaMa 복원에 쓴다냥 — Aletheia 복원은 1px만 넓힌다냥."/>
+                                        <TextBlock Text="0 ~ 64" Style="{StaticResource SetRange}"/>
+                                    </DockPanel>
+                                    <CheckBox x:Name="ChkBubbleFilter" Content="흰 말풍선 필터 (전용 AI의 흰 검출 중 글자 블록과 겹치는 것 버리기)" Foreground="{DynamicResource NekoText}" Margin="0,6,0,0"
+                                              ToolTip="기본 꺼짐이다냥.&#10;· 켜면 말풍선 오탐은 줄지만 진짜 흰선도 일부 놓친다냥."/>
+
+                                    <!-- 규칙 감지기 전용 세부값 — 전용 AI 없는 흰 막대·색 검열 규칙 감지에만 쓰이므로 접어 둔다 -->
+                                    <Border Style="{StaticResource SideCard}" Margin="0,12,0,4">
+                                        <StackPanel>
+                                            <ToggleButton x:Name="BtnManualDetect" Style="{StaticResource SetCardToggle}" Content="규칙 감지기 세부 설정 (흰 막대·색 검열 규칙용)"/>
+                                            <StackPanel x:Name="PnlManualDetect" Style="{StaticResource SideBody}"
+                                                        Visibility="{Binding IsChecked, ElementName=BtnManualDetect, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Style="{StaticResource HintText}" Text="규칙 감지기에만 쓰는 값이다냥 — AI 감지에는 영향이 없다냥."/>
+                                                <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
+                                                    <DockPanel Style="{StaticResource SetRow}">
+                                                        <TextBlock Text="막대 최소 비율" Style="{StaticResource SetLabel}"/>
+                                                        <TextBox DockPanel.Dock="Left" x:Name="TxtBarAspect" Width="70" HorizontalAlignment="Left"
+                                                                 ToolTip="비율은 가로세로 비(1.8 = 긴 쪽이 1.8배 이상)다냥.&#10;· 네모난 검열도 잡으려면 1.2까지 낮춰 보라냥.&#10;· 크기는 px²다냥."/>
+                                                        <TextBlock Text="1 ~ 10" Style="{StaticResource SetRange}"/>
+                                                    </DockPanel>
+                                                    <DockPanel Style="{StaticResource SetRow}">
+                                                        <TextBlock Text="막대 최소 크기" Style="{StaticResource SetLabel}"/>
+                                                        <TextBox DockPanel.Dock="Left" x:Name="TxtBarMinArea" Width="70" HorizontalAlignment="Left"
+                                                                 ToolTip="비율은 가로세로 비(1.8 = 긴 쪽이 1.8배 이상)다냥.&#10;· 네모난 검열도 잡으려면 1.2까지 낮춰 보라냥.&#10;· 크기는 px²다냥."/>
+                                                        <TextBlock Text="50 ~ 500000" Style="{StaticResource SetRange}"/>
+                                                    </DockPanel>
+                                                </UniformGrid>
+                                                <TextBlock Text="모자이크 규칙 감지 세부 (지금은 Aletheia Lens가 찾아서 안 쓴다냥)" Style="{StaticResource SetSub}"/>
+                                                <UniformGrid Columns="2" Rows="1">
+                                                    <DockPanel Style="{StaticResource SetRow}">
+                                                        <TextBlock Text="블록 크기 px" Style="{StaticResource SetLabel}"/>
+                                                        <TextBox DockPanel.Dock="Left" x:Name="TxtBlockSize" Width="70" HorizontalAlignment="Left" ToolTip="모자이크 한 칸의 픽셀 크기다냥 (보통 4~16)."/>
+                                                        <TextBlock Text="2 ~ 64" Style="{StaticResource SetRange}"/>
+                                                    </DockPanel>
+                                                    <DockPanel Style="{StaticResource SetRow}">
+                                                        <TextBlock Text="감지 민감도" Style="{StaticResource SetLabel}"/>
+                                                        <TextBox DockPanel.Dock="Left" x:Name="TxtThreshold" Width="70" HorizontalAlignment="Left" ToolTip="낮을수록 더 많이 모자이크로 본다냥 (기본 15)."/>
+                                                        <TextBlock Text="1 ~ 80" Style="{StaticResource SetRange}"/>
+                                                    </DockPanel>
+                                                </UniformGrid>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- ── ② 검열 지우기 ── -->
+                        <Border Style="{StaticResource SideCard}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="② 검열 지우기"/></Border>
+                                <StackPanel Style="{StaticResource SideBody}">
+                                    <DockPanel Style="{StaticResource SetRow}">
+                                        <TextBlock Text="제거 방식" Style="{StaticResource SetLabel}"/>
+                                        <ComboBox x:Name="CmbDecensorMode" SelectionChanged="CmbDecensorMode_Changed">
+                                            <ComboBoxItem x:Name="ItemModeBasic" Content="기본 — Aletheia Lens 복원 (빠름, 추가 설치 불필요)" Tag="Basic"/>
+                                            <ComboBoxItem Content="재생성 — SDXL로 검열 자리를 그려 넣기 (내장 재생성 레시피, 엔진 필요)" Tag="ComfyRegen"/>
+                                            <ComboBoxItem Content="커스텀 ComfyUI — 내가 ComfyUI에서 짠 워크플로 파일로 (API JSON, 엔진 필요)" Tag="ComfyCustom"/>
+                                        </ComboBox>
+                                    </DockPanel>
+                                    <StackPanel x:Name="PnlCustomDecensor" Visibility="Collapsed">
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="워크플로 파일" Style="{StaticResource SetLabel}"/>
+                                            <ui:Button Content="찾기…" Click="BtnCustomDecensorPick_Click" DockPanel.Dock="Right" Padding="10,4" Margin="8,0,0,0"/>
+                                            <TextBox x:Name="TxtCustomDecensor" ToolTip="ComfyUI에서 Export (API)로 내보낸 JSON이다냥"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="되돌릴 범위 px" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtCustomReach" Width="70" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="0 ~ 512" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <TextBlock Style="{StaticResource HintText}" Margin="0,2,0,0"
+                                                   Text="Export (API) 파일이다냥.&#10;· 규칙: LoadImage 1개(원고, 알파=마스크) + SaveImage 1개. 되돌릴 범위는 마스크 둘레 px(0 = 전체)다냥."/>
+                                    </StackPanel>
+                                    <TextBlock x:Name="TxtDecensorModeHint" Style="{StaticResource SetHint}" Margin="0,4,0,2" Text=""/>
+                                    <!-- 기본 + Aletheia + 보완이 있을 때만: 보완으로 찾은 자리를 무엇으로 지울지 -->
+                                    <StackPanel x:Name="PnlAssistRepair">
+                                        <CheckBox x:Name="ChkAssistRepair" Content="보완으로 찾은 자리(흰 막대선 등)도 Aletheia Lens로 지우기" Foreground="{DynamicResource NekoText}" Margin="0,4,0,0"
+                                                  Checked="DecensorUi_Toggled" Unchecked="DecensorUi_Toggled"
+                                                  ToolTip="기본 켜짐이다냥 — 보완으로 찾은 자리도 Aletheia로 지운다냥.&#10;· 끄면 LaMa로 지운다냥(매끈하지만 뭉개질 수 있다냥)."/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- ── ③ 확인하고 고치기 ── -->
+                        <Border Style="{StaticResource SideCard}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="③ 지우기 전에 확인하기"/></Border>
+                                <StackPanel Style="{StaticResource SideBody}">
+                                    <CheckBox x:Name="ChkReview" Content="지우기 전에 마스크를 직접 확인·추가한다냥" Foreground="{DynamicResource NekoText}"/>
+                                    <DockPanel Style="{StaticResource SetRow}" Margin="0,6,0,0">
+                                        <TextBlock Text="검토 방식" Style="{StaticResource SetLabel}"/>
+                                        <ComboBox x:Name="CmbReviewMode"
+                                                  ToolTip="페이지별: 검열 없는 장은 바로 끝난다냥.&#10;· 감지된 장은 목록에서 더블클릭해 고친 뒤 [검열 제거 시작]을 누르라냥.">
+                                            <ComboBoxItem Tag="PerPage" Content="페이지별 — 감지된 장만 검토 대기, 나머지는 바로 진행한다냥" IsSelected="True"/>
+                                            <ComboBoxItem Tag="Window" Content="검토 창 — 모든 장을 먼저 찾고 한꺼번에 본다냥"/>
+                                        </ComboBox>
+                                    </DockPanel>
+                                    <CheckBox x:Name="ChkReuseMasks" Content="다시 돌릴 때 저장된 마스크를 감지 대신 쓴다냥" Foreground="{DynamicResource NekoText}" Margin="0,6,0,0"
+                                              ToolTip="마스크는 결과 폴더의 .neko에 남는다냥.&#10;· 끄면 매번 새로 감지한다냥."/>
+                                    <CheckBox x:Name="ChkCollect" Content="검토에서 고친 마스크를 학습 재료로 모은다냥 (내 PC에만 저장)" Foreground="{DynamicResource NekoText}" Margin="0,6,0,0"
+                                              ToolTip="원고·자동 감지·최종 마스크를 %AppData%\NekoManga\training\corrections 에 저장한다냥.&#10;· 모은 재료로 전용 AI를 다시 학습할 수 있다냥."/>
+                                    <TextBlock Style="{StaticResource SetHint}" Text="페이지별: 검열 없는 장은 바로 끝난다냥."/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SideCard}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="전용 AI 자가 학습 (반자동)"/></Border>
+                                <StackPanel Style="{StaticResource SideBody}">
+                                    <CheckBox x:Name="ChkSelfTrain" Content="자가 학습 기능을 켠다냥" Foreground="{DynamicResource NekoText}" Checked="ChkSelfTrain_Changed" Unchecked="ChkSelfTrain_Changed"/>
+                                    <StackPanel x:Name="PnlSelfTrain" Visibility="Collapsed">
+                                        <TextBlock Style="{StaticResource HintText}" Margin="0,6,0,0"
+                                                   Text="모은 재료로 전용 AI를 짧게 미세조정하고 전/후를 비교해 보여 준다냥.&#10;· [적용]을 눌러야 모델이 바뀌고 언제든 되돌릴 수 있다냥.&#10;· 학습 중엔 GPU를 쓰고 엔진(ComfyUI)을 끈다냥."/>
+                                        <TextBlock x:Name="TxtTrainMaterial" Style="{StaticResource HintText}" Margin="0,4,0,0" Text=""/>
+                                        <WrapPanel Margin="0,6,0,0">
+                                            <ui:Button x:Name="BtnSelfTrain" Content="🎓 지금까지 모은 재료로 학습" Click="BtnSelfTrain_Click" Padding="12,5"/>
+                                            <ui:Button x:Name="BtnSelfTrainStop" Content="중단" Click="BtnSelfTrainStop_Click" Padding="12,5" Margin="8,0,0,0" IsEnabled="False"/>
+                                            <ui:Button x:Name="BtnSelfApply" Content="✔ 적용" Click="BtnSelfApply_Click" Padding="12,5" Margin="8,0,0,0" IsEnabled="False"/>
+                                            <ui:Button x:Name="BtnSelfRollback" Content="↶ 이전 모델로 되돌리기" Click="BtnSelfRollback_Click" Padding="12,5" Margin="8,0,0,0" IsEnabled="False"/>
+                                            <ui:Button Content="재료 폴더 열기" Click="BtnOpenCorrections_Click" Padding="12,5" Margin="8,0,0,0"/>
+                                        </WrapPanel>
+                                        <TextBlock x:Name="TxtTrainStatus" Style="{StaticResource HintText}" Margin="0,6,0,0" Text="" TextWrapping="Wrap"/>
+                                        <UniformGrid Columns="2" Rows="2" Margin="0,6,0,0">
+                                            <DockPanel Style="{StaticResource SetRow}">
+                                                <TextBlock Text="에폭" Style="{StaticResource SetLabel}"/>
+                                                <TextBox DockPanel.Dock="Left" x:Name="TxtSelfEpochs" Width="70" HorizontalAlignment="Left"/>
+                                                <TextBlock Text="1 ~ 50" Style="{StaticResource SetRange}"/>
+                                            </DockPanel>
+                                            <DockPanel Style="{StaticResource SetRow}">
+                                                <TextBlock Text="학습률" Style="{StaticResource SetLabel}"/>
+                                                <TextBox DockPanel.Dock="Left" x:Name="TxtSelfLr" Width="90" HorizontalAlignment="Left"/>
+                                                <TextBlock Text="0.00001 ~ 0.01" Style="{StaticResource SetRange}"/>
+                                            </DockPanel>
+                                            <DockPanel Style="{StaticResource SetRow}">
+                                                <TextBlock Text="동결 층" Style="{StaticResource SetLabel}"/>
+                                                <TextBox DockPanel.Dock="Left" x:Name="TxtSelfFreeze" Width="70" HorizontalAlignment="Left"/>
+                                                <TextBlock Text="0 ~ 22" Style="{StaticResource SetRange}"/>
+                                            </DockPanel>
+                                            <DockPanel Style="{StaticResource SetRow}">
+                                                <TextBlock Text="최소 재료 쪽수" Style="{StaticResource SetLabel}"/>
+                                                <TextBox DockPanel.Dock="Left" x:Name="TxtSelfMinPages" Width="70" HorizontalAlignment="Left"/>
+                                                <TextBlock Text="5 ~ 500" Style="{StaticResource SetRange}"/>
+                                            </DockPanel>
+                                        </UniformGrid>
+                                        <TextBlock Style="{StaticResource SetHint}" Text="기본값(5에폭·0.0002·백본 동결)은 기존 실력을 잊지 않게 보수적으로 잡은 값이다냥."/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 고급: 워크플로를 아는 사용자용 — 접힌 상태가 기본 -->
+                        <Border Style="{StaticResource SideCard}">
+                            <StackPanel>
+                                <ToggleButton x:Name="BtnDecensorAdv" Style="{StaticResource SetCardToggle}" Content="고급 옵션 — 워크플로 직접 제어"/>
+                                <StackPanel x:Name="PnlDecensorAdv" Style="{StaticResource SideBody}"
+                                            Visibility="{Binding IsChecked, ElementName=BtnDecensorAdv, Converter={StaticResource BoolToVis}}">
+                                    <TextBlock Style="{StaticResource HintText}" Text="ComfyUI 워크플로에 들어가는 값 그대로다냥.&#10;· 바꾼 값은 다음 작업부터다냥."/>
+
+                                    <TextBlock Text="재생성 워크플로 (SDXL)" Style="{StaticResource SetSub}"/>
+                                    <DockPanel Style="{StaticResource SetRow}">
+                                        <TextBlock Text="체크포인트 파일" Style="{StaticResource SetLabel}"/>
+                                        <ui:Button Content="찾기…" Click="BtnRegenCkptPick_Click" DockPanel.Dock="Right" Padding="10,4" Margin="8,0,0,0"/>
+                                        <TextBox x:Name="TxtRegenCkpt" IsReadOnly="True" ToolTip="safetensors · ckpt · pt 파일이다냥.&#10;· models 폴더 밖의 파일은 복사해 넣는다냥."/>
+                                    </DockPanel>
+                                    <DockPanel Style="{StaticResource SetRow}">
+                                        <TextBlock Text="ControlNet 파일" Style="{StaticResource SetLabel}"/>
+                                        <ui:Button Content="찾기…" Click="BtnRegenCnPick_Click" DockPanel.Dock="Right" Padding="10,4" Margin="8,0,0,0"/>
+                                        <TextBox x:Name="TxtRegenCn" IsReadOnly="True" ToolTip="safetensors · ckpt · pt 파일이다냥.&#10;· models 폴더 밖의 파일은 복사해 넣는다냥."/>
+                                    </DockPanel>
+                                    <TextBlock Text="기본 프롬프트" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
+                                    <TextBox x:Name="TxtRegenPrompt" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="48"/>
+                                    <TextBlock Text="신체부위 태그 — 남성" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
+                                    <TextBox x:Name="TxtRegenBodyM" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="28"/>
+                                    <TextBlock Text="신체부위 태그 — 여성" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
+                                    <TextBox x:Name="TxtRegenBodyF" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="28"/>
+                                    <!-- 2026-11-16 사용자 "여자거에서 구멍에 전부다 질내사정으로 나오는데 실제 이미지에서 질내사정한 부분만": 여성 태그에서 뗀 사정 태그 — 사정인 조각이 있는 영역에만 더한다(RegenTags.For) -->
+                                    <TextBlock Text="질내사정 태그 — 질내사정인 조각에만 넣는다냥" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
+                                    <TextBox x:Name="TxtRegenBodyCum" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="28"/>
+                                    <CheckBox x:Name="ChkRegenCumAuto" Content="질내사정인지 자동으로 판단한다냥 (조각마다 직접 고칠 수 있다냥)" Foreground="{DynamicResource NekoText}" Margin="0,6,0,0"
+                                              ToolTip="질내사정인 자리에만 위 태그를 더한다냥. 자동 판단은 틀릴 수 있으니 결과 창의 '사정' 표시로 고쳐 줘냥. 태그 칸을 비우면 안 넣는다냥."/>
+                                    <!-- 2026-11-15 사용자 "남자거에 계속 여자거가 그려지는데 … 남/여 구분을 확실하게": 기본 켬 — 조각마다 성별을 가려(RegenRegion.PieceSex + 결과 창에서 직접 고른 것) 한쪽뿐인 영역에는 그쪽 태그만. 끄면 늘 같이(2026-11-13의 기본) -->
+                                    <CheckBox x:Name="ChkRegenTagsBySex" Content="확실한 부위에는 그쪽 태그만 넣는다냥 (아니면 같이)" Foreground="{DynamicResource NekoText}" Margin="0,6,0,0"
+                                              ToolTip="조각마다 부위 감지를 보고 한쪽 성별뿐이면 그쪽 태그만 넣는다냥. 모르는 조각은 결과 창의 남/여 표시로 직접 고른다냥. 꺼 두면 늘 같이 넣는다냥."/>
+                                    <!-- 2026-11-15 자리별 태그: 그리는 방식이 바뀐다 — 사용자가 전/후를 보고 정하기 전까지 기본 끔 -->
+                                    <CheckBox x:Name="ChkRegenTagsPerPiece" Content="남녀 부위가 같이 있으면 자리마다 그 성별의 태그만 넣는다냥 (시험 중)" Foreground="{DynamicResource NekoText}" Margin="0,6,0,0"
+                                              ToolTip="한 범위에 남녀 조각이 같이 있으면 자리를 나눠 각각의 태그를 넣는다냥. 조금 느려진다냥. 결과를 보고 정하라냥."/>
+                                    <!-- 2026-11-16 사용자 "인체 부위도 제대로 안나오는게 있는데": 떨어진 자리끼리 합쳐 쪽 전체를 0.4배로 줄여 보내던 것 — 결과가 바뀌므로 사용자가 전/후를 보고 정하기 전까지 기본 끔 -->
+                                    <CheckBox x:Name="ChkRegenSplitRegions" Content="떨어진 검열 자리는 따로 다시 그린다냥 (시험 중)" Foreground="{DynamicResource NekoText}" Margin="0,6,0,0"
+                                              ToolTip="검열 자리가 흩어져 있으면 묶어 그리느라 그림이 흐려질 수 있다냥. 켜면 떨어진 자리를 따로 원래 크기로 그린다냥. 그만큼 오래 걸린다냥."/>
+                                    <TextBlock Text="네거티브" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
+                                    <TextBox x:Name="TxtRegenNeg" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="48"/>
+                                    <UniformGrid Columns="2" Rows="3" Margin="0,8,0,0">
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="디노이즈" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtRegenDenoise" Width="70" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="0.05 ~ 1" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="스텝" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtRegenSteps" Width="70" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="1 ~ 150" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="CFG" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtRegenCfg" Width="70" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="0 ~ 30" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="CN 강도" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtRegenCnStr" Width="70" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="0 ~ 2" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="CN 끝" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtRegenCnEnd" Width="70" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="0 ~ 1" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="자를 크기" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtRegenCrop" Width="70" HorizontalAlignment="Left" ToolTip="영역마다 이 크기로 잘라 SDXL에 보낸다냥 — 1024가 가장 맞는다냥"/>
+                                            <TextBlock Text="512 ~ 2048" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                    </UniformGrid>
+                                    <UniformGrid Columns="2" Rows="2">
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="조각 인페인트 확장" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtRegenInpaintGrow" Width="70" HorizontalAlignment="Left" ToolTip="1단계(조각 새로 그리기)의 마스크를 이만큼 넓힌다냥"/>
+                                            <TextBlock Text="0 ~ 64" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="조각 그리기 CN 강도" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtRegenInpaintCnStr" Width="70" HorizontalAlignment="Left" ToolTip="1단계(조각 인페인트)의 ControlNet 강도다냥. 기본 0.25 — 0이면 주변 선의 안내 없이 채워 어색할 수 있고, 올릴수록 막대 자리가 평평한 흰 칠로 메워질 수 있다냥"/>
+                                            <TextBlock Text="0 ~ 2" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="흰 조각 다시 그리기" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtRegenWhiteRetries" Width="70" HorizontalAlignment="Left" ToolTip="그린 결과에서 막대 자리가 평평한 흰 칠로 남은 조각이 있으면 새 시드로 이만큼 더 그려 덜 흰 것을 고른다냥. 기본 2 — 한 번 더 그릴 때마다 1~2분이 든다냥. 0이면 끈다냥. 시드를 고정한 장은 다시 그리지 않는다냥"/>
+                                            <TextBlock Text="0 ~ 5" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <Border/>
+                                    </UniformGrid>
+                                    <DockPanel Style="{StaticResource SetRow}">
+                                        <TextBlock Text="조각 그리기 ControlNet" Style="{StaticResource SetLabel}"/>
+                                        <ComboBox x:Name="CmbRegenInpaintControl" ToolTip="위의 조각 그리기 CN 강도가 0이면 1단계는 ControlNet 없이 그려서 이 선택은 효과가 없다냥">
+                                            <ComboBoxItem Tag="Lineart" Content="선화에 조각 자리를 검게 칠한다냥 (기본)" ToolTip="조각 자리를 검게 칠한 선화를 ControlNet에 넣는다냥. union이 아니면 늘 이 방식이다냥."/>
+                                            <ComboBoxItem Tag="Repaint" Content="리페인트 — union promax의 repaint (실험용)" ToolTip="조각 자리를 비운 원고를 repaint로 넣는다냥. 실측에서는 더 나빴다냥 — 비교용이다냥."/>
+                                        </ComboBox>
+                                    </DockPanel>
+                                    <CheckBox x:Name="ChkRegenEraseTight" Content="조각에서 검은 막대만 지우고 그린다냥 (막대 사이의 윤곽은 남긴다냥)" Foreground="{DynamicResource NekoText}" Margin="0,6,0,0"
+                                              ToolTip="끄면 조각을 통째로 지우고 그린다냥. 흰 막대·모자이크는 켜 두어도 통째로 지운다냥"/>
+                                    <TextBlock Style="{StaticResource SetHint}" Text="재생성 v3: 영역마다 잘라 SDXL 두 단계로 그린다냥.&#10;· 범위 밖 값은 저장할 때 잘린다냥."/>
+
+                                    <!-- 부위 통째 다시 그리기 (2026-11-12, 사용자 요청): 재생성·커스텀만 — 검열 조각이 덮은 부위 전체를 다시 그린다 -->
+                                    <TextBlock Text="부위 통째 다시 그리기 (재생성·커스텀)" Style="{StaticResource SetSub}"/>
+                                    <CheckBox x:Name="ChkRegenWhole" Content="조각이 덮은 부위 전체를 다시 그린다냥" Foreground="{DynamicResource NekoText}"/>
+                                    <UniformGrid Columns="2" Rows="2" Margin="0,4,0,0">
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="감지 임계" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtRegenRegionConf" Width="70" HorizontalAlignment="Left" ToolTip="부위 감지의 확신도다냥 — 조각과 겹치는 것만 쓰니 낮아도 된다냥"/>
+                                            <TextBlock Text="0.01 ~ 0.9" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="부위 여백" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtRegenRegionPad" Width="70" HorizontalAlignment="Left" ToolTip="부위 상자를 이 비율만큼 넓힌다냥 (0.1 = 10%)"/>
+                                            <TextBlock Text="0 ~ 1" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="조각 확장 배율" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtRegenRegionGrow" Width="70" HorizontalAlignment="Left" ToolTip="부위를 못 찾은 조각은 이 배율의 타원으로 다시 그린다냥 (0 = 그대로)"/>
+                                            <TextBlock Text="0 ~ 3" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <Border/>
+                                    </UniformGrid>
+                                    <TextBlock Style="{StaticResource SetHint}" Margin="0,4,0,2"
+                                               Text="부위 감지 모델(45MB)이 있으면 조각과 겹치는 부위 전체를 다시 그린다냥.&#10;· 없으면 배율로만 넓힌다냥.&#10;· 기본(Aletheia)에는 안 쓴다냥."/>
+
+                                    <ui:Button Content="기본값 복원" Click="BtnDecensorAdvReset_Click" Margin="0,10,0,4" Padding="12,5"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
-
-                    <!-- 감지 모델 상태 카드 — 설치 여부와 지금 맡은 일을 보여 준다 -->
-                    <Border x:Name="CardCensorAi" Background="{DynamicResource NekoCard}"
-                            BorderBrush="{DynamicResource NekoStroke}" BorderThickness="2" CornerRadius="0"
-                            Padding="14,10" Margin="0,8,0,0">
-                        <StackPanel>
-                            <DockPanel>
-                                <Ellipse x:Name="DotCensorAi" Width="12" Height="12" Fill="Gray" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="TxtCensorAi" Margin="10,0,0,0" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" TextWrapping="Wrap"
-                                           Text="검열 감지 AI 상태 확인 중이다냥..."/>
-                            </DockPanel>
-                            <DockPanel x:Name="RowAssistAi" Margin="0,6,0,0">
-                                <Ellipse x:Name="DotAssistAi" Width="12" Height="12" Fill="Gray" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="TxtAssistAi" Margin="10,0,0,0" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource NekoText}" VerticalAlignment="Center" TextWrapping="Wrap" Text=""/>
-                            </DockPanel>
-                            <TextBlock x:Name="TxtCensorAiHint" Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,8,0,0" Text=""/>
-                            <ui:Button x:Name="BtnInstallCensorAi" Content="⬇ 검열 감지·복원 모델 설치"
-                                       Click="BtnOpenSetup_Click" Padding="14,6" Margin="0,10,0,0"
-                                       HorizontalAlignment="Left" Visibility="Collapsed"/>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- 마스크 확장: LaMa·GPU 방식처럼 넓은 마스크가 필요한 복원에만 쓴다 (Aletheia 복원은 원본처럼 1px) -->
-                    <DockPanel Margin="0,12,0,0">
-                        <TextBlock Text="마스크 확장 px (0 ~ 64)" Style="{StaticResource FieldLabel}" Width="160"/>
-                        <TextBox x:Name="TxtMaskGrow" Width="90" HorizontalAlignment="Left"/>
-                    </DockPanel>
-                    <TextBlock Style="{StaticResource HintText}"
-                               Text="찾은 영역 둘레를 이만큼 더 지운다냥.&#10;· 재생성·커스텀과 LaMa 복원에 쓴다냥 — Aletheia 복원은 1px만 넓힌다냥."/>
-                    <CheckBox x:Name="ChkBubbleFilter" Content="흰 말풍선 필터 (전용 AI의 흰 검출 중 글자 블록과 겹치는 것 버리기)" Margin="0,8,0,0"/>
-                    <TextBlock Style="{StaticResource HintText}"
-                               Text="기본 꺼짐이다냥.&#10;· 켜면 말풍선 오탐은 줄지만 진짜 흰선도 일부 놓친다냥."/>
-
-                    <!-- 규칙 감지기 전용 세부값 — 전용 AI 없는 흰 막대·색 검열 규칙 감지에만 쓰이므로 접어 둔다 -->
-                    <ui:Button x:Name="BtnManualDetect" Content="▸ 규칙 감지기 세부 설정 (흰 막대·색 검열 규칙용)"
-                               Click="BtnManualDetect_Click" Margin="0,12,0,0" Padding="14,6"/>
-                    <StackPanel x:Name="PnlManualDetect" Visibility="Collapsed">
-                    <TextBlock Style="{StaticResource HintText}" Margin="0,6,0,0"
-                               Text="규칙 감지기에만 쓰는 값이다냥 — AI 감지에는 영향이 없다냥."/>
-                    <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
-                        <DockPanel>
-                            <TextBlock Text="막대 최소 비율 (1 ~ 10)" Style="{StaticResource FieldLabel}" Width="160"/>
-                            <TextBox x:Name="TxtBarAspect" Width="80" HorizontalAlignment="Left"/>
-                        </DockPanel>
-                        <DockPanel>
-                            <TextBlock Text="막대 최소 크기 (50 ~ 500000)" Style="{StaticResource FieldLabel}" Width="160"/>
-                            <TextBox x:Name="TxtBarMinArea" Width="80" HorizontalAlignment="Left"/>
-                        </DockPanel>
-                    </UniformGrid>
-                    <TextBlock Style="{StaticResource HintText}"
-                               Text="비율은 가로세로 비(1.8 = 긴 쪽이 1.8배 이상)다냥.&#10;· 네모난 검열도 잡으려면 1.2까지 낮춰 보라냥.&#10;· 크기는 px²다냥."/>
-
-                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="모자이크 규칙 감지 세부 (지금은 Aletheia Lens가 찾아서 안 쓴다냥)"/></Border>
-                    <DockPanel Margin="0,4">
-                        <TextBlock Text="블록 크기 px (2 ~ 64)" Style="{StaticResource FieldLabel}" Width="160"/>
-                        <TextBox x:Name="TxtBlockSize" Width="90" HorizontalAlignment="Left"/>
-                    </DockPanel>
-                    <TextBlock Style="{StaticResource HintText}" Text="모자이크 한 칸의 픽셀 크기다냥 (보통 4~16)."/>
-                    <DockPanel Margin="0,4">
-                        <TextBlock Text="감지 민감도 (1 ~ 80)" Style="{StaticResource FieldLabel}" Width="160"/>
-                        <TextBox x:Name="TxtThreshold" Width="90" HorizontalAlignment="Left"/>
-                    </DockPanel>
-                    <TextBlock Style="{StaticResource HintText}" Text="낮을수록 더 많이 모자이크로 본다냥 (기본 15)."/>
-                    </StackPanel>
-
-                    <!-- ── ② 검열 지우기 ── -->
-                    <Border Style="{StaticResource MangaTag}" Margin="0,18,0,0"><TextBlock Style="{StaticResource MangaTagText}" Text="② 검열 지우기"/></Border>
-                    <DockPanel Margin="0,2,0,0">
-                        <TextBlock Text="제거 방식" Style="{StaticResource FieldLabel}" Width="130"/>
-                        <ComboBox x:Name="CmbDecensorMode" MinWidth="430" HorizontalAlignment="Left" SelectionChanged="CmbDecensorMode_Changed">
-                            <ComboBoxItem x:Name="ItemModeBasic" Content="기본 — Aletheia Lens 복원 (빠름, 추가 설치 불필요)" Tag="Basic"/>
-                            <ComboBoxItem Content="재생성 — SDXL로 검열 자리를 그려 넣기 (내장 재생성 레시피, 엔진 필요)" Tag="ComfyRegen"/>
-                            <ComboBoxItem Content="커스텀 ComfyUI — 내가 ComfyUI에서 짠 워크플로 파일로 (API JSON, 엔진 필요)" Tag="ComfyCustom"/>
-                        </ComboBox>
-                    </DockPanel>
-                    <StackPanel x:Name="PnlCustomDecensor" Visibility="Collapsed">
-                        <DockPanel Margin="0,6,0,0">
-                            <TextBlock Text="워크플로 파일" Style="{StaticResource FieldLabel}" Width="110"/>
-                            <ui:Button Content="찾기…" Click="BtnCustomDecensorPick_Click" DockPanel.Dock="Right" Padding="10,4" Margin="8,0,0,0"/>
-                            <TextBox x:Name="TxtCustomDecensor" ToolTip="ComfyUI에서 Export (API)로 내보낸 JSON이다냥"/>
-                        </DockPanel>
-                        <DockPanel Margin="0,4,0,0">
-                            <TextBlock Text="되돌릴 범위 px (0 ~ 512)" Style="{StaticResource FieldLabel}" Width="150"/>
-                            <TextBox x:Name="TxtCustomReach" Width="70" HorizontalAlignment="Left"/>
-                        </DockPanel>
-                        <TextBlock Style="{StaticResource HintText}"
-                                   Text="Export (API) 파일이다냥.&#10;· 규칙: LoadImage 1개(원고, 알파=마스크) + SaveImage 1개. 되돌릴 범위는 마스크 둘레 px(0 = 전체)다냥."/>
-                    </StackPanel>
-                    <TextBlock x:Name="TxtDecensorModeHint" Style="{StaticResource HintText}" Text=""/>
-                    <!-- 기본 + Aletheia + 보완이 있을 때만: 보완으로 찾은 자리를 무엇으로 지울지 -->
-                    <StackPanel x:Name="PnlAssistRepair">
-                        <CheckBox x:Name="ChkAssistRepair" Content="보완으로 찾은 자리(흰 막대선 등)도 Aletheia Lens로 지우기" Margin="0,6,0,0"
-                                  Checked="DecensorUi_Toggled" Unchecked="DecensorUi_Toggled"/>
-                        <TextBlock Style="{StaticResource HintText}"
-                                   Text="기본 켜짐이다냥 — 보완으로 찾은 자리도 Aletheia로 지운다냥.&#10;· 끄면 LaMa로 지운다냥(매끈하지만 뭉개질 수 있다냥)."/>
-                    </StackPanel>
-
-                    <!-- ── ③ 확인하고 고치기 ── -->
-                    <Border Style="{StaticResource MangaTag}" Margin="0,18,0,0"><TextBlock Style="{StaticResource MangaTagText}" Text="③ 지우기 전에 확인하기"/></Border>
-                    <CheckBox x:Name="ChkReview" Content="지우기 전에 마스크를 직접 확인·추가한다냥" Margin="0,4,0,0"/>
-                    <WrapPanel Margin="0,6,0,0">
-                        <TextBlock Text="검토 방식" Style="{StaticResource FieldLabel}"/>
-                        <ComboBox x:Name="CmbReviewMode" MinWidth="430">
-                            <ComboBoxItem Tag="PerPage" Content="페이지별 — 감지된 장만 검토 대기, 나머지는 바로 진행한다냥" IsSelected="True"/>
-                            <ComboBoxItem Tag="Window" Content="검토 창 — 모든 장을 먼저 찾고 한꺼번에 본다냥"/>
-                        </ComboBox>
-                    </WrapPanel>
-                    <TextBlock Style="{StaticResource HintText}"
-                               Text="페이지별: 검열 없는 장은 바로 끝난다냥.&#10;· 감지된 장은 목록에서 더블클릭해 고친 뒤 [검열 제거 시작]을 누르라냥."/>
-                    <CheckBox x:Name="ChkReuseMasks" Content="다시 돌릴 때 저장된 마스크를 감지 대신 쓴다냥" Margin="0,4,0,0"/>
-                    <TextBlock Style="{StaticResource HintText}"
-                               Text="마스크는 결과 폴더의 .neko에 남는다냥.&#10;· 끄면 매번 새로 감지한다냥."/>
-                    <CheckBox x:Name="ChkCollect" Content="검토에서 고친 마스크를 학습 재료로 모은다냥 (내 PC에만 저장)" Margin="0,8,0,0"/>
-                    <TextBlock Style="{StaticResource HintText}"
-                               Text="원고·자동 감지·최종 마스크를 %AppData%\NekoManga\training\corrections 에 저장한다냥.&#10;· 모은 재료로 전용 AI를 다시 학습할 수 있다냥."/>
-
-                    <Border Style="{StaticResource MangaTag}" Margin="0,18,0,0"><TextBlock Style="{StaticResource MangaTagText}" Text="전용 AI 자가 학습 (반자동)"/></Border>
-                    <CheckBox x:Name="ChkSelfTrain" Content="자가 학습 기능을 켠다냥" Margin="0,6,0,0" Checked="ChkSelfTrain_Changed" Unchecked="ChkSelfTrain_Changed"/>
-                    <StackPanel x:Name="PnlSelfTrain" Visibility="Collapsed">
-                        <TextBlock Style="{StaticResource HintText}"
-                                   Text="모은 재료로 전용 AI를 짧게 미세조정하고 전/후를 비교해 보여 준다냥.&#10;· [적용]을 눌러야 모델이 바뀌고 언제든 되돌릴 수 있다냥.&#10;· 학습 중엔 GPU를 쓰고 엔진(ComfyUI)을 끈다냥."/>
-                        <TextBlock x:Name="TxtTrainMaterial" Style="{StaticResource HintText}" Margin="0,4,0,0" Text=""/>
-                        <WrapPanel Margin="0,6,0,0">
-                            <ui:Button x:Name="BtnSelfTrain" Content="🎓 지금까지 모은 재료로 학습" Click="BtnSelfTrain_Click" Padding="12,5"/>
-                            <ui:Button x:Name="BtnSelfTrainStop" Content="중단" Click="BtnSelfTrainStop_Click" Padding="12,5" Margin="8,0,0,0" IsEnabled="False"/>
-                            <ui:Button x:Name="BtnSelfApply" Content="✔ 적용" Click="BtnSelfApply_Click" Padding="12,5" Margin="8,0,0,0" IsEnabled="False"/>
-                            <ui:Button x:Name="BtnSelfRollback" Content="↶ 이전 모델로 되돌리기" Click="BtnSelfRollback_Click" Padding="12,5" Margin="8,0,0,0" IsEnabled="False"/>
-                            <ui:Button Content="재료 폴더 열기" Click="BtnOpenCorrections_Click" Padding="12,5" Margin="8,0,0,0"/>
-                        </WrapPanel>
-                        <TextBlock x:Name="TxtTrainStatus" Style="{StaticResource HintText}" Margin="0,6,0,0" Text="" TextWrapping="Wrap"/>
-                        <UniformGrid Columns="2" Rows="2" Margin="0,8,0,0">
-                            <DockPanel>
-                                <TextBlock Text="에폭 (1 ~ 50)" Style="{StaticResource FieldLabel}" Width="150"/>
-                                <TextBox x:Name="TxtSelfEpochs" Width="70" HorizontalAlignment="Left"/>
-                            </DockPanel>
-                            <DockPanel>
-                                <TextBlock Text="학습률 (0.00001 ~ 0.01)" Style="{StaticResource FieldLabel}" Width="150"/>
-                                <TextBox x:Name="TxtSelfLr" Width="90" HorizontalAlignment="Left"/>
-                            </DockPanel>
-                            <DockPanel>
-                                <TextBlock Text="동결 층 (0 ~ 22)" Style="{StaticResource FieldLabel}" Width="150"/>
-                                <TextBox x:Name="TxtSelfFreeze" Width="70" HorizontalAlignment="Left"/>
-                            </DockPanel>
-                            <DockPanel>
-                                <TextBlock Text="최소 재료 쪽수 (5 ~ 500)" Style="{StaticResource FieldLabel}" Width="166"/>
-                                <TextBox x:Name="TxtSelfMinPages" Width="70" HorizontalAlignment="Left"/>
-                            </DockPanel>
-                        </UniformGrid>
-                        <TextBlock Style="{StaticResource HintText}"
-                                   Text="기본값(5에폭·0.0002·백본 동결)은 기존 실력을 잊지 않게 보수적으로 잡은 값이다냥."/>
-                    </StackPanel>
-
-                    <!-- 고급: 워크플로를 아는 사용자용 — 접힌 상태가 기본 -->
-                    <ui:Button x:Name="BtnDecensorAdv" Content="▸ 고급 옵션 — 워크플로 직접 제어"
-                               Click="BtnDecensorAdv_Click" Margin="0,18,0,0" Padding="14,6"/>
-                    <StackPanel x:Name="PnlDecensorAdv" Visibility="Collapsed">
-                        <TextBlock Style="{StaticResource HintText}" Margin="0,6,0,0"
-                                   Text="ComfyUI 워크플로에 들어가는 값 그대로다냥.&#10;· 바꾼 값은 다음 작업부터다냥."/>
-
-
-                        <Border Style="{StaticResource MangaTag}" Margin="0,12,0,0"><TextBlock Style="{StaticResource MangaTagText}" Text="재생성 워크플로 (SDXL)"/></Border>
-                        <DockPanel Margin="0,4">
-                            <TextBlock Text="체크포인트 파일" Style="{StaticResource FieldLabel}" Width="130"/>
-                            <ui:Button Content="찾기…" Click="BtnRegenCkptPick_Click" DockPanel.Dock="Right" Padding="10,4" Margin="8,0,0,0"/>
-                            <TextBox x:Name="TxtRegenCkpt" IsReadOnly="True"/>
-                        </DockPanel>
-                        <DockPanel Margin="0,4">
-                            <TextBlock Text="ControlNet 파일" Style="{StaticResource FieldLabel}" Width="130"/>
-                            <ui:Button Content="찾기…" Click="BtnRegenCnPick_Click" DockPanel.Dock="Right" Padding="10,4" Margin="8,0,0,0"/>
-                            <TextBox x:Name="TxtRegenCn" IsReadOnly="True"/>
-                        </DockPanel>
-                        <TextBlock Style="{StaticResource HintText}"
-                                   Text="safetensors · ckpt · pt 파일이다냥.&#10;· models 폴더 밖의 파일은 복사해 넣는다냥."/>
-                        <TextBlock Text="기본 프롬프트" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
-                        <TextBox x:Name="TxtRegenPrompt" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="48"/>
-                        <TextBlock Text="신체부위 태그 — 남성" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
-                        <TextBox x:Name="TxtRegenBodyM" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="28"/>
-                        <TextBlock Text="신체부위 태그 — 여성" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
-                        <TextBox x:Name="TxtRegenBodyF" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="28"/>
-                        <!-- 2026-11-16 사용자 "여자거에서 구멍에 전부다 질내사정으로 나오는데 실제 이미지에서 질내사정한 부분만": 여성 태그에서 뗀 사정 태그 — 사정인 조각이 있는 영역에만 더한다(RegenTags.For) -->
-                        <TextBlock Text="질내사정 태그 — 질내사정인 조각에만 넣는다냥" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
-                        <TextBox x:Name="TxtRegenBodyCum" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="28"/>
-                        <CheckBox x:Name="ChkRegenCumAuto" Content="질내사정인지 자동으로 판단한다냥 (조각마다 직접 고칠 수 있다냥)" Foreground="{DynamicResource NekoText}" Margin="0,6,0,0"
-                                  ToolTip="질내사정인 자리에만 위 태그를 더한다냥. 자동 판단은 틀릴 수 있으니 결과 창의 '사정' 표시로 고쳐 줘냥. 태그 칸을 비우면 안 넣는다냥."/>
-                        <!-- 2026-11-15 사용자 "남자거에 계속 여자거가 그려지는데 … 남/여 구분을 확실하게": 기본 켬 — 조각마다 성별을 가려(RegenRegion.PieceSex + 결과 창에서 직접 고른 것) 한쪽뿐인 영역에는 그쪽 태그만. 끄면 늘 같이(2026-11-13의 기본) -->
-                        <CheckBox x:Name="ChkRegenTagsBySex" Content="확실한 부위에는 그쪽 태그만 넣는다냥 (아니면 같이)" Foreground="{DynamicResource NekoText}" Margin="0,6,0,0"
-                                  ToolTip="조각마다 부위 감지를 보고 한쪽 성별뿐이면 그쪽 태그만 넣는다냥. 모르는 조각은 결과 창의 남/여 표시로 직접 고른다냥. 꺼 두면 늘 같이 넣는다냥."/>
-                        <!-- 2026-11-15 자리별 태그: 그리는 방식이 바뀐다 — 사용자가 전/후를 보고 정하기 전까지 기본 끔 -->
-                        <CheckBox x:Name="ChkRegenTagsPerPiece" Content="남녀 부위가 같이 있으면 자리마다 그 성별의 태그만 넣는다냥 (시험 중)" Foreground="{DynamicResource NekoText}" Margin="0,6,0,0"
-                                  ToolTip="한 범위에 남녀 조각이 같이 있으면 자리를 나눠 각각의 태그를 넣는다냥. 조금 느려진다냥. 결과를 보고 정하라냥."/>
-                        <!-- 2026-11-16 사용자 "인체 부위도 제대로 안나오는게 있는데": 떨어진 자리끼리 합쳐 쪽 전체를 0.4배로 줄여 보내던 것 — 결과가 바뀌므로 사용자가 전/후를 보고 정하기 전까지 기본 끔 -->
-                        <CheckBox x:Name="ChkRegenSplitRegions" Content="떨어진 검열 자리는 따로 다시 그린다냥 (시험 중)" Foreground="{DynamicResource NekoText}" Margin="0,6,0,0"
-                                  ToolTip="검열 자리가 흩어져 있으면 묶어 그리느라 그림이 흐려질 수 있다냥. 켜면 떨어진 자리를 따로 원래 크기로 그린다냥. 그만큼 오래 걸린다냥."/>
-                        <TextBlock Text="네거티브" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
-                        <TextBox x:Name="TxtRegenNeg" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="48"/>
-                        <UniformGrid Columns="2" Rows="3" Margin="0,8,0,0">
-                            <DockPanel>
-                                <TextBlock Text="디노이즈 (0.05 ~ 1)" Style="{StaticResource FieldLabel}" Width="150"/>
-                                <TextBox x:Name="TxtRegenDenoise" Width="70" HorizontalAlignment="Left"/>
-                            </DockPanel>
-                            <DockPanel>
-                                <TextBlock Text="스텝 (1 ~ 150)" Style="{StaticResource FieldLabel}" Width="150"/>
-                                <TextBox x:Name="TxtRegenSteps" Width="70" HorizontalAlignment="Left"/>
-                            </DockPanel>
-                            <DockPanel>
-                                <TextBlock Text="CFG (0 ~ 30)" Style="{StaticResource FieldLabel}" Width="150"/>
-                                <TextBox x:Name="TxtRegenCfg" Width="70" HorizontalAlignment="Left"/>
-                            </DockPanel>
-                            <DockPanel>
-                                <TextBlock Text="CN 강도 (0 ~ 2)" Style="{StaticResource FieldLabel}" Width="150"/>
-                                <TextBox x:Name="TxtRegenCnStr" Width="70" HorizontalAlignment="Left"/>
-                            </DockPanel>
-                            <DockPanel>
-                                <TextBlock Text="CN 끝 (0 ~ 1)" Style="{StaticResource FieldLabel}" Width="150"/>
-                                <TextBox x:Name="TxtRegenCnEnd" Width="70" HorizontalAlignment="Left"/>
-                            </DockPanel>
-                            <DockPanel>
-                                <TextBlock Text="자를 크기 (512 ~ 2048)" Style="{StaticResource FieldLabel}" Width="150"/>
-                                <TextBox x:Name="TxtRegenCrop" Width="70" HorizontalAlignment="Left" ToolTip="영역마다 이 크기로 잘라 SDXL에 보낸다냥 — 1024가 가장 맞는다냥"/>
-                            </DockPanel>
-                        </UniformGrid>
-                        <DockPanel Margin="0,6,0,0">
-                            <TextBlock Text="조각 인페인트 확장 (0 ~ 64)" Style="{StaticResource FieldLabel}" Width="180"/>
-                            <TextBox x:Name="TxtRegenInpaintGrow" Width="70" HorizontalAlignment="Left" ToolTip="1단계(조각 새로 그리기)의 마스크를 이만큼 넓힌다냥"/>
-                        </DockPanel>
-                        <DockPanel Margin="0,6,0,0">
-                            <TextBlock Text="조각 그리기 CN 강도 (0 ~ 2)" Style="{StaticResource FieldLabel}" Width="180"/>
-                            <TextBox x:Name="TxtRegenInpaintCnStr" Width="70" HorizontalAlignment="Left" ToolTip="1단계(조각 인페인트)의 ControlNet 강도다냥. 기본 0.25 — 0이면 주변 선의 안내 없이 채워 어색할 수 있고, 올릴수록 막대 자리가 평평한 흰 칠로 메워질 수 있다냥"/>
-                        </DockPanel>
-                        <DockPanel Margin="0,6,0,0">
-                            <TextBlock Text="조각 그리기 ControlNet" Style="{StaticResource FieldLabel}" Width="180"/>
-                            <ComboBox x:Name="CmbRegenInpaintControl" MinWidth="340" HorizontalAlignment="Left" ToolTip="위의 조각 그리기 CN 강도가 0이면 1단계는 ControlNet 없이 그려서 이 선택은 효과가 없다냥">
-                                <ComboBoxItem Tag="Lineart" Content="선화에 조각 자리를 검게 칠한다냥 (기본)" ToolTip="조각 자리를 검게 칠한 선화를 ControlNet에 넣는다냥. union이 아니면 늘 이 방식이다냥."/>
-                                <ComboBoxItem Tag="Repaint" Content="리페인트 — union promax의 repaint (실험용)" ToolTip="조각 자리를 비운 원고를 repaint로 넣는다냥. 실측에서는 더 나빴다냥 — 비교용이다냥."/>
-                            </ComboBox>
-                        </DockPanel>
-                        <CheckBox x:Name="ChkRegenEraseTight" Content="조각에서 검은 막대만 지우고 그린다냥 (막대 사이의 윤곽은 남긴다냥)" Foreground="{DynamicResource NekoText}" Margin="0,8,0,0"
-                                  ToolTip="끄면 조각을 통째로 지우고 그린다냥. 흰 막대·모자이크는 켜 두어도 통째로 지운다냥"/>
-                        <DockPanel Margin="0,6,0,0">
-                            <TextBlock Text="흰 조각 다시 그리기 (0 ~ 5)" Style="{StaticResource FieldLabel}" Width="180"/>
-                            <TextBox x:Name="TxtRegenWhiteRetries" Width="70" HorizontalAlignment="Left" ToolTip="그린 결과에서 막대 자리가 평평한 흰 칠로 남은 조각이 있으면 새 시드로 이만큼 더 그려 덜 흰 것을 고른다냥. 기본 2 — 한 번 더 그릴 때마다 1~2분이 든다냥. 0이면 끈다냥. 시드를 고정한 장은 다시 그리지 않는다냥"/>
-                        </DockPanel>
-                        <TextBlock Style="{StaticResource HintText}"
-                                   Text="재생성 v3: 영역마다 잘라 SDXL 두 단계로 그린다냥.&#10;· 범위 밖 값은 저장할 때 잘린다냥."/>
-
-                        <!-- 부위 통째 다시 그리기 (2026-11-12, 사용자 요청): 재생성·커스텀만 — 검열 조각이 덮은 부위 전체를 다시 그린다 -->
-                        <Border Style="{StaticResource MangaTag}" Margin="0,12,0,0"><TextBlock Style="{StaticResource MangaTagText}" Text="부위 통째 다시 그리기 (재생성·커스텀)"/></Border>
-                        <CheckBox x:Name="ChkRegenWhole" Content="조각이 덮은 부위 전체를 다시 그린다냥" Foreground="{DynamicResource NekoText}" Margin="0,6,0,0"/>
-                        <UniformGrid Columns="3" Rows="1" Margin="0,6,0,0">
-                            <DockPanel>
-                                <TextBlock Text="감지 임계 (0.01 ~ 0.9)" Style="{StaticResource FieldLabel}" Width="150"/>
-                                <TextBox x:Name="TxtRegenRegionConf" Width="70" HorizontalAlignment="Left" ToolTip="부위 감지의 확신도다냥 — 조각과 겹치는 것만 쓰니 낮아도 된다냥"/>
-                            </DockPanel>
-                            <DockPanel>
-                                <TextBlock Text="부위 여백 (0 ~ 1)" Style="{StaticResource FieldLabel}" Width="150"/>
-                                <TextBox x:Name="TxtRegenRegionPad" Width="70" HorizontalAlignment="Left" ToolTip="부위 상자를 이 비율만큼 넓힌다냥 (0.1 = 10%)"/>
-                            </DockPanel>
-                            <DockPanel>
-                                <TextBlock Text="조각 확장 배율 (0 ~ 3)" Style="{StaticResource FieldLabel}" Width="150"/>
-                                <TextBox x:Name="TxtRegenRegionGrow" Width="70" HorizontalAlignment="Left" ToolTip="부위를 못 찾은 조각은 이 배율의 타원으로 다시 그린다냥 (0 = 그대로)"/>
-                            </DockPanel>
-                        </UniformGrid>
-                        <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,0"
-                                   Text="부위 감지 모델(45MB)이 있으면 조각과 겹치는 부위 전체를 다시 그린다냥.&#10;· 없으면 배율로만 넓힌다냥.&#10;· 기본(Aletheia)에는 안 쓴다냥."/>
-
-                        <ui:Button Content="기본값 복원" Click="BtnDecensorAdvReset_Click" Margin="0,10,0,0" Padding="12,5"/>
-                    </StackPanel>
-                </StackPanel>
                 </ScrollViewer>
             </TabItem>
 
             <!-- ── 번역 ── -->
-            <TabItem Header="💬 번역">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="8,8,18,8">
-                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="번역 엔진"/></Border>
-                    <ComboBox x:Name="CmbTranslator" Width="300" HorizontalAlignment="Left"
-                              SelectionChanged="CmbTranslator_SelectionChanged">
-                        <ComboBoxItem Content="Google (무료, 키 불필요)" Tag="Google"/>
-                        <ComboBoxItem Content="DeepL (API 키 필요)" Tag="DeepL"/>
-                        <ComboBoxItem Content="DeepSeek (AI 번역 · API 키 필요)" Tag="DeepSeek"/>
-                        <ComboBoxItem Content="Grok / xAI (AI 번역 · API 키 필요)" Tag="Grok"/>
-                    </ComboBox>
-                    <TextBlock Style="{StaticResource HintText}" Margin="0,6,0,0"
-                               Text="DeepSeek·Grok은 문맥을 아는 AI 번역이라 말투가 자연스럽다냥 (유료 API, 보통 저렴)."/>
+            <TabItem Header="💬 번역" Style="{StaticResource SideNavTab}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="14,12,14,4">
+                    <StackPanel>
+                        <Border Style="{StaticResource SideCard}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="번역 엔진"/></Border>
+                                <StackPanel Style="{StaticResource SideBody}">
+                                    <ComboBox x:Name="CmbTranslator" MinWidth="300" HorizontalAlignment="Left"
+                                              SelectionChanged="CmbTranslator_SelectionChanged">
+                                        <ComboBoxItem Content="Google (무료, 키 불필요)" Tag="Google"/>
+                                        <ComboBoxItem Content="DeepL (API 키 필요)" Tag="DeepL"/>
+                                        <ComboBoxItem Content="DeepSeek (AI 번역 · API 키 필요)" Tag="DeepSeek"/>
+                                        <ComboBoxItem Content="Grok / xAI (AI 번역 · API 키 필요)" Tag="Grok"/>
+                                    </ComboBox>
 
-                    <!-- DeepL -->
-                    <StackPanel x:Name="PanelDeepL">
-                        <DockPanel Margin="0,8,0,0">
-                            <TextBlock Text="DeepL API 키" Style="{StaticResource FieldLabel}" Width="110"/>
-                            <TextBox x:Name="TxtDeepLKey" Width="360" HorizontalAlignment="Left"/>
-                        </DockPanel>
-                        <TextBlock Style="{StaticResource HintText}"
-                                   Text="deepl.com 무료 키(…:fx)도 된다냥 (월 50만 자)."/>
+                                    <!-- DeepL -->
+                                    <StackPanel x:Name="PanelDeepL">
+                                        <DockPanel Style="{StaticResource SetRow}" Margin="0,8,0,0">
+                                            <TextBlock Text="DeepL API 키" Style="{StaticResource SetLabel}"/>
+                                            <TextBox x:Name="TxtDeepLKey" MaxWidth="400" HorizontalAlignment="Left" MinWidth="340" ToolTip="deepl.com 무료 키(…:fx)도 된다냥 (월 50만 자)."/>
+                                        </DockPanel>
+                                    </StackPanel>
+
+                                    <!-- DeepSeek -->
+                                    <StackPanel x:Name="PanelDeepSeek">
+                                        <DockPanel Style="{StaticResource SetRow}" Margin="0,8,0,0">
+                                            <TextBlock Text="DeepSeek 키" Style="{StaticResource SetLabel}"/>
+                                            <TextBox x:Name="TxtDeepSeekKey" MaxWidth="400" HorizontalAlignment="Left" MinWidth="340" ToolTip="platform.deepseek.com에서 키를 받는다냥.&#10;· 번역은 deepseek-flash면 충분하고, 정교한 의역은 deepseek-v4-pro다냥."/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="모델" Style="{StaticResource SetLabel}"/>
+                                            <ComboBox x:Name="CmbDeepSeekModel" MinWidth="240" HorizontalAlignment="Left" IsEditable="True"
+                                                      ToolTip="platform.deepseek.com에서 키를 받는다냥.&#10;· 번역은 deepseek-flash면 충분하고, 정교한 의역은 deepseek-v4-pro다냥.">
+                                                <ComboBoxItem Content="deepseek-flash"/>
+                                                <ComboBoxItem Content="deepseek-v4-pro"/>
+                                            </ComboBox>
+                                        </DockPanel>
+                                    </StackPanel>
+
+                                    <!-- Grok -->
+                                    <StackPanel x:Name="PanelGrok">
+                                        <DockPanel Style="{StaticResource SetRow}" Margin="0,8,0,0">
+                                            <TextBlock Text="Grok(xAI) 키" Style="{StaticResource SetLabel}"/>
+                                            <TextBox x:Name="TxtGrokKey" MaxWidth="400" HorizontalAlignment="Left" MinWidth="340" ToolTip="console.x.ai에서 키를 받는다냥.&#10;· 번역은 grok-4.3이면 충분하고, 최고 품질은 grok-4.7이다냥."/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="모델" Style="{StaticResource SetLabel}"/>
+                                            <ComboBox x:Name="CmbGrokModel" MinWidth="240" HorizontalAlignment="Left" IsEditable="True"
+                                                      ToolTip="console.x.ai에서 키를 받는다냥.&#10;· 번역은 grok-4.3이면 충분하고, 최고 품질은 grok-4.7이다냥.">
+                                                <ComboBoxItem Content="grok-4.3"/>
+                                                <ComboBoxItem Content="grok-4.7"/>
+                                                <ComboBoxItem Content="grok-build-0.1"/>
+                                            </ComboBox>
+                                        </DockPanel>
+                                    </StackPanel>
+                                    <TextBlock Style="{StaticResource SetHint}" Text="DeepSeek·Grok은 문맥을 아는 AI 번역이라 말투가 자연스럽다냥 (유료 API, 보통 저렴)."/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SideCard}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="언어 · 범위"/></Border>
+                                <StackPanel Style="{StaticResource SideBody}">
+                                    <UniformGrid Columns="2" Rows="1">
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="원본 언어" Style="{StaticResource SetLabel}"/>
+                                            <ComboBox x:Name="CmbSource" MinWidth="150" HorizontalAlignment="Left">
+                                                <ComboBoxItem Content="일본어" Tag="ja"/>
+                                            </ComboBox>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="번역 언어" Style="{StaticResource SetLabel}"/>
+                                            <ComboBox x:Name="CmbTarget" MinWidth="150" HorizontalAlignment="Left">
+                                                <ComboBoxItem Content="한국어" Tag="ko"/>
+                                                <ComboBoxItem Content="영어" Tag="en"/>
+                                            </ComboBox>
+                                        </DockPanel>
+                                    </UniformGrid>
+                                    <!-- 풍선 밖 효과음(2026-11-26 시험 기능, CarrotMangaTranslator 참고): Keep/Replace는 SfxMode, Dialogue는 TranslateBubbleOnly=false(전부 대사로) -->
+                                    <DockPanel Style="{StaticResource SetRow}" Margin="0,6,12,3">
+                                        <TextBlock Text="풍선 밖 효과음" Style="{StaticResource SetLabel}"/>
+                                        <ComboBox x:Name="CmbSfxMode"
+                                                  ToolTip="그림 위의 소리 글(풍선 밖 효과음)을 어떻게 할지다냥. '지우고 덮기'는 시험 중이라 결과를 보고 쓰라냥 — 원문을 지우고 그 자리에 굵은 글씨로 번역을 넣는다냥. 번역은 용어집 → 내장 의성어 사전 → 번역기 순이다냥">
+                                            <ComboBoxItem Tag="Keep" Content="그대로 둔다냥 (번역하지 않음)"/>
+                                            <ComboBoxItem Tag="Replace" Content="지우고 번역으로 덮는다냥 (시험 중)"/>
+                                            <ComboBoxItem Tag="Dialogue" Content="대사처럼 번역한다냥 (풍선 밖 글도 전부)"/>
+                                        </ComboBox>
+                                    </DockPanel>
+                                    <TextBlock Style="{StaticResource SetHint}"
+                                               Text="글자 인식이 일본어 특화라 원본 언어는 일본어만이다냥.&#10;· 감지→인식→번역→지우기 전부 내장 AI다냥."/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SideCard}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="번역 용어집 · 문맥"/></Border>
+                                <StackPanel Style="{StaticResource SideBody}">
+                                    <TextBox x:Name="TxtGlossary" AcceptsReturn="True" TextWrapping="NoWrap" MinHeight="72" MaxHeight="160" VerticalScrollBarVisibility="Auto"
+                                             ToolTip="한 줄에 하나, 원문=번역 (예: ミク=미쿠). #으로 시작하면 설명 줄이다냥. DeepSeek·Grok에는 지시문으로 넣고, Google·DeepL에는 원문의 낱말을 바꿔 보낸다냥. 효과음에도 먼저 쓴다냥"/>
+                                    <CheckBox x:Name="ChkCarryContext" Margin="0,8,0,0" Foreground="{DynamicResource NekoText}"
+                                              Content="앞 페이지 대사를 문맥으로 같이 보낸다냥 (DeepSeek·Grok)"
+                                              ToolTip="최근 30줄의 원문→번역을 참고용으로 같이 보낸다냥. 인물의 말투·호칭이 페이지 사이에 흔들리지 않는다냥. Google·DeepL은 쓰지 않는다냥"/>
+                                    <TextBlock Style="{StaticResource SetHint}" Text="인물 이름·고정 표현을 용어집에 적으면 번역이 흔들리지 않는다냥. 한 줄에 하나, 원문=번역."/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SideCard}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="식자 — 말풍선 글자 모양"/></Border>
+                                <StackPanel Style="{StaticResource SideBody}">
+                                    <DockPanel Style="{StaticResource SetRow}">
+                                        <TextBlock Text="글꼴" Style="{StaticResource SetLabel}"/>
+                                        <CheckBox x:Name="ChkLetterBold" Content="굵게" Foreground="{DynamicResource NekoText}"
+                                                  VerticalAlignment="Center" Margin="14,0,0,0" DockPanel.Dock="Right"/>
+                                        <ComboBox x:Name="CmbLetterFont" MinWidth="240" HorizontalAlignment="Left" IsEditable="True"/>
+                                    </DockPanel>
+                                    <UniformGrid Columns="2" Rows="2">
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="크기 배율" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtLetterSize" Width="70" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="0.3 ~ 3" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="글자 색" Style="{StaticResource SetLabel}"/>
+                                            <StackPanel Orientation="Horizontal">
+                                                <Border x:Name="SwLetterColor" Width="22" Height="22" CornerRadius="3" BorderBrush="{DynamicResource NekoStroke}" BorderThickness="1"
+                                                        Cursor="Hand" VerticalAlignment="Center" Margin="0,0,6,0" MouseLeftButtonUp="Swatch_Click"
+                                                        Tag="{Binding ElementName=TxtLetterColor}" ToolTip="색 고르기"/>
+                                                <TextBox x:Name="TxtLetterColor" Width="100" TextChanged="ColorBox_Changed" ToolTip="#RRGGBB — 기본 검정, auto면 원문 색이다냥"/>
+                                            </StackPanel>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="외곽선 두께" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtLetterOutline" Width="70" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="0 ~ 4" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="외곽선 색" Style="{StaticResource SetLabel}"/>
+                                            <StackPanel Orientation="Horizontal">
+                                                <Border x:Name="SwLetterOutlineColor" Width="22" Height="22" CornerRadius="3" BorderBrush="{DynamicResource NekoStroke}" BorderThickness="1"
+                                                        Cursor="Hand" VerticalAlignment="Center" Margin="0,0,6,0" MouseLeftButtonUp="Swatch_Click"
+                                                        Tag="{Binding ElementName=TxtLetterOutlineColor}" ToolTip="색 고르기"/>
+                                                <TextBox x:Name="TxtLetterOutlineColor" Width="100" TextChanged="ColorBox_Changed" ToolTip="외곽선 색 #RRGGBB"/>
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </UniformGrid>
+                                    <CheckBox x:Name="ChkLetterAutoContrast" Margin="0,4,0,0" Foreground="{DynamicResource NekoText}"
+                                              Content="바탕이 어두우면 글자 색과 외곽선 색을 서로 바꾼다냥 (그림 위·검은 바탕의 글)"/>
+                                    <UniformGrid Columns="2" Rows="2" Margin="0,4,0,0">
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="정렬" Style="{StaticResource SetLabel}"/>
+                                            <ComboBox x:Name="CmbLetterAlign" MinWidth="110" HorizontalAlignment="Left">
+                                                <ComboBoxItem Tag="Left" Content="왼쪽"/>
+                                                <ComboBoxItem Tag="Center" Content="가운데" IsSelected="True"/>
+                                                <ComboBoxItem Tag="Right" Content="오른쪽"/>
+                                            </ComboBox>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="줄간격" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtLetterLineSp" Width="70" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="0.6 ~ 3" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="어절 간격" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtLetterWordSp" Width="70" HorizontalAlignment="Left"
+                                                     ToolTip="띄어쓰기 폭이다냥. 1이면 글꼴 그대로, 작을수록 붙는다냥."/>
+                                            <TextBlock Text="0.3 ~ 2" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <CheckBox x:Name="ChkLetterItalic" Content="기울임" Foreground="{DynamicResource NekoText}" VerticalAlignment="Center"/>
+                                        </DockPanel>
+                                    </UniformGrid>
+                                    <TextBlock Style="{StaticResource SetHint}"
+                                               Text="크기 배율 1.0 = 말풍선에 맞춘 크기다냥.&#10;· 줄간격·어절 간격 1.0 = 기본. 글자 색은 #RRGGBB(기본 검정), auto면 원문 색이다냥.&#10;· 외곽선 0 = 없음."/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
-
-                    <!-- DeepSeek -->
-                    <StackPanel x:Name="PanelDeepSeek">
-                        <DockPanel Margin="0,8,0,0">
-                            <TextBlock Text="DeepSeek 키" Style="{StaticResource FieldLabel}" Width="110"/>
-                            <TextBox x:Name="TxtDeepSeekKey" Width="360" HorizontalAlignment="Left"/>
-                        </DockPanel>
-                        <DockPanel Margin="0,4,0,0">
-                            <TextBlock Text="모델" Style="{StaticResource FieldLabel}" Width="110"/>
-                            <ComboBox x:Name="CmbDeepSeekModel" Width="260" HorizontalAlignment="Left" IsEditable="True">
-                                <ComboBoxItem Content="deepseek-flash"/>
-                                <ComboBoxItem Content="deepseek-v4-pro"/>
-                            </ComboBox>
-                        </DockPanel>
-                        <TextBlock Style="{StaticResource HintText}"
-                                   Text="platform.deepseek.com에서 키를 받는다냥.&#10;· 번역은 deepseek-flash면 충분하고, 정교한 의역은 deepseek-v4-pro다냥."/>
-                    </StackPanel>
-
-                    <!-- Grok -->
-                    <StackPanel x:Name="PanelGrok">
-                        <DockPanel Margin="0,8,0,0">
-                            <TextBlock Text="Grok(xAI) 키" Style="{StaticResource FieldLabel}" Width="110"/>
-                            <TextBox x:Name="TxtGrokKey" Width="360" HorizontalAlignment="Left"/>
-                        </DockPanel>
-                        <DockPanel Margin="0,4,0,0">
-                            <TextBlock Text="모델" Style="{StaticResource FieldLabel}" Width="110"/>
-                            <ComboBox x:Name="CmbGrokModel" Width="260" HorizontalAlignment="Left" IsEditable="True">
-                                <ComboBoxItem Content="grok-4.3"/>
-                                <ComboBoxItem Content="grok-4.7"/>
-                                <ComboBoxItem Content="grok-build-0.1"/>
-                            </ComboBox>
-                        </DockPanel>
-                        <TextBlock Style="{StaticResource HintText}"
-                                   Text="console.x.ai에서 키를 받는다냥.&#10;· 번역은 grok-4.3이면 충분하고, 최고 품질은 grok-4.7이다냥."/>
-                    </StackPanel>
-                    <UniformGrid Columns="2" Rows="1" Margin="0,8,0,0">
-                        <DockPanel>
-                            <TextBlock Text="원본 언어" Style="{StaticResource FieldLabel}" Width="90"/>
-                            <ComboBox x:Name="CmbSource" Width="170" HorizontalAlignment="Left">
-                                <ComboBoxItem Content="일본어" Tag="ja"/>
-                            </ComboBox>
-                        </DockPanel>
-                        <DockPanel>
-                            <TextBlock Text="번역 언어" Style="{StaticResource FieldLabel}" Width="90"/>
-                            <ComboBox x:Name="CmbTarget" Width="170" HorizontalAlignment="Left">
-                                <ComboBoxItem Content="한국어" Tag="ko"/>
-                                <ComboBoxItem Content="영어" Tag="en"/>
-                            </ComboBox>
-                        </DockPanel>
-                    </UniformGrid>
-                    <CheckBox x:Name="ChkBubbleOnly" Margin="0,8,0,0" Foreground="{DynamicResource NekoText}"
-                              Content="말풍선 밖의 효과음은 번역하지 않는다냥 (그림 위의 소리 글은 그대로)"/>
-                    <TextBlock Style="{StaticResource HintText}" Margin="0,8,0,0"
-                               Text="글자 인식이 일본어 특화라 원본 언어는 일본어만이다냥.&#10;· 감지→인식→번역→지우기 전부 내장 AI다냥."/>
-
-                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="식자 — 말풍선 글자 모양"/></Border>
-                    <DockPanel Margin="0,4">
-                        <TextBlock Text="글꼴" Style="{StaticResource FieldLabel}" Width="110"/>
-                        <ComboBox x:Name="CmbLetterFont" Width="240" HorizontalAlignment="Left" IsEditable="True"/>
-                        <CheckBox x:Name="ChkLetterBold" Content="굵게" Foreground="{DynamicResource NekoText}"
-                                  VerticalAlignment="Center" Margin="14,0,0,0"/>
-                    </DockPanel>
-                    <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
-                        <DockPanel>
-                            <TextBlock Text="크기 배율 (0.3 ~ 3)" Style="{StaticResource FieldLabel}" Width="140"/>
-                            <TextBox x:Name="TxtLetterSize" Width="70" HorizontalAlignment="Left"/>
-                        </DockPanel>
-                        <DockPanel>
-                            <TextBlock Text="글자 색" Style="{StaticResource FieldLabel}" Width="110"/>
-                            <TextBox x:Name="TxtLetterColor" Width="110" HorizontalAlignment="Left" ToolTip="#RRGGBB — 기본 검정, auto면 원문 색이다냥"/>
-                        </DockPanel>
-                    </UniformGrid>
-                    <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
-                        <DockPanel>
-                            <TextBlock Text="외곽선 두께 (0 ~ 4)" Style="{StaticResource FieldLabel}" Width="140"/>
-                            <TextBox x:Name="TxtLetterOutline" Width="70" HorizontalAlignment="Left"/>
-                        </DockPanel>
-                        <DockPanel>
-                            <TextBlock Text="외곽선 색" Style="{StaticResource FieldLabel}" Width="110"/>
-                            <TextBox x:Name="TxtLetterOutlineColor" Width="110" HorizontalAlignment="Left"/>
-                        </DockPanel>
-                    </UniformGrid>
-                    <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
-                        <DockPanel>
-                            <TextBlock Text="정렬" Style="{StaticResource FieldLabel}" Width="110"/>
-                            <ComboBox x:Name="CmbLetterAlign" Width="110" HorizontalAlignment="Left">
-                                <ComboBoxItem Tag="Left" Content="왼쪽"/>
-                                <ComboBoxItem Tag="Center" Content="가운데" IsSelected="True"/>
-                                <ComboBoxItem Tag="Right" Content="오른쪽"/>
-                            </ComboBox>
-                        </DockPanel>
-                        <DockPanel>
-                            <TextBlock Text="줄간격 (0.6 ~ 3)" Style="{StaticResource FieldLabel}" Width="140"/>
-                            <TextBox x:Name="TxtLetterLineSp" Width="70" HorizontalAlignment="Left"/>
-                            <CheckBox x:Name="ChkLetterItalic" Content="기울임" Foreground="{DynamicResource NekoText}"
-                                      VerticalAlignment="Center" Margin="14,0,0,0"/>
-                        </DockPanel>
-                    </UniformGrid>
-                    <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
-                        <DockPanel>
-                            <TextBlock Text="어절 간격 (0.3 ~ 2)" Style="{StaticResource FieldLabel}" Width="140"/>
-                            <TextBox x:Name="TxtLetterWordSp" Width="70" HorizontalAlignment="Left"
-                                     ToolTip="띄어쓰기 폭이다냥. 1이면 글꼴 그대로, 작을수록 붙는다냥."/>
-                        </DockPanel>
-                        <DockPanel/>
-                    </UniformGrid>
-                    <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,0"
-                               Text="크기 배율 1.0 = 말풍선에 맞춘 크기다냥.&#10;· 줄간격·어절 간격 1.0 = 기본. 글자 색은 #RRGGBB(기본 검정), auto면 원문 색이다냥.&#10;· 외곽선 0 = 없음."/>
-                </StackPanel>
                 </ScrollViewer>
             </TabItem>
 
             <!-- ── 엔진 (ComfyUI 수명·모델 관리 — 초보자용) ── -->
-            <TabItem Header="⚙ 엔진">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="8,8,18,8">
-                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="채색 엔진"/></Border>
-                    <TextBlock Style="{StaticResource HintText}"
-                               Text="채색과 재생성·커스텀 검열 제거를 맡는 엔진이다냥.&#10;· 앱이 알아서 켜고 끈다냥."/>
-                    <Border Background="{DynamicResource NekoCard}" BorderBrush="{DynamicResource NekoStroke}" BorderThickness="2" CornerRadius="0" Padding="14,10" Margin="0,8,0,0">
-                        <StackPanel>
-                            <DockPanel>
-                                <Ellipse x:Name="DotEngine" Width="12" Height="12" Fill="Gray" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="TxtEngineState" Text="상태 확인 중이다냥..." Margin="10,0,0,0"
-                                           Foreground="{DynamicResource NekoText}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <ui:Button x:Name="BtnEngineStart" Content="▶ 켜기" Click="BtnEngineStart_Click" Padding="14,4"/>
-                                    <ui:Button x:Name="BtnEngineStop" Content="■ 끄기" Click="BtnEngineStop_Click" Padding="14,4" Margin="8,0,0,0"/>
+            <TabItem Header="⚙ 엔진" Style="{StaticResource SideNavTab}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="14,12,14,4">
+                    <StackPanel>
+                        <Border Style="{StaticResource SideCard}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="채색 엔진"/></Border>
+                                <StackPanel Style="{StaticResource SideBody}">
+                                    <DockPanel>
+                                        <Ellipse x:Name="DotEngine" Width="12" Height="12" Fill="Gray" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="TxtEngineState" Text="상태 확인 중이다냥..." Margin="10,0,0,0"
+                                                   Foreground="{DynamicResource NekoText}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <ui:Button x:Name="BtnEngineStart" Content="▶ 켜기" Click="BtnEngineStart_Click" Padding="14,4"/>
+                                            <ui:Button x:Name="BtnEngineStop" Content="■ 끄기" Click="BtnEngineStop_Click" Padding="14,4" Margin="8,0,0,0"/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                    <!-- 연결해 둔 ComfyUI를 엔진으로 쓸 때만 보인다(LoadEngineTab) — [끄기]가 그 ComfyUI 자체를 닫는다는 안내 -->
+                                    <TextBlock x:Name="TxtEngineLinked" Style="{StaticResource HintText}" Margin="0,6,0,0" Visibility="Collapsed" Text=""/>
+                                    <CheckBox x:Name="ChkPrewarm" Content="앱을 켤 때 엔진도 미리 켠다냥 (첫 채색 대기 없음)"
+                                              Foreground="{DynamicResource NekoText}" Margin="0,8,0,0"/>
+                                    <CheckBox x:Name="ChkKeepWarm" Content="작업이 끝나도 엔진을 끄지 않는다냥 (다음 작업이 빠르다냥)"
+                                              Foreground="{DynamicResource NekoText}" Margin="0,6,0,0"/>
+                                    <DockPanel Style="{StaticResource SetRow}" Margin="0,8,0,0">
+                                        <TextBlock Text="그래픽카드 종류" Style="{StaticResource SetLabel}"/>
+                                        <ui:Button DockPanel.Dock="Right" Content="이 PC에 맞게 조정" Click="BtnAutoTune_Click" Padding="10,4" Margin="8,0,0,0"
+                                                   ToolTip="VRAM·RAM을 읽어 해상도·엔진 인자 등을 이 PC에 맞게 바꾼다냥. 바꾸기 전에 목록을 보여 준다냥."/>
+                                        <ComboBox x:Name="CmbGpuVendor" MinWidth="240" HorizontalAlignment="Left"
+                                                  ToolTip="엔진(ComfyUI)을 어떤 빌드로 받을지다냥. 이미 설치된 엔진은 안 바뀐다냥 — 바꾸려면 포터블 폴더를 지우고 다시 설치하라냥.">
+                                            <ComboBoxItem Tag="auto" Content="자동 감지"/>
+                                            <ComboBoxItem Tag="nvidia" Content="NVIDIA RTX 20 이상"/>
+                                            <ComboBoxItem Tag="nvidia-old" Content="NVIDIA GTX 10 이하 (구형)"/>
+                                            <ComboBoxItem Tag="amd" Content="AMD Radeon RX 6000 이상"/>
+                                        </ComboBox>
+                                    </DockPanel>
+                                    <TextBlock x:Name="TxtGpuDetected" Style="{StaticResource HintText}" Margin="0,2,0,0" Text=""/>
+                                    <!-- 내장 AI(ONNX)의 그래픽카드 사용 (2026-11-09) — ComfyUI 엔진과 별개로, 번역·검열 감지·기본 복원 모델을 DirectML로 돌릴지 -->
+                                    <DockPanel Style="{StaticResource SetRow}" Margin="0,8,0,0">
+                                        <TextBlock Text="내장 AI 가속" Style="{StaticResource SetLabel}"/>
+                                        <ComboBox x:Name="CmbOnnxGpu"
+                                                  ToolTip="내장 AI를 그래픽카드로 돌리면 훨씬 빠르다냥(검열 감지 9초 → 1초).&#10;· VRAM을 5GB쯤 써서 '자동'은 6GB 이상이고 엔진 작업이 없을 때만 쓴다냥.&#10;· 오류가 나면 CPU로 바꾼다냥.">
+                                            <ComboBoxItem Tag="Auto" Content="자동 — 채색·GPU 검열 제거를 안 쓸 때만 그래픽카드 (권장)"/>
+                                            <ComboBoxItem Tag="On" Content="항상 그래픽카드 (VRAM 12GB 이상 권장)"/>
+                                            <ComboBoxItem Tag="Off" Content="항상 CPU"/>
+                                        </ComboBox>
+                                    </DockPanel>
+                                    <TextBlock Style="{StaticResource SetHint}" Text="채색과 재생성·커스텀 검열 제거를 맡는 엔진이다냥.&#10;· 앱이 알아서 켜고 끈다냥."/>
                                 </StackPanel>
-                            </DockPanel>
-                            <!-- 연결해 둔 ComfyUI를 엔진으로 쓸 때만 보인다(LoadEngineTab) — [끄기]가 그 ComfyUI 자체를 닫는다는 안내 -->
-                            <TextBlock x:Name="TxtEngineLinked" Style="{StaticResource HintText}" Margin="0,6,0,0" Visibility="Collapsed" Text=""/>
-                            <CheckBox x:Name="ChkPrewarm" Content="앱을 켤 때 엔진도 미리 켠다냥 (첫 채색 대기 없음)"
-                                      Foreground="{DynamicResource NekoText}" Margin="0,10,0,0"/>
-                            <CheckBox x:Name="ChkKeepWarm" Content="작업이 끝나도 엔진을 끄지 않는다냥 (다음 작업이 빠르다냥)"
-                                      Foreground="{DynamicResource NekoText}" Margin="0,6,0,0"/>
-                            <DockPanel Margin="0,10,0,0">
-                                <TextBlock Text="그래픽카드 종류" Style="{StaticResource FieldLabel}" Width="110"/>
-                                <ui:Button DockPanel.Dock="Right" Content="이 PC에 맞게 조정" Click="BtnAutoTune_Click" Padding="10,4" Margin="8,0,0,0"
-                                           ToolTip="VRAM·RAM을 읽어 해상도·엔진 인자 등을 이 PC에 맞게 바꾼다냥. 바꾸기 전에 목록을 보여 준다냥."/>
-                                <ComboBox x:Name="CmbGpuVendor" Width="260" HorizontalAlignment="Left"
-                                          ToolTip="엔진(ComfyUI)을 어떤 빌드로 받을지다냥. 이미 설치된 엔진은 안 바뀐다냥 — 바꾸려면 포터블 폴더를 지우고 다시 설치하라냥.">
-                                    <ComboBoxItem Tag="auto" Content="자동 감지"/>
-                                    <ComboBoxItem Tag="nvidia" Content="NVIDIA RTX 20 이상"/>
-                                    <ComboBoxItem Tag="nvidia-old" Content="NVIDIA GTX 10 이하 (구형)"/>
-                                    <ComboBoxItem Tag="amd" Content="AMD Radeon RX 6000 이상"/>
-                                </ComboBox>
-                            </DockPanel>
-                            <TextBlock x:Name="TxtGpuDetected" Style="{StaticResource HintText}" Margin="0,4,0,0" Text=""/>
-                            <!-- 내장 AI(ONNX)의 그래픽카드 사용 (2026-11-09) — ComfyUI 엔진과 별개로, 번역·검열 감지·기본 복원 모델을 DirectML로 돌릴지 -->
-                            <DockPanel Margin="0,10,0,0">
-                                <TextBlock Text="내장 AI 가속" Style="{StaticResource FieldLabel}" Width="110"/>
-                                <ComboBox x:Name="CmbOnnxGpu" MinWidth="430" HorizontalAlignment="Left">
-                                    <ComboBoxItem Tag="Auto" Content="자동 — 채색·GPU 검열 제거를 안 쓸 때만 그래픽카드 (권장)"/>
-                                    <ComboBoxItem Tag="On" Content="항상 그래픽카드 (VRAM 12GB 이상 권장)"/>
-                                    <ComboBoxItem Tag="Off" Content="항상 CPU"/>
-                                </ComboBox>
-                            </DockPanel>
-                            <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,0"
-                                       Text="내장 AI를 그래픽카드로 돌리면 훨씬 빠르다냥(검열 감지 9초 → 1초).&#10;· VRAM을 5GB쯤 써서 '자동'은 6GB 이상이고 엔진 작업이 없을 때만 쓴다냥.&#10;· 오류가 나면 CPU로 바꾼다냥."/>
-                        </StackPanel>
-                    </Border>
+                            </StackPanel>
+                        </Border>
 
-                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="ComfyUI 화면 · 내 워크플로"/></Border>
-                    <TextBlock Style="{StaticResource HintText}"
-                               Text="ComfyUI에서 워크플로를 만들고 Export (API)로 저장하면 커스텀으로 끼울 수 있다냥."/>
-                    <WrapPanel Margin="0,6,0,0">
-                        <ui:Button Content="🌐 ComfyUI 화면 열기" Click="BtnOpenComfyUi_Click" Padding="12,5"/>
-                        <ui:Button Content="내장 재생성 레시피를 ComfyUI에 넣는다냥" Click="BtnInstallBundledWf_Click" Padding="12,5" Margin="8,0,0,0"
-                                   ToolTip="내장 재생성 레시피를 ComfyUI 워크플로 목록에 복사한다냥. 커스텀의 출발점으로 쓰라냥."/>
-                        <ui:Button Content="재생성 레시피를 API JSON으로 저장" Click="BtnExportRegenApi_Click" Padding="12,5" Margin="8,0,0,0"
-                                   ToolTip="지금 설정의 재생성 레시피를 API 파일로 저장한다냥 — 참고용이다냥. 그대로 커스텀으로 쓰면 실패한다냥."/>
-                    </WrapPanel>
-                    <TextBlock x:Name="TxtWfStatus" Style="{StaticResource HintText}" Margin="0,4,0,0" Text=""/>
-                    <DockPanel Margin="0,8,0,0">
-                        <TextBlock Text="채색 커스텀" Style="{StaticResource FieldLabel}" Width="110"/>
-                        <ui:Button Content="비우기" Click="BtnColorCustomClear_Click" DockPanel.Dock="Right" Padding="10,4" Margin="8,0,0,0"/>
-                        <ui:Button Content="찾기…" Click="BtnColorCustomPick_Click" DockPanel.Dock="Right" Padding="10,4" Margin="8,0,0,0"/>
-                        <TextBox x:Name="TxtColorCustom" ToolTip="비우면 내장 채색 워크플로를 쓴다냥"/>
-                    </DockPanel>
-                    <TextBlock Style="{StaticResource HintText}"
-                               Text="지정하면 이 워크플로로 채색한다냥 (LoadImage 1개 = 원고, SaveImage 1개 = 결과)."/>
+                        <Border Style="{StaticResource SideCard}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="ComfyUI 화면 · 내 워크플로"/></Border>
+                                <StackPanel Style="{StaticResource SideBody}">
+                                    <WrapPanel>
+                                        <ui:Button Content="🌐 ComfyUI 화면 열기" Click="BtnOpenComfyUi_Click" Padding="12,5"/>
+                                        <ui:Button Content="내장 재생성 레시피를 ComfyUI에 넣는다냥" Click="BtnInstallBundledWf_Click" Padding="12,5" Margin="8,0,0,0"
+                                                   ToolTip="내장 재생성 레시피를 ComfyUI 워크플로 목록에 복사한다냥. 커스텀의 출발점으로 쓰라냥."/>
+                                        <ui:Button Content="재생성 레시피를 API JSON으로 저장" Click="BtnExportRegenApi_Click" Padding="12,5" Margin="8,0,0,0"
+                                                   ToolTip="지금 설정의 재생성 레시피를 API 파일로 저장한다냥 — 참고용이다냥. 그대로 커스텀으로 쓰면 실패한다냥."/>
+                                    </WrapPanel>
+                                    <TextBlock x:Name="TxtWfStatus" Style="{StaticResource HintText}" Margin="0,4,0,0" Text=""/>
+                                    <DockPanel Style="{StaticResource SetRow}" Margin="0,8,0,0">
+                                        <TextBlock Text="채색 커스텀" Style="{StaticResource SetLabel}"/>
+                                        <ui:Button Content="비우기" Click="BtnColorCustomClear_Click" DockPanel.Dock="Right" Padding="10,4" Margin="8,0,0,0"/>
+                                        <ui:Button Content="찾기…" Click="BtnColorCustomPick_Click" DockPanel.Dock="Right" Padding="10,4" Margin="8,0,0,0"/>
+                                        <TextBox x:Name="TxtColorCustom" ToolTip="비우면 내장 채색 워크플로를 쓴다냥"/>
+                                    </DockPanel>
+                                    <TextBlock Style="{StaticResource SetHint}" Text="ComfyUI에서 워크플로를 만들고 Export (API)로 저장하면 커스텀으로 끼울 수 있다냥.&#10;· 지정하면 이 워크플로로 채색한다냥 (LoadImage 1개 = 원고, SaveImage 1개 = 결과)."/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
 
-                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="채색 모델"/></Border>
-                    <TextBlock Style="{StaticResource HintText}"
-                               Text="그림을 그리는 모델이다냥.&#10;· 파일을 가져오거나 주소로 받아 바꿀 수 있다냥."/>
-                    <DockPanel Margin="0,6,0,0">
-                        <TextBlock Text="그림 모델" Style="{StaticResource FieldLabel}" Width="110"/>
-                        <ui:Button Content="↻" Click="BtnModelsRefresh_Click" DockPanel.Dock="Right" Padding="10,4" ToolTip="목록 새로고침"/>
-                        <ui:Button Content="파일 가져오기" Click="BtnCkptImport_Click" DockPanel.Dock="Right" Padding="10,4" Margin="8,0"/>
-                        <ComboBox x:Name="CmbCheckpoint"/>
-                    </DockPanel>
-                    <DockPanel Margin="0,6,0,0">
-                        <TextBlock Text="주소로 받기" Style="{StaticResource FieldLabel}" Width="110"/>
-                        <ui:Button x:Name="BtnCkptDownload" Content="⬇ 받기" Click="BtnCkptDownload_Click" DockPanel.Dock="Right" Padding="12,4" Margin="8,0,0,0"/>
-                        <TextBox x:Name="TxtCkptUrl" ToolTip="civitai·huggingface 다운로드 주소를 붙여넣으라냥"/>
-                    </DockPanel>
-                    <TextBlock x:Name="TxtCkptStatus" Style="{StaticResource HintText}" Margin="0,4,0,0"
-                               Text="civitai 로그인 모델은 구성요소 탭의 API 키를 쓴다냥.&#10;· 받은 모델은 위 목록에서 고른다냥."/>
-                    <DockPanel Margin="0,10,0,0">
-                        <TextBlock Text="선화 안내 모델" Style="{StaticResource FieldLabel}" Width="110"/>
-                        <ComboBox x:Name="CmbControlNet"/>
-                    </DockPanel>
-                    <TextBlock Style="{StaticResource HintText}"
-                               Text="원고 선을 따라 그리게 잡아 주는 모델(ControlNet)이다냥.&#10;· 보통 안 바꾼다냥."/>
+                        <Border Style="{StaticResource SideCard}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="채색 모델"/></Border>
+                                <StackPanel Style="{StaticResource SideBody}">
+                                    <DockPanel Style="{StaticResource SetRow}">
+                                        <TextBlock Text="그림 모델" Style="{StaticResource SetLabel}"/>
+                                        <ui:Button Content="↻" Click="BtnModelsRefresh_Click" DockPanel.Dock="Right" Padding="10,4" ToolTip="목록 새로고침"/>
+                                        <ui:Button Content="파일 가져오기" Click="BtnCkptImport_Click" DockPanel.Dock="Right" Padding="10,4" Margin="8,0"/>
+                                        <ComboBox x:Name="CmbCheckpoint"/>
+                                    </DockPanel>
+                                    <DockPanel Style="{StaticResource SetRow}">
+                                        <TextBlock Text="주소로 받기" Style="{StaticResource SetLabel}"/>
+                                        <ui:Button x:Name="BtnCkptDownload" Content="⬇ 받기" Click="BtnCkptDownload_Click" DockPanel.Dock="Right" Padding="12,4" Margin="8,0,0,0"/>
+                                        <TextBox x:Name="TxtCkptUrl" ToolTip="civitai·huggingface 다운로드 주소를 붙여넣으라냥"/>
+                                    </DockPanel>
+                                    <TextBlock x:Name="TxtCkptStatus" Style="{StaticResource HintText}" Margin="0,2,0,0"
+                                               Text="civitai 로그인 모델은 구성요소 탭의 API 키를 쓴다냥.&#10;· 받은 모델은 위 목록에서 고른다냥."/>
+                                    <DockPanel Style="{StaticResource SetRow}" Margin="0,8,0,0">
+                                        <TextBlock Text="선화 안내 모델" Style="{StaticResource SetLabel}"/>
+                                        <ComboBox x:Name="CmbControlNet" ToolTip="원고 선을 따라 그리게 잡아 주는 모델(ControlNet)이다냥.&#10;· 보통 안 바꾼다냥."/>
+                                    </DockPanel>
+                                    <TextBlock Style="{StaticResource SetHint}" Text="그림을 그리는 모델이다냥.&#10;· 파일을 가져오거나 주소로 받아 바꿀 수 있다냥."/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
 
-                    <!-- 고급: 엔진 실행·채색 워크플로 세부 — 접힌 상태가 기본 -->
-                    <ui:Button x:Name="BtnEngineAdv" Content="▸ 고급 옵션 — 엔진·워크플로 직접 제어"
-                               Click="BtnEngineAdv_Click" Margin="0,18,0,0" Padding="14,6"/>
-                    <StackPanel x:Name="PnlEngineAdv" Visibility="Collapsed">
-                        <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="엔진 실행"/></Border>
-                        <DockPanel Margin="0,4">
-                            <TextBlock Text="포트 (1024 ~ 65535)" Style="{StaticResource FieldLabel}" Width="160"/>
-                            <TextBox x:Name="TxtAdvPort" Width="90" HorizontalAlignment="Left"/>
-                        </DockPanel>
-                        <DockPanel Margin="0,4">
-                            <TextBlock Text="추가 실행 인자" Style="{StaticResource FieldLabel}" Width="110"/>
-                            <TextBox x:Name="TxtAdvExtraArgs"/>
-                        </DockPanel>
-                        <TextBlock Style="{StaticResource HintText}"
-                                   Text="main.py 뒤에 그대로 붙는다냥 — 예: --lowvram, --cpu. 엔진을 껐다 켜면 적용된다냥."/>
+                        <!-- 고급: 엔진 실행·채색 워크플로 세부 — 접힌 상태가 기본 -->
+                        <Border Style="{StaticResource SideCard}">
+                            <StackPanel>
+                                <ToggleButton x:Name="BtnEngineAdv" Style="{StaticResource SetCardToggle}" Content="고급 옵션 — 엔진·워크플로 직접 제어"/>
+                                <StackPanel x:Name="PnlEngineAdv" Style="{StaticResource SideBody}"
+                                            Visibility="{Binding IsChecked, ElementName=BtnEngineAdv, Converter={StaticResource BoolToVis}}">
+                                    <TextBlock Text="엔진 실행" Style="{StaticResource SetSub}" Margin="0,0,0,4"/>
+                                    <UniformGrid Columns="2" Rows="1">
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="포트" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtAdvPort" Width="80" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="1024 ~ 65535" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <Border/>
+                                    </UniformGrid>
+                                    <DockPanel Style="{StaticResource SetRow}">
+                                        <TextBlock Text="추가 실행 인자" Style="{StaticResource SetLabel}"/>
+                                        <TextBox x:Name="TxtAdvExtraArgs" ToolTip="main.py 뒤에 그대로 붙는다냥 — 예: --lowvram, --cpu. 엔진을 껐다 켜면 적용된다냥."/>
+                                    </DockPanel>
 
-                        <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="채색 ControlNet 2단"/></Border>
-                        <TextBlock Style="{StaticResource HintText}" Margin="0,2,0,0"
-                                   Text="원본 레시피: 선화가 0~60%, 스케치가 60~100% 구간을 맡는다냥."/>
-                        <UniformGrid Columns="2" Rows="2" Margin="0,4,0,0">
-                            <DockPanel Margin="0,4">
-                                <TextBlock Text="선화 강도 (0 ~ 2)" Style="{StaticResource FieldLabel}" Width="160"/>
-                                <TextBox x:Name="TxtAdvCnLineStr" Width="80" HorizontalAlignment="Left"/>
-                            </DockPanel>
-                            <DockPanel Margin="0,4">
-                                <TextBlock Text="선화 구간 끝 (0 ~ 1)" Style="{StaticResource FieldLabel}" Width="160"/>
-                                <TextBox x:Name="TxtAdvCnLineEnd" Width="80" HorizontalAlignment="Left"/>
-                            </DockPanel>
-                            <DockPanel Margin="0,4">
-                                <TextBlock Text="스케치 강도 (0 ~ 2)" Style="{StaticResource FieldLabel}" Width="160"/>
-                                <TextBox x:Name="TxtAdvCnScrStr" Width="80" HorizontalAlignment="Left"/>
-                            </DockPanel>
-                            <DockPanel Margin="0,4">
-                                <TextBlock Text="스케치 구간 시작 (0 ~ 1)" Style="{StaticResource FieldLabel}" Width="160"/>
-                                <TextBox x:Name="TxtAdvCnScrStart" Width="80" HorizontalAlignment="Left"/>
-                            </DockPanel>
-                        </UniformGrid>
-                        <UniformGrid Columns="2" Rows="1" Margin="0,4,0,0">
-                            <DockPanel>
-                                <TextBlock Text="전처리 해상도 (256 ~ 4096)" Style="{StaticResource FieldLabel}" Width="160"/>
-                                <TextBox x:Name="TxtAdvPreRes" Width="80" HorizontalAlignment="Left"/>
-                            </DockPanel>
-                            <DockPanel>
-                                <TextBlock Text="XDoG 임계값 (1 ~ 128)" Style="{StaticResource FieldLabel}" Width="160"/>
-                                <TextBox x:Name="TxtAdvXdog" Width="80" HorizontalAlignment="Left"/>
-                            </DockPanel>
-                        </UniformGrid>
-                        <TextBlock Style="{StaticResource HintText}"
-                                   Text="전처리 해상도(기본 1280)는 선화 추출 크기다냥 — 높이면 가는 선을 더 잡지만 느리다냥.&#10;· XDoG 임계값(기본 32)은 스케치 선의 진하기다냥."/>
+                                    <TextBlock Text="채색 ControlNet 2단" Style="{StaticResource SetSub}"/>
+                                    <UniformGrid Columns="2" Rows="3">
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="선화 강도" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtAdvCnLineStr" Width="70" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="0 ~ 2" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="선화 구간 끝" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtAdvCnLineEnd" Width="70" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="0 ~ 1" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="스케치 강도" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtAdvCnScrStr" Width="70" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="0 ~ 2" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="스케치 구간 시작" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtAdvCnScrStart" Width="70" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="0 ~ 1" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="전처리 해상도" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtAdvPreRes" Width="70" HorizontalAlignment="Left"
+                                                     ToolTip="전처리 해상도(기본 1280)는 선화 추출 크기다냥 — 높이면 가는 선을 더 잡지만 느리다냥.&#10;· XDoG 임계값(기본 32)은 스케치 선의 진하기다냥."/>
+                                            <TextBlock Text="256 ~ 4096" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="XDoG 임계값" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtAdvXdog" Width="70" HorizontalAlignment="Left"
+                                                     ToolTip="전처리 해상도(기본 1280)는 선화 추출 크기다냥 — 높이면 가는 선을 더 잡지만 느리다냥.&#10;· XDoG 임계값(기본 32)은 스케치 선의 진하기다냥."/>
+                                            <TextBlock Text="1 ~ 128" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                    </UniformGrid>
+                                    <TextBlock Style="{StaticResource HintText}" Margin="0,2,0,0" Text="원본 레시피: 선화가 0~60%, 스케치가 60~100% 구간을 맡는다냥."/>
 
-                        <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="표지 주입 (IPAdapter)"/></Border>
-                        <DockPanel Margin="0,4">
-                            <TextBlock Text="적용 끝 지점 (0 ~ 1)" Style="{StaticResource FieldLabel}" Width="160"/>
-                            <TextBox x:Name="TxtAdvIpaEnd" Width="80" HorizontalAlignment="Left"/>
-                        </DockPanel>
-                        <TextBlock Style="{StaticResource HintText}"
-                                   Text="0~1 (기본 0.9)다냥.&#10;· 낮추면 마무리에서 표지 영향이 빠진다냥."/>
+                                    <TextBlock Text="표지 주입 (IPAdapter)" Style="{StaticResource SetSub}"/>
+                                    <UniformGrid Columns="2" Rows="1">
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="적용 끝 지점" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtAdvIpaEnd" Width="70" HorizontalAlignment="Left" ToolTip="0~1 (기본 0.9)다냥.&#10;· 낮추면 마무리에서 표지 영향이 빠진다냥."/>
+                                            <TextBlock Text="0 ~ 1" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <Border/>
+                                    </UniformGrid>
 
-                        <ui:Button Content="기본값 복원" Click="BtnEngineAdvReset_Click" Margin="0,10,0,0" Padding="12,5"/>
+                                    <ui:Button Content="기본값 복원" Click="BtnEngineAdvReset_Click" Margin="0,10,0,4" Padding="12,5"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
-                </StackPanel>
                 </ScrollViewer>
             </TabItem>
 
             <!-- ── 구성요소 ── -->
-            <TabItem Header="📦 구성요소">
-                <StackPanel Margin="8,8,18,8">
-                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="설치 경로"/></Border>
-                    <DockPanel Margin="0,4">
-                        <TextBlock Text="구성요소 위치" Style="{StaticResource FieldLabel}" Width="130"/>
-                        <TextBox x:Name="TxtRuntimeRoot" IsReadOnly="True"/>
-                    </DockPanel>
-                    <DockPanel Margin="0,4">
-                        <TextBlock Text="결과물 저장" Style="{StaticResource FieldLabel}" Width="130"/>
-                        <ui:Button DockPanel.Dock="Right" Content="선택" Click="BtnPickOutput_Click" Padding="12,4" Margin="8,0,0,0"/>
-                        <TextBox x:Name="TxtOutputRoot"/>
-                    </DockPanel>
-                    <TextBlock Style="{StaticResource HintText}" Text="비우면 원본 폴더 옆에 '폴더명_neko'로 저장된다냥."/>
+            <TabItem Header="📦 구성요소" Style="{StaticResource SideNavTab}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="14,12,14,4">
+                    <StackPanel>
+                        <Border Style="{StaticResource SideCard}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="설치 경로"/></Border>
+                                <StackPanel Style="{StaticResource SideBody}">
+                                    <DockPanel Style="{StaticResource SetRow}">
+                                        <TextBlock Text="구성요소 위치" Style="{StaticResource SetLabel}"/>
+                                        <TextBox x:Name="TxtRuntimeRoot" IsReadOnly="True"/>
+                                    </DockPanel>
+                                    <DockPanel Style="{StaticResource SetRow}">
+                                        <TextBlock Text="결과물 저장" Style="{StaticResource SetLabel}"/>
+                                        <ui:Button DockPanel.Dock="Right" Content="선택" Click="BtnPickOutput_Click" Padding="12,4" Margin="8,0,0,0"/>
+                                        <TextBox x:Name="TxtOutputRoot"/>
+                                    </DockPanel>
+                                    <TextBlock Style="{StaticResource SetHint}" Text="비우면 원본 폴더 옆에 '폴더명_neko'로 저장된다냥."/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
 
-                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="기존 설치 연결"/></Border>
-                    <DockPanel Margin="0,4">
-                        <TextBlock Text="ComfyUI 경로" Style="{StaticResource FieldLabel}" Width="130"/>
-                        <TextBox x:Name="TxtLinkedComfy"/>
-                    </DockPanel>
-                    <TextBlock Style="{StaticResource HintText}"
-                               Text="이미 있는 ComfyUI portable 경로를 넣으면 재다운로드(약 20GB)를 건너뛴다냥."/>
+                        <Border Style="{StaticResource SideCard}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="기존 설치 연결"/></Border>
+                                <StackPanel Style="{StaticResource SideBody}">
+                                    <DockPanel Style="{StaticResource SetRow}">
+                                        <TextBlock Text="ComfyUI 경로" Style="{StaticResource SetLabel}"/>
+                                        <TextBox x:Name="TxtLinkedComfy"/>
+                                    </DockPanel>
+                                    <TextBlock Style="{StaticResource SetHint}" Text="이미 있는 ComfyUI portable 경로를 넣으면 재다운로드(약 20GB)를 건너뛴다냥."/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
 
-                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="civitai API 키 (선택)"/></Border>
-                    <TextBox x:Name="TxtCivitaiKey"/>
-                    <TextBlock Style="{StaticResource HintText}"
-                               Text="채색 모델 다운로드가 로그인 오류로 실패할 때만 필요하다냥.&#10;· civitai.com → 계정 설정 → API Keys."/>
+                        <Border Style="{StaticResource SideCard}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="civitai API 키 (선택)"/></Border>
+                                <StackPanel Style="{StaticResource SideBody}">
+                                    <TextBox x:Name="TxtCivitaiKey"/>
+                                    <TextBlock Style="{StaticResource SetHint}" Text="채색 모델 다운로드가 로그인 오류로 실패할 때만 필요하다냥.&#10;· civitai.com → 계정 설정 → API Keys."/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
 
-                    <ui:Button Content="구성요소 설치 창 열기" Click="BtnOpenSetup_Click" Margin="0,14,0,0" Padding="16,8"/>
-                </StackPanel>
+                        <ui:Button Content="구성요소 설치 창 열기" Click="BtnOpenSetup_Click" Margin="0,4,0,0" Padding="16,8" HorizontalAlignment="Left"/>
+                    </StackPanel>
+                </ScrollViewer>
             </TabItem>
 
             <!-- ── 정보 ── -->
-            <TabItem Header="ℹ 정보">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="8,8,18,8">
-                    <StackPanel Orientation="Horizontal" Margin="0,12,0,4">
-                        <Image Source="{DynamicResource NekoLogo}" Width="46" Height="46" Margin="0,0,12,0"/>
-                        <TextBlock Text="NekoManga" FontSize="24" FontWeight="ExtraBold"
-                                   Foreground="{DynamicResource NekoText}" VerticalAlignment="Center"/>
-                    </StackPanel>
-                    <TextBlock x:Name="TxtAboutVersion" Style="{StaticResource HintText}"/>
-                    <TextBlock Style="{StaticResource HintText}" Margin="0,8,0,0"
-                               Text="흑백 만화 자동 채색 + 검열 제거 + 번역 식자 올인원이다냥."/>
-                    <ui:Button Content="GitHub 열기" Click="BtnGitHub_Click" Margin="0,16,0,0" Padding="16,8" HorizontalAlignment="Left"/>
+            <TabItem Header="ℹ 정보" Style="{StaticResource SideNavTab}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="14,12,14,4">
+                    <StackPanel>
+                        <DockPanel Margin="0,4,0,12">
+                            <Image Source="{DynamicResource NekoLogo}" Width="46" Height="46" Margin="0,0,12,0" DockPanel.Dock="Left"/>
+                            <ui:Button Content="GitHub 열기" Click="BtnGitHub_Click" Padding="14,6" DockPanel.Dock="Right" VerticalAlignment="Center"/>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="NekoManga" FontSize="24" FontWeight="ExtraBold" Foreground="{DynamicResource NekoText}"/>
+                                <TextBlock x:Name="TxtAboutVersion" Style="{StaticResource HintText}"/>
+                                <TextBlock Style="{StaticResource HintText}" Text="흑백 만화 자동 채색 + 검열 제거 + 번역 식자 올인원이다냥."/>
+                            </StackPanel>
+                        </DockPanel>
 
-                    <!-- 화면 언어 — 칸의 이름(한국어 / English / 日本語)은 코드가 채운다(UiText.FillLanguagePicker). 만화를 옮기는 언어(번역 탭)와는 따로다 -->
-                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="🌐 화면 언어"/></Border>
-                    <ComboBox x:Name="CmbUiLanguage" MinWidth="180" HorizontalAlignment="Left" SelectionChanged="UiLanguage_Changed"/>
-                    <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,0"
-                               Text="고르는 즉시 열린 창의 글이 바뀐다냥. 이미 나와 있는 진행 글은 다음에 바뀔 때 새 언어로 나온다냥. 만화를 옮기는 언어(번역 탭)와는 따로다냥."/>
-                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="내장 AI 모듈"/></Border>
-                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,2,0,0" Text="• 텍스트 감지 — comictextdetector: 말풍선과 글자 위치를 찾는다냥."/>
-                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 글자 인식 — manga-ocr: 일본어 세로쓰기 특화 OCR이다냥."/>
-                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 검열 감지 — Aletheia Lens(Mask R-CNN): 막대·모자이크를 찾는다냥.&#10;· 전용 모델(YOLO-seg)이 흰 막대선을 보완한다냥."/>
-                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 기본 검열 제거 — Aletheia Lens(DeepCreamPy): 찾은 자리를 주변에 맞춰 채운다냥.&#10;· '재생성'은 SDXL, '커스텀'은 내 워크플로다냥."/>
-                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 글자 지움 — LaMa(만화·애니 학습판): 지운 글자 자리를 메운다냥."/>
-                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 번역 — Google(무료) / DeepL / DeepSeek / Grok 중 고른다냥."/>
-                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 자동 채색 — SDXL + ControlNet 2단: 원고 선을 따라 컬러로 그린다냥.&#10;· WD14 태거가 프롬프트를 만든다냥."/>
-                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 식자 — 내장 렌더러: 번역문을 말풍선에 외곽선과 함께 그린다냥."/>
+                        <UniformGrid Columns="2" Rows="1">
+                            <!-- 화면 언어 — 칸의 이름(한국어 / English / 日本語)은 코드가 채운다(UiText.FillLanguagePicker). 만화를 옮기는 언어(번역 탭)와는 따로다 -->
+                            <Border Style="{StaticResource SideCard}" Margin="0,0,5,10">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="🌐 화면 언어"/></Border>
+                                    <StackPanel Style="{StaticResource SideBody}">
+                                        <ComboBox x:Name="CmbUiLanguage" MinWidth="180" HorizontalAlignment="Left" SelectionChanged="UiLanguage_Changed"/>
+                                        <TextBlock Style="{StaticResource SetHint}" Text="고르는 즉시 열린 창의 글이 바뀐다냥. 이미 나와 있는 진행 글은 다음에 바뀔 때 새 언어로 나온다냥. 만화를 옮기는 언어(번역 탭)와는 따로다냥."/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                            <Border Style="{StaticResource SideCard}" Margin="5,0,0,10">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="화면 테마"/></Border>
+                                    <StackPanel Style="{StaticResource SideBody}">
+                                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                            <RadioButton x:Name="RbThemeLight" Content="☀ 화이트 (원고지)" IsChecked="True"
+                                                         Foreground="{DynamicResource NekoText}" Margin="0,0,18,0"
+                                                         Checked="Theme_Changed"/>
+                                            <RadioButton x:Name="RbThemeDark" Content="🌙 다크 (먹지)"
+                                                         Foreground="{DynamicResource NekoText}"
+                                                         Checked="Theme_Changed"/>
+                                        </StackPanel>
+                                        <TextBlock Style="{StaticResource SetHint}" Text="고르는 즉시 모든 창에 적용된다냥."/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </UniformGrid>
 
-                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="화면 테마"/></Border>
-                    <StackPanel Orientation="Horizontal">
-                        <RadioButton x:Name="RbThemeLight" Content="☀ 화이트 (원고지)" IsChecked="True"
-                                     Foreground="{DynamicResource NekoText}" Margin="0,0,18,0"
-                                     Checked="Theme_Changed"/>
-                        <RadioButton x:Name="RbThemeDark" Content="🌙 다크 (먹지)"
-                                     Foreground="{DynamicResource NekoText}"
-                                     Checked="Theme_Changed"/>
+                        <Border Style="{StaticResource SideCard}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="내장 AI 모듈"/></Border>
+                                <StackPanel Style="{StaticResource SideBody}">
+                                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Text="• 텍스트 감지 — comictextdetector: 말풍선과 글자 위치를 찾는다냥."/>
+                                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 글자 인식 — manga-ocr: 일본어 세로쓰기 특화 OCR이다냥."/>
+                                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 검열 감지 — Aletheia Lens(Mask R-CNN): 막대·모자이크를 찾는다냥.&#10;· 전용 모델(YOLO-seg)이 흰 막대선을 보완한다냥."/>
+                                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 기본 검열 제거 — Aletheia Lens(DeepCreamPy): 찾은 자리를 주변에 맞춰 채운다냥.&#10;· '재생성'은 SDXL, '커스텀'은 내 워크플로다냥."/>
+                                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 글자 지움 — LaMa(만화·애니 학습판): 지운 글자 자리를 메운다냥."/>
+                                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 번역 — Google(무료) / DeepL / DeepSeek / Grok 중 고른다냥."/>
+                                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 자동 채색 — SDXL + ControlNet 2단: 원고 선을 따라 컬러로 그린다냥.&#10;· WD14 태거가 프롬프트를 만든다냥."/>
+                                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,4" Text="• 식자 — 내장 렌더러: 번역문을 말풍선에 외곽선과 함께 그린다냥."/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SideCard}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="프로그램 삭제"/></Border>
+                                <StackPanel Style="{StaticResource SideBody}">
+                                    <TextBlock Style="{StaticResource HintText}" Text="앱과 바로가기를 지운다냥.&#10;· 구성요소 폴더는 커서 자동으로 안 지운다냥 — 직접 지워 줘냥."/>
+                                    <ui:Button x:Name="BtnUninstall" Content="🗑 NekoManga 삭제하기" Click="BtnUninstall_Click"
+                                               Appearance="Danger" Margin="0,8,0,4" Padding="16,8" HorizontalAlignment="Left"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
-                    <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,0"
-                               Text="고르는 즉시 모든 창에 적용된다냥."/>
-                    <Border Style="{StaticResource MangaTag}"><TextBlock Style="{StaticResource MangaTagText}" Text="프로그램 삭제"/></Border>
-                    <TextBlock Style="{StaticResource HintText}"
-                               Text="앱과 바로가기를 지운다냥.&#10;· 구성요소 폴더는 커서 자동으로 안 지운다냥 — 직접 지워 줘냥."/>
-                    <ui:Button x:Name="BtnUninstall" Content="🗑 NekoManga 삭제하기" Click="BtnUninstall_Click"
-                               Appearance="Danger" Margin="0,8,0,0" Padding="16,8" HorizontalAlignment="Left"/>
-                </StackPanel>
                 </ScrollViewer>
             </TabItem>
         </TabControl>

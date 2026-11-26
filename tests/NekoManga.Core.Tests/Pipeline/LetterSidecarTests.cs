@@ -13,7 +13,7 @@ public class LetterSidecarTests
     [
         new(10, 12, 50, 80, "日本語のセリフ", "한국어 대사 — \"따옴표\"", 18.5, Vertical: true, FontColorHex: "#000000"),
         new(60, 5, 120, 40, "ｶﾞｯ", "쾅", 24, Vertical: false, FontColorHex: "#FFFFFF",
-            ManualRect: true, StyleScale: 1.25, Align: "Right", BoldOverride: 1, Italic: true, LineSpacing: 1.4, ColorOverride: "#FF0000", RotationDeg: -12.5),
+            ManualRect: true, StyleScale: 1.25, Align: "Right", BoldOverride: 1, Italic: true, LineSpacing: 1.4, ColorOverride: "#FF0000", RotationDeg: -12.5, Sfx: true),
     ];
 
     private static LetterSidecar Stored(string source, long srcLen, string basePath = "") =>
