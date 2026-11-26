@@ -260,8 +260,10 @@ public partial class ResultWindow
         CmbBlocks.Items.Clear();
         for (int i = 0; i < _letterBlocks.Count; i++)
         {
-            var t = _letterBlocks[i].Translation;
-            CmbBlocks.Items.Add($"{i + 1}. {(_letterBlocks[i].Hidden ? Loc.T("(숨김) ") : "")}{(t.Length > 22 ? t[..22] + "…" : t)}");
+            // 글자 수로 자르지 않는다 — 항목은 폭에서 잘리면 XAML(ItemTemplate의 TextTrimming)이 "…"을 붙이고, 온 글은 툴팁에(2026-11-26, 전에는 22자에서 잘랐다).
+            // 줄바꿈(직접 나눈 줄의 \n, 번역기가 준 \r\n)과 겹친 빈칸은 빈칸 하나로 — CR이 남으면 TextBlock이 줄을 바꿔 "…"이 둘째 줄에만 붙는다
+            var t = string.Join(" ", _letterBlocks[i].Translation.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+            CmbBlocks.Items.Add($"{i + 1}. {(_letterBlocks[i].Hidden ? Loc.T("(숨김) ") : "")}{t}");
         }
         if (_letterBlocks.Count > 0) CmbBlocks.SelectedIndex = 0;
         TxtBlockText.Text = _letterBlocks.Count > 0 ? _letterBlocks[0].Translation : "";
@@ -473,6 +475,9 @@ public partial class ResultWindow
         if (_syncingBlockUi || CmbBlocks.SelectedIndex < 0) return;
         int i = CmbBlocks.SelectedIndex;
         SetBlock(i, _letterBlocks[i] with { Translation = TxtBlockText.Text.Replace("\r\n", "\n") }, "text:" + i);
+        // 칸은 높이 상한 없이 늘어나므로(2026-11-26) 치는 자리가 패널 아래로 내려가면 바깥 ScrollViewer가 따라오게 — TextBox는 제 안의 스크롤만 맞춘다
+        if (TxtBlockText.IsKeyboardFocusWithin)
+            try { TxtBlockText.BringIntoView(TxtBlockText.GetRectFromCharacterIndex(TxtBlockText.CaretIndex)); } catch { }
         // 제자리에서 고치는 중이면 그 텍스트박스에도 바로 반영 (박스는 Grid 컨테이너 안에 있다) — 아니면 그림을 다시 그린다
         if (_editBlock == i)
         {
