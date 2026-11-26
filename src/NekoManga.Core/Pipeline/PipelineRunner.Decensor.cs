@@ -244,21 +244,16 @@ public partial class PipelineRunner
         Mat img, Mat mask, int pageIdx, CancellationToken ct)
     {
         var maskedPng = MosaicDetector.ToMaskedPng(img, mask);
-        var up = await client.UploadImageAsync(maskedPng, $"nm_custom_{_tag}_{pageIdx}.png", ct);
-        ComfyClient.ComfyResult? r = null;
         var outPrefix = NextOutputPrefix("customout");
-        Mat outImg;
-        try
-        {
-            var prepared = CustomWorkflow.Prepare(workflow, up, outPrefix);
-            var pid = await client.QueuePromptAsync(prepared.Prompt, ct);
-            r = await client.WaitAsync(pid, comfyOutputDir, TimeSpan.FromMinutes(30), ct);
-            if (r.OutputFiles.Count == 0)
-                throw new InvalidOperationException(Loc.T("커스텀 워크플로 결과 파일이 없다냥 — SaveImage 노드가 결과를 저장하는지 확인해 줘냥."));
-            outImg = ImgIo.Read(r.OutputFiles[^1], ImreadModes.Color);
-        }
-        finally { WorkFolders.RemoveComfyFiles(settings.ComfyRoot, r?.OutputFiles, outPrefix, up); }   // 읽었으니 ComfyUI 폴더에는 남기지 않는다(실패·멈춤이어도 올린 입력과 그사이 저장된 출력은 지운다)
-        using var outImgOwner = outImg;
+        // 결과는 읽어서 넘겨받는다 — ComfyUI 폴더에는 남기지 않는다(실패·멈춤이어도 올린 입력과 그사이 저장된 출력은 지우고, 기다리다 그만둔 프롬프트는 거둔다: RunOneImageWorkflowAsync)
+        using var outImg = await RunOneImageWorkflowAsync(client, settings.ComfyRoot, comfyOutputDir, maskedPng, $"nm_custom_{_tag}_{pageIdx}.png", outPrefix,
+            up => CustomWorkflow.Prepare(workflow, up, outPrefix).Prompt, TimeSpan.FromMinutes(30),
+            r =>
+            {
+                if (r.OutputFiles.Count == 0)
+                    throw new InvalidOperationException(Loc.T("커스텀 워크플로 결과 파일이 없다냥 — SaveImage 노드가 결과를 저장하는지 확인해 줘냥."));
+                return ImgIo.Read(r.OutputFiles[^1], ImreadModes.Color);
+            }, ct);
         if (outImg.Empty()) throw new InvalidDataException(Loc.T("커스텀 워크플로 결과를 읽지 못했다냥."));
         using var resized = outImg.Width == img.Width && outImg.Height == img.Height
             ? outImg.Clone()
@@ -338,16 +333,18 @@ public partial class PipelineRunner
             using (crop) using (cropRegion) using (cropErase)
             {
                 string? up = null, eraseUp = null, areaUp = null;
+                // 올릴 이름은 우리가 짓는다(서버는 overwrite=true라 그대로 쓴다) — 요청이 서버에 닿은 뒤 답을 못 받고 끝나도(멈춤·연결 끊김) 이 이름으로 치운다(검토 2026-11-27)
+                string upName = $"nm_regen_{_tag}_{pageIdx}_{k}.png", eraseName = $"nm_regenmask_{_tag}_{pageIdx}_{k}.png", areaName = $"nm_regenarea_{_tag}_{pageIdx}_{k}.png";
                 Mat? best = null; List<double> bestWhite = []; long bestSeed = 0;
                 try
                 {
-                    up = await client.UploadImageAsync(MosaicDetector.ToMaskedPng(crop, cropRegion), $"nm_regen_{_tag}_{pageIdx}_{k}.png", ct);
-                    eraseUp = await client.UploadImageAsync(MosaicDetector.ToMaskedPng(crop, cropErase), $"nm_regenmask_{_tag}_{pageIdx}_{k}.png", ct);
+                    up = await client.UploadImageAsync(MosaicDetector.ToMaskedPng(crop, cropRegion), upName, ct);
+                    eraseUp = await client.UploadImageAsync(MosaicDetector.ToMaskedPng(crop, cropErase), eraseName, ct);
                     if (areas != null)
                     {
                         using var packed = RegenSexAreas.Pack(areas);
                         Cv2.ImEncode(".png", packed, out var areaPng);
-                        areaUp = await client.UploadImageAsync(areaPng, $"nm_regenarea_{_tag}_{pageIdx}_{k}.png", ct);
+                        areaUp = await client.UploadImageAsync(areaPng, areaName, ct);
                     }
                     long first = RegenSeedFor(rs, lockedSeeds, k);
                     // 흰 조각 다시 그리기(2026-11-20, RegenWhiteCheck): 결과에 평평한 흰 조각이 남으면 첫 시드에서 끌어낸 시드로 다시 그려 덜 흰 것을 고른다 — 올린 입력은 그대로 쓰고 그래프의 시드만 바뀐다.
@@ -381,7 +378,7 @@ public partial class PipelineRunner
                 }
                 catch { best?.Dispose(); throw; }
                 // 읽었으니 ComfyUI 폴더에는 남기지 않는다 — 영역마다 입력 둘(셋)이 쌓였다(실측 2026-11-13: output\nm_* 566MB). 실패·멈춤이어도 올린 입력은 지운다(출력은 시도마다 RunRegenGraphAsync가 치운다)
-                finally { WorkFolders.RemoveComfyFiles(settings.ComfyRoot, null, null, up, eraseUp, areaUp); }
+                finally { WorkFolders.RemoveComfyFiles(settings.ComfyRoot, null, null, up, eraseUp, areaUp, upName, eraseName, areaName); }
                 using var bestOwner = best!;
                 seeds.Add(bestSeed);
                 // 영역(+엣지가 닿는 범위)만 창 자리에 — 나머지 픽셀은 원본 그대로
@@ -395,20 +392,31 @@ public partial class PipelineRunner
         return seeds;
     }
 
+    /// <summary>재생성 프롬프트 하나를 기다리는 한도(두 단계라 20분). 시험이 줄여 쓴다.</summary>
+    internal TimeSpan RegenTimeout { get; set; } = TimeSpan.FromMinutes(20);
+
     /// <summary>재생성 그래프를 한 번 돌려 창 크기의 결과를 돌려준다(없으면 던진다) — 출력 파일은 읽은 뒤 바로 치운다(올린 입력은 호출부가 시도를 다 마친 뒤 치운다).</summary>
     private async Task<Mat> RunRegenGraphAsync(ComfyClient client, string comfyOutputDir, AppSettings rs, string up, string eraseUp, string? areaUp, List<string>? areaTags,
         string tags, RegenWindow w, long seed, CancellationToken ct)
     {
         var outPrefix = NextOutputPrefix("regenout");
         ComfyClient.ComfyResult? r = null;
+        string? pid = null;
         Mat outImg;
         try
         {
             var graph = WorkflowBuilder.BuildRegenCrop(rs, up, eraseUp, outPrefix, tags, w.SendW, w.SendH, seed, areaUp, areaTags);
-            var pid = await client.QueuePromptAsync(graph, ct);
-            r = await client.WaitAsync(pid, comfyOutputDir, TimeSpan.FromMinutes(20), ct);
+            pid = await client.QueuePromptAsync(graph, ct);
+            r = await client.WaitAsync(pid, comfyOutputDir, RegenTimeout, ct);
             if (r.OutputFiles.Count == 0) throw new InvalidOperationException(Loc.T("재생성 결과 파일이 없다냥."));
             outImg = ImgIo.Read(r.OutputFiles[^1], ImreadModes.Color);
+        }
+        catch (Exception) when (pid != null && r == null && !ct.IsCancellationRequested)
+        {
+            // 기다리기만 그만두면(제한 시간·연결 오류) 프롬프트는 서버에서 끝까지 돌아, 아래에서 치운 뒤에 출력 파일을 사용자의 ComfyUI 폴더에 남긴다 — 거둬 달라고 한다
+            // (글자 자리 다시 그리기에서 먼저 고친 틈, 검수 2026-11-26). 사용자가 멈춘 경우는 WaitAsync가 이미 거뒀다. 되는 데까지만(CancelPromptAsync는 던지지 않는다)
+            await client.CancelPromptAsync(pid);
+            throw;
         }
         finally { WorkFolders.RemoveComfyFiles(settings.ComfyRoot, r?.OutputFiles, outPrefix); }
         using var outImgOwner = outImg;

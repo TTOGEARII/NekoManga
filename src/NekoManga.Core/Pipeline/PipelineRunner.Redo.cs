@@ -68,7 +68,7 @@ public partial class PipelineRunner
     }
 
     /// <summary>픽셀마다 B·G·R의 최대−최소(채도의 대용)를 <paramref name="where"/>(0 아닌 곳, null이면 전체)에서 평균한 값.</summary>
-    private static double MeanChroma(Mat bgr, Mat? where)
+    internal static double MeanChroma(Mat bgr, Mat? where)   // 글자 자리 다시 그리기의 컬러 쪽 판정(TextRegenPlan.IsColorPage)도 쓴다
     {
         var ch = Cv2.Split(bgr);
         try

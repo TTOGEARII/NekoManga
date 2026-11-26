@@ -21,6 +21,27 @@ public class ImgIoTests
         Assert.Equal(ImgIo.ImageExts.Length, ImgIo.ImageExts.Distinct().Count());
     }
 
+    [Fact]
+    public void TryWrite_TargetCannotBeWritten_ReturnsFalse_AndLeavesTheOldFile()
+    {
+        // Write는 인코딩 실패만 false로 알리고 파일을 못 쓰면(읽기 전용·잠김·디스크 가득) 던진다. "못 쓰면 없는 것으로 치고 간다"는 호출부(글자 자리 다시 그리기의 대상 마스크·다시 그린 그림)는
+        // TryWrite를 쓴다 — Write의 false만 보던 때는 그 한 장이 실패로 끝났다(검토 2026-11-26·27)
+        using var t = new TempDir();
+        var path = t.At("out.png");
+        using var old = new Mat(8, 8, MatType.CV_8UC3, new Scalar(10, 20, 30));
+        using var next = new Mat(8, 8, MatType.CV_8UC3, new Scalar(200, 200, 200));
+        Assert.True(ImgIo.TryWrite(path, old));
+        var bytes = File.ReadAllBytes(path);
+        File.SetAttributes(path, FileAttributes.ReadOnly);
+        try
+        {
+            Assert.False(ImgIo.TryWrite(path, next));
+            Assert.Equal(bytes, File.ReadAllBytes(path));
+            Assert.Empty(Directory.GetFiles(t.Root, "*.part"));
+        }
+        finally { File.SetAttributes(path, FileAttributes.Normal); }
+    }
+
     [Theory]
     [InlineData("page.png")]
     [InlineData("PAGE.PNG")]              // 스캔본·카메라 파일은 대문자 확장자가 흔하다

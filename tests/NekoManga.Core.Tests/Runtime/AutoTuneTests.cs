@@ -121,6 +121,35 @@ public class AutoTuneTests
         Assert.Contains(maxwell.Changes, c => c.Key == "extra-args" && c.To == "--lowvram");
     }
 
+    [Fact]
+    public void BuildFor_NoUsableGpu_TextRegenOn_SuggestsTurningItOff()
+    {
+        // 글자 지운 자리 다시 그리기(2026-11-26)도 ComfyUI SDXL을 쓴다 — 엔진을 못 돌리는 카드면 채색처럼 끄기를 권한다
+        var s = new AppSettings { EnableAutoColor = false, TextRegen = true, PrewarmComfyOnLaunch = false, KeepComfyWarm = false };
+
+        var plan = AutoTune.BuildFor(s, "nvidia-old", "NVIDIA GeForce GTX 680", 2048, 16, gpuTooOld: true);
+
+        Assert.Contains(plan.Changes, c => c.Key == "textregen-off");
+        AutoTune.Apply(s, plan);
+        Assert.False(s.TextRegen);
+        var off = AutoTune.BuildFor(new AppSettings { EnableAutoColor = false }, "nvidia-old", "NVIDIA GeForce GTX 680", 2048, 16, gpuTooOld: true);
+        Assert.DoesNotContain(off.Changes, c => c.Key == "textregen-off");   // 꺼 둔 PC에는 권하지 않는다
+    }
+
+    [Fact]
+    public void BuildFor_LowVram_AlsoLowersTheTextRegenLineArtResolution()
+    {
+        // 8GB 미만: 재생성의 선화 해상도를 1024로 낮추듯 글자 자리 쪽도 낮춘다 — 이 값은 설정 창에 칸이 없어 사용자가 직접 낮출 길이 없다(검토 2026-11-27)
+        var s = new AppSettings();
+        var plan = AutoTune.BuildFor(s, "nvidia", "NVIDIA GeForce GTX 1660", 6144, 16);
+        Assert.Contains(plan.Changes, c => c.Key == "textregen-res" && c.To == "1024");
+        AutoTune.Apply(s, plan);
+        Assert.Equal(1024, s.TextRegenPreprocResolution);
+
+        var roomy = AutoTune.BuildFor(new AppSettings(), "nvidia", "NVIDIA GeForce RTX 4070", 12282, 32);
+        Assert.DoesNotContain(roomy.Changes, c => c.Key == "textregen-res");
+    }
+
     private static SystemCheck.Gpu Card(string name, int vramMb, string driver = "580.88") => new(name, driver, int.Parse(driver.Split('.')[0]), vramMb);
 
     [Theory]

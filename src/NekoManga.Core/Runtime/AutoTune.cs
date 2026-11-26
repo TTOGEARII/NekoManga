@@ -63,6 +63,7 @@ public static class AutoTune
         {
             if (s.EnableAutoColor) ch.Add(new("color-off", Loc.T("자동 채색"), Loc.T("켬"), Loc.T("끔"), why, x => x.EnableAutoColor = false));
             if (s.DecensorMode is "ComfyRegen" or "ComfyCustom") ch.Add(new("decensor-basic", Loc.T("검열 제거 방식"), s.DecensorMode, Loc.T("기본 (내장 모델)"), why, x => x.DecensorMode = "Basic"));
+            if (s.TextRegen) ch.Add(new("textregen-off", Loc.T("글자 자리 다시 그리기"), Loc.T("켬"), Loc.T("끔"), why, x => x.TextRegen = false));
             if (s.EnableSelfTraining) ch.Add(new("selftrain-off", Loc.T("자가 학습"), Loc.T("켬"), Loc.T("끔"), why, x => x.EnableSelfTraining = false));
         }
         else if (vram > 0)
@@ -76,6 +77,8 @@ public static class AutoTune
             // 선화 추출 해상도는 빠듯한 카드에서만 낮춘다 — 넉넉한 카드에서 사용자가 올려 둔 값을 '기본값'으로 되돌릴 이유는 없다
             if (lowvram && s.PreprocResolution > 1024) ch.Add(new("preproc-res", Loc.T("선화 추출 해상도"), s.PreprocResolution.ToString(), "1024", tier, x => x.PreprocResolution = 1024));
             if (lowvram && s.RegenPreprocResolution > 1024) ch.Add(new("regen-res", Loc.T("재생성 선화 해상도"), s.RegenPreprocResolution.ToString(), "1024", tier, x => x.RegenPreprocResolution = 1024));
+            // 글자 자리 다시 그리기의 선화 해상도도 같이 — 이 값은 설정 창에 칸이 없어 사용자가 직접 낮출 길이 없다(검토 2026-11-27)
+            if (lowvram && s.TextRegenPreprocResolution > 1024) ch.Add(new("textregen-res", Loc.T("글자 자리 선화 해상도"), s.TextRegenPreprocResolution.ToString(), "1024", tier, x => x.TextRegenPreprocResolution = 1024));
             var args = s.ComfyExtraArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
             bool hasLow = args.Contains("--lowvram") || args.Contains("--novram");
             if (lowvram && !hasLow)

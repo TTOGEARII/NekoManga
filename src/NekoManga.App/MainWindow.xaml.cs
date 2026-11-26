@@ -416,11 +416,10 @@ public partial class MainWindow
         }
 
         // ComfyUI가 필요한 조합인데 미설치면 바로 안내
-        bool needComfy = s.EnableAutoColor
-            || (s.EnableDecensor && s.DecensorMode is "ComfyRegen" or "ComfyCustom");
+        bool needComfy = s.UsesComfy;   // 채색 · 재생성/커스텀 검열 제거 · 글자 자리 다시 그리기(2026-11-26)
         if (needComfy && !s.ComfyAvailable)
         {
-            TxtStatus.Text = Loc.T("채색·재생성·커스텀은 ComfyUI가 필요하다냥 — 설정 → 구성요소에서 설치해 줘냥");
+            TxtStatus.Text = Loc.T("채색·재생성·커스텀·글자 자리 다시 그리기는 ComfyUI가 필요하다냥 — 설정 → 구성요소에서 설치해 줘냥");
             return;
         }
 

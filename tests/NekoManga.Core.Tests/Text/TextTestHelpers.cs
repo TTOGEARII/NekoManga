@@ -66,6 +66,27 @@ internal static class TextTestHelpers
 
     public static Rect RectOf(DetectedBlock b) => new(b.X1, b.Y1, b.X2 - b.X1, b.Y2 - b.Y1);
 
+    /// <summary>블록의 흰 테·갇힌 흰 틈(BubbleSolver.TextHalo)을 지울 마스크 into에 더하고, 더한 자리의 상자(쪽 좌표)를 돌려준다 — 더한 것이 없으면 null.
+    /// 러너(EmbeddedTranslator.EraseBlock)가 하는 일을 흰 테만 보는 시험용으로 줄인 것.</summary>
+    public static Rect? AddTextHalo(Mat img, Mat textMask, Rect block, Mat into)
+    {
+        using var halo = BubbleSolver.TextHalo(img, textMask, block, out var window);
+        if (halo == null) return null;
+        using var dst = new Mat(into, window);
+        Cv2.BitwiseOr(dst, halo, dst);
+        var bound = Bounds(halo)!.Value;
+        return new Rect(bound.X + window.X, bound.Y + window.Y, bound.Width, bound.Height);
+    }
+
+    /// <summary>블록의 구멍 둘레 판정(BubbleSolver.RegenStats) — 구멍 = 지울 마스크의 1.15배 창 안(흰 테가 창 밖으로 나가지 않은 블록에서 러너가 넘기는 것과 같다).</summary>
+    public static (bool Wanted, double White, double Black) RegenStats(Mat img, Mat eraseMask, Rect block)
+    {
+        var area = BubbleSolver.Enlarge(block, 1.15, img.Width, img.Height);
+        if (area.Width <= 0 || area.Height <= 0) return (false, 0, 0);
+        using var own = new Mat(eraseMask, area);
+        return BubbleSolver.RegenStats(img, eraseMask, area, own);
+    }
+
     /// <summary>PNG로 저장한다 (경로에 한글·일본어가 있어도 되게 파일은 .NET으로 쓴다). 부모 폴더가 없으면 만든다.</summary>
     public static void SavePng(Mat img, string path)
     {

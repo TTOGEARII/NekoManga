@@ -5,7 +5,8 @@ using OpenCvSharp.Dnn;
 namespace NekoManga.Core.Engine;
 
 /// <summary>감지된 텍스트 블록 (원본 이미지 좌표).</summary>
-public record DetectedBlock(int X1, int Y1, int X2, int Y2, float Confidence, bool LangJa);
+/// <param name="HandLettered">대사 블록에서 갈라낸 손글씨 효과음의 획(<see cref="BubbleSplitter.SplitOffGiants"/>) — 글 내용과 상관없이 효과음 꼴로 다룬다(감지기는 채우지 않는다).</param>
+public record DetectedBlock(int X1, int Y1, int X2, int Y2, float Confidence, bool LangJa, bool HandLettered = false);
 
 public record DetectionResult(IReadOnlyList<DetectedBlock> Blocks, Mat TextMask);
 

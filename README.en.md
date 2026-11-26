@@ -8,6 +8,7 @@ An all-in-one desktop app that works a little magic on black-and-white manga. Dr
   - Choose from **Google** (free), **DeepL**, **DeepSeek**, and **Grok**. The AI translation engines use context to produce more natural dialogue.
   - Text in vertical Japanese speech bubbles is laid out horizontally for readability, with wrapping that keeps words intact.
   - Only text inside speech bubbles is translated; sound effects and handwriting outside bubbles are left as they are (you can turn this off under **Settings → Translation**).
+  - If erased text over artwork (dialogue outside bubbles, see-through bubbles) leaves a blurry smear, try **Redraw erased areas (SDXL · experimental)** under **Settings → Translation** — only those spots are redrawn with ComfyUI SDXL to match the surrounding art. White bubbles are left as they are, and the checkpoint, ControlNet and prompt used here are separate from censorship removal.
 - 🙈 **Censorship removal** — [Aletheia Lens](https://github.com/Cec1c/Aletheia-Lens) detects censorship bars and mosaics, with a dedicated model to help catch thin white bars. You can **review and correct the detection masks** before restoration.
   - After detection, use the review window to paint over missed areas or erase incorrect detections, then run restoration.
   - Choose from three restoration modes: **Basic** (fast restoration using Aletheia Lens’s DeepCreamPy), **Regeneration** (SDXL with a built-in workflow), or **Custom ComfyUI** (your own workflow).

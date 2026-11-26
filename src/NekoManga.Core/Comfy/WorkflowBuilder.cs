@@ -249,6 +249,76 @@ public static class WorkflowBuilder
         return p;
     }
 
+    /// <summary>글자 자리 그래프가 넓힌 구멍 마스크에 거는 블러(보낸 그림의 px). 러너가 다시 그린 것을 붙이는 범위를 여기에 맞춘다(PipelineRunner.TextRegenPasteReach).</summary>
+    internal const int TextRegenMaskBlur = 2;
+
+    /// <summary>글자 지운 자리 인페인트(TextRegen, 2026-11-26) — 번역 단계에서 LaMa로 지운 글자 자리 가운데 바탕에 그림이 있는 곳을 SDXL로 다시 그린다.
+    /// <see cref="BuildRegenCrop"/>의 1단계(구멍 인페인트, 디노이즈 1.0)와 같은 구조를 **글자용 설정(TextRegen*)으로 따로** 짓는다(노드 번호도 그 1단계와 같게) — 사용자가 검열 재생성과
+    /// 모델·ControlNet·인페인트 값을 나누어 쓰려 한다. 부위 태그를 붙이지 않고, 2단계(영역 다듬기)가 없다: 대사 옆의 얼굴·머리카락을 다시 그리지 않고 구멍만 바꾼다.
+    /// <paramref name="imgUpload"/>: 창을 잘라 올린 PNG(그림 + 알파 = 구멍). <paramref name="w"/>·<paramref name="h"/>: 올린 그림의 크기(ControlNet 그림에서 구멍을 검게 비울 때 쓴다).
+    /// <paramref name="seed"/>: 러너가 창마다 넘긴다(빈 조각 재시도는 끌어낸 시드) — 안 넘기면 설정의 시드, 그것이 -1이면 여기서 뽑는다.
+    /// ControlNet 강도가 0이면 체인을 만들지 않는다(전처리 노드가 헛돌지 않게 — 재생성 1단계와 같은 판단). 'Repaint'는 union 계열 ControlNet에서만, 아니면 Lineart.</summary>
+    public static JsonObject BuildTextRegen(AppSettings s, string imgUpload, string filenamePrefix, int w, int h, long? seed = null, string? controlNetFile = null)
+    {
+        long sd = seed ?? (s.TextRegenSeed >= 0 ? s.TextRegenSeed : Random.Shared.NextInt64(0, uint.MaxValue));
+        string controlNet = controlNetFile ?? s.TextRegenControlNetInUse;   // 러너가 설치된 이름으로 바꿔 잡았으면 그것(설정은 그대로 둔다)
+        var p = new JsonObject
+        {
+            ["1"] = Node("LoadImage", new() { ["image"] = imgUpload }),   // 그림 + 알파 = 구멍
+            ["2"] = Node("CheckpointLoaderSimple", new() { ["ckpt_name"] = s.TextRegenCheckpointInUse }),
+        };
+        p["1"]!["_meta"] = new JsonObject { ["title"] = "NekoManga 입력 (알파 = 글자 지운 자리)" };   // loc:none
+        p["5"] = Node("LayerMask: MaskGrow", new() { ["mask"] = Link("1", 1), ["invert_mask"] = false, ["grow"] = s.TextRegenInpaintGrow, ["blur"] = TextRegenMaskBlur });
+        p["10"] = Node("CLIPTextEncode", new() { ["clip"] = Link("2", 1), ["text"] = s.TextRegenPrompt });
+        p["11"] = Node("CLIPTextEncode", new() { ["clip"] = Link("2", 1), ["text"] = s.TextRegenNegative });
+        bool useCn = s.TextRegenCnStrength > 0;
+        if (useCn)
+        {
+            bool union = controlNet.Contains("union", StringComparison.OrdinalIgnoreCase) || controlNet.Contains("promax", StringComparison.OrdinalIgnoreCase);
+            bool repaint = union && s.TextRegenControl == "Repaint";
+            p["12"] = Node("ControlNetLoader", new() { ["control_net_name"] = controlNet });
+            p["24"] = Node("EmptyImage", new() { ["width"] = w, ["height"] = h, ["batch_size"] = 1, ["color"] = 0 });
+            string cn = "12", controlBase;
+            if (repaint)
+            {
+                p["34"] = Node("SetUnionControlNetType", new() { ["control_net"] = Link("12", 0), ["type"] = "repaint" });
+                cn = "34"; controlBase = "1";   // 구멍을 검게 비운 원고 그대로
+            }
+            else
+            {
+                if (union)
+                {
+                    p["13"] = Node("SetUnionControlNetType", new() { ["control_net"] = Link("12", 0), ["type"] = "canny/lineart/anime_lineart/mlsd" });
+                    cn = "13";
+                }
+                p["9"] = Node("AIO_Preprocessor", new() { ["image"] = Link("1", 0), ["preprocessor"] = "Manga2Anime_LineArt_Preprocessor", ["resolution"] = s.TextRegenPreprocResolution });
+                controlBase = "9";              // 선화에서 구멍을 검게("선 없음") — 둘레의 선이 구멍 가장자리까지 안내한다
+            }
+            p["25"] = Node("ImageCompositeMasked", new() { ["destination"] = Link(controlBase, 0), ["source"] = Link("24", 0), ["mask"] = Link("5", 0), ["x"] = 0, ["y"] = 0, ["resize_source"] = true });
+            p["14"] = Node("ControlNetApplyAdvanced", new()
+            {
+                ["positive"] = Link("10", 0), ["negative"] = Link("11", 0),
+                ["control_net"] = Link(cn, 0), ["image"] = Link("25", 0),
+                ["strength"] = s.TextRegenCnStrength, ["start_percent"] = 0.0, ["end_percent"] = s.TextRegenCnEnd, ["vae"] = Link("2", 2),
+            });
+        }
+        p["15"] = Node("VAEEncode", new() { ["pixels"] = Link("1", 0), ["vae"] = Link("2", 2) });
+        p["26"] = Node("SetLatentNoiseMask", new() { ["samples"] = Link("15", 0), ["mask"] = Link("5", 0) });
+        p["16"] = Node("KSampler", new()
+        {
+            ["model"] = Link("2", 0),
+            ["positive"] = useCn ? Link("14", 0) : Link("10", 0), ["negative"] = useCn ? Link("14", 1) : Link("11", 0),
+            ["latent_image"] = Link("26", 0),
+            ["seed"] = sd, ["steps"] = s.TextRegenSteps, ["cfg"] = s.TextRegenCfg,
+            ["sampler_name"] = s.TextRegenSampler, ["scheduler"] = s.TextRegenScheduler, ["denoise"] = 1.0,
+        });
+        p["17"] = Node("VAEDecode", new() { ["samples"] = Link("16", 0), ["vae"] = Link("2", 2) });
+        // 원본 위에 그린 결과를 구멍(넓힌 마스크)만 — 러너도 붙일 때 같은 범위만 받는다
+        p["27"] = Node("ImageCompositeMasked", new() { ["destination"] = Link("1", 0), ["source"] = Link("17", 0), ["mask"] = Link("5", 0), ["x"] = 0, ["y"] = 0, ["resize_source"] = false });
+        p["20"] = Node("SaveImage", new() { ["images"] = Link("27", 0), ["filename_prefix"] = filenamePrefix });
+        return p;
+    }
+
     /// <summary>표지/참고 일러스트에서 WD14 태그만 뽑는 미니 워크플로 (ShowText로 결과 수거).</summary>
     public static JsonObject BuildTagExtract(AppSettings s, string uploadedName) => new()
     {

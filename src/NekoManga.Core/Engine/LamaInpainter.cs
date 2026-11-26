@@ -23,7 +23,8 @@ public class LamaInpainter(OnnxEnv env)
 
     public bool IsReady => env.ModelExists(ActiveModelFile);
 
-    /// <summary>img(BGR)·mask(8UC1, 255=지울 영역)를 받아 img를 제자리 수정한다.</summary>
+    /// <summary>img(BGR)·mask(8UC1, 255=지울 영역)를 받아 img를 제자리 수정한다.
+    /// 조각 상한 360은 글자 지우기에도 그대로 쓴다 — 160(조각 + 맥락 ≤ 512, 원본 해상도)으로 바꿔 실제 쪽(05·26쪽, 속도선·빗금 위 글)을 돌려 봤지만 뿌연 얼룩은 그대로였다(2026-11-26, 해상도가 아니라 모델의 한계).</summary>
     public void Inpaint(Mat img, Mat mask)
     {
         // FindContours는 입력 마스크를 파괴하므로 복제본에서 컨투어를 찾고,

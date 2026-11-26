@@ -35,23 +35,28 @@ public sealed class OnnxEnv(AppSettings settings) : IDisposable
     private static readonly Lazy<int> BestVramMb = new(Runtime.SystemCheck.BestAdapterVramMb);
 
     /// <summary>지금 설정에서 내장 모델을 GPU(DirectML)에 올려도 되는가 (AppSettings.OnnxGpu).
-    /// "Auto"(기본): **전용 VRAM이 6GB 이상이고 ComfyUI를 쓰지 않는 작업일 때만 GPU.** ComfyUI를 쓰는 작업(자동 채색·재생성·커스텀)이면 CPU —
+    /// "Auto"(기본): **전용 VRAM이 6GB 이상이고 ComfyUI를 쓰지 않는 작업일 때만 GPU.** ComfyUI를 쓰는 작업(자동 채색·재생성·커스텀·글자 자리 다시 그리기 — 러너가 <see cref="JobUsesComfy"/>로 알려 준다)이면 CPU —
     /// 내장 모델을 전부 GPU에 올리면 VRAM을 ~5GB 잡아(실측) 8GB 카드에서 SDXL과 다투다 메모리 부족이 난다.
     /// "On" = 항상 GPU(VRAM 검사 없음), "Off" = 항상 CPU. NEKO_FORCE_CPU=1이 가장 우선.</summary>
-    public bool GpuAllowed
+    public bool GpuAllowed =>
+        Allowed(settings.OnnxGpu, Environment.GetEnvironmentVariable("NEKO_FORCE_CPU") == "1", VramMb, JobUsesComfy ?? settings.UsesComfyApartFromTextRegen);
+
+    /// <summary>이번 실행이 ComfyUI를 쓰는가 — 러너가 시작할 때(모델을 올리기 전에) 정해 준다(<c>PipelineRunner.PrepareAsync</c>). 설정만 보면 '글자 자리 다시 그리기'를 켜 둔 사람은
+    /// 결과 창의 다시 지우기·다시 식자(SDXL을 부르지 않는 실행)까지 내장 AI가 CPU로 돈다(검토 2026-11-26).
+    /// null이면(러너의 준비를 거치지 않는 길 — 결과 창의 제자리 지우기 <c>ManualDecensorAsync</c>·부위 감지·진단 진입점) 설정으로 보되 **글자 자리 다시 그리기는 세지 않는다**:
+    /// 그 기능은 번역기를 쓰는 실행에서만 돌고 거기서는 늘 이 값이 정해진다(검토 2026-11-27 — 세면 그런 길까지 CPU로 돈다).</summary>
+    public bool? JobUsesComfy { get; set; }
+
+    /// <summary>전용 VRAM(MB)을 읽는 길 — 시험이 바꿔 끼운다(기본은 레지스트리에서 한 번 읽은 값).</summary>
+    internal Func<int> VramMb { get; init; } = () => BestVramMb.Value;
+
+    /// <summary><see cref="GpuAllowed"/>의 판정만 떼어 낸 것(시험이 표로 본다). VRAM은 '자동'일 때만 묻는다.</summary>
+    internal static bool Allowed(string onnxGpu, bool forceCpu, Func<int> vramMb, bool usesComfy) => !forceCpu && onnxGpu switch
     {
-        get
-        {
-            if (Environment.GetEnvironmentVariable("NEKO_FORCE_CPU") == "1") return false;
-            return settings.OnnxGpu switch
-            {
-                "On" => true,
-                "Off" => false,
-                _ => BestVramMb.Value >= AutoMinVramMb
-                     && !(settings.EnableAutoColor || (settings.EnableDecensor && settings.DecensorMode is "ComfyRegen" or "ComfyCustom")),
-            };
-        }
-    }
+        "On" => true,
+        "Off" => false,
+        _ => !usesComfy && vramMb() >= AutoMinVramMb,   // 글자 자리 다시 그리기(TextRegen)도 SDXL을 쓴다(2026-11-26)
+    };
 
     /// <summary>모델 실행을 감싼다: GPU 세션이면 한 번에 하나씩만 돌리고(<see cref="GpuSync"/>), 실행 오류(VRAM 부족·드라이버 재시작 등)가 나면
     /// 그 모델을 CPU로 내리고 한 번 더 돌린다. <paramref name="body"/>는 다시 불려도 되는 것이어야 한다(안에서 <see cref="Get"/>으로 세션을 새로 받는다).

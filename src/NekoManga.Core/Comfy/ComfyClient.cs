@@ -15,13 +15,32 @@ public class ComfyClient(string baseUrl)
     internal ComfyClient(string baseUrl, HttpMessageHandler handler) : this(baseUrl) =>
         Http = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
 
-    /// <summary>input 폴더로 업로드하고 서버가 부여한 파일명을 돌려준다.</summary>
+    /// <summary>완료를 묻는 간격(ms) — 시험 이음새(가짜 응답기는 바로 끝나는데 프롬프트마다 2초를 기다리면 재시도 시험이 수십 초가 된다). 실제 서버에는 기본값 그대로.</summary>
+    internal int PollMs { get; init; } = 2000;
+
+    /// <summary>요청 하나를 기다리는 한도. HttpClient의 Timeout은 무한이다(긴 생성은 /history를 되풀이해 물어 기다린다) — 그래서 **소켓은 받는데 답을 안 하는 서버**(멈춘·심하게 스왑 중인 프로세스,
+    /// 콘솔 글자 선택으로 멈춘 ComfyUI)에서는 올리기·줄 넣기·묻기 요청 하나가 영영 안 돌아왔고, 그 위의 제한 시간(<see cref="WaitAsync"/>의 timeout)도 요청 사이에서만 재서 걸리지 않았다(검토 2026-11-27).
+    /// 넘기면 <see cref="TimeoutException"/>(사용자의 멈추기 = 취소 예외와 구별된다). 로컬 서버의 요청은 길어야 몇 초다 — 2분은 서버가 잠깐 바쁜 것(모델을 올리는 중)을 실패로 만들지 않을 만큼.</summary>
+    internal TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(120);
+
+    /// <summary>요청 하나를 <see cref="RequestTimeout"/> 안에서 보낸다 — 넘기면 TimeoutException, 사용자가 멈추면(<paramref name="ct"/>) 취소 예외 그대로.</summary>
+    private async Task<HttpResponseMessage> SendAsync(Func<CancellationToken, Task<HttpResponseMessage>> request, CancellationToken ct)
+    {
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        limit.CancelAfter(RequestTimeout);
+        try { return await request(limit.Token); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested && limit.IsCancellationRequested)
+        {
+            throw new TimeoutException(Loc.F($"엔진(ComfyUI)이 {(int)RequestTimeout.TotalSeconds}초 동안 답하지 않는다냥."));
+        }
+    }
+
     /// <summary>서버가 해당 노드 클래스를 아는지 — 커스텀 노드 설치 후 서버를 안 껐으면 모를 수 있다.</summary>
     public async Task<bool> HasNodeAsync(string classType, CancellationToken ct)
     {
         try
         {
-            using var r = await Http.GetAsync($"{baseUrl}/object_info/{classType}", ct);
+            using var r = await SendAsync(t => Http.GetAsync($"{baseUrl}/object_info/{classType}", t), ct);
             if (!r.IsSuccessStatusCode) return false;
             var body = await r.Content.ReadAsStringAsync(ct);
             return body.Contains(classType);
@@ -32,12 +51,14 @@ public class ComfyClient(string baseUrl)
     /// <summary>서버가 아는 모든 노드의 정의(입력 이름·순서·고를 수 있는 값). 화면 포맷 워크플로 변환과 실행 전 점검에 쓴다.</summary>
     public async Task<JsonObject> GetObjectInfoAsync(CancellationToken ct)
     {
-        using var r = await Http.GetAsync($"{baseUrl}/object_info", ct);
+        using var r = await SendAsync(t => Http.GetAsync($"{baseUrl}/object_info", t), ct);
         r.EnsureSuccessStatusCode();
         return JsonNode.Parse(await r.Content.ReadAsStringAsync(ct)) as JsonObject
                ?? throw new InvalidDataException(Loc.T("ComfyUI의 노드 정보(/object_info)를 읽지 못했다냥."));
     }
 
+    /// <summary>input 폴더로 올리고 서버가 답한 파일 이름을 돌려준다(덮어쓰기라 보통 부탁한 <paramref name="fileName"/> 그대로다). 답을 못 받으면(멈춤·연결 오류·요청 한도) 파일은 이미 쓰였을 수 있다 —
+    /// 호출부는 답으로 받은 이름과 **부탁한 이름 둘 다**로 치운다(WorkFolders.RemoveComfyFiles).</summary>
     public async Task<string> UploadImageAsync(byte[] png, string fileName, CancellationToken ct)
     {
         using var form = new MultipartFormDataContent();
@@ -45,7 +66,7 @@ public class ComfyClient(string baseUrl)
         img.Headers.ContentType = new("image/png");
         form.Add(img, "image", fileName);
         form.Add(new StringContent("true"), "overwrite");
-        using var resp = await Http.PostAsync($"{baseUrl}/upload/image", form, ct);
+        using var resp = await SendAsync(t => Http.PostAsync($"{baseUrl}/upload/image", form, t), ct);
         resp.EnsureSuccessStatusCode();
         var json = JsonNode.Parse(await resp.Content.ReadAsStringAsync(ct))!;
         return json["name"]!.GetValue<string>();
@@ -60,8 +81,8 @@ public class ComfyClient(string baseUrl)
         var body = new JsonObject { ["prompt"] = prompt, ["prompt_id"] = id };
         try
         {
-            using var resp = await Http.PostAsync($"{baseUrl}/prompt",
-                new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"), ct);
+            using var resp = await SendAsync(t => Http.PostAsync($"{baseUrl}/prompt",
+                new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"), t), ct);
             var text = await resp.Content.ReadAsStringAsync(ct);
             if (!resp.IsSuccessStatusCode)
                 throw new InvalidOperationException(Loc.F($"워크플로 검증 실패다냥: {Truncate(ExplainRejection(text), 2000)}"));
@@ -69,6 +90,13 @@ public class ComfyClient(string baseUrl)
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
+            await CancelPromptAsync(id);
+            throw;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException or TimeoutException)
+        {
+            // 요청이 가다가 끊겼다(연결 오류·답 없는 서버의 요청 한도): 서버가 받았는지 모른다 — 받았으면 줄에 들어가 끝까지 돌고, 호출부가 출력을 치운 뒤에 그림을 남긴다(검토 2026-11-27).
+            // 우리가 지어 보낸 id로 거둔다(되는 데까지만 — 옛 ComfyUI는 제 id를 쓰니 못 거둔다). 서버가 거절한 것(위의 InvalidOperationException)은 줄에 없다
             await CancelPromptAsync(id);
             throw;
         }
@@ -157,8 +185,11 @@ public class ComfyClient(string baseUrl)
         while (DateTime.UtcNow < deadline)
         {
             ct.ThrowIfCancellationRequested();
-            await Task.Delay(2000, ct);
-            using var resp = await Http.GetAsync($"{baseUrl}/history/{promptId}", ct);
+            await Task.Delay(PollMs, ct);
+            HttpResponseMessage answer;
+            try { answer = await SendAsync(t => Http.GetAsync($"{baseUrl}/history/{promptId}", t), ct); }
+            catch (TimeoutException) { continue; }   // 이번 물음에 답이 없다(서버가 바쁘거나 멈췄다) — 한도까지는 다시 묻는다. 연결 오류(서버가 꺼졌다)는 전처럼 바로 던진다
+            using var resp = answer;
             if (!resp.IsSuccessStatusCode) continue;
             var hist = JsonNode.Parse(await resp.Content.ReadAsStringAsync(ct)) as JsonObject;
             if (hist == null || !hist.ContainsKey(promptId)) continue;

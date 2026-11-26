@@ -66,7 +66,7 @@ public static class WorkFolders
     /// <param name="outputFiles">ComfyClient.WaitAsync가 돌려준 출력 파일 경로들.</param>
     /// <param name="outputPrefix">그 프롬프트의 SaveImage 접두사(PipelineRunner.NextOutputPrefix — 프롬프트마다 다르다). 있으면 output 바로 아래의 <c>&lt;접두사&gt;_*</c>도 지운다:
     /// 멈춤·제한 시간 초과·연결 오류로 기다리기를 그만두면 출력 파일 이름을 못 받는데, 그사이 서버가 저장했으면 남는다. 글자·숫자·밑줄만 든 <c>nm_…</c>(8자 이상)일 때만 훑는다.</param>
-    /// <param name="inputNames">UploadImageAsync가 돌려준 입력 파일 이름들(폴더 없이).</param>
+    /// <param name="inputNames">올린 입력 파일 이름들(폴더 없이) — UploadImageAsync가 돌려준 이름과, 답을 못 받았을 때를 위해 올리며 부탁한 이름.</param>
     public static void RemoveComfyFiles(string comfyRoot, IEnumerable<string>? outputFiles, string? outputPrefix, params string?[] inputNames)
     {
         if (Keep) return;

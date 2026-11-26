@@ -690,6 +690,98 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- 글자 지운 자리 다시 그리기(TextRegen, 2026-11-26 사용자 "ComfyUI SDXL로 다시 그리는 방향으로" · "검열 제거와 별도로 특화된 모델을 따로" · "인페인팅과 컨트롤넷도 글자용으로 따로"):
+                             LaMa가 뭉개는 그림 위의 글자 자리만 SDXL 인페인트 한 단계로 다시 그린다. 값은 전부 TextRegen* — 검열 재생성(Regen*)의 칸과 나누지 않는다. 불러오기·저장은 SettingsWindow.TextRegen.cs -->
+                        <Border Style="{StaticResource SideCard}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="지운 자리 다시 그리기 (SDXL · 시험 중)"/></Border>
+                                <StackPanel Style="{StaticResource SideBody}">
+                                    <CheckBox x:Name="ChkTextRegen" Foreground="{DynamicResource NekoText}"
+                                              Content="풍선 밖·투명 풍선의 글자 자리를 SDXL로 다시 그린다냥 (ComfyUI 필요)"
+                                              ToolTip="그림 위의 글을 지운 자리가 뿌옇게 뭉개지는 것을 SDXL로 다시 그린다냥. 흰 풍선 안은 그대로 둔다냥. 그리는 창 하나에 1분쯤 걸리고, 실패하면 지운 그대로 간다냥"/>
+                                    <TextBlock Style="{StaticResource SetHint}" Text="속도선·빗금·톤 위의 글자 자리가 주변 그림과 이어지게 다시 그린다냥.&#10;· 시험 중이라 결과를 보고 쓰라냥.&#10;· 켜 두면 번역 작업 동안 내장 AI는 CPU로 돈다냥('내장 AI 가속'이 자동일 때)."/>
+                                </StackPanel>
+                                <ToggleButton x:Name="BtnTextRegenAdv" Style="{StaticResource SetCardToggle}" Content="고급 옵션 — 글자용 모델·인페인트"/>
+                                <StackPanel x:Name="PnlTextRegenAdv" Style="{StaticResource SideBody}"
+                                            Visibility="{Binding IsChecked, ElementName=BtnTextRegenAdv, Converter={StaticResource BoolToVis}}">
+                                    <TextBlock Style="{StaticResource HintText}" Text="검열 제거의 재생성과 따로 쓰는 값이다냥.&#10;· 파일 칸을 비워 두면 재생성의 모델을 쓴다냥.&#10;· 재생성·채색과 다른 체크포인트를 쓰면 모델을 번갈아 읽어 느려진다냥."/>
+                                    <DockPanel Style="{StaticResource SetRow}">
+                                        <TextBlock Text="체크포인트 파일" Style="{StaticResource SetLabel}"/>
+                                        <ui:Button Content="재생성과 같게" Click="BtnTextRegenCkptClear_Click" DockPanel.Dock="Right" Padding="10,4" Margin="6,0,0,0" ToolTip="칸을 비운다냥 — 비어 있으면 재생성의 모델을 쓴다냥"/>
+                                        <ui:Button Content="찾기…" Click="BtnTextRegenCkptPick_Click" DockPanel.Dock="Right" Padding="10,4" Margin="8,0,0,0"/>
+                                        <TextBox x:Name="TxtTextRegenCkpt" IsReadOnly="True" ToolTip="safetensors · ckpt · pt 파일이다냥.&#10;· models 폴더 밖의 파일은 복사해 넣는다냥."/>
+                                    </DockPanel>
+                                    <DockPanel Style="{StaticResource SetRow}">
+                                        <TextBlock Text="ControlNet 파일" Style="{StaticResource SetLabel}"/>
+                                        <ui:Button Content="재생성과 같게" Click="BtnTextRegenCnClear_Click" DockPanel.Dock="Right" Padding="10,4" Margin="6,0,0,0" ToolTip="칸을 비운다냥 — 비어 있으면 재생성의 모델을 쓴다냥"/>
+                                        <ui:Button Content="찾기…" Click="BtnTextRegenCnPick_Click" DockPanel.Dock="Right" Padding="10,4" Margin="8,0,0,0"/>
+                                        <TextBox x:Name="TxtTextRegenCn" IsReadOnly="True" ToolTip="safetensors · ckpt · pt 파일이다냥.&#10;· models 폴더 밖의 파일은 복사해 넣는다냥."/>
+                                    </DockPanel>
+                                    <TextBlock Text="프롬프트" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
+                                    <TextBox x:Name="TxtTextRegenPrompt" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="40"/>
+                                    <TextBlock Text="네거티브" Style="{StaticResource FieldLabel}" Margin="0,8,0,2"/>
+                                    <TextBox x:Name="TxtTextRegenNeg" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="40"/>
+                                    <UniformGrid Columns="2" Margin="0,8,0,0">
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="스텝" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtTextRegenSteps" Width="70" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="1 ~ 150" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="CFG" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtTextRegenCfg" Width="70" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="0 ~ 30" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="샘플러" Style="{StaticResource SetLabel}"/>
+                                            <TextBox x:Name="TxtTextRegenSampler" Width="150" HorizontalAlignment="Left"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="스케줄러" Style="{StaticResource SetLabel}"/>
+                                            <TextBox x:Name="TxtTextRegenScheduler" Width="150" HorizontalAlignment="Left"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="시드" Style="{StaticResource SetLabel}"/>
+                                            <TextBox x:Name="TxtTextRegenSeed" Width="150" HorizontalAlignment="Left" ToolTip="-1이면 그릴 때마다 새로 뽑는다냥"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="구멍 넓히기" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtTextRegenGrow" Width="70" HorizontalAlignment="Left" ToolTip="글자 자리를 이만큼(px) 넓혀 그린다냥 — 글자 가장자리의 잔상까지 덮는다냥"/>
+                                            <TextBlock Text="0 ~ 64" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="CN 강도" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtTextRegenCnStr" Width="70" HorizontalAlignment="Left" ToolTip="0이면 ControlNet 없이 프롬프트만으로 그린다냥"/>
+                                            <TextBlock Text="0 ~ 2" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="CN 끝" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtTextRegenCnEnd" Width="70" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="0 ~ 1" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="자를 크기" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtTextRegenCrop" Width="70" HorizontalAlignment="Left" ToolTip="가까운 글자 자리들을 이 크기의 창으로 묶어 SDXL에 보낸다냥 — 1024가 가장 맞는다냥"/>
+                                            <TextBlock Text="512 ~ 2048" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="빈 조각 다시 그리기" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtTextRegenRetries" Width="70" HorizontalAlignment="Left" ToolTip="그린 자리가 둘레보다 눈에 띄게 희면 새 시드로 이 횟수까지 다시 그린다냥. 0이면 끈다냥"/>
+                                            <TextBlock Text="0 ~ 5" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                    </UniformGrid>
+                                    <DockPanel Style="{StaticResource SetRow}">
+                                        <TextBlock Text="ControlNet 종류" Style="{StaticResource SetLabel}"/>
+                                        <ComboBox x:Name="CmbTextRegenControl" ToolTip="CN 강도가 0이면 ControlNet 없이 그려서 이 선택은 효과가 없다냥">
+                                            <ComboBoxItem Tag="Lineart" Content="선화에 글자 자리를 검게 칠한다냥 (기본)"/>
+                                            <ComboBoxItem Tag="Repaint" Content="리페인트 — union promax의 repaint (실험용)"/>
+                                        </ComboBox>
+                                    </DockPanel>
+                                    <ui:Button Content="기본값 복원" Click="BtnTextRegenReset_Click" Margin="0,10,0,4" Padding="12,5"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
                         <Border Style="{StaticResource SideCard}">
                             <StackPanel>
                                 <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="식자 — 말풍선 글자 모양"/></Border>
@@ -806,7 +898,7 @@
                                         <TextBlock Text="내장 AI 가속" Style="{StaticResource SetLabel}"/>
                                         <ComboBox x:Name="CmbOnnxGpu"
                                                   ToolTip="내장 AI를 그래픽카드로 돌리면 훨씬 빠르다냥(검열 감지 9초 → 1초).&#10;· VRAM을 5GB쯤 써서 '자동'은 6GB 이상이고 엔진 작업이 없을 때만 쓴다냥.&#10;· 오류가 나면 CPU로 바꾼다냥.">
-                                            <ComboBoxItem Tag="Auto" Content="자동 — 채색·GPU 검열 제거를 안 쓸 때만 그래픽카드 (권장)"/>
+                                            <ComboBoxItem Tag="Auto" Content="자동 — 엔진(ComfyUI)을 안 쓰는 작업에서만 그래픽카드 (권장)"/>
                                             <ComboBoxItem Tag="On" Content="항상 그래픽카드 (VRAM 12GB 이상 권장)"/>
                                             <ComboBoxItem Tag="Off" Content="항상 CPU"/>
                                         </ComboBox>

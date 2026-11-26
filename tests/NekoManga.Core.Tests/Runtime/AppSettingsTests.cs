@@ -696,6 +696,71 @@ public class AppSettingsTests
         Assert.Equal("Replace", LoadJson(t, "{\"SfxMode\": \"Replace\"}").SfxMode);
     }
 
+    // ── 글자 지운 자리 다시 그리기(TextRegen, 2026-11-26) — 검열 재생성(Regen*)과 따로 두는 칸 ──
+
+    [Fact]
+    public void Defaults_TextRegen_OffWithItsOwnInpaintValues()
+    {
+        var s = new AppSettings();
+        Assert.False(s.TextRegen);
+        Assert.Equal(("", ""), (s.TextRegenCheckpoint, s.TextRegenControlNet));
+        Assert.Equal("monochrome manga, clean lineart, consistent screentone, seamless background", s.TextRegenPrompt);
+        Assert.Equal("text, letters, sound effects, symbols, watermark, speech bubble, broken lines, blurry lineart, colorized, oversmoothed, residual artifacts", s.TextRegenNegative);
+        Assert.Equal((24, 5.0, "dpmpp_sde_gpu", "karras", -1L), (s.TextRegenSteps, s.TextRegenCfg, s.TextRegenSampler, s.TextRegenScheduler, s.TextRegenSeed));
+        Assert.Equal((8, "Lineart", 0.25, 0.85), (s.TextRegenInpaintGrow, s.TextRegenControl, s.TextRegenCnStrength, s.TextRegenCnEnd));
+        Assert.Equal((1472, 1024, 1), (s.TextRegenPreprocResolution, s.TextRegenCropSize, s.TextRegenWhiteRetries));
+    }
+
+    [Fact]
+    public void TextRegenModelsInUse_EmptyBoxesFollowTheRegenModels_FilledBoxesWin()
+    {
+        var s = new AppSettings { RegenCheckpoint = "regen.safetensors", RegenControlNet = "regen-cn.safetensors" };
+        Assert.Equal(("regen.safetensors", "regen-cn.safetensors"), (s.TextRegenCheckpointInUse, s.TextRegenControlNetInUse));
+        s.TextRegenCheckpoint = " text.safetensors "; s.TextRegenControlNet = "text-cn.safetensors";
+        Assert.Equal(("text.safetensors", "text-cn.safetensors"), (s.TextRegenCheckpointInUse, s.TextRegenControlNetInUse));
+    }
+
+    [Fact]
+    public void Load_TextRegen_OutOfRangeValuesAreClamped_UnknownControlFallsBack()
+    {
+        using var t = new TempDir();
+        var s = LoadJson(t, """{"TextRegenSteps": 0, "TextRegenCfg": 99, "TextRegenInpaintGrow": 999, "TextRegenControl": "x", "TextRegenCnStrength": -1, "TextRegenCnEnd": 5, "TextRegenPreprocResolution": 1, "TextRegenCropSize": 1, "TextRegenWhiteRetries": 99}""");
+        Assert.Equal((1, 30.0, 64, "Lineart"), (s.TextRegenSteps, s.TextRegenCfg, s.TextRegenInpaintGrow, s.TextRegenControl));
+        Assert.Equal((0.0, 1.0, 256, 512, 5), (s.TextRegenCnStrength, s.TextRegenCnEnd, s.TextRegenPreprocResolution, s.TextRegenCropSize, s.TextRegenWhiteRetries));
+        Assert.Equal("Repaint", LoadJson(t, "{\"TextRegenControl\": \"Repaint\"}").TextRegenControl);
+    }
+
+    [Fact]
+    public void Load_TextRegen_BlankSamplerNamesAndASeedBelowMinusOne_AreNormalised()
+    {
+        // 손으로 고친 json: 빈 샘플러·스케줄러 이름은 그래프에 그대로 들어가 ComfyUI가 거절한다 → 기본값으로. 시드는 -1(매번 새로)보다 작은 값이 없다
+        using var t = new TempDir();
+        var s = LoadJson(t, """{"TextRegenSampler": " ", "TextRegenScheduler": "", "TextRegenSeed": -7}""");
+        Assert.Equal(("dpmpp_sde_gpu", "karras", -1L), (s.TextRegenSampler, s.TextRegenScheduler, s.TextRegenSeed));
+        Assert.Equal(123L, LoadJson(t, """{"TextRegenSeed": 123}""").TextRegenSeed);
+    }
+
+    [Theory]
+    [InlineData(true, true, true)]
+    [InlineData(true, false, false)]   // 번역을 끄면 글자를 지우지도 않는다 — ComfyUI를 띄울 까닭이 없다
+    [InlineData(false, true, false)]
+    public void UsesComfy_TextRegen_CountsOnlyWhenTranslationIsOn(bool textRegen, bool translate, bool expected)
+    {
+        var s = new AppSettings { EnableAutoColor = false, EnableDecensor = false, EnableTranslate = translate, TextRegen = textRegen };
+        Assert.Equal(expected, s.UsesTextRegen);
+        Assert.Equal(expected, s.UsesComfy);
+    }
+
+    [Fact]
+    public void UsesComfy_ColorOrComfyDecensor_AsBefore()
+    {
+        Assert.True(new AppSettings { EnableAutoColor = true, EnableDecensor = false }.UsesComfy);
+        Assert.True(new AppSettings { EnableAutoColor = false, EnableDecensor = true, DecensorMode = "ComfyRegen" }.UsesComfy);
+        Assert.True(new AppSettings { EnableAutoColor = false, EnableDecensor = true, DecensorMode = "ComfyCustom" }.UsesComfy);
+        Assert.False(new AppSettings { EnableAutoColor = false, EnableDecensor = true, DecensorMode = "Basic" }.UsesComfy);
+        Assert.False(new AppSettings { EnableAutoColor = false, EnableDecensor = false, DecensorMode = "ComfyRegen" }.UsesComfy);   // 검열 제거를 끄면 방식은 상관없다
+    }
+
     // ── 식자 글자 색 ──
 
     [Fact]

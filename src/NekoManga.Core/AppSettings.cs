@@ -72,7 +72,7 @@ public class AppSettings
     /// (정답 벤치의 PSNR은 LaMa가 높지만 질감 대비(std비 0.83 vs 0.92)·선명도는 Aletheia가 높다).</summary>
     public string DecensorAssistRepair { get; set; } = "Aletheia";
     /// <summary>내장 AI(글자 감지·OCR·LaMa·검열 감지)를 그래픽카드(DirectML)로 돌릴지 — "Auto"(기본) / "On" / "Off".
-    /// Auto는 ComfyUI를 쓰는 작업(자동 채색·GPU 검열 제거)에서는 CPU, 그 밖에는 GPU (Engine.OnnxEnv.GpuAllowed — 전부 올리면 VRAM ~5GB).
+    /// Auto는 ComfyUI를 쓰는 작업(자동 채색·GPU 검열 제거·글자 자리 다시 그리기)에서는 CPU, 그 밖에는 GPU (Engine.OnnxEnv.GpuAllowed — 전부 올리면 VRAM ~5GB).
     /// 2026-11-09 전에는 DirectML.dll이 빠져 있어 설정과 무관하게 늘 CPU였다.</summary>
     public string OnnxGpu { get; set; } = "Auto";
     /// <summary>무엇을 검열로 볼지 — "Auto"(AI) / "BlackBar"(검은 막대·먹줄) / "WhiteBar"(흰 막대) /
@@ -235,6 +235,41 @@ public class AppSettings
     public double RegenRegionConf { get; set; } = 0.12;
     public double RegenRegionPad { get; set; } = 0.10;    // 검출 상자를 사방으로 넓히는 비율(상자 크기 기준)
     public double RegenRegionGrow { get; set; } = 0.6;    // 검출이 없는 조각을 넓히는 배율(조각 크기 기준, 사방)
+
+    // ── 글자 지운 자리 다시 그리기(TextRegen, 2026-11-26 사용자 "ComfyUI SDXL로 다시 그리는 방향으로" · "검열 제거와 별도로 특화된 모델을 따로" · "인페인팅과 컨트롤넷도 글자용으로 따로") ──
+    // 번역 단계에서 LaMa로 지운 자리 가운데 바탕에 그림이 있는 곳(풍선 밖 대사·투명 풍선·빗금이 지나가는 풍선 — BubbleSolver.RegenStats)만 SDXL 인페인트 한 단계(WorkflowBuilder.BuildTextRegen)로
+    // 다시 그린다. 흰 풍선 안은 LaMa 그대로. LaMa 만화판은 속도선·빗금·줄무늬를 잇지 못하고 뿌옇게 뭉갠다(실제 쪽 05·26, 조각을 160px로 줄여도 같았다).
+    // 검열 재생성(Regen*)과 값을 나누지 않는다 — 부위 태그·2단계 다듬기가 글자 자리에는 맞지 않고, 사용자가 글자용 모델을 따로 고르려 한다. 기본값은 재생성 1단계의 값에서 시작한다.
+    /// <summary>무늬 있는 바탕(스크린톤·줄무늬·속도선) 위의 글자 자리를 둘레의 무늬를 옮겨 메운다(Engine.TextureFill — OpenCV shift-map, 모델 없음). 기본 켬(2026-11-26 사용자
+    /// "복구된 부분이 부자연스러워" · "여기도 뭉개졌어": LaMa는 그런 자리를 회색으로 뭉갠다). 끄면 v1.18.0처럼 단색이 아닌 블록을 전부 LaMa로 지운다 — 설정 창에 칸은 없다(json).</summary>
+    public bool EraseTextureFill { get; set; } = true;
+    /// <summary>글자 지운 자리를 SDXL로 다시 그린다(기본 끔, 시험 중). 번역을 켠 작업에서만 돈다(<see cref="UsesTextRegen"/>).</summary>
+    public bool TextRegen { get; set; }
+    /// <summary>글자용 체크포인트 파일 이름 — 비워 두면 재생성 체크포인트(<see cref="RegenCheckpoint"/>)를 따른다(<see cref="TextRegenCheckpointInUse"/>).</summary>
+    public string TextRegenCheckpoint { get; set; } = "";
+    /// <summary>글자용 ControlNet 파일 이름 — 비워 두면 재생성 ControlNet을 따른다(<see cref="TextRegenControlNetInUse"/>).</summary>
+    public string TextRegenControlNet { get; set; } = "";
+    /// <summary>글자 자리의 양성 프롬프트 — 부위 태그를 붙이지 않고 이것만 넣는다.</summary>
+    public string TextRegenPrompt { get; set; } = "monochrome manga, clean lineart, consistent screentone, seamless background";
+    public string TextRegenNegative { get; set; } = "text, letters, sound effects, symbols, watermark, speech bubble, broken lines, blurry lineart, colorized, oversmoothed, residual artifacts";
+    public int TextRegenSteps { get; set; } = 24;
+    public double TextRegenCfg { get; set; } = 5.0;
+    public string TextRegenSampler { get; set; } = "dpmpp_sde_gpu";
+    public string TextRegenScheduler { get; set; } = "karras";
+    /// <summary>-1이면 창마다 새로 뽑는다.</summary>
+    public long TextRegenSeed { get; set; } = -1;
+    /// <summary>구멍(지울 마스크)을 넓히는 px — 노이즈 마스크와 붙이는 범위(+2px)에 쓴다.</summary>
+    public int TextRegenInpaintGrow { get; set; } = 8;
+    /// <summary>ControlNet 종류: "Lineart"(구멍을 검게 비운 선화) | "Repaint"(union promax일 때만 — 구멍을 검게 비운 원고). 뜻은 <see cref="RegenInpaintControl"/>과 같다.</summary>
+    public string TextRegenControl { get; set; } = "Lineart";
+    /// <summary>ControlNet 강도 — 0이면 ControlNet 없이 프롬프트만으로 그린다(그래프에 체인을 만들지 않는다).</summary>
+    public double TextRegenCnStrength { get; set; } = 0.25;
+    public double TextRegenCnEnd { get; set; } = 0.85;
+    public int TextRegenPreprocResolution { get; set; } = 1472;
+    /// <summary>창 하나의 크기(정사각, px) — 한 쪽의 대상 블록을 이 창으로 묶어 보낸다(TextRegenPlan.WindowsFor).</summary>
+    public int TextRegenCropSize { get; set; } = 1024;
+    /// <summary>그린 자리가 둘레보다 눈에 띄게 희면(빈 조각 — TextRegenCheck) 새 시드로 이만큼 더 그린다. 0 = 끔. 재생성(2)보다 적은 1: 창 하나에 1분쯤 들고, 쪽마다 창이 여럿이다.</summary>
+    public int TextRegenWhiteRetries { get; set; } = 1;
 
     // ── 커스텀 워크플로(ComfyCustom) — ComfyUI 화면에서 직접 짠 API 포맷 JSON을 그대로 돌린다 (2026-10-20, CustomWorkflow.cs 규약) ──
     /// <summary>검열제거용 커스텀 워크플로(API JSON) 경로. DecensorMode="ComfyCustom"일 때 쓴다.</summary>
@@ -498,6 +533,17 @@ public class AppSettings
         if (SettingsVersion < 1 && RegenInpaintCnStrength is 0.0 or 0.5) RegenInpaintCnStrength = 0.25;
         RegenInpaintCnStrength = Math.Clamp(RegenInpaintCnStrength, 0, 2);
         RegenWhiteRetries = Math.Clamp(RegenWhiteRetries, 0, 5);
+        // 글자 지운 자리 다시 그리기 — 재생성과 같은 범위
+        TextRegenSteps = Math.Clamp(TextRegenSteps, 1, 150); TextRegenCfg = Math.Clamp(TextRegenCfg, 0, 30);
+        TextRegenInpaintGrow = Math.Clamp(TextRegenInpaintGrow, 0, 64);
+        if (TextRegenControl is not ("Repaint" or "Lineart")) TextRegenControl = "Lineart";
+        TextRegenCnStrength = Math.Clamp(TextRegenCnStrength, 0, 2); TextRegenCnEnd = Math.Clamp(TextRegenCnEnd, 0, 1);
+        TextRegenPreprocResolution = Math.Clamp(TextRegenPreprocResolution, 256, 4096);
+        TextRegenCropSize = Math.Clamp(TextRegenCropSize, 512, 2048);
+        TextRegenWhiteRetries = Math.Clamp(TextRegenWhiteRetries, 0, 5);
+        TextRegenSeed = Math.Max(-1, TextRegenSeed);   // -1 = 매번 새로. 그보다 작은 값은 뜻이 없다
+        if (string.IsNullOrWhiteSpace(TextRegenSampler)) TextRegenSampler = "dpmpp_sde_gpu";
+        if (string.IsNullOrWhiteSpace(TextRegenScheduler)) TextRegenScheduler = "karras";
         if (string.IsNullOrWhiteSpace(RegenSampler)) RegenSampler = "dpmpp_sde_gpu";
         if (string.IsNullOrWhiteSpace(RegenScheduler)) RegenScheduler = "karras";
         CnLineartStrength = Math.Clamp(CnLineartStrength, 0, 2);
@@ -549,7 +595,24 @@ public class AppSettings
         !string.IsNullOrWhiteSpace(LinkedComfyRoot) ? LinkedComfyRoot
         : Path.Combine(RuntimeRoot, "ComfyUI_windows_portable");
 
-    /// <summary>ComfyUI가 사용 가능한가 (채색·재생성·커스텀 검열제거의 전제조건).</summary>
+    /// <summary>글자 자리 다시 그리기가 실제로 쓰는 체크포인트 — 글자용 칸이 비었으면 재생성 것.</summary>
+    [JsonIgnore]
+    public string TextRegenCheckpointInUse => string.IsNullOrWhiteSpace(TextRegenCheckpoint) ? RegenCheckpoint : TextRegenCheckpoint.Trim();
+    /// <summary>글자 자리 다시 그리기가 실제로 쓰는 ControlNet — 글자용 칸이 비었으면 재생성 것.</summary>
+    [JsonIgnore]
+    public string TextRegenControlNetInUse => string.IsNullOrWhiteSpace(TextRegenControlNet) ? RegenControlNet : TextRegenControlNet.Trim();
+    /// <summary>이 작업에서 글자 자리 다시 그리기가 도는가 — 번역을 꺼 두면 글자를 지우지도 않는다.</summary>
+    [JsonIgnore]
+    public bool UsesTextRegen => EnableTranslate && TextRegen;
+    /// <summary>이 설정의 작업이 ComfyUI를 쓰는가(자동 채색 · 재생성/커스텀 검열 제거 · 글자 자리 다시 그리기) — 내장 AI의 GPU 자동 규칙(OnnxEnv)과 시작 전 확인이 같이 본다.</summary>
+    [JsonIgnore]
+    public bool UsesComfy => UsesComfyApartFromTextRegen || UsesTextRegen;
+    /// <summary>글자 자리 다시 그리기를 뺀 ComfyUI 사용(자동 채색 · 재생성/커스텀 검열 제거) — 번역기를 쓰지 않는 실행과 러너 밖의 길(결과 창의 제자리 지우기·부위 감지)은 이것만 센다:
+    /// 글자 자리 다시 그리기는 번역 단계에서만 돈다(<c>PipelineRunner.NeedsComfy</c>, <c>OnnxEnv.GpuAllowed</c>).</summary>
+    [JsonIgnore]
+    public bool UsesComfyApartFromTextRegen => EnableAutoColor || (EnableDecensor && DecensorMode is "ComfyRegen" or "ComfyCustom");
+
+    /// <summary>ComfyUI가 사용 가능한가 (채색·재생성·커스텀 검열제거·글자 자리 다시 그리기의 전제조건).</summary>
     [JsonIgnore]
     public bool ComfyAvailable =>
         File.Exists(Path.Combine(ComfyRoot, "ComfyUI", "main.py")) &&

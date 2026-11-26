@@ -116,17 +116,11 @@ public static class ColorRefHelper
 
         status?.Report(Loc.T("표지에서 색 태그 뽑는 중이다냥..."));
         var bytes = await File.ReadAllBytesAsync(imagePath, ct);
-        var up = await client.UploadImageAsync(bytes, $"nm_ref_{Guid.NewGuid():N}.png", ct);
-        ComfyClient.ComfyResult? r = null;
-        try
-        {
-            var pid = await client.QueuePromptAsync(WorkflowBuilder.BuildTagExtract(settings, up), ct);
-            var outDir = Path.Combine(settings.ComfyRoot, "ComfyUI", "output");
-            r = await client.WaitAsync(pid, outDir, TimeSpan.FromMinutes(5), ct);
-        }
-        finally { NekoManga.Core.Pipeline.WorkFolders.RemoveComfyFiles(settings.ComfyRoot, r?.OutputFiles, null, up); }   // 뽑을 때마다 새 이름으로 올린다 — 안 지우면 input에 쌓인다
-
-        var raw = r.Texts.FirstOrDefault() ?? "";
+        // 뽑을 때마다 새 이름으로 올린다 — 안 지우면 input에 쌓인다. 올리는 요청의 답을 못 받았어도 부탁한 이름으로 치우고, 기다리다 그만두면 프롬프트를 거둔다(채색·커스텀과 같은 길, 검토 2026-11-27).
+        // 이 그래프는 그림을 저장하지 않는다(글만 돌려준다) — 출력 접두사가 없다
+        var raw = await Pipeline.PipelineRunner.RunOneImageWorkflowAsync(client, settings.ComfyRoot, Path.Combine(settings.ComfyRoot, "ComfyUI", "output"),
+            bytes, $"nm_ref_{Guid.NewGuid():N}.png", null, up => WorkflowBuilder.BuildTagExtract(settings, up), TimeSpan.FromMinutes(5),
+            r => r.Texts.FirstOrDefault() ?? "", ct);
         return FilterColorTags(raw);
     }
 }

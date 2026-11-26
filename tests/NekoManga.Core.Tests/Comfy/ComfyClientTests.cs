@@ -29,6 +29,16 @@ public class ComfyClientTests
         /// <summary>POST /prompt가 도착했다.</summary>
         public TaskCompletionSource Submitted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        /// <summary>GET /history의 처음 이만큼은 답하지 않는다(요청이 취소될 때까지) — 그 뒤로는 '끝났다'고 답한다. 0이면 늘 '아직'.</summary>
+        public int HangHistory { get; init; }
+        private int _historyAsked;
+
+        /// <summary>POST /upload/image를 받고 답하지 않는다.</summary>
+        public bool HangUpload { get; init; }
+
+        /// <summary>GET /object_info…에 답하지 않는다.</summary>
+        public bool HangObjectInfo { get; init; }
+
         public IReadOnlyList<(string Method, string Path, string Body)> Calls { get { lock (_calls) return _calls.ToList(); } }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -44,6 +54,22 @@ public class ComfyClientTests
                 if (HangSubmit) await Task.Delay(Timeout.Infinite, cancellationToken);
                 json = new JsonObject { ["prompt_id"] = ServerMinted }.ToJsonString();
             }
+            else if (request.Method == HttpMethod.Get && path.StartsWith("/history/", StringComparison.Ordinal) && HangHistory > 0)
+            {
+                if (Interlocked.Increment(ref _historyAsked) <= HangHistory) await Task.Delay(Timeout.Infinite, cancellationToken);
+                json = new JsonObject
+                {
+                    [path["/history/".Length..]] = new JsonObject
+                    {
+                        ["status"] = new JsonObject { ["status_str"] = "success", ["completed"] = true },
+                        ["outputs"] = new JsonObject(),
+                    },
+                }.ToJsonString();
+            }
+            else if (request.Method == HttpMethod.Post && path == "/upload/image" && HangUpload)
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            else if (request.Method == HttpMethod.Get && path.StartsWith("/object_info", StringComparison.Ordinal) && HangObjectInfo)
+                await Task.Delay(Timeout.Infinite, cancellationToken);
             else if (request.Method == HttpMethod.Get && path == "/queue")
             {
                 // 항목의 짜임은 ComfyUI의 (번호, prompt_id, 프롬프트, …)
@@ -167,5 +193,91 @@ public class ComfyClientTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => submit);
 
         Assert.Equal([SentId(fake)], DequeuedIds(fake));
+    }
+
+    // ── 답하지 않는 서버(소켓은 받는데 답이 없다 — 멈춘 프로세스) ──
+    // HttpClient의 Timeout은 무한이다(긴 생성은 /history를 되풀이해 물어 기다린다). 요청 하나가 영영 안 돌아오면 그 위의 제한 시간도 재지지 않는다 — 요청마다 한도를 둔다(검토 2026-11-27)
+
+    /// <summary>끝나지 않으면(요청 한도가 없던 때) 30초 뒤 실패로 끝낸다 — 시험이 영영 매달리지 않게. 돌려주는 것은 끝난 그 작업.</summary>
+    private static async Task<Task<T>> Settled<T>(Task<T> work)
+    {
+        var first = await Task.WhenAny(work, Task.Delay(TimeSpan.FromSeconds(30)));
+        Assert.True(ReferenceEquals(first, work), "요청이 끝나지 않는다");
+        return work;
+    }
+
+    [Fact]
+    public async Task WaitAsync_OnePollGoesUnanswered_AsksAgain_AndStillGetsTheResult()
+    {
+        // 물음 하나에 답이 없다고 기다리기를 그만두지 않는다(서버가 잠깐 바빴을 뿐일 수 있다) — 한도까지는 다시 묻는다
+        var fake = new FakeComfy(running: Ours) { HangHistory = 1 };
+        var client = new ComfyClient(Url, fake) { PollMs = 1, RequestTimeout = TimeSpan.FromMilliseconds(100) };
+
+        var wait = await Settled(client.WaitAsync(Ours, "out", TimeSpan.FromMinutes(5), CancellationToken.None));
+
+        Assert.Empty((await wait).OutputFiles);
+        Assert.True(fake.Calls.Count(c => c.Path == "/history/" + Ours) >= 2);   // 답 없는 첫 물음 뒤에 다시 물었다(느린 기계에서 한 번 더 놓쳐도 된다)
+    }
+
+    [Fact]
+    public async Task UploadImageAsync_ServerNeverAnswers_GivesUpAfterTheRequestLimit_AsATimeout()
+    {
+        var fake = new FakeComfy(running: null) { HangUpload = true };
+        var client = new ComfyClient(Url, fake) { RequestTimeout = TimeSpan.FromMilliseconds(100) };
+
+        var upload = await Settled(client.UploadImageAsync([1, 2, 3], "nm_x.png", CancellationToken.None));
+
+        // 사용자가 멈춘 것(취소 예외)과 구별된다 — 취소로 보이면 러너가 작업 전체를 멈춘다
+        await Assert.ThrowsAsync<TimeoutException>(() => upload);
+    }
+
+    [Fact]
+    public async Task QueuePromptAsync_ServerNeverAnswers_GivesUp_AndReclaimsThePromptByTheIdItSent()
+    {
+        // 답이 없어도 서버는 그 프롬프트를 줄에 넣었을 수 있다 — 우리가 지어 보낸 id로 거둔다
+        var fake = new FakeComfy(running: null) { HangSubmit = true };
+        var client = new ComfyClient(Url, fake) { RequestTimeout = TimeSpan.FromMilliseconds(100) };
+
+        var submit = await Settled(client.QueuePromptAsync(new JsonObject(), CancellationToken.None));
+
+        await Assert.ThrowsAsync<TimeoutException>(() => submit);
+        Assert.Equal([SentId(fake)], DequeuedIds(fake));
+    }
+
+    [Fact]
+    public async Task GetObjectInfoAsync_ServerNeverAnswers_GivesUpAfterTheRequestLimit_AsATimeout()
+    {
+        // 커스텀 워크플로의 시작 전 점검·설정 창의 워크플로 점검이 부른다 — 답 없는 서버에서 창이 영영 매달리지 않게
+        var fake = new FakeComfy(running: null) { HangObjectInfo = true };
+        var client = new ComfyClient(Url, fake) { RequestTimeout = TimeSpan.FromMilliseconds(100) };
+
+        var info = await Settled(client.GetObjectInfoAsync(CancellationToken.None));
+
+        await Assert.ThrowsAsync<TimeoutException>(() => info);
+    }
+
+    [Fact]
+    public async Task HasNodeAsync_ServerNeverAnswers_SaysNo_InsteadOfHanging()
+    {
+        var fake = new FakeComfy(running: null) { HangObjectInfo = true };
+        var client = new ComfyClient(Url, fake) { RequestTimeout = TimeSpan.FromMilliseconds(100) };
+
+        var has = await Settled(client.HasNodeAsync("LoadImage", CancellationToken.None));
+
+        Assert.False(await has);
+    }
+
+    [Fact]
+    public async Task UploadImageAsync_UserStopsWhileTheServerIsSilent_IsStillACancellation()
+    {
+        // 요청 한도는 사용자의 멈추기를 시간 초과로 바꾸지 않는다
+        var fake = new FakeComfy(running: null) { HangUpload = true };
+        var client = new ComfyClient(Url, fake) { RequestTimeout = TimeSpan.FromSeconds(60) };
+        using var cts = new CancellationTokenSource();
+
+        var upload = client.UploadImageAsync([1, 2, 3], "nm_x.png", cts.Token);
+        cts.CancelAfter(50);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await (await Settled(upload)));
     }
 }

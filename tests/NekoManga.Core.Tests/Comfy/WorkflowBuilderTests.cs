@@ -512,6 +512,135 @@ public class WorkflowBuilderTests
         Assert.All(OfType(g, "AIO_Preprocessor"), p => { Assert.Equal("Manga2Anime_LineArt_Preprocessor", Str(Inputs(p.Node)["preprocessor"])); Assert.Equal(1024, Num(Inputs(p.Node)["resolution"])); });
     }
 
+    // ───────── 글자 지운 자리 다시 그리기 (BuildTextRegen, 2026-11-26) ─────────
+    // 재생성 1단계와 같은 구조를 글자용 설정(TextRegen*)으로 따로 짓는다 — 부위 태그도 2단계(영역 다듬기)도 없다: 대사 옆 얼굴·머리카락을 다시 그리지 않는다.
+
+    private static JsonObject Text(AppSettings? s = null, int w = 1024, int h = 1024, long? seed = null) =>
+        WorkflowBuilder.BuildTextRegen(s ?? new AppSettings { TextRegenSeed = 1 }, "nm_textregen_0_0.png", "out", w, h, seed);
+
+    [Fact]
+    public void BuildTextRegen_OneLoadImage_OneFullDenoisePass_SavesTheHoleCompositedOnTheOriginal()
+    {
+        var s = new AppSettings { TextRegenSeed = 7, TextRegenInpaintGrow = 6, TextRegenSteps = 18, TextRegenCfg = 4.5, TextRegenSampler = "euler", TextRegenScheduler = "normal" };
+        var g = Text(s);
+        var load = Assert.Single(OfType(g, "LoadImage"));
+        Assert.Equal("nm_textregen_0_0.png", Str(Inputs(load.Node)["image"]));
+        var k = Assert.Single(OfType(g, "KSampler"));
+        Assert.Equal(1.0, Num(Inputs(k.Node)["denoise"]));
+        Assert.Equal(7, Num(Inputs(k.Node)["seed"]));
+        Assert.Equal(18, Num(Inputs(k.Node)["steps"]));
+        Assert.Equal(4.5, Num(Inputs(k.Node)["cfg"]));
+        Assert.Equal(("euler", "normal"), (Str(Inputs(k.Node)["sampler_name"]), Str(Inputs(k.Node)["scheduler"])));
+        // 노이즈 마스크 = 그림의 알파(구멍)를 TextRegenInpaintGrow만큼 넓힌 것, 잠재는 그림에서
+        var noise = Source(g, Inputs(k.Node)["latent_image"]);
+        Assert.Equal("SetLatentNoiseMask", ClassType(noise));
+        var grow = Source(g, Inputs(noise)["mask"]);
+        AssertMaskGrow(grow, 6, 2);
+        Assert.Equal((load.Id, 1), LinkOf(Inputs(grow)["mask"]));
+        Assert.Equal((load.Id, 0), LinkOf(Inputs(Source(g, Inputs(noise)["samples"]))["pixels"]));
+        // 저장 = 원본 위에, 그린 결과를 같은 마스크로 합성한 것(2단계가 없다)
+        var comp = Source(g, Inputs(Assert.Single(OfType(g, "SaveImage")).Node)["images"]);
+        Assert.Equal("ImageCompositeMasked", ClassType(comp));
+        Assert.Equal((load.Id, 0), LinkOf(Inputs(comp)["destination"]));
+        Assert.Equal("VAEDecode", ClassType(Source(g, Inputs(comp)["source"])));
+        Assert.Same(grow, Source(g, Inputs(comp)["mask"]));
+    }
+
+    [Fact]
+    public void BuildTextRegen_UsesTheTextSettings_NotTheDecensorRegenOnes()
+    {
+        var s = new AppSettings
+        {
+            TextRegenSeed = 1, RegenPrompt = "REGEN", RegenNegative = "REGEN-NEG", RegenBodyTagsMale = "penis", RegenBodyTagsFemale = "pussy",
+            RegenCheckpoint = "regen.safetensors", RegenControlNet = "regen-union.safetensors",
+            TextRegenPrompt = "TEXT", TextRegenNegative = "TEXT-NEG", TextRegenCheckpoint = "text.safetensors", TextRegenControlNet = "text-union.safetensors",
+        };
+        var g = Text(s);
+        Assert.Equal(["TEXT", "TEXT-NEG"], OfType(g, "CLIPTextEncode").Select(n => Str(Inputs(n.Node)["text"])).Order());   // 부위 태그가 붙지 않는다
+        Assert.Equal("text.safetensors", Str(Inputs(Only(g, "CheckpointLoaderSimple").Node)["ckpt_name"]));
+        Assert.Equal("text-union.safetensors", Str(Inputs(Only(g, "ControlNetLoader").Node)["control_net_name"]));
+        // 양성·부정이 ControlNet을 거쳐 샘플러의 제자리로 간다
+        var k = Only(g, "KSampler");
+        var cn = Source(g, Inputs(k.Node)["positive"]);
+        Assert.Equal("ControlNetApplyAdvanced", ClassType(cn));
+        Assert.Same(cn, Source(g, Inputs(k.Node)["negative"]));
+        Assert.Equal("TEXT", Str(Inputs(Source(g, Inputs(cn)["positive"]))["text"]));
+        Assert.Equal("TEXT-NEG", Str(Inputs(Source(g, Inputs(cn)["negative"]))["text"]));
+    }
+
+    [Fact]
+    public void BuildTextRegen_EmptyModelBoxes_FallBackToTheRegenModels()
+    {
+        var g = Text(new AppSettings { TextRegenSeed = 1, RegenCheckpoint = "regen.safetensors", RegenControlNet = "regen-union.safetensors" });
+        Assert.Equal("regen.safetensors", Str(Inputs(Only(g, "CheckpointLoaderSimple").Node)["ckpt_name"]));
+        Assert.Equal("regen-union.safetensors", Str(Inputs(Only(g, "ControlNetLoader").Node)["control_net_name"]));
+    }
+
+    [Theory]
+    [InlineData("Lineart")]
+    [InlineData("Repaint")]
+    public void BuildTextRegen_CnStrengthZero_HasNoControlNodes(string control)
+    {
+        // 강도 0이면 ControlNetApplyAdvanced는 조건을 그대로 돌려주지만 ComfyUI는 전처리 노드를 전부 돈다 — 체인을 만들지 않는다(재생성 1단계와 같은 판단)
+        var g = Text(new AppSettings { TextRegenSeed = 1, TextRegenCnStrength = 0, TextRegenControl = control });
+        foreach (var type in new[] { "ControlNetLoader", "ControlNetApplyAdvanced", "AIO_Preprocessor", "EmptyImage", "SetUnionControlNetType" })
+            Assert.Empty(OfType(g, type));
+        var k = Only(g, "KSampler");
+        Assert.Equal("CLIPTextEncode", ClassType(Source(g, Inputs(k.Node)["positive"])));
+        Assert.Equal("CLIPTextEncode", ClassType(Source(g, Inputs(k.Node)["negative"])));
+        Assert.NotSame(Source(g, Inputs(k.Node)["positive"]), Source(g, Inputs(k.Node)["negative"]));
+    }
+
+    [Fact]
+    public void BuildTextRegen_Lineart_BlacksOutTheHoleInTheLineart()
+    {
+        var s = new AppSettings { TextRegenSeed = 1, TextRegenCnStrength = 0.4, TextRegenCnEnd = 0.7, TextRegenPreprocResolution = 1280 };
+        var g = Text(s, 896, 768);
+        var cn = Only(g, "ControlNetApplyAdvanced");
+        Assert.Equal(0.4, Num(Inputs(cn.Node)["strength"]));
+        Assert.Equal(0.7, Num(Inputs(cn.Node)["end_percent"]));
+        var ctrl = Source(g, Inputs(cn.Node)["image"]);
+        Assert.Equal("ImageCompositeMasked", ClassType(ctrl));
+        var pre = Source(g, Inputs(ctrl)["destination"]);
+        Assert.Equal("AIO_Preprocessor", ClassType(pre));
+        Assert.Equal("Manga2Anime_LineArt_Preprocessor", Str(Inputs(pre)["preprocessor"]));
+        Assert.Equal(1280, Num(Inputs(pre)["resolution"]));
+        var black = Source(g, Inputs(ctrl)["source"]);
+        Assert.Equal("EmptyImage", ClassType(black));
+        Assert.Equal(896, Num(Inputs(black)["width"]));
+        Assert.Equal(768, Num(Inputs(black)["height"]));
+        Assert.Equal(0, Num(Inputs(black)["color"]));
+        Assert.Equal("LayerMask: MaskGrow", ClassType(Source(g, Inputs(ctrl)["mask"])));
+        // union 모델(기본 promax)이면 선화 종류를 건다
+        Assert.Equal("canny/lineart/anime_lineart/mlsd", Str(Inputs(Source(g, Inputs(cn.Node)["control_net"]))["type"]));
+    }
+
+    [Fact]
+    public void BuildTextRegen_Repaint_OnAUnionModel_UsesTheOriginalWithTheHoleBlacked_AndTheRepaintType()
+    {
+        var g = Text(new AppSettings { TextRegenSeed = 1, TextRegenControl = "Repaint" });
+        var cn = Only(g, "ControlNetApplyAdvanced");
+        Assert.Equal("repaint", Str(Inputs(Source(g, Inputs(cn.Node)["control_net"]))["type"]));
+        var ctrl = Source(g, Inputs(cn.Node)["image"]);
+        Assert.Equal("LoadImage", ClassType(Source(g, Inputs(ctrl)["destination"])));
+        Assert.Empty(OfType(g, "AIO_Preprocessor"));
+    }
+
+    [Fact]
+    public void BuildTextRegen_Repaint_OnAPlainControlNet_FallsBackToLineart()
+    {
+        var g = Text(new AppSettings { TextRegenSeed = 1, TextRegenControl = "Repaint", TextRegenControlNet = "mistoLine_rank256.safetensors" });
+        Assert.Empty(OfType(g, "SetUnionControlNetType"));
+        Assert.Single(OfType(g, "AIO_Preprocessor"));
+        Assert.Equal("ControlNetLoader", ClassType(Source(g, Inputs(Only(g, "ControlNetApplyAdvanced").Node)["control_net"])));
+    }
+
+    [Fact]
+    public void BuildTextRegen_GivenSeed_WinsOverTheSettingsSeed()
+    {
+        Assert.Equal(99, Num(Inputs(Only(Text(new AppSettings { TextRegenSeed = 7 }, seed: 99), "KSampler").Node)["seed"]));
+    }
+
     // ───────── 태그 추출 ─────────
 
     [Theory]
@@ -540,12 +669,16 @@ public class WorkflowBuilderTests
     [InlineData("autocolor", -1L)]
     [InlineData("autocolor", -987654321L)]
     [InlineData("regen", -1L)]
+    [InlineData("textregen", -1L)]
     public void Builders_NegativeSeed_SendsNonNegativeIntegerSeed(string builder, long seed)
     {
-        var s = new AppSettings { ColorSeed = seed, RegenSeed = seed };
-        var g = builder == "autocolor"
-            ? WorkflowBuilder.BuildAutoColor(s, "in.png", "out")
-            : WorkflowBuilder.BuildRegenCrop(s, "in.png", "erase.png", "out", "", 1024, 1024);
+        var s = new AppSettings { ColorSeed = seed, RegenSeed = seed, TextRegenSeed = seed };
+        var g = builder switch
+        {
+            "autocolor" => WorkflowBuilder.BuildAutoColor(s, "in.png", "out"),
+            "textregen" => WorkflowBuilder.BuildTextRegen(s, "in.png", "out", 1024, 1024),
+            _ => WorkflowBuilder.BuildRegenCrop(s, "in.png", "erase.png", "out", "", 1024, 1024),
+        };
 
         // 음수는 '매번 무작위'라는 설정일 뿐이다 — ComfyUI KSampler는 음수 시드를 받지 않으므로 그래프에는 0 이상의 정수가 실려야 한다 (재생성은 두 단계 모두)
         Assert.All(OfType(g, "KSampler"), k => Assert.True(Inputs(k.Node)["seed"]!.GetValue<long>() >= 0));
@@ -559,6 +692,9 @@ public class WorkflowBuilderTests
     [InlineData("regen-plain-controlnet")]
     [InlineData("regen-areas")]
     [InlineData("regen-three-areas")]
+    [InlineData("textregen")]
+    [InlineData("textregen-no-controlnet")]
+    [InlineData("textregen-repaint")]
     [InlineData("tag-extract")]
     public void Builders_EveryLinkHitsAnExistingNodeAndEveryNodeFeedsAnOutput(string variant)
     {
@@ -596,6 +732,9 @@ public class WorkflowBuilderTests
             new AppSettings { RegenSeed = 1, RegenControlNet = "mistoLine_rank256.safetensors" }, "in.png", "erase.png", "nm_out", "penis, glans", 1024, 1024),
         "regen-areas" => WorkflowBuilder.BuildRegenCrop(new AppSettings { RegenSeed = 1 }, "in.png", "erase.png", "nm_out", "penis, pussy", 1024, 1024, areaUpload: "areas.png", areaTags: ["penis", "pussy"]),
         "regen-three-areas" => WorkflowBuilder.BuildRegenCrop(new AppSettings { RegenSeed = 1 }, "in.png", "erase.png", "nm_out", "penis, pussy", 1024, 1024, areaUpload: "areas.png", areaTags: ["penis", "pussy", "penis, pussy"]),
+        "textregen" => WorkflowBuilder.BuildTextRegen(new AppSettings { TextRegenSeed = 1 }, "in.png", "nm_out", 1024, 1024),
+        "textregen-no-controlnet" => WorkflowBuilder.BuildTextRegen(new AppSettings { TextRegenSeed = 1, TextRegenCnStrength = 0 }, "in.png", "nm_out", 1024, 1024),
+        "textregen-repaint" => WorkflowBuilder.BuildTextRegen(new AppSettings { TextRegenSeed = 1, TextRegenControl = "Repaint" }, "in.png", "nm_out", 1024, 1024),
         "tag-extract" => WorkflowBuilder.BuildTagExtract(new AppSettings(), "in.png"),
         _ => throw new ArgumentOutOfRangeException(nameof(variant), variant, null),
     };

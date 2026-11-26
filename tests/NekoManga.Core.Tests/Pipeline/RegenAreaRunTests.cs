@@ -27,6 +27,12 @@ public class RegenAreaRunTests
         public Func<int, Scalar>? OutputColor { get; set; }
         /// <summary>시도 번호 → true면 그 /prompt를 500으로 거절한다(재시도 중의 ComfyUI 오류 흉내).</summary>
         public Func<int, bool>? FailPrompt { get; set; }
+        /// <summary>true면 /history가 끝내 완료를 알리지 않는다(멈춘 서버 — 제한 시간을 넘긴다).</summary>
+        public bool NeverFinish { get; set; }
+        /// <summary>서버에 거두라고 온 프롬프트 id(POST /queue {"delete": […]}).</summary>
+        public List<string> Cancelled { get; } = [];
+        /// <summary>올린 파일을 input에 쓴 **뒤에** 던질 예외(올린 이름을 받는다) — 요청은 서버에 닿았는데 답을 못 받은 경우.</summary>
+        public Func<string, Exception?>? ThrowAfterUpload { get; set; }
         private readonly Dictionary<string, string> _outputs = new();
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
@@ -40,6 +46,7 @@ public class RegenAreaRunTests
                 Directory.CreateDirectory(Path.Combine(root, "ComfyUI", "input"));
                 await File.WriteAllBytesAsync(Path.Combine(root, "ComfyUI", "input", name), await file.ReadAsByteArrayAsync(ct), ct);
                 lock (Uploads) Uploads.Add(name);
+                if (ThrowAfterUpload?.Invoke(name) is { } lost) throw lost;
                 json = new JsonObject { ["name"] = name }.ToJsonString();
             }
             else if (path == "/prompt")
@@ -60,7 +67,12 @@ public class RegenAreaRunTests
                 lock (Graphs) _outputs[id] = output;
                 json = new JsonObject { ["prompt_id"] = id }.ToJsonString();
             }
-            else if (path.StartsWith("/history/", StringComparison.Ordinal))
+            else if (path == "/queue" && request.Method == HttpMethod.Post)
+            {
+                if (JsonNode.Parse(await request.Content!.ReadAsStringAsync(ct))?["delete"] is JsonArray ids)
+                    lock (Cancelled) Cancelled.AddRange(ids.Select(i => i!.GetValue<string>()));
+            }
+            else if (path.StartsWith("/history/", StringComparison.Ordinal) && !NeverFinish)
             {
                 var id = path["/history/".Length..];
                 string output;
@@ -261,6 +273,55 @@ public class RegenAreaRunTests
             Assert.Contains(notes, n => n.Contains("멈췄다"));
             Assert.Empty(Directory.GetFiles(Path.Combine(s.ComfyRoot, "ComfyUI", "input")));
             Assert.Empty(Directory.GetFiles(Path.Combine(s.ComfyRoot, "ComfyUI", "output")));
+        }
+        finally { foreach (var r in plan) r.Dispose(); }
+    }
+
+    [Fact]
+    public async Task ComfyRegenDecensorAsync_TimedOutPrompt_IsWithdrawnFromTheServer()
+    {
+        // 기다리기만 그만두면(제한 시간·연결 오류) 프롬프트는 서버에서 끝까지 돌아, 우리가 출력을 치운 뒤에 사용자의 ComfyUI 폴더에 그림을 남긴다 — 거둬 달라고 한다.
+        // 글자 자리 다시 그리기에서 먼저 고친 틈이다(검수 2026-11-26). 재생성에도 같은 틈이 있었다
+        using var t = new TempDir();
+        var (s, _, _) = WhiteRetrySetup(t, retries: 0);
+        var fake = new FakeComfy(s.ComfyRoot) { NeverFinish = true };
+        var client = new ComfyClient("http://127.0.0.1:1", fake) { PollMs = 1 };
+        using var runner = new PipelineRunner(s) { RegenTimeout = TimeSpan.FromMilliseconds(80) };
+        using var img = new Mat(600, 800, MatType.CV_8UC3, Scalar.White);
+        using var mask = RectMask(800, 600, new Rect(200, 200, 120, 30));
+        var plan = runner.RegenPlanFor(img, mask, null, marks: [new SexMark(new Point(260, 215), RegenKind.Female)]);
+        try
+        {
+            await Assert.ThrowsAsync<TimeoutException>(() =>
+                runner.ComfyRegenDecensorAsync(client, Path.Combine(s.ComfyRoot, "ComfyUI", "output"), img, plan, 3, CancellationToken.None));
+
+            Assert.Equal(["p1"], fake.Cancelled);
+            Assert.Empty(Directory.GetFiles(Path.Combine(s.ComfyRoot, "ComfyUI", "input")));
+            Assert.Empty(Directory.GetFiles(Path.Combine(s.ComfyRoot, "ComfyUI", "output")));
+        }
+        finally { foreach (var r in plan) r.Dispose(); }
+    }
+
+    [Fact]
+    public async Task ComfyRegenDecensorAsync_StoppedRightAfterAnUploadReachedTheServer_LeavesNoInputBehind()
+    {
+        // 둘째 그림(지울 자리 마스크)을 올리는 요청이 서버에 닿아 파일은 생겼는데 답을 받기 전에 멈췄다 — 답(파일 이름)이 없어도 우리가 지어 보낸 이름으로 치운다(검토 2026-11-27)
+        using var t = new TempDir();
+        var (s, fake, client) = WhiteRetrySetup(t, retries: 0);
+        using var cts = new CancellationTokenSource();
+        fake.ThrowAfterUpload = name => name.StartsWith("nm_regenmask_", StringComparison.Ordinal) ? Stop() : null;
+        Exception Stop() { cts.Cancel(); return new OperationCanceledException(cts.Token); }
+        using var runner = new PipelineRunner(s);
+        using var img = new Mat(600, 800, MatType.CV_8UC3, Scalar.White);
+        using var mask = RectMask(800, 600, new Rect(200, 200, 120, 30));
+        var plan = runner.RegenPlanFor(img, mask, null, marks: [new SexMark(new Point(260, 215), RegenKind.Female)]);
+        try
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                runner.ComfyRegenDecensorAsync(client, Path.Combine(s.ComfyRoot, "ComfyUI", "output"), img, plan, 3, cts.Token));
+
+            Assert.Equal(2, fake.Uploads.Count);
+            Assert.Empty(Directory.GetFiles(Path.Combine(s.ComfyRoot, "ComfyUI", "input")));
         }
         finally { foreach (var r in plan) r.Dispose(); }
     }

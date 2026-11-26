@@ -57,6 +57,14 @@ public static class ImgIo
         return true;
     }
 
+    /// <summary><see cref="Write"/>와 같되 **파일을 못 써도 던지지 않고 false**를 돌려준다(읽기 전용·잠김·권한·디스크 가득·잘못된 경로). "못 쓰면 없는 것으로 치고 간다"는 자리에서 쓴다 —
+    /// <see cref="Write"/>의 false는 인코딩 실패뿐이라, 그것만 보는 호출부는 쓰기 실패에 그 장을 실패로 끝낸다(검토 2026-11-26·27). 임시 파일 뒤 교체라 못 쓴 경우 옛 파일은 그대로다.</summary>
+    public static bool TryWrite(string path, Mat img)
+    {
+        try { return Write(path, img); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException or System.Security.SecurityException) { return false; }
+    }
+
     /// <summary>작은 텍스트(사이드카 json)도 임시 파일 뒤 교체로 쓴다 — 결과 창 미리 읽기가 반쯤 쓰인 json을 읽으면 역직렬화가 실패해 마스크 탭이 꺼진다.</summary>
     public static void WriteAllTextAtomic(string path, string text) =>
         WriteViaTemp(path, p => File.WriteAllText(p, text));

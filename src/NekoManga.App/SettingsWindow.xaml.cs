@@ -103,6 +103,7 @@ public partial class SettingsWindow
         SelectComboByTag(CmbSfxMode, s.TranslateBubbleOnly ? s.SfxMode : "Dialogue");   // 풍선 밖 효과음: Keep/Replace(시험 중)/Dialogue(= 전부 대사로, TranslateBubbleOnly 끔)
         TxtGlossary.Text = s.TranslateGlossary.Replace("\n", Environment.NewLine);
         ChkCarryContext.IsChecked = s.TranslateCarryContext;
+        LoadTextRegen(s);
 
         // 식자 글꼴: 설치된 글꼴 목록을 채우고 현재 값을 고른다 (편집 가능 — 직접 입력도 됨)
         foreach (var f in System.Drawing.FontFamily.Families.Select(f => f.Name).OrderBy(n => n))
@@ -237,6 +238,7 @@ public partial class SettingsWindow
         if (sfx != "Dialogue") s.SfxMode = sfx;   // '대사처럼'을 골랐으면 SfxMode는 전 값 그대로(가르지 않으니 뜻이 없다)
         s.TranslateGlossary = TxtGlossary.Text.Replace("\r\n", "\n").Trim();
         s.TranslateCarryContext = ChkCarryContext.IsChecked == true;
+        SaveTextRegen(s);
         s.DeepLApiKey = TxtDeepLKey.Text.Trim();
         s.DeepSeekApiKey = TxtDeepSeekKey.Text.Trim();
         s.DeepSeekModel = (CmbDeepSeekModel.Text ?? "").Trim();
@@ -288,6 +290,9 @@ public partial class SettingsWindow
         R(TxtRegenDenoise, 0.05, 1.0, false); R(TxtRegenSteps, 1, 150, true); R(TxtRegenCfg, 0, 30, false);
         R(TxtRegenCnStr, 0, 2, false); R(TxtRegenCnEnd, 0, 1, false); R(TxtRegenCrop, 512, 2048, true); R(TxtRegenInpaintGrow, 0, 64, true); R(TxtRegenInpaintCnStr, 0, 2, false); R(TxtRegenWhiteRetries, 0, 5, true);
         R(TxtRegenRegionConf, 0.01, 0.9, false); R(TxtRegenRegionPad, 0, 1, false); R(TxtRegenRegionGrow, 0, 3, false);
+        // 번역 — 지운 자리 다시 그리기(SaveTextRegen의 범위와 같다)
+        R(TxtTextRegenSteps, 1, 150, true); R(TxtTextRegenCfg, 0, 30, false); R(TxtTextRegenGrow, 0, 64, true);
+        R(TxtTextRegenCnStr, 0, 2, false); R(TxtTextRegenCnEnd, 0, 1, false); R(TxtTextRegenCrop, 512, 2048, true); R(TxtTextRegenRetries, 0, 5, true);
         // 엔진
         R(TxtAdvPort, 1024, 65535, true); R(TxtAdvCnLineStr, 0, 2, false); R(TxtAdvCnLineEnd, 0, 1, false);
         R(TxtAdvCnScrStr, 0, 2, false); R(TxtAdvCnScrStart, 0, 1, false); R(TxtAdvPreRes, 256, 4096, true);

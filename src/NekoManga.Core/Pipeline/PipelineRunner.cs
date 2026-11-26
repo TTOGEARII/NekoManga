@@ -20,7 +20,7 @@ public record PageProgress(string File, string Stage, double Percent, bool Done 
 ///        → [식자: 번역문을 C#으로 렌더]
 ///        → 완성본
 ///
-/// 번역·기본 검열제거는 전부 프로세스 안(ONNX)에서 돌고, 채색·재생성·커스텀 검열제거만 ComfyUI가 필요하다.
+/// 번역·기본 검열제거는 전부 프로세스 안(ONNX)에서 돌고, 채색·재생성·커스텀 검열제거와 글자 자리 다시 그리기(시험 중, 기본 끔)만 ComfyUI가 필요하다.
 /// 검열 감지·기본 복원은 2026-11-09에 Aletheia Lens 이식(AletheiaDecensor)으로 교체했고, 옛 경로('이전 방식' 엔진 = CensorNet/규칙 + LaMa)는
 /// 2026-11-12 사용자 선택으로 삭제 — CensorNet·규칙 감지기는 Aletheia의 보완(흰 막대·색 검열)으로만 남는다.</summary>
 public partial class PipelineRunner(AppSettings settings) : IDisposable
@@ -47,6 +47,30 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
     /// 프롬프트가 끝나면 출력 파일을 지우므로, 접두사가 같으면 같은 장을 값도 안 바꾸고 다시 돌릴 때(시드 고정·커스텀 워크플로) 이미 지운 파일을 가리켜 실패한다.
     /// 접두사만 달라도 SaveImage는 다시 돌아 새 파일을 쓴다(앞 노드들은 캐시 그대로라 빠르다). 꼬리표가 들어 있어 이 접두사로 훑어 지워도 다른 창의 출력은 안 걸린다.</summary>
     internal string NextOutputPrefix(string kind) => $"nm_{kind}_{_tag}_{Interlocked.Increment(ref _promptSeq)}";
+
+    /// <summary>그림 하나를 올려 워크플로 하나를 돌리고 결과를 넘긴다(채색·커스텀 검열 제거·표지 색 태그 뽑기). <paramref name="take"/>는 출력 파일이 아직 있을 때 불린다 — 그 뒤 어떻게 끝나든 ComfyUI 폴더(<paramref name="comfyRoot"/>)에는 남기지 않는다:
+    /// 올린 입력은 답(서버가 준 파일 이름)을 못 받았어도 **부탁한 이름(<paramref name="uploadName"/>)으로** 치우고, 기다리다 그만두면(제한 시간·연결 오류) 그 프롬프트를 거둔다 —
+    /// 안 거두면 서버에서 끝까지 돌아 우리가 치운 뒤에 출력을 남긴다. 재생성·글자 자리 다시 그리기에서 먼저 막은 틈이 이 길들에도 그대로 있었다(검토 2026-11-27).
+    /// 사용자가 멈춘 경우는 <see cref="ComfyClient.WaitAsync"/>·<see cref="ComfyClient.QueuePromptAsync"/>가 이미 거뒀다. <paramref name="graphFor"/>는 서버가 준 파일 이름을 받아 그래프를 짓는다.</summary>
+    internal static async Task<T> RunOneImageWorkflowAsync<T>(ComfyClient client, string comfyRoot, string comfyOutputDir, byte[] png, string uploadName, string? outPrefix,
+        Func<string, JsonObject> graphFor, TimeSpan timeout, Func<ComfyClient.ComfyResult, T> take, CancellationToken ct)
+    {
+        string? up = null, pid = null;
+        ComfyClient.ComfyResult? r = null;
+        try
+        {
+            up = await client.UploadImageAsync(png, uploadName, ct);
+            pid = await client.QueuePromptAsync(graphFor(up), ct);
+            r = await client.WaitAsync(pid, comfyOutputDir, timeout, ct);
+            return take(r);
+        }
+        catch (Exception) when (pid != null && r == null && !ct.IsCancellationRequested)
+        {
+            await client.CancelPromptAsync(pid);   // 되는 데까지만(던지지 않는다)
+            throw;
+        }
+        finally { WorkFolders.RemoveComfyFiles(comfyRoot, r?.OutputFiles, outPrefix, up, uploadName); }
+    }
     private readonly ComfyServer _server = new(settings);
 
     /// <summary>시험용 — 프로세스·HTTP 없는 가짜 장부의 ComfyServer를 넣는다.</summary>
@@ -133,16 +157,28 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         }
     }
 
+    /// <summary>이 실행이 ComfyUI를 쓰는가: 자동 채색 · 재생성/커스텀 검열 제거 · 글자 자리 다시 그리기(번역기를 쓰는 실행에서만 — 결과 창의 다시 지우기·다시 식자·다시 검열 제거는 SDXL로 글자 자리를 그리지 않는다).
+    /// 설정의 <see cref="AppSettings.UsesComfy"/>는 '쓸 수 있는 설정인가'(시작 전 안내용)이고, 이것은 실행 하나의 답이다.</summary>
+    internal static bool NeedsComfy(AppSettings s, bool needTranslator) =>
+        s.UsesComfyApartFromTextRegen || (needTranslator && s.UsesTextRegen);
+
+    /// <summary>이 러너의 내장 AI 환경 — 시험이 본다.</summary>
+    internal OnnxEnv Onnx => _onnx;
+
     /// <summary>모델·구성요소 확인, ComfyUI 기동, 표지 색 참조 준비. RunAsync와 RedoPageAsync가 공유한다.</summary>
     private async Task<RunContext> PrepareAsync(IReadOnlyList<string> files, IProgress<PageProgress> progress, bool needTranslator, CancellationToken ct)
     {
+        // 이 실행이 ComfyUI를 쓰는가 — 내장 AI의 GPU 자동 규칙이 본다. 모델을 올리기 전에(세션은 처음 만들 때의 판정으로 굳는다) 알려 둔다
+        bool needComfy = NeedsComfy(settings, needTranslator);
+        _onnx.JobUsesComfy = needComfy;
+        (_textRegenFailStreak, _textRegenGaveUp) = (0, false);   // 글자 자리 다시 그리기의 '이어진 실패'는 작업마다 다시 센다
         var translator = needTranslator ? new EmbeddedTranslator(settings, _onnx) : null;
         var lama = new LamaInpainter(_onnx);
 
         bool comfyRegen = settings.EnableDecensor && settings.DecensorMode == "ComfyRegen";
         bool comfyCustom = settings.EnableDecensor && settings.DecensorMode == "ComfyCustom";
         bool colorCustom = settings.EnableAutoColor && !string.IsNullOrWhiteSpace(settings.ColorCustomWorkflow);
-        bool needComfy = settings.EnableAutoColor || comfyRegen || comfyCustom;
+        bool textRegen = needTranslator && settings.UsesTextRegen;   // 글자 지운 자리 다시 그리기(2026-11-26) — 번역기를 쓰는 실행에서만(결과 창의 다시 지우기·다시 채색은 돌지 않는다)
 
         if (translator is { IsReady: false })
             throw new FileNotFoundException(Loc.T("번역 엔진 모델이 아직 없다냥 — 설정 → 구성요소에서 받아 줘냥."));
@@ -155,9 +191,10 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         }
         if (needComfy && !settings.ComfyAvailable)
             throw new FileNotFoundException(
-                (settings.EnableAutoColor ? Loc.T("자동 채색") : comfyRegen ? Loc.T("재생성 검열제거") : Loc.T("커스텀 워크플로 검열제거")) +
+                (settings.EnableAutoColor ? Loc.T("자동 채색") : comfyRegen ? Loc.T("재생성 검열제거") : comfyCustom ? Loc.T("커스텀 워크플로 검열제거") : Loc.T("글자 자리 다시 그리기")) +
                 Loc.T(" 기능은 ComfyUI가 필요하다냥 — 설정 → 구성요소에서 설치해 줘냥."));
         if (comfyRegen) CheckRegenModels();
+        if (textRegen) CheckTextRegenModels();
         if (settings.EnableAutoColor && !colorCustom && MissingColorPart(settings) is { } missingColor) throw new FileNotFoundException(missingColor);
 
         var cx = new RunContext
@@ -240,6 +277,10 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
             var tr = await cx.Translator.TranslatePageAsync(pg.WorkPath, cx.WorkDir, status, cx.Ct, pg.WorkKey);
             pg.WorkPath = tr.InpaintedPath;
             pg.Blocks = tr.Blocks;
+            // 글자 지운 자리 다시 그리기(TextRegen): LaMa가 뭉갠 자리(그림 위의 글)만 SDXL로 — 실패해도 이 장은 LaMa 결과로 간다(경고만)
+            if (settings.UsesTextRegen && tr.RegenMaskPath != null && cx.Client != null
+                && await TextRegenFileAsync(cx.Client, cx.ComfyOutputDir, tr.InpaintedPath, tr.RegenMaskPath, i, cx.Ct, status, tr.RegenBlocks) is { } regenWarn)
+                Warn(cx, pg, regenWarn);
         }
         if (!settings.EnableDecensor) return;
         using var img = ImgIo.Read(pg.WorkPath, ImreadModes.Color);
@@ -379,25 +420,23 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         {
             progress.Report(new(name, cx.CustomColor != null ? Loc.T("채색 중이다냥 (커스텀 워크플로)") : Loc.T("채색 중이다냥 (장당 1~2분)"), 60));
             var png = await File.ReadAllBytesAsync(work, cx.Ct);
-            var up = await cx.Client.UploadImageAsync(png, $"nm_cl_{_tag}_{i}.png", cx.Ct);
-            ComfyClient.ComfyResult? r = null;
             var colorOut = NextOutputPrefix("color");
-            try
-            {
-                var pid = await cx.Client.QueuePromptAsync(cx.CustomColor != null
+            work = await RunOneImageWorkflowAsync(cx.Client, settings.ComfyRoot, cx.ComfyOutputDir, png, $"nm_cl_{_tag}_{i}.png", colorOut,
+                up => cx.CustomColor != null
                     ? CustomWorkflow.Prepare(cx.CustomColor, up, colorOut).Prompt
-                    : WorkflowBuilder.BuildAutoColor(settings, up, colorOut, _refImageName), cx.Ct);
-                r = await cx.Client.WaitAsync(pid, cx.ComfyOutputDir, TimeSpan.FromMinutes(20), cx.Ct);
-                if (r.OutputFiles.Count == 0)
-                    throw new InvalidOperationException(Loc.T("채색 결과 파일이 없다냥."));
-                // 채색 결과는 식자가 끝날 때까지 쓴다 — 작업 폴더로 옮겨 두고 ComfyUI의 출력 폴더에서는 지운다(전에는 거기 그대로 쌓였다)
-                var colored = Path.Combine(cx.WorkDir, pg.WorkKey + ".colored" + Path.GetExtension(r.OutputFiles[^1]));
-                Directory.CreateDirectory(cx.WorkDir);
-                File.Copy(r.OutputFiles[^1], colored, overwrite: true);
-                work = colored;
-                colorized = true;
-            }
-            finally { WorkFolders.RemoveComfyFiles(settings.ComfyRoot, r?.OutputFiles, colorOut, up); }
+                    : WorkflowBuilder.BuildAutoColor(settings, up, colorOut, _refImageName),
+                TimeSpan.FromMinutes(20),
+                r =>
+                {
+                    if (r.OutputFiles.Count == 0)
+                        throw new InvalidOperationException(Loc.T("채색 결과 파일이 없다냥."));
+                    // 채색 결과는 식자가 끝날 때까지 쓴다 — 작업 폴더로 옮겨 두고 ComfyUI의 출력 폴더에서는 지운다(전에는 거기 그대로 쌓였다)
+                    var colored = Path.Combine(cx.WorkDir, pg.WorkKey + ".colored" + Path.GetExtension(r.OutputFiles[^1]));
+                    Directory.CreateDirectory(cx.WorkDir);
+                    File.Copy(r.OutputFiles[^1], colored, overwrite: true);
+                    return colored;
+                }, cx.Ct);
+            colorized = true;
         }
         cx.Ct.ThrowIfCancellationRequested();   // 채색 뒤·식자 전 — 결과물을 쓰기 전의 마지막 경계
 
@@ -465,10 +504,18 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
 
     private static string WarnSuffix(ReviewPage pg) => pg.Warning == null ? "" : " · ⚠ " + pg.Warning;
 
-    /// <summary>치명적이지 않은 문제 — 행 상태에 바로 보이고, 그 장의 '완료' 줄에도 붙는다.</summary>
+    /// <summary>장의 경고 자리는 하나다 — 뒤의 경고가 앞의 것을 덮지 않게 잇는다(같은 글은 한 번만). 덮어쓰던 때는 "컬러 쪽이라 건너뛴다" 같은 알림이 앞선 진짜 경고(옛 결과를 못 옮김)를 지우고,
+    /// 뒤 단계의 경고가 글자 자리 다시 그리기의 실패를 지웠다(검토 2026-11-27).</summary>
+    internal static string JoinWarning(string? earlier, string message)
+    {
+        if (string.IsNullOrEmpty(earlier)) return message;
+        return earlier.Split(" / ").Contains(message) ? earlier : earlier + " / " + message;
+    }
+
+    /// <summary>치명적이지 않은 문제 — 행 상태에 바로 보이고, 그 장의 '완료' 줄에도 붙는다(여럿이면 이어서).</summary>
     private static void Warn(RunContext cx, ReviewPage pg, string message)
     {
-        pg.Warning = message;
+        pg.Warning = JoinWarning(pg.Warning, message);
         cx.Progress.Report(new(pg.File, message, -1));   // 진행률은 그대로(-1 = 바꾸지 않음) — 48%로 되돌리면 92%까지 간 행이 뒤로 간다
     }
 

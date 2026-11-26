@@ -152,6 +152,169 @@ public static class BubbleSplitter
         }
     }
 
+    /// <summary>대사 블록에 붙어 잡힌 **손글씨 효과음의 획**을 갈라낸다 — 풍선 안의 글과, 그 풍선 밖에 놓인 훨씬 굵고 큰 획이 한 블록이면 둘로 나누고 뒤쪽에 <see cref="DetectedBlock.HandLettered"/>를 단다.
+    /// 2026-11-26 사용자 "이런 부분은 효과음이야"(실제 05쪽): 풍선 안 대사와 그 아래 그림 위의 큰 "ぐぷ"가 감지기 마스크에서 이어져(Split이 한 덩어리로 보고, MergeSiblings가 옆 기둥과 다시 합쳐)
+    /// 한 블록이 됐고, 대사를 지우면서 효과음의 획까지 LaMa로 지워졌다. OCR은 대사만 읽어 글로는 효과음인지 알 길이 없다 — 그림으로 가른다.
+    /// 기준(그 블록의 실측: 풍선이 마스크의 35%를 품고, 밖의 덩어리는 넓이 38,729px·굵기 120px, 안의 글 덩어리는 굵기 45px. 다른 31블록의 풍선 밖 조각은 넓이 1,600px·굵기 27px 이하):
+    /// ① 글을 가장 많이 품은 밝은 닫힌 영역(풍선 — 톤의 1~2px 줄·점은 닫기 연산으로 지우고 본다)이 창 가장자리에 닿지 않고 ② 블록 마스크의 <see cref="GiantCoverMin"/>~<see cref="GiantCoverMax"/>를 품으며
+    /// ③ 풍선 밖 덩어리의 넓이가 쪽의 <see cref="GiantAreaFrac"/> 이상이고 굵기가 쪽 너비의 <see cref="GiantThickFrac"/> 이상이면서 풍선 안 글 덩어리 굵기(중앙값)의 <see cref="GiantThickRatio"/>배 이상.
+    /// 풍선 밖으로 벗어난 **같은 크기의 대사**는 ③에 걸리지 않아 그대로다(갈라내면 번역되지 않고 남는다). 풍선이 없는 블록(그림 위의 글)은 가를 근거가 없어 그대로 둔다.</summary>
+    public static List<DetectedBlock> SplitOffGiants(Mat img, Mat textMask, IReadOnlyList<DetectedBlock> blocks)
+    {
+        var result = new List<DetectedBlock>(blocks.Count + 1);
+        Mat? gray = null;
+        try
+        {
+            foreach (var b in blocks)
+            {
+                (DetectedBlock Text, DetectedBlock Giant)? parts = null;
+                try
+                {
+                    if (gray == null) { gray = new Mat(); Cv2.CvtColor(img, gray, ColorConversionCodes.BGR2GRAY); }
+                    parts = GiantOutsideBubble(gray, textMask, b);
+                }
+                catch { }   // 가르기는 보너스 — 실패하면 원래 블록 그대로
+                if (parts is { } p) { result.Add(p.Text); result.Add(p.Giant); }
+                else result.Add(b);
+            }
+        }
+        finally { gray?.Dispose(); }
+        return result;
+    }
+
+    /// <summary><see cref="SplitOffGiants"/>: 풍선이 품어야 하는 블록 마스크의 비율 범위 · 풍선 밖 덩어리의 넓이 하한(쪽 넓이 대비) · 굵기 하한(쪽 너비 대비) · 풍선 안 글 굵기 대비 배율.</summary>
+    internal const double GiantCoverMin = 0.10, GiantCoverMax = 0.90, GiantAreaFrac = 0.001, GiantThickFrac = 0.025, GiantThickRatio = 2.0;
+    /// <summary><see cref="SplitOffGiants"/>: 밝은 성분의 이 비율 넘게 블록 마스크가 덮으면 풍선이 아니라 글자 · 가른 뒤 어느 블록에도 못 드는 풍선 밖 마스크가 이 픽셀 수와 블록 마스크의 이 비율 가운데 큰 쪽을 넘으면 가르지 않는다.</summary>
+    internal const double GlyphLikeCover = 0.8, OrphanMaxShare = 0.05;
+    internal const int OrphanMaxPx = 300;
+
+    private static (DetectedBlock Text, DetectedBlock Giant)? GiantOutsideBubble(Mat gray, Mat textMask, DetectedBlock block)
+    {
+        var page = new Rect(0, 0, gray.Width, gray.Height);
+        var rect = new Rect(block.X1, block.Y1, block.X2 - block.X1, block.Y2 - block.Y1) & page;
+        if (rect.Width < 8 || rect.Height < 8) return null;
+        // 풍선 전체가 들어오게 넉넉한 창 — 긴 변의 절반(작은 블록은 150px)
+        int pad = Math.Max(150, Math.Max(rect.Width, rect.Height) / 2);
+        var win = new Rect(rect.X - pad, rect.Y - pad, rect.Width + 2 * pad, rect.Height + 2 * pad) & page;
+
+        using var blockMask = new Mat(win.Height, win.Width, MatType.CV_8UC1, Scalar.Black);
+        using (var src = new Mat(textMask, rect))
+        using (var dst = new Mat(blockMask, new Rect(rect.X - win.X, rect.Y - win.Y, rect.Width, rect.Height)))
+            src.CopyTo(dst);
+        int total = Cv2.CountNonZero(blockMask);
+        if (total < 300) return null;
+
+        // 밝은 영역: 톤의 가는 줄·점(1~2px)은 3×3 닫기로 지우고 본다 — 줄무늬 풍선도 한 덩어리가 된다
+        using var g = new Mat(gray, win);
+        using var closed = new Mat();
+        using (var k3 = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(3, 3))) Cv2.MorphologyEx(g, closed, MorphTypes.Close, k3);
+        using var bright = new Mat();
+        Cv2.Threshold(closed, bright, 199, 255, ThresholdTypes.Binary);
+        using var labels = new Mat(); using var stats = new Mat(); using var cent = new Mat();
+        int n = Cv2.ConnectedComponentsWithStats(bright, labels, stats, cent, PixelConnectivity.Connectivity4);
+        if (n <= 1) return null;
+
+        // 풍선 후보 = 블록 마스크와 가장 많이 겹치는 밝은 성분들. 속이 빈 효과음 글자의 흰 속도 밝은 성분이라(획이 굵으면 풍선보다 더 많이 겹친다)
+        // 하나만 보지 않고 위에서 셋까지 차례로 본다: "안은 가는 글, 밖은 굵은 획"이 성립하는 후보가 풍선이다(효과음의 속을 풍선으로 잡으면 밖이 가는 글이라 성립하지 않는다)
+        var candidates = new List<(int Label, int Count)>();
+        for (int i = 1; i < n; i++)
+        {
+            if (stats.At<int>(i, (int)ConnectedComponentsTypes.Area) < 400) continue;
+            var box = new Rect(stats.At<int>(i, (int)ConnectedComponentsTypes.Left), stats.At<int>(i, (int)ConnectedComponentsTypes.Top),
+                stats.At<int>(i, (int)ConnectedComponentsTypes.Width), stats.At<int>(i, (int)ConnectedComponentsTypes.Height));
+            using var lab = new Mat(labels, box); using var comp = new Mat(); using var hit = new Mat();
+            Cv2.InRange(lab, new Scalar(i), new Scalar(i), comp);
+            using (var bm = new Mat(blockMask, box)) Cv2.BitwiseAnd(comp, bm, hit);
+            int count = Cv2.CountNonZero(hit);
+            // 마스크에 거의 다 덮인 밝은 성분은 풍선이 아니라 글자다(먹 바탕의 흰 글, 속 빈 글자의 흰 속) — 풍선의 흰 안쪽은 글 획 밖으로 넓게 퍼져 있다.
+            // 이것을 풍선으로 보면 흰 글의 작은 글자가 '풍선', 큰 글자가 '풍선 밖의 거대한 획'이 되어 큰 글자가 효과음으로 떨어져 나간다(검토 2026-11-27)
+            if (count >= GlyphLikeCover * stats.At<int>(i, (int)ConnectedComponentsTypes.Area)) continue;
+            if (count > 0) candidates.Add((i, count));
+        }
+        foreach (var (label, _) in candidates.OrderByDescending(c => c.Count).Take(3))
+            if (GiantOutside(labels, stats, label, blockMask, total, win, page, block) is { } parts)
+                return parts;
+        return null;
+    }
+
+    /// <summary><see cref="GiantOutsideBubble"/>의 후보 하나: 밝은 성분 label을 풍선으로 보고, 풍선 안의 글과 풍선 밖의 굵고 큰 획으로 갈리는지 본다.</summary>
+    private static (DetectedBlock Text, DetectedBlock Giant)? GiantOutside(Mat labels, Mat stats, int bestLabel, Mat blockMask, int total, Rect win, Rect page, DetectedBlock block)
+    {
+        var bb = new Rect(stats.At<int>(bestLabel, (int)ConnectedComponentsTypes.Left), stats.At<int>(bestLabel, (int)ConnectedComponentsTypes.Top),
+            stats.At<int>(bestLabel, (int)ConnectedComponentsTypes.Width), stats.At<int>(bestLabel, (int)ConnectedComponentsTypes.Height));
+        // 창 가장자리에 닿은 영역은 다 못 본 것이다(쪽 가장자리는 예외) — 닫힌 풍선인지 모른다
+        bool cut = (bb.X <= 0 && win.X > 0) || (bb.Y <= 0 && win.Y > 0) || (bb.Right >= win.Width && win.Right < page.Width) || (bb.Bottom >= win.Height && win.Bottom < page.Height);
+        if (cut) return null;
+
+        // 풍선 = 그 성분 + 성분에 둘러싸인 구멍(글자 획): 바깥에서 흘려 넣어 닿지 않는 곳이 안이다
+        using var bubble = new Mat();
+        Cv2.InRange(labels, new Scalar(bestLabel), new Scalar(bestLabel), bubble);
+        using (var padded = new Mat())
+        {
+            Cv2.CopyMakeBorder(bubble, padded, 1, 1, 1, 1, BorderTypes.Constant, Scalar.Black);
+            Cv2.FloodFill(padded, new Point(0, 0), new Scalar(128));
+            using var inner = new Mat(padded, new Rect(1, 1, bubble.Width, bubble.Height));
+            using var holes = new Mat();
+            Cv2.InRange(inner, new Scalar(0), new Scalar(0), holes);
+            Cv2.BitwiseOr(bubble, holes, bubble);
+        }
+        using (var k4 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(9, 9))) Cv2.Dilate(bubble, bubble, k4);   // 테두리 선 위의 획 가장자리까지
+
+        using var inside = new Mat(); using var outside = new Mat(); using var notBubble = new Mat();
+        Cv2.BitwiseAnd(blockMask, bubble, inside);
+        Cv2.BitwiseNot(bubble, notBubble);
+        Cv2.BitwiseAnd(blockMask, notBubble, outside);
+        double cover = Cv2.CountNonZero(inside) / (double)total;
+        if (cover < GiantCoverMin || cover > GiantCoverMax) return null;
+
+        var insideComps = Thicknesses(inside, minArea: 60);
+        if (insideComps.Count == 0) return null;
+        var sorted = insideComps.Select(c => c.Thick).OrderBy(t => t).ToList();
+        double medianThick = sorted[sorted.Count / 2];
+        double minArea = GiantAreaFrac * page.Width * page.Height;
+        double minThick = Math.Max(GiantThickFrac * page.Width, GiantThickRatio * medianThick);
+        var giants = Thicknesses(outside, minArea: 60).Where(c => c.Area >= minArea && c.Thick >= minThick).ToList();
+        if (giants.Count == 0) return null;
+
+        var giantBox = giants.Select(c => c.Box).Aggregate((a, b) => a.Union(b));
+        var textBox = insideComps.Select(c => c.Box).Aggregate((a, b) => a.Union(b));
+        // 풍선 밖에 거대한 획 말고도 글이 남으면(풍선 밖으로 이어진 보통 크기의 대사) 가르지 않는다 — 그 글은 대사 블록(풍선 안)에도 효과음 블록에도 들지 못해
+        // 읽히지도 번역되지도 지워지지도 않는다(검토 2026-11-27). 효과음에 딸린 작은 조각(탁점)은 효과음 상자 안에 있어 세지 않는다
+        using (var orphans = outside.Clone())
+        {
+            var near = new Rect(giantBox.X - 8, giantBox.Y - 8, giantBox.Width + 16, giantBox.Height + 16) & new Rect(0, 0, orphans.Cols, orphans.Rows);
+            orphans.Rectangle(near, Scalar.Black, -1);
+            if (Cv2.CountNonZero(orphans) > Math.Max(OrphanMaxPx, OrphanMaxShare * total)) return null;
+        }
+        DetectedBlock At(Rect r, bool hand) => new(
+            Math.Max(0, win.X + r.X - 2), Math.Max(0, win.Y + r.Y - 2), Math.Min(page.Width, win.X + r.Right + 2), Math.Min(page.Height, win.Y + r.Bottom + 2),
+            block.Confidence, block.LangJa, hand);
+        return (At(textBox, false), At(giantBox, true));
+    }
+
+    /// <summary>마스크의 덩어리(8연결, minArea 이상)마다 상자·넓이·굵기(거리 변환 최댓값의 두 배 — 가장 굵은 곳의 폭).</summary>
+    private static List<(Rect Box, int Area, double Thick)> Thicknesses(Mat mask, int minArea)
+    {
+        var list = new List<(Rect Box, int Area, double Thick)>();
+        using var labels = new Mat(); using var stats = new Mat(); using var cent = new Mat();
+        int n = Cv2.ConnectedComponentsWithStats(mask, labels, stats, cent, PixelConnectivity.Connectivity8);
+        if (n <= 1) return list;
+        using var dist = new Mat();
+        Cv2.DistanceTransform(mask, dist, DistanceTypes.L2, DistanceTransformMasks.Mask3);
+        for (int i = 1; i < n; i++)
+        {
+            int area = stats.At<int>(i, (int)ConnectedComponentsTypes.Area);
+            if (area < minArea) continue;
+            var box = new Rect(stats.At<int>(i, (int)ConnectedComponentsTypes.Left), stats.At<int>(i, (int)ConnectedComponentsTypes.Top),
+                stats.At<int>(i, (int)ConnectedComponentsTypes.Width), stats.At<int>(i, (int)ConnectedComponentsTypes.Height));
+            using var lab = new Mat(labels, box); using var comp = new Mat(); using var d = new Mat(dist, box);
+            Cv2.InRange(lab, new Scalar(i), new Scalar(i), comp);
+            Cv2.MinMaxLoc(d, out _, out double max, out _, out _, comp);
+            list.Add((box, area, max * 2));
+        }
+        return list;
+    }
+
     private static bool Adjacent(DetectedBlock a, DetectedBlock b)
     {
         int wa = a.X2 - a.X1, ha = a.Y2 - a.Y1, wb = b.X2 - b.X1, hb = b.Y2 - b.Y1;
