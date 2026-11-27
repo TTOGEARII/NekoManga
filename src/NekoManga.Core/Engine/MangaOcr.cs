@@ -11,7 +11,7 @@ namespace NekoManga.Core.Engine;
 /// 블록마다 따로 돌리면 실행 횟수가 "블록 수 × 글자 수"가 된다(실측: 블록당 0.33초, 10블록 쪽 3초 남짓 — 사용자가 다른 도구보다 느리다고 지적).
 /// 묶어서 돌리면 실행 횟수가 "가장 긴 블록의 글자 수"로 줄어든다. 먼저 끝난 블록은 채움 토큰을 이어 붙이고 결과만 무시한다
 /// (디코더는 앞쪽 글자만 보므로 뒤에 붙는 것은 앞의 결과에 영향이 없다).</summary>
-public class MangaOcr(OnnxEnv env)
+public class MangaOcr(OnnxEnv env) : ITextRecognizer
 {
     public const string EncoderFile = "ocr_encoder.onnx";
     public const string DecoderFile = "ocr_decoder.onnx";

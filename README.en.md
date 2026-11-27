@@ -4,7 +4,7 @@
 
 An all-in-one desktop app that works a little magic on black-and-white manga. Drag in your images and click a button to translate, remove censorship, and colorize your pages.
 
-- 💬 **Translation and lettering** — NekoManga reads speech bubbles with manga-ocr, translates the text, and places it back in the bubbles. Text that sits on artwork or a black background is drawn with the text and outline colors swapped (white letters with a black outline) so it stays readable; turn this off under ⚙ Settings → 💬 Translation. Sound effects outside bubbles are left alone by default; choosing **Erase and replace with the translation (experimental)** in the same tab erases the original and draws the translation there in bold (glossary → built-in onomatopoeia dictionary → translator; tall sound effects are stacked vertically). Fixed terms such as character names go in the **glossary** (one per line, source=translation), and DeepSeek/Grok also receive the previous pages' dialogue as context.
+- 💬 **Translation and lettering** — NekoManga reads speech bubbles with Hayai OCR, translates the text, and places it back in the bubbles. Text that sits on artwork or a black background is drawn with the text and outline colors swapped (white letters with a black outline) so it stays readable; turn this off under ⚙ Settings → 💬 Translation. Sound effects outside bubbles are left alone by default; choosing **Erase and replace with the translation (experimental)** in the same tab erases the original and draws the translation there in bold (glossary → built-in onomatopoeia dictionary → translator; tall sound effects are stacked vertically). Fixed terms such as character names go in the **glossary** (one per line, source=translation), and DeepSeek/Grok also receive the previous pages' dialogue as context.
   - Choose from **Google** (free), **DeepL**, **DeepSeek**, and **Grok**. The AI translation engines use context to produce more natural dialogue.
   - Text in vertical Japanese speech bubbles is laid out horizontally for readability, with wrapping that keeps words intact.
   - Only text inside speech bubbles is translated; sound effects and handwriting outside bubbles are left as they are (you can turn this off under **Settings → Translation**).
@@ -19,7 +19,7 @@ An all-in-one desktop app that works a little magic on black-and-white manga. Dr
   - **Add a color cover as a reference** to match characters’ hair, eyes, and clothing to the cover.
   - Open ComfyUI from within the app and use workflows exported as API JSON for colorization or censorship removal.
 
-NekoManga **installs, starts, and stops the AI engines automatically**. Translation and basic censorship removal use bundled models that require an initial download of about 1.1 GB. If your graphics card qualifies, the engine for regeneration-based censorship removal (ComfyUI, about 12 GB) is downloaded as well. To use colorization, keep **Install colorization too (about 5 GB more)** checked during first-run setup.
+NekoManga **installs, starts, and stops the AI engines automatically**. Translation and basic censorship removal use bundled models that require an initial download of about 1.0 GB. If your graphics card qualifies, the engine for regeneration-based censorship removal (ComfyUI, about 12 GB) is downloaded as well. To use colorization, keep **Install colorization too (about 5 GB more)** checked during first-run setup.
 
 Setup checks your PC, selects an engine for your graphics card, and provides download links for any required drivers or runtimes. The app also **adjusts resolution and memory settings automatically** based on your available VRAM and RAM.
 
@@ -45,7 +45,7 @@ All source code is public in this repository, and GitHub Actions builds the inst
 | RAM | 8 GB | **32 GB** (below 16 GB, the app automatically disables engine preloading) |
 | GPU | Optional | **NVIDIA RTX 20 series or newer** or **AMD Radeon RX 6000 series or newer**, with at least 8 GB of VRAM. GTX 10 series and older cards automatically use a slower legacy engine. |
 | Disk space | 2 GB | **25 GB or more** |
-| Internet | Initial model download (1.1 GB) | Initial model download (about 20 GB) |
+| Internet | Initial model download (1.0 GB) | Initial model download (about 20 GB) |
 
 - NVIDIA systems require driver **580 or later** for RTX 20 series or newer, or driver **528 or later** for GTX 10 series or older. They also require the Visual C++ 2015–2022 x64 runtime. Setup checks these requirements and provides download links when needed.
 - AMD support uses the official portable ComfyUI ROCm build. AMD support is still in its early stages, so processing can be slower than on NVIDIA and some nodes may be unavailable.
@@ -97,6 +97,7 @@ In **Settings**, you can adjust colorization quality, censorship detection and r
 
 ## Acknowledgments
 
+- Text recognition uses [Hayai OCR v2.7 Supernova](https://huggingface.co/JustANormalTinkerer/hayai-ocr-v2.7-supernova) (Apache-2.0), a manga OCR model that also reads handwriting and sound effects. NekoManga downloads the author’s ONNX export and runs it in C#. You can switch back to the previous engine (manga-ocr) in Settings.
 - Censorship detection and basic restoration are based on [Aletheia Lens](https://github.com/Cec1c/Aletheia-Lens) (GPL-3.0). NekoManga ports its detection pipeline (hent-AI Mask R-CNN) and restoration pipeline (DeepCreamPy) to C# and downloads the model files published by that project.
 - Thanks also to the projects it builds on: [hent-AI](https://github.com/natethegreate/hent-AI), [DeepCreamPy](https://github.com/cookieY/DeepCreamPy), and [Mask R-CNN](https://github.com/matterport/Mask_RCNN).
 

@@ -14,7 +14,8 @@ public class ComponentInstallerTests
 
         // 설치 창은 이 순서대로 받는다 — 목록 순서(필수 엔진 먼저)를 바꾸지 않아야 한다
         Assert.Equal(ComponentCatalog.All, installer.Missing());
-        Assert.Equal(ComponentCatalog.EngineComponents, installer.MissingEngine());
+        // 글자 읽기 모델은 고른 엔진의 것만 필요하다(다른 엔진의 것은 받으라고 하지 않는다)
+        Assert.Equal(ComponentCatalog.EngineComponents.Where(installer.IsWanted), installer.MissingEngine());
     }
 
     [Fact]
@@ -25,7 +26,7 @@ public class ComponentInstallerTests
 
         // 받다 만 .part만 있으면 아직 설치가 아니다 — 다음 설치가 이어받는다
         foreach (var c in ComponentCatalog.EngineComponents) RuntimeTestHelpers.Touch(installer.Resolve(c.Probe) + ".part");
-        Assert.Equal(ComponentCatalog.EngineComponents, installer.MissingEngine());
+        Assert.Equal(ComponentCatalog.EngineComponents.Where(installer.IsWanted), installer.MissingEngine());
 
         foreach (var c in ComponentCatalog.EngineComponents) RuntimeTestHelpers.Touch(installer.Resolve(c.Probe));
         Assert.Empty(installer.MissingEngine());

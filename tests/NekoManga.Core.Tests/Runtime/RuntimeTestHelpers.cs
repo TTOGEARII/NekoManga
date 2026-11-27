@@ -35,6 +35,7 @@ internal static class RuntimeTestHelpers
     private static readonly Dictionary<string, string> ValidAlternates = new()
     {
         [nameof(AppSettings.TranslateEngine)] = "DeepSeek",
+        [nameof(AppSettings.OcrEngine)] = "MangaOcr",        // Hayai|MangaOcr — 그 밖은 Hayai로 돌아온다(글자 읽기 엔진, 2026-11-27)
         [nameof(AppSettings.SfxMode)] = "Replace",          // Keep|Replace — 그 밖은 Keep으로 돌아온다(효과음 시험 기능, 2026-11-26)
         [nameof(AppSettings.DecensorMode)] = "ComfyRegen",
         [nameof(AppSettings.DecensorLegacyAssist)] = "WhiteMosaic",

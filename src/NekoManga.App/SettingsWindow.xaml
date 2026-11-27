@@ -660,6 +660,15 @@
                                             </ComboBox>
                                         </DockPanel>
                                     </UniformGrid>
+                                    <!-- 글자 읽기 엔진(2026-11-27): 고른 엔진의 모델만 받는다(ComponentInstaller.IsWanted) — 모델이 없는 엔진을 고르면 다음에 켤 때 준비 창이 받으라고 한다 -->
+                                    <DockPanel Style="{StaticResource SetRow}" Margin="0,6,12,3">
+                                        <TextBlock Text="글자 읽기 엔진" Style="{StaticResource SetLabel}"/>
+                                        <ComboBox x:Name="CmbOcrEngine" MinWidth="300" HorizontalAlignment="Left"
+                                                  ToolTip="말풍선의 글자를 읽는 AI다냥. 바꾸면 그 엔진의 모델을 받아야 한다냥(설정 → 구성요소).">
+                                            <ComboBoxItem Tag="Hayai" Content="Hayai OCR (권장 — 손글씨·효과음도 잘 읽는다냥)"/>
+                                            <ComboBoxItem Tag="MangaOcr" Content="manga-ocr (이전 엔진)"/>
+                                        </ComboBox>
+                                    </DockPanel>
                                     <!-- 풍선 밖 효과음(2026-11-26 시험 기능, CarrotMangaTranslator 참고): Keep/Replace는 SfxMode, Dialogue는 TranslateBubbleOnly=false(전부 대사로) -->
                                     <DockPanel Style="{StaticResource SetRow}" Margin="0,6,12,3">
                                         <TextBlock Text="풍선 밖 효과음" Style="{StaticResource SetLabel}"/>
@@ -1135,7 +1144,7 @@
                                 <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="내장 AI 모듈"/></Border>
                                 <StackPanel Style="{StaticResource SideBody}">
                                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Text="• 텍스트 감지 — comictextdetector: 말풍선과 글자 위치를 찾는다냥."/>
-                                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 글자 인식 — manga-ocr: 일본어 세로쓰기 특화 OCR이다냥."/>
+                                    <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 글자 인식 — Hayai OCR(기본) 또는 manga-ocr: 말풍선의 글자를 읽는다냥."/>
                                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 검열 감지 — Aletheia Lens(Mask R-CNN): 막대·모자이크를 찾는다냥.&#10;· 전용 모델(YOLO-seg)이 흰 막대선을 보완한다냥."/>
                                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 기본 검열 제거 — Aletheia Lens(DeepCreamPy): 찾은 자리를 주변에 맞춰 채운다냥.&#10;· '재생성'은 SDXL, '커스텀'은 내 워크플로다냥."/>
                                     <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,3,0,0" Text="• 글자 지움 — LaMa(만화·애니 학습판): 지운 글자 자리를 메운다냥."/>

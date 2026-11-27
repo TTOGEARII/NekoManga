@@ -105,6 +105,8 @@ public class AppSettingsTests
     [InlineData(nameof(AppSettings.DecensorLegacyAssist), "\"Black\"")]
     [InlineData(nameof(AppSettings.DecensorAssistRepair), "\"PConv\"")]
     [InlineData(nameof(AppSettings.OnnxGpu), "\"Maybe\"")]
+    [InlineData(nameof(AppSettings.OcrEngine), "\"Tesseract\"")]        // 모르는 글자 읽기 엔진
+    [InlineData(nameof(AppSettings.OcrEngine), "null")]
     [InlineData(nameof(AppSettings.GpuVendor), "\"intel\"")]
     [InlineData(nameof(AppSettings.DecensorReviewMode), "\"Batch\"")]
     [InlineData(nameof(AppSettings.LetterAlign), "\"Justify\"")]
@@ -127,6 +129,7 @@ public class AppSettingsTests
     [InlineData(nameof(AppSettings.TranslateEngine), "DeepL")]
     [InlineData(nameof(AppSettings.TranslateEngine), "DeepSeek")]
     [InlineData(nameof(AppSettings.TranslateEngine), "Grok")]
+    [InlineData(nameof(AppSettings.OcrEngine), "MangaOcr")]
     [InlineData(nameof(AppSettings.DecensorMode), "ComfyRegen")]
     [InlineData(nameof(AppSettings.DecensorMode), "ComfyCustom")]
     [InlineData(nameof(AppSettings.RegenInpaintControl), "Repaint")]

@@ -99,6 +99,7 @@ public partial class SettingsWindow
 
         SelectComboByTag(CmbTranslator, s.TranslateEngine);
         SelectComboByTag(CmbSource, s.TranslateSource);
+        SelectComboByTag(CmbOcrEngine, s.OcrEngine);
         SelectComboByTag(CmbTarget, s.TranslateTarget);
         SelectComboByTag(CmbSfxMode, s.TranslateBubbleOnly ? s.SfxMode : "Dialogue");   // 풍선 밖 효과음: Keep/Replace(시험 중)/Dialogue(= 전부 대사로, TranslateBubbleOnly 끔)
         TxtGlossary.Text = s.TranslateGlossary.Replace("\n", Environment.NewLine);
@@ -232,6 +233,7 @@ public partial class SettingsWindow
 
         s.TranslateEngine = ComboTag(CmbTranslator, s.TranslateEngine);
         s.TranslateSource = ComboTag(CmbSource, s.TranslateSource);
+        s.OcrEngine = ComboTag(CmbOcrEngine, s.OcrEngine);
         s.TranslateTarget = ComboTag(CmbTarget, s.TranslateTarget);
         var sfx = ComboTag(CmbSfxMode, s.TranslateBubbleOnly ? s.SfxMode : "Dialogue");
         s.TranslateBubbleOnly = sfx != "Dialogue";

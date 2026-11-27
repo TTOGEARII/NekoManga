@@ -27,10 +27,12 @@ public class ColorOptionalTests
         var s = new AppSettings { RuntimeRoot = t.At("rt") };
         var installer = new ComponentInstaller(s);
         Assert.True(s.InstallColor);   // 기본은 받는다
-        Assert.All(ComponentCatalog.All, c => Assert.True(installer.IsWanted(c)));
+        // (글자 읽기 모델은 고른 엔진에 따라 갈린다 — OcrEngineChoiceTests가 본다)
+        var notOcr = ComponentCatalog.All.Where(c => c.Ocr == null).ToList();
+        Assert.All(notOcr, c => Assert.True(installer.IsWanted(c)));
 
         s.InstallColor = false;
-        Assert.All(ComponentCatalog.All, c => Assert.Equal(!c.ColorOnly, installer.IsWanted(c)));
+        Assert.All(notOcr, c => Assert.Equal(!c.ColorOnly, installer.IsWanted(c)));
         // 재생성에 드는 것은 그대로 받는다
         Assert.True(installer.IsWanted(ComponentCatalog.ModelCheckpoint));
         Assert.True(installer.IsWanted(ComponentCatalog.NodeLayerStyle));

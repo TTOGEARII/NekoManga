@@ -59,15 +59,15 @@ public class ComponentInstaller(AppSettings settings)
         !OwnsPython ? []
         : ComponentCatalog.All.Where(c => c.HasDeps && File.Exists(Resolve(c.Probe)) && !File.Exists(DepsMarker(c))).ToList();
 
-    /// <summary>받을 대상인가 — 채색에만 쓰는 구성요소는 설정에서 채색을 뺐으면 받지 않는다. 나머지는 늘 받는다.</summary>
-    public bool IsWanted(Component c) => !c.ColorOnly || settings.InstallColor;
+    /// <summary>받을 대상인가 — 채색에만 쓰는 구성요소는 설정에서 채색을 뺐으면 받지 않고, 글자 읽기 모델은 고른 엔진의 것만 받는다(다른 엔진의 수백 MB를 받지 않게). 나머지는 늘 받는다.</summary>
+    public bool IsWanted(Component c) => (!c.ColorOnly || settings.InstallColor) && (c.Ocr == null || c.Ocr == settings.OcrEngine);
 
     public IReadOnlyList<Component> Missing() =>
         ComponentCatalog.All.Where(c => !IsInstalled(c)).ToList();
 
-    /// <summary>내장 기능(번역·기본 검열제거)에 필요한 것 중 빠진 것.</summary>
+    /// <summary>내장 기능(번역·기본 검열제거)에 필요한 것 중 빠진 것 — 고르지 않은 글자 읽기 엔진의 모델은 필요한 것이 아니다.</summary>
     public IReadOnlyList<Component> MissingEngine() =>
-        ComponentCatalog.EngineComponents.Where(c => !IsInstalled(c)).ToList();
+        ComponentCatalog.EngineComponents.Where(c => IsWanted(c) && !IsInstalled(c)).ToList();
 
     /// <summary>자동 감지(GpuVendor=auto)일 때 그래픽카드 종류를 묻는 함수 — 시험에서 nvidia-smi 대신 넣는다.</summary>
     internal Func<string> DetectVendor = () => SystemCheck.DetectVendor().Vendor;

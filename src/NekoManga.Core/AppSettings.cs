@@ -303,9 +303,13 @@ public class AppSettings
     /// <summary>IPAdapter(표지 주입) 적용 끝 지점(0~1). 높을수록 끝까지 표지 색이 유지된다.</summary>
     public double IpaEndAt { get; set; } = 0.9;
 
-    // ── 번역 (내장 엔진: CTD + manga-ocr + LaMa) ────────────────
+    // ── 번역 (내장 엔진: CTD + 글자 읽기(Hayai OCR 또는 manga-ocr) + LaMa) ────────────────
     /// <summary>"Google"(무료, 기본) · "DeepL" · "DeepSeek" · "Grok" (뒤 셋은 API 키 필요).</summary>
     public string TranslateEngine { get; set; } = "Google";
+    /// <summary>글자 읽기(OCR) 엔진: "Hayai"(기본, 2026-11-27 — Hayai OCR v2.7 Supernova) · "MangaOcr"(v1.18.1까지의 엔진).
+    /// 이 앱의 조각 72개로 잰 글자 오류율이 4.93% → 2.25%이고 손글씨·효과음에서 갈린다(11자 → 1자 / 54자). 고른 엔진의 모델만 받는다(<see cref="Runtime.ComponentInstaller.IsWanted"/>) —
+    /// 고른 엔진의 모델이 없으면 다른 엔진으로 넘어가지 않고 번역이 준비되지 않은 것으로 본다.</summary>
+    public string OcrEngine { get; set; } = "Hayai";
     /// <summary>언어 코드. OCR이 일본어 특화라 원본은 ja 고정 권장.</summary>
     public string TranslateSource { get; set; } = "ja";
     public string TranslateTarget { get; set; } = "ko";
@@ -476,6 +480,7 @@ public class AppSettings
         // Papago 등 구 BT 엔진만 Google로 되돌린다 (DeepSeek·Grok은 유효).
         if (TranslateEngine is not ("Google" or "DeepL" or "DeepSeek" or "Grok")) TranslateEngine = "Google";
         if (SfxMode is not ("Keep" or "Replace")) SfxMode = "Keep";   // 효과음(시험 중) — 모르는 값은 끔(전처럼 그대로 둔다)
+        if (OcrEngine is not ("Hayai" or "MangaOcr")) OcrEngine = "Hayai";
         // 옛 '강력'(SDXL+LoRA)·DeepCream 모드는 2026-10-19 폐기 — 둘 다 기본(내장 LaMa)으로 돌린다
         // ComfyLama(엔진 LaMa)는 2026-11-12 사용자 선택으로 삭제 — 기본으로. '이전 방식' 감지 엔진(DecensorEngine)도 같이 삭제(옛 json의 키는 무시된다)
         if (DecensorMode is not ("Basic" or "ComfyRegen" or "ComfyCustom")) DecensorMode = "Basic";

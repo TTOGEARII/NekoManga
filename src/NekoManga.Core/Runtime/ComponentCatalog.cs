@@ -37,7 +37,9 @@ public record Component(
     string[]? PipPackages = null,
     /// <summary>채색에만 쓰는 구성요소(태거·문자열 노드·IPAdapter) — 준비 창에서 채색을 빼면 받지 않는다(AppSettings.InstallColor).
     /// 재생성 검열 제거가 쓰는 것(ComfyUI·체크포인트·ControlNet·LayerStyle·전처리기 노드)은 여기 넣지 않는다 — 그것은 늘 받는다.</summary>
-    bool ColorOnly = false
+    bool ColorOnly = false,
+    /// <summary>글자 읽기 엔진("Hayai"·"MangaOcr")의 모델이면 그 이름 — 설정에서 그 엔진을 골랐을 때만 받는다(AppSettings.OcrEngine). 나머지는 null.</summary>
+    string? Ocr = null
 )
 {
     /// <summary>파이썬 패키지 설치가 딸린 구성요소인가.</summary>
@@ -49,7 +51,7 @@ public static class ComponentCatalog
 {
     public const string ComfyDirName = "ComfyUI_windows_portable";
 
-    // ── 내장 엔진 모델 (번역·검열 감지·기본 검열제거 — 필수, 총 ~780MB) ──
+    // ── 내장 엔진 모델 (번역·검열 감지·기본 검열제거 — 필수, 총 ~1.0GB: 글자 읽기를 Hayai OCR로 받을 때. manga-ocr면 ~1.1GB) ──
     public static readonly Component ModelCtd = new(
         "model-ctd", Loc.Key("텍스트 감지 모델 (comictextdetector)"), ComponentKind.File,
         "https://huggingface.co/dreMaz/mit_models/resolve/main/comictextdetector.pt.onnx",
@@ -73,20 +75,51 @@ public static class ComponentCatalog
         "models/lama_manga.onnx", "models/lama_manga.onnx", 210_935_000,
         Obsolete: new[] { "models/lama_fp32.onnx" });
 
+    // ── 글자 읽기: Hayai OCR v2.7 Supernova (기본, 2026-11-27 — 원 모델 JustANormalTinkerer/hayai-ocr-v2.7-supernova는 Apache-2.0, 같은 작성자의 ONNX 변환본을 받는다) ──
+    // 반정밀도(fp16) 파일이다 — 이 엔진은 CPU에서만 돌고(HayaiOcr 주석), CPU에서는 전정밀도(fp32, 855MB)와 읽은 글이 같다(조각 83개 전부) · 속도도 같다. 크기는 절반(428MB).
+    // int8(252MB)은 조금 빠르지만(조각마다 252 → 225ms) 묶음에 따라 글이 달라진 조각이 있었다(양자화 연산이 CPU 종류를 탄다) — 쓰지 않는다.
+    // 저장소의 main이 바뀌어도 같은 파일을 받게 판(커밋)을 박아 둔다.
+    private const string HayaiRepo = "https://huggingface.co/JustANormalTinkerer/hayai-ocr-v2.7-supernova-onnx/resolve/bc1e39f962b6c500a4855bd8eb4e02f11483bedb";
+
+    public static readonly Component ModelHayaiPrefill = new(
+        "model-hayai-prefill", Loc.Key("글자 인식 모델 1/2 (Hayai OCR)"), ComponentKind.File,
+        HayaiRepo + "/hayai_prefill_fp16.onnx",
+        "models/hayai_prefill.onnx", "models/hayai_prefill.onnx", 303_632_441,
+        Sha256: "ae5336c2a02d4d3642ae5627c8baa887eeb6df90d41d0001e7cc85bbf574ca54", Ocr: "Hayai");
+
+    public static readonly Component ModelHayaiDecode = new(
+        "model-hayai-decode", Loc.Key("글자 인식 모델 2/2 (Hayai OCR)"), ComponentKind.File,
+        HayaiRepo + "/hayai_decode_fp16.onnx",
+        "models/hayai_decode.onnx", "models/hayai_decode.onnx", 124_728_101,
+        Sha256: "3db27feda91ff581682e7ee2b8244c1d810c818c6d8f8f142e7ac7b519919662", Ocr: "Hayai");
+
+    public static readonly Component ModelHayaiPos = new(
+        "model-hayai-pos", Loc.Key("글자 인식 위치 표 (Hayai OCR)"), ComponentKind.File,
+        HayaiRepo + "/pos_embedding.npy",
+        "models/hayai_pos.npy", "models/hayai_pos.npy", 786_560,
+        Sha256: "39f018f1ad06c8183d0eaa1531186b7241706678304f1bf50814604211ac1039", Ocr: "Hayai");
+
+    public static readonly Component ModelHayaiTokenizer = new(
+        "model-hayai-tokenizer", Loc.Key("글자 인식 사전 (Hayai OCR)"), ComponentKind.File,
+        HayaiRepo + "/tokenizer.json",
+        "models/hayai_tokenizer.json", "models/hayai_tokenizer.json", 1_247_253,
+        Sha256: "f8a0a909c628a684fe463094614e236a8b1d3609e7770f77e7beafaf1056bf13", Ocr: "Hayai");
+
+    // ── 글자 읽기: manga-ocr (v1.18.1까지의 엔진 — 설정에서 고르면 받는다) ──
     public static readonly Component ModelOcrEncoder = new(
         "model-ocr-enc", Loc.Key("글자 인식 모델 1/2 (manga-ocr)"), ComponentKind.File,
         "https://huggingface.co/mayocream/manga-ocr-onnx/resolve/main/encoder_model.onnx",
-        "models/ocr_encoder.onnx", "models/ocr_encoder.onnx", 343_455_000);
+        "models/ocr_encoder.onnx", "models/ocr_encoder.onnx", 343_455_000, Ocr: "MangaOcr");
 
     public static readonly Component ModelOcrDecoder = new(
         "model-ocr-dec", Loc.Key("글자 인식 모델 2/2 (manga-ocr)"), ComponentKind.File,
         "https://huggingface.co/mayocream/manga-ocr-onnx/resolve/main/decoder_model.onnx",
-        "models/ocr_decoder.onnx", "models/ocr_decoder.onnx", 117_481_000);
+        "models/ocr_decoder.onnx", "models/ocr_decoder.onnx", 117_481_000, Ocr: "MangaOcr");
 
     public static readonly Component ModelOcrVocab = new(
-        "model-ocr-vocab", Loc.Key("글자 인식 사전"), ComponentKind.File,
+        "model-ocr-vocab", Loc.Key("글자 인식 사전 (manga-ocr)"), ComponentKind.File,
         "https://huggingface.co/mayocream/manga-ocr-onnx/resolve/main/vocab.txt",
-        "models/ocr_vocab.txt", "models/ocr_vocab.txt", 31_000);
+        "models/ocr_vocab.txt", "models/ocr_vocab.txt", 31_000, Ocr: "MangaOcr");
 
     /// <summary>NekoManga 맞춤 검열 검출 모델 — 이 앱 전용으로 직접 학습했다 (릴리스 자산).
     /// 무검열 원고에 검열을 합성 + 검열/무검열 쌍 diff 실라벨로 학습해, 흰 막대·흰 박스·
@@ -265,7 +298,8 @@ public static class ComponentCatalog
     /// <summary>설치 순서대로. 내장 엔진 모델 먼저, ComfyUI(선택)는 뒤에.</summary>
     public static IReadOnlyList<Component> All { get; } = new[]
     {
-        ModelCtd, ModelLama, ModelOcrEncoder, ModelOcrDecoder, ModelOcrVocab, ModelCensor,
+        ModelCtd, ModelLama, ModelHayaiPrefill, ModelHayaiDecode, ModelHayaiPos, ModelHayaiTokenizer,
+        ModelOcrEncoder, ModelOcrDecoder, ModelOcrVocab, ModelCensor,
         ModelAletheiaDetector, ModelAletheiaBar, ModelAletheiaMosaic,
         SevenZip, ComfyPortable,
         NodeWd14, ModelColorTagger, ModelColorTaggerTags, NodeCustomScripts, NodeLayerStyle, NodeControlnetAux, NodeIpAdapter,
@@ -276,5 +310,5 @@ public static class ComponentCatalog
     public static IEnumerable<Component> ComfyComponents => All.Where(c => c.ForComfy);
 
     public static string FirstRunNote =>
-        Loc.T("번역·기본 검열 제거 모델(1.1GB)과 재생성 엔진(ComfyUI, 약 12GB)을 받는다냥.\n· 채색까지 쓰려면 '채색도 설치'를 체크해 줘냥(약 5GB 더).");
+        Loc.T("번역·기본 검열 제거 모델(1.0GB)과 재생성 엔진(ComfyUI, 약 12GB)을 받는다냥.\n· 채색까지 쓰려면 '채색도 설치'를 체크해 줘냥(약 5GB 더).");
 }
