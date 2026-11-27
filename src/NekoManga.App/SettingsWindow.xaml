@@ -699,6 +699,10 @@
                                     <CheckBox x:Name="ChkKeepEdited" Margin="0,8,0,0" Foreground="{DynamicResource NekoText}"
                                               Content="내가 고친 번역은 다시 돌려도 그대로 둔다냥"
                                               ToolTip="결과 창이나 번역 표로 고친 글은 같은 원고를 다시 돌려도 새 번역으로 덮지 않는다냥. 끄면 전부 새로 번역한다냥"/>
+                                    <!-- 화 전체 검수(2026-11-28, 시험 중·기본 끔 — 사용자의 Carrot 규칙 "전체 판독 뒤 일관성을 확인한다"): 작업이 끝나면 한 번 더 묻는다. 메인 창 [📑 번역 표] 메뉴로 따로 돌릴 수도 있다 -->
+                                    <CheckBox x:Name="ChkChapterReview" Margin="0,8,0,0" Foreground="{DynamicResource NekoText}"
+                                              Content="작업이 끝나면 화 전체를 검수한다냥 (DeepSeek·Grok, 시험 중)"
+                                              ToolTip="끝난 장들의 원문과 번역을 번역기에 통째로 한 번 더 보낸다냥. 이름·용어 표기와 말투가 쪽마다 흔들린 줄만 고치고, 고친 줄은 결과 창에 ↻로 표시된다냥. 메인 창의 [📑 번역 표]에서 따로 돌릴 수도 있다냥"/>
                                     <TextBlock Style="{StaticResource SetHint}" Text="인물 이름·고정 표현을 용어집에 적으면 번역이 흔들리지 않는다냥. 한 줄에 하나, 원문=번역."/>
                                 </StackPanel>
                             </StackPanel>

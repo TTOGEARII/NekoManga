@@ -263,8 +263,8 @@ public partial class ResultWindow
             // 글자 수로 자르지 않는다 — 항목은 폭에서 잘리면 XAML(ItemTemplate의 TextTrimming)이 "…"을 붙이고, 온 글은 툴팁에(2026-11-26, 전에는 22자에서 잘랐다).
             // 줄바꿈(직접 나눈 줄의 \n, 번역기가 준 \r\n)과 겹친 빈칸은 빈칸 하나로 — CR이 남으면 TextBlock이 줄을 바꿔 "…"이 둘째 줄에만 붙는다
             var t = string.Join(" ", _letterBlocks[i].Translation.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-            // ⚠ = 번역을 확인할 줄(다른 번역기로 메움·못 옮김 — 2026-11-27). 목록은 쪽을 열 때 만든다 — 글을 고쳐도 다음에 열 때까지 머리표는 남는다(까닭 줄은 바로 사라진다)
-            CmbBlocks.Items.Add($"{i + 1}. {(_letterBlocks[i].NeedsReview() ? "⚠ " : "")}{(_letterBlocks[i].Hidden ? Loc.T("(숨김) ") : "")}{(_letterBlocks[i].Sfx ? Loc.T("[효과음] ") : "")}{t}");
+            // ⚠ = 번역을 확인할 줄(다른 번역기로 메움·못 옮김 — 2026-11-27), ↻ = 화 전체 검수가 고친 줄(2026-11-28). 목록은 쪽을 열 때 만든다 — 글을 고쳐도 다음에 열 때까지 머리표는 남는다(까닭 줄은 바로 사라진다)
+            CmbBlocks.Items.Add($"{i + 1}. {(!_letterBlocks[i].NeedsReview() ? "" : _letterBlocks[i].Review == ReviewMark.Revised ? "↻ " : "⚠ ")}{(_letterBlocks[i].Hidden ? Loc.T("(숨김) ") : "")}{(_letterBlocks[i].Sfx ? Loc.T("[효과음] ") : "")}{t}");
         }
         if (_letterBlocks.Count > 0) CmbBlocks.SelectedIndex = 0;
         TxtBlockText.Text = _letterBlocks.Count > 0 ? _letterBlocks[0].Translation : "";
@@ -353,10 +353,22 @@ public partial class ResultWindow
     private void ShowBlockReview(TextBlockInfo? b)
     {
         bool show = b != null && b.NeedsReview();
+        bool revised = show && b!.Review == ReviewMark.Revised;   // 화 전체 검수가 고친 줄 — 실패가 아니라 '바뀐 줄'이다. 전의 글을 보여 주고 되돌릴 수 있게 한다
         TxtBlockReview.Text = !show ? ""
+            : revised ? Loc.F($"↻ 화 전체 검수가 고친 줄이다냥 — 전의 글: {string.Join(" ", b!.Prior.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))}")
             : b!.Review == ReviewMark.Filled ? Loc.T("⚠ 고른 번역기가 못 옮겨 다른 번역기(Google)로 메운 줄이다냥 — 글을 확인해 줘냥")
             : Loc.T("⚠ 번역하지 못한 줄이다냥 — 글을 고쳐 줘냥");
         TxtBlockReview.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        BtnRestorePrior.Visibility = revised && b!.Prior.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>[전의 글로 되돌리기] — 화 전체 검수가 고치기 전의 글을 번역 칸에 다시 넣는다(칸의 글이 바뀌면 블록에 담기고 다시 식자된다 — 손으로 친 것과 같은 길).
+    /// 되돌린 글은 번역기의 글(Machine)과 달라 '내가 고친 글'이 된다: 표시가 꺼지고, 다음 검수·다시 번역이 건드리지 않는다.</summary>
+    private void BtnRestorePrior_Click(object sender, RoutedEventArgs e)
+    {
+        int i = CmbBlocks.SelectedIndex;
+        if (i < 0 || i >= _letterBlocks.Count || string.IsNullOrEmpty(_letterBlocks[i].Prior)) return;
+        TxtBlockText.Text = _letterBlocks[i].Prior;
     }
 
     /// <summary>자동인 크기·외곽선 칸에 지금 그려진 값(px)을 적는다 — 그 숫자에서 고쳐 나갈 수 있게. 치는 중인 칸은 건드리지 않는다(force가 아니면).</summary>

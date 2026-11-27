@@ -104,6 +104,14 @@ public class DeepLTranslator(string apiKey) : ITranslator
         => TranslateAsync(texts.Select(t => Glossary.ApplySource(t, options.Glossary)).ToList(), sourceLang, targetLang, ct);
 }
 
+/// <summary>지시문과 글을 보내면 글로 답하는 모델(OpenAI 호환 chat) — 번역 말고 다른 일을 물을 때 쓴다(화 전체 검수 <see cref="Pipeline.ChapterReview"/>).
+/// <see cref="LlmTranslator"/>가 구현한다(DeepSeek·Grok). 번역만 하는 번역기(Google·DeepL)는 구현하지 않는다 — 그 번역기를 고른 설정에서는 이 일을 할 수 없다고 화면이 알린다.
+/// 못 답하면 던진다(HTTP 오류·제한 시간·끊긴 답) — 반쯤 받은 답을 돌려주지 않는다.</summary>
+public interface IChatModel
+{
+    Task<string> AskAsync(string system, string user, int maxTokens, CancellationToken ct);
+}
+
 /// <summary>OpenAI 호환 chat completions API를 쓰는 LLM 번역기 (DeepSeek·Grok·기타 호환 엔드포인트).
 /// 만화 맥락을 살리려 한 페이지의 말풍선을 번호로 묶어 한 번에 번역하고 번호로 되돌린다.
 ///
@@ -112,9 +120,11 @@ public class DeepLTranslator(string apiKey) : ITranslator
 /// 원문이 그대로 들어간다 (실측: 8줄 1536토큰 상한 → reasoning_tokens 1536, content "" → 06·10·13·22장 전부 미번역).
 /// 대책: ① DeepSeek은 thinking을 끈다 (번역엔 불필요, 20초→1.6초) ② 상한을 넉넉히 ③ 그래도 비면 상한을 키워 한 번 더
 /// ④ 끝내 못 받은 줄은 Google로 메운다 — 원문을 그대로 두는 것보다 낫다.</summary>
-public class LlmTranslator(string endpoint, string apiKey, string model, string engineName, bool disableThinking = false) : ITranslator
+public class LlmTranslator(string endpoint, string apiKey, string model, string engineName, bool disableThinking = false) : ITranslator, IChatModel
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(150) };
+    /// <summary>화 전체 검수용 — 한 화(수백 줄)를 한 번에 보내고 고친 줄을 받는다. 쪽 하나의 번역보다 답이 늦다(추론 모델은 더).</summary>
+    private static readonly HttpClient LongHttp = new() { Timeout = TimeSpan.FromSeconds(300) };
 
     public bool AnswersVary => true;
 
@@ -213,6 +223,54 @@ public class LlmTranslator(string endpoint, string apiKey, string model, string 
         return result;
     }
 
+    /// <summary>지시문과 글을 그대로 보내고 답의 본문을 돌려준다(<see cref="IChatModel"/> — 화 전체 검수). 번역 요청과 달리 다른 번역기로 넘어가지 않는다:
+    /// 네트워크 오류는 한 번 다시 보내고, thinking 파라미터를 모르는 모델이면 그것 없이 다시 보내고, 답이 길이로 끊기면 상한을 한 번 키워 다시 묻는다 —
+    /// 그래도 끊기면 받은 데까지 쓰지 않고 던진다(끊긴 마지막 줄이 번역으로 들어가지 않게). 제한 시간(300초)을 넘기면 <see cref="TimeoutException"/>(사용자 취소와 가른다).</summary>
+    public async Task<string> AskAsync(string system, string user, int maxTokens, CancellationToken ct)
+    {
+        bool thinkingOff = disableThinking, resent = false, grown = false;
+        while (true)
+        {
+            var body = BuildRequestBody(model, system, user, maxTokens, thinkingOff, null);
+            HttpResponseMessage resp;
+            try
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Post, endpoint);
+                req.Headers.Add("Authorization", $"Bearer {apiKey}");
+                req.Content = new StringContent(body.ToJsonString(), System.Text.Encoding.UTF8, "application/json");
+                resp = await LongHttp.SendAsync(req, ct);
+            }
+            catch (HttpRequestException) when (!resent)
+            {
+                resent = true;
+                await Task.Delay(2000, ct);
+                continue;
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                throw new TimeoutException(Loc.F($"{engineName}의 답이 너무 늦다냥 — 잠시 뒤에 다시 해 줘냥."));
+            }
+            using var _ = resp;
+            var text = await resp.Content.ReadAsStringAsync(ct);
+            if (!resp.IsSuccessStatusCode)
+            {
+                if (thinkingOff && (int)resp.StatusCode == 400) { thinkingOff = false; continue; }
+                throw new InvalidOperationException(Loc.F($"{engineName} 오류 (HTTP {(int)resp.StatusCode}) — 설정의 API 키를 확인해 줘냥."));
+            }
+            var choice = JsonNode.Parse(text)?["choices"]?[0];
+            var content = choice?["message"]?["content"]?.GetValue<string>() ?? "";
+            var finish = choice?["finish_reason"]?.GetValue<string>() ?? "";
+            if (Environment.GetEnvironmentVariable("NEKO_TRANSLATE_DBG") is { Length: > 0 } dbg)
+                try { File.AppendAllText(dbg, $"=== {engineName} {model} (ask, max {maxTokens}, finish {finish})\n--- system\n{system}\n--- user\n{user}\n--- answer\n{content}\n\n"); } catch { }   // loc:none
+            if (finish == "length")
+            {
+                if (!grown && maxTokens < 32768) { grown = true; maxTokens = Math.Min(32768, maxTokens * 4); continue; }
+                throw new InvalidOperationException(Loc.F($"{engineName}의 답이 너무 길어 끝까지 받지 못했다냥."));
+            }
+            return content;
+        }
+    }
+
     private static readonly Regex ThinkTag = new(@"<think>[\s\S]*?</think>", RegexOptions.Compiled);
     private static readonly Regex NumberedLine = new(@"^(?:\[(\d+)\]|(\d+)[\.\):])\s*(.*)$", RegexOptions.Compiled);
     private static readonly Regex PlaceTag = new(@"^\s*<\d{1,3}\s*,\s*\d{1,3}>\s*", RegexOptions.Compiled);
@@ -293,12 +351,7 @@ public class LlmTranslator(string endpoint, string apiKey, string model, string 
               .Append($"- Write the output entirely in {tgtName}: never leave {srcName} characters such as kana, kanji or the prolonged-sound mark ー in it (render stretched sounds with ~ or {tgtName} letters; drop a cut-off small っ, or show the cut-off with ! or …).\n")
               .Append("- The source text was read by OCR, so a line may contain a misread character or be only a fragment. When the surrounding bubbles make the intended words clear, translate those; ")
               .Append("otherwise translate what is written as plainly as you can. Never invent new content, and never spell out a line sound by sound: for an unreadable scrap, write the short natural reaction that fits the scene.\n")
-              .Append(g.Honorifics switch
-              {
-                  "Natural" => $"- Adapt name honorifics (-chan, -kun, -san, -sama, senpai …) to the way natural {tgtName} addresses the person: drop them where a {tgtName} speaker would just use the name, and use native terms of address where they fit.\n",
-                  "Drop" => "- Leave out name honorifics (-chan, -kun, -san, -sama …): use the bare name.\n",
-                  _ => $"- Keep name honorifics (-chan, -kun, -san, -sama, senpai …) in their customary {tgtName} form right after the name.\n",
-              });
+              .Append(HonorificRule(g.Honorifics, tgtName));
             if (g.Tone == "Literal") sb.Append("- Stay close to the wording of the original: do not embellish or localize beyond what the grammar needs.\n");
             if (o.Places is { Count: > 0 })
                 sb.Append("- Each line starts with the bubble's position on the page as <x,y> in percent (0,0 is the top-left corner, 100,100 the bottom-right). ")
@@ -337,7 +390,15 @@ public class LlmTranslator(string endpoint, string apiKey, string model, string 
     };
 
     // 프롬프트에 넣을 이름일 뿐 언어 판정(LangCode)이 아니다 — zh-TW·zh-Hans 같은 꼴은 코드 그대로 넘어가 간체·번체 구분이 프롬프트에 남는다
-    private static string LangName(string code) => code switch
+    /// <summary>이름 뒤 호칭(경칭)의 지침 한 줄 — 설정 TranslateHonorifics("Keep"·"Natural"·"Drop"). 번역과 화 전체 검수(<see cref="Pipeline.ChapterReview"/>)가 같은 글을 쓴다.</summary>
+    internal static string HonorificRule(string honorifics, string tgtName) => honorifics switch
+    {
+        "Natural" => $"- Adapt name honorifics (-chan, -kun, -san, -sama, senpai …) to the way natural {tgtName} addresses the person: drop them where a {tgtName} speaker would just use the name, and use native terms of address where they fit.\n",
+        "Drop" => "- Leave out name honorifics (-chan, -kun, -san, -sama …): use the bare name.\n",
+        _ => $"- Keep name honorifics (-chan, -kun, -san, -sama, senpai …) in their customary {tgtName} form right after the name.\n",
+    };
+
+    internal static string LangName(string code) => code switch
     {
         "ja" => "Japanese", "ko" => "Korean", "en" => "English", "zh" => "Chinese", _ => code,
     };

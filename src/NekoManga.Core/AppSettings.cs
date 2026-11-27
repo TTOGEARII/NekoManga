@@ -34,6 +34,9 @@ public class AppSettings
     /// <summary>결과 창·검수 표로 고친 번역은 같은 원고를 다시 돌려도 그대로 둔다(2026-11-27 — 사용자의 Carrot 규칙 "사용자가 확정한 문자열은 다시 번역하지 않는다"). 끄면 전처럼 전부 새 번역으로 바뀐다.
     /// 고친 글 = 식자 정보에 남은 번역기의 글(<see cref="Engine.TextBlockInfo.Machine"/>)과 다른 글 — 이 기능이 생기기 전의 결과는 알 수 없어 지키지 못한다.</summary>
     public bool TranslateKeepEdited { get; set; } = true;
+    /// <summary>작업이 끝나면 화 전체 검수도 한다(2026-11-28, 시험 중 — 기본 끔): 끝난 장들의 원문·번역을 LLM 번역기에 통째로 한 번 더 보내 이름·용어 표기와 말투가 쪽마다 흔들린 줄만 고친다
+    /// (<see cref="Pipeline.ChapterReview"/>). 메인 창의 [📑 번역 표] 메뉴로 따로 돌릴 수도 있다. DeepSeek·Grok에서만 — 다른 번역기면 안 된다고 알린다.</summary>
+    public bool TranslateChapterReview { get; set; }
 
     // ── 경로 ──────────────────────────────────────────────────
     /// <summary>ComfyUI·BallonsTranslator·모델이 설치되는 루트. 용량이 커서(약 15GB) 여유 있는 드라이브 권장.</summary>

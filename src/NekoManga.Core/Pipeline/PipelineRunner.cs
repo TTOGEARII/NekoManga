@@ -540,7 +540,7 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
     internal static string? ReviewWarning(IReadOnlyList<TextBlockInfo> blocks)
     {
         int filled = blocks.Count(b => b.NeedsReview() && b.Review == ReviewMark.Filled);
-        int failed = blocks.Count(b => b.NeedsReview() && b.Review != ReviewMark.Filled);
+        int failed = blocks.Count(b => b.NeedsReview() && b.Review != ReviewMark.Filled && b.Review != ReviewMark.Revised);   // 화 전체 검수가 고친 줄은 실패가 아니다
         if (filled + failed == 0) return null;
         return Loc.F($"번역을 확인할 줄 {filled + failed}개다냥 (다른 번역기로 메움 {filled} · 못 옮김 {failed}) — 결과 창 식자 탭의 ⚠ 표시를 보라냥");
     }

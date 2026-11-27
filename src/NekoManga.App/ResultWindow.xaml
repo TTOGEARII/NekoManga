@@ -364,6 +364,9 @@
                                         </DockPanel>
                                         <!-- 번역을 확인할 줄(2026-11-27): 고른 번역기가 못 옮겨 다른 번역기로 메웠거나 끝내 못 옮긴 줄의 까닭 — 글을 고치면 사라진다(TextBlockInfo.NeedsReview, ShowBlockReview) -->
                                         <TextBlock x:Name="TxtBlockReview" Visibility="Collapsed" TextWrapping="Wrap" Foreground="{DynamicResource NekoPink}" Margin="0,0,0,6"/>
+                                        <!-- 화 전체 검수가 고친 줄(2026-11-28)만: 전의 글(번역기의 글)로 되돌린다 — 되돌린 글은 '내가 고친 글'이 되어 다음 검수·다시 번역이 건드리지 않는다 -->
+                                        <ui:Button x:Name="BtnRestorePrior" Content="전의 글로 되돌리기" Visibility="Collapsed" Click="BtnRestorePrior_Click" Padding="10,4" Margin="0,0,0,6"
+                                                   ToolTip="화 전체 검수가 고치기 전의 번역으로 되돌린다냥 — 되돌린 글은 다음 검수가 건드리지 않는다냥"/>
                                         <!-- 여러 줄: Enter로 줄을 나눈다(풍선을 두 번 클릭해 그 자리에서 고치는 것과 같은 글). 높이 상한 없음 — 긴 글은 칸이 늘어난다(원문 칸과 같게, 2026-11-26) -->
                                         <TextBox x:Name="TxtBlockText" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="56"
                                                  TextChanged="TxtBlockText_Changed" Margin="0,0,0,6"/>

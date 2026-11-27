@@ -105,6 +105,7 @@ public partial class SettingsWindow
         TxtGlossary.Text = s.TranslateGlossary.Replace("\n", Environment.NewLine);
         ChkCarryContext.IsChecked = s.TranslateCarryContext;
         ChkKeepEdited.IsChecked = s.TranslateKeepEdited;
+        ChkChapterReview.IsChecked = s.TranslateChapterReview;
         // 번역 지침(2026-11-27): 호칭·말투·인물 메모·작품 메모·쪽 그림 보내기(시험 중)
         SelectComboByTag(CmbHonorifics, s.TranslateHonorifics);
         SelectComboByTag(CmbTone, s.TranslateTone);
@@ -256,6 +257,7 @@ public partial class SettingsWindow
         s.TranslateGlossary = TxtGlossary.Text.Replace("\r\n", "\n").Trim();
         s.TranslateCarryContext = ChkCarryContext.IsChecked == true;
         s.TranslateKeepEdited = ChkKeepEdited.IsChecked == true;
+        s.TranslateChapterReview = ChkChapterReview.IsChecked == true;
         s.TranslateHonorifics = ComboTag(CmbHonorifics, s.TranslateHonorifics);
         s.TranslateTone = ComboTag(CmbTone, s.TranslateTone);
         s.TranslateCharacters = TxtCharacters.Text.Replace("\r\n", "\n").Trim();

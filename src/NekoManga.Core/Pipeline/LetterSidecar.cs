@@ -45,6 +45,29 @@ public record LetterSidecar(
         ImgIo.WriteAllTextAtomic(path, JsonSerializer.Serialize(this));
     }
 
+    /// <summary>블록을 고친 이 식자 정보로 결과물을 다시 식자하고 저장한다(번역 표 들여오기·화 전체 검수가 같이 쓰는 길 — 결과물을 제자리에 덮는다).
+    /// 임시 파일에 먼저 그린다 — 못 그리면 식자 정보도 결과물도 옛 것 그대로(둘이 어긋나지 않게). 좌표는 박제한 원본 크기로 환산한다(원고를 옮겼어도 제자리에).
+    /// 결과물을 못 바꾸면(다른 프로그램이 쥐고 있다) 방금 쓴 식자 정보를 전의 것으로 되돌리고 던진다 — 식자 정보만 새 글이면 결과 창의 글과 그림이 어긋난 채 남는다(검토 2026-11-28: 전에는 그렇게 남았다).
+    /// 마스크 사이드카·주인 기록은 건드리지 않는다(같은 원고의 글만 바뀐다).</summary>
+    public void SaveAndRender(string outPath, AppSettings settings)
+    {
+        var tmp = Path.Combine(Path.GetTempPath(), $"neko-sheet-{Guid.NewGuid():N}.png");
+        var jsonPath = JsonPathFor(outPath);
+        try
+        {
+            TextRenderer.RenderBlocks(BasePath, Source, SrcW, SrcH, Blocks, tmp, settings, CommonSize);
+            var before = File.Exists(jsonPath) ? File.ReadAllText(jsonPath) : null;
+            Save(outPath);   // 고친 글이 다음 다시 렌더링·결과 창에도 남게
+            try { File.Copy(tmp, outPath, overwrite: true); }
+            catch
+            {
+                try { if (before != null) ImgIo.WriteAllTextAtomic(jsonPath, before); else File.Delete(jsonPath); } catch { }   // 되는 데까지 — 못 되돌려도 처음의 까닭을 던진다
+                throw;
+            }
+        }
+        finally { try { File.Delete(tmp); } catch { } }
+    }
+
     /// <summary>옛 이름(v1.5.5까지의 <c>&lt;원고 이름&gt;</c>)의 사이드카를 새 이름으로 옮긴다 — 결과 이름 규칙이 바뀐 뒤 한 번만 쓰인다.
     /// 새 이름 자리에 이미 사이드카가 있으면 건드리지 않는다.</summary>
     public static void MoveLegacy(string fromOut, string toOut)

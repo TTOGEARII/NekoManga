@@ -229,6 +229,10 @@
                             <ContextMenu>
                                 <MenuItem Header="내보내기 (CSV)…" Click="ReviewExport_Click"/>
                                 <MenuItem Header="들여와 고친 글 적용 (CSV)…" Click="ReviewImport_Click"/>
+                                <Separator/>
+                                <!-- 화 전체 검수(2026-11-28): 목록의 장 전부를 한 화로 보고 LLM 번역기에 통째로 보내 흔들린 줄만 고친다(MainWindow.ReviewSheet.cs → ChapterReview) -->
+                                <MenuItem Header="화 전체 검수 (DeepSeek·Grok)" Click="ChapterReview_Click"
+                                          ToolTip="목록의 장 전부를 한 화로 보고 원문과 번역을 번역기에 통째로 보낸다냥. 이름·용어 표기와 말투가 쪽마다 흔들린 줄만 고쳐 다시 식자한다냥"/>
                             </ContextMenu>
                         </ui:Button.ContextMenu>
                     </ui:Button>

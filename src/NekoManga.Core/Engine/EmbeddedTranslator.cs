@@ -33,13 +33,14 @@ public record TextBlockInfo(
     bool Added = false,            // 결과 창 [새 글 넣기]로 넣은 블록 — 원문이 없다. 지우면 숨기지 않고 목록에서 뺀다
     bool Sfx = false,              // 풍선 밖 효과음(2026-11-26 시험 기능, SfxMode=Replace): 원문을 지우고 그 자리에 굵게 덮는다 — 풍선을 재지 않고 자리에 맞춘 크기, 세로면 글자를 쌓는다(TextRenderer.SfxStyle). 옛 json에는 없다 → false
     string Machine = "",           // 번역기가 낸 글(식자한 그대로, 2026-11-27) — Translation이 이것과 다르면 사용자가 고친 글이다(IsEdited). 옛 json에는 없다 → ""(고쳤는지 알 수 없다)
-    string Review = "",            // 번역을 확인할 까닭(ReviewMark.Filled = 다른 번역기로 메움 · Failed = 못 옮김), 비면 없음. 글을 고치면 표시는 보이지 않는다(NeedsReview). 옛 json에는 없다 → ""
+    string Review = "",            // 번역을 확인할 까닭(ReviewMark.Filled = 다른 번역기로 메움 · Failed = 못 옮김 · Revised = 화 전체 검수가 고침), 비면 없음. 글을 고치면 표시는 보이지 않는다(NeedsReview). 옛 json에는 없다 → ""
     // 아래 셋은 원문 글자를 픽셀에서 잰 값(SourceGlyph, 2026-11-27 — 식자가 원문의 크기·굵기·글꼴을 따라간다). 판정이 아니라 잰 값이다(굵게·명조의 문턱은 식자할 때 건다 — 고쳐도 다시 번역하지 않는다).
     // 옛 json에는 없다 → 0 = 못 쟀다(그 블록은 전처럼 식자된다)
     double SrcEm = 0,              // 글자 한 칸의 크기(원본 그림의 px)
     double SrcStroke = 0,          // 고른 획 굵기 ÷ SrcEm(실측: 본문 0.05~0.085, 굵은 고딕 0.10, 아주 굵은 글 0.15)
     double SrcThick = 0,           // 굵은 획의 굵기 ÷ SrcEm — 굵기 판정이 보는 값(실측: 가는 글꼴 0.08~0.10, 보통 본문·굵은 고딕 0.13~0.16, 아주 굵은 글 0.22)
-    double SrcContrast = 0)        // 세로 획 굵기 ÷ 가로 획 굵기(명조 2 이상, 고딕 1쯤). 0 = 곧은 획이 모자라 못 쟀다
+    double SrcContrast = 0,        // 세로 획 굵기 ÷ 가로 획 굵기(명조 2 이상, 고딕 1쯤). 0 = 곧은 획이 모자라 못 쟀다
+    string Prior = "")             // 화 전체 검수(ChapterReview)가 고치기 전의 글 — Review가 Revised일 때 결과 창이 보여 주고 되돌릴 수 있다. 두 번 검수해도 맨 처음 번역기의 글이 남는다. 옛 json에는 없다 → ""
 {
     /// <summary>결과 창 식자 탭이 번역 글 위에 보여 주는 원문(OCR 글) — 앞뒤 빈칸·줄 바꿈을 뗀다(2026-11-26 사용자 요청).
     /// 빈 글이면 창이 칸을 접는다: [새 글 넣기]로 만든 글은 원문이 ""이고, 옛 json에 칸이 없으면 null로 들어온다.</summary>
@@ -121,6 +122,8 @@ public static class ReviewMark
     public const string Filled = "Filled";
     /// <summary>끝까지 검증에 걸렸거나 답이 없었다 — 걸린 답이나 원문이 그대로 식자된다.</summary>
     public const string Failed = "Failed";
+    /// <summary>화 전체 검수(<see cref="Pipeline.ChapterReview"/>)가 고친 줄 — 전의 글은 <see cref="TextBlockInfo.Prior"/>. 실패가 아니라 '바뀐 줄'이다(장의 경고에는 세지 않는다).</summary>
+    public const string Revised = "Revised";
 }
 
 /// <param name="RegenMaskPath">글자 지운 자리 가운데 SDXL로 다시 그릴 곳의 마스크(쪽 크기 PNG, 255 = 대상) — 설정(TextRegen)이 꺼져 있거나 대상이 없으면 null. 러너(PipelineRunner.TextRegenFileAsync)가 읽는다.</param>

@@ -497,9 +497,20 @@ public partial class MainWindow
             await Task.Run(() => runner.RunAsync(files, progress, _cts.Token));
             RefreshResultViews();         // 목록 썸네일·미리보기를 결과물로 바꿔 바로 확인할 수 있게
             var failed = _rows.Count(r => r.Failed);
-            TxtStatus.Text = failed == 0
+            var done = failed == 0
                 ? Loc.F($"전부 완료다냥! 총 {_rows.Count}장 (ﾉ´ヮ`)ﾉ*:･ﾟ✧")
                 : Loc.F($"완료 — 성공 {_rows.Count - failed}장 / 실패 {failed}장");
+            TxtStatus.Text = done;
+            // 화 전체 검수(설정에서 켰을 때만, 2026-11-28): 목록의 끝난 장 전부를 한 화로 본다 — [멈추기]로 그만둘 수 있다(그때는 아래의 '멈췄다냥'으로 간다. 장들은 이미 끝나 있다)
+            if (s.EnableTranslate && s.TranslateChapterReview)
+            {
+                string note;
+                try { note = await ChapterReviewAsync(_rows.Where(r => r.Done && !r.Failed).Select(OutPathOf).ToList(), s, _cts.Token); }
+                catch (OperationCanceledException) { note = Loc.T("화 전체 검수를 멈췄다냥 — 결과는 그대로다냥"); }   // 작업은 이미 끝났다 — '멈췄다냥'으로 덮지 않는다
+                RefreshThumbsAfterReletter();
+                ShowPreview(FileList.SelectedItem as FileRow);
+                TxtStatus.Text = done + " · " + note;
+            }
         }
         catch (OperationCanceledException)
         {
@@ -749,6 +760,8 @@ public partial class MainWindow
         }
         // 업데이트를 다 받으면 앱이 곧장 다시 시작된다 — 그사이 수정 창에서 [지우기]를 돌리거나 고치던 것이 말없이 끊기지 않게
         if (_updating) { TxtStatus.Text = Loc.T("업데이트를 받는 중이다냥 — 곧 앱이 다시 시작된다냥"); return; }
+        // 화 전체 검수가 도는 동안에는 열지 않는다(단추는 꺼 두지만 목록의 두 번 클릭은 이리로 온다) — 창에서 고친 것과 검수의 고침이 서로를 덮는다
+        if (_chapterReviewing) { TxtStatus.Text = Loc.T("화 전체 검수 중이다냥 — 끝난 뒤에 열어 줘냥"); return; }
 
         // 창 안에서 ◀ ▶로 넘겨볼 수 있게 목록 전체를 넘긴다 (결과물 경로도 함께 — .neko 사이드카 위치)
         var pages = _rows.Select(r => new ResultWindow.PageRef(r.ViewPath, OutPathOf(r), r.Path)).ToList();
