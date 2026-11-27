@@ -305,6 +305,9 @@ public partial class PipelineRunner
         /// <summary>번역(글자 지움) 뒤의 원고 경로 — 검토 창이 보여 주는 그림이자 검열 제거 입력.</summary>
         public string WorkPath { get; set; } = file;
         public IReadOnlyList<TextBlockInfo> Blocks { get; set; } = Array.Empty<TextBlockInfo>();
+        /// <summary>원본의 크기(px) — 1차의 번역이 원본을 읽을 때 적어 둔다. 2차의 식자가 원본을 크기만 보려고 다시 읽지 않는다. 0 = 모른다(1차를 돌지 않은 다시 렌더링 — 그때는 원본에서 읽는다).</summary>
+        public int SrcW { get; set; }
+        public int SrcH { get; set; }
         /// <summary>결과 창이 붙든 쪽 공통 글자 크기(식자 사이드카의 CommonSize) — 다시 렌더링의 식자도 이 값으로 해야 손대지 않은 풍선의 크기가 그대로다. 0 = 구한다.</summary>
         public double LetterCommon { get; set; }
         public Mat? Mask { get; set; }

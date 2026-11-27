@@ -130,7 +130,9 @@ public static class ReviewMark
 
 /// <param name="RegenMaskPath">글자 지운 자리 가운데 SDXL로 다시 그릴 곳의 마스크(쪽 크기 PNG, 255 = 대상) — 설정(TextRegen)이 꺼져 있거나 대상이 없으면 null. 러너(PipelineRunner.TextRegenFileAsync)가 읽는다.</param>
 /// <param name="RegenBlocks">그 마스크에 든 블록 수 — 진행 줄에 보인다(대상 고르기가 몇 개나 SDXL로 보냈는가).</param>
-public record PageTranslation(string InpaintedPath, IReadOnlyList<TextBlockInfo> Blocks, string? RegenMaskPath = null, int RegenBlocks = 0);
+/// <param name="Width">읽은 그림의 폭(px) — 블록 좌표의 기준이다. 러너의 2차가 식자할 때 원본을 크기만 보려고 다시 디코드하지 않게 넘긴다(2026-11-28 — 쪽마다 112ms씩 두 번이었다). 0 = 모른다.</param>
+/// <param name="Height">읽은 그림의 높이(px).</param>
+public record PageTranslation(string InpaintedPath, IReadOnlyList<TextBlockInfo> Blocks, string? RegenMaskPath = null, int RegenBlocks = 0, int Width = 0, int Height = 0);
 
 /// <summary>감지한 글 블록의 역할(2026-11-26): 대사 | 풍선 밖 효과음(지우고 번역으로 덮는다 — 시험 중) | 뺀다(풍선 밖 효과음을 그대로 두는 옛 동작).</summary>
 public enum BlockRole { Dialogue, Sfx, Drop }
@@ -502,7 +504,7 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         Lap("저장");   // loc:none
         if (Environment.GetEnvironmentVariable("NEKO_TIMING") is { Length: > 0 } timing)
             try { File.AppendAllText(timing, Path.GetFileName(imagePath) + ": " + string.Join(", ", laps) + Environment.NewLine); } catch { }
-        return new PageTranslation(outPath, result, regenPath, regenPath != null ? regenBlocks : 0);
+        return new PageTranslation(outPath, result, regenPath, regenPath != null ? regenBlocks : 0, img.Cols, img.Rows);
     }
 
     /// <summary>앞 쪽의 대사(원문→번역) — 한 작업(러너가 쪽마다 같은 EmbeddedTranslator를 쓴다) 안에서 다음 쪽의 LLM 번역에 문맥으로 넘긴다(TranslateCarryContext).</summary>

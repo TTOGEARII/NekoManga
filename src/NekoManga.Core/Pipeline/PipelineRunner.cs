@@ -290,7 +290,9 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
             }
             // 다음 쪽(아직 1차를 돌지 않아 작업 그림이 원고다)을 알려 준다 — 번역 응답을 기다리는 동안 그 쪽의 감지·글자 읽기를 미리 돌린다
             string? next = cx.Pages is { } all && i + 1 < all.Count ? all[i + 1].WorkPath : null;
+            bool fromSource = string.Equals(pg.WorkPath, pg.File, StringComparison.OrdinalIgnoreCase);
             var tr = await cx.Translator.TranslatePageAsync(pg.WorkPath, cx.WorkDir, status, cx.Ct, pg.WorkKey, next, previous);
+            if (fromSource) (pg.SrcW, pg.SrcH) = (tr.Width, tr.Height);   // 번역기가 읽은 것이 원본이다 — 그 크기를 2차의 식자에 넘긴다(원본을 다시 디코드하지 않게)
             pg.WorkPath = tr.InpaintedPath;
             pg.Blocks = tr.Blocks;
             // 다른 번역기로 메웠거나 못 옮긴 줄이 있으면 그 장의 경고로 남긴다 — 전에는 흔적 없이 '완료'였다(원문이 그대로 식자된 줄도)
@@ -464,20 +466,7 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         if (blocks.Count > 0)
         {
             progress.Report(new(name, Loc.T("식자 중이다냥"), 92));
-            Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
-
-            // 식자 전 원고와 블록을 남겨 둔다 — 결과 보기 창의 식자 탭이
-            // 글꼴·색·번역문을 바꿔 다시 식자할 때 쓴다 (없으면 번역부터 다시 돌려야 한다).
-            using (var baseImg = ImgIo.Read(work))
-            using (var srcImg = ImgIo.Read(file))
-                if (!baseImg.Empty() && !srcImg.Empty())
-                {
-                    ImgIo.Write(LetterSidecar.BasePathFor(outPath), baseImg);
-                    new LetterSidecar(file, srcImg.Width, srcImg.Height,
-                        LetterSidecar.BasePathFor(outPath), [.. blocks], SrcLen: MaskSidecar.LengthOf(file), CommonSize: pg.LetterCommon, Target: settings.TranslateTarget).Save(outPath);
-                }
-
-            TextRenderer.RenderBlocks(work, file, 0, 0, blocks, outPath, settings, pg.LetterCommon);
+            LetterAndSave(work, file, blocks, outPath, settings, pg.LetterCommon, pg.SrcW, pg.SrcH, IsOurWorkPng(cx.WorkDir, work));
         }
         else if (work == file)
         {
@@ -565,6 +554,45 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
     private static void Report(IProgress<PageProgress> p, IReadOnlyList<string> files, string stage, double pct)
     {
         foreach (var f in files) p.Report(new(f, stage, pct));
+    }
+
+    /// <summary>작업 그림(<paramref name="work"/>)이 **이 작업이 쓴 글자 지운 그림**인가 — 작업 폴더 안의 <c>*.inpainted.png</c>. 그런 그림은 우리 인코더가 BGR 8비트로 쓴 것이라
+    /// 식자 전 원고로 그대로 복사해도 디코드해 다시 인코딩한 것과 바이트까지 같다. 채색 결과(ComfyUI가 쓴 png — 워크플로가 박혀 있고 알파가 있을 수 있다)·원본 그대로·다시 렌더링의 그림은 아니다.
+    /// 검열 제거 뒤의 그림(<c>*.decensored.png</c>)도 넣지 않았다: 같은 인코더가 쓴 것이지만 검열 제거를 지난 결과물을 다루는 길은 전과 한 걸음도 다르지 않게 둔다.</summary>
+    internal static bool IsOurWorkPng(string workDir, string work)
+    {
+        try
+        {
+            return work.EndsWith(".inpainted.png", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(Path.GetFullPath(Path.GetDirectoryName(work) ?? ""), Path.GetFullPath(workDir), StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }   // 이상한 경로 — 아니라고 보고 전처럼 다시 인코딩한다
+    }
+
+    /// <summary>식자 걸음(2차의 끝): 식자 전 원고와 식자 정보를 결과의 .neko에 남기고(결과 창 식자 탭이 글꼴·색·번역문을 바꿔 다시 식자할 때 쓴다 — 없으면 번역부터 다시 돌려야 한다),
+    /// 번역 글을 그려 결과물을 쓴다. 만드는 것은 전과 같다 — 쪽마다 하던 헛일만 뺐다(2026-11-28, 실제 38쪽의 식자 단계 36초: 쪽마다 0.95초 가운데 0.5초가 이것이었다):
+    /// · 원본을 크기만 보려고 두 번 디코드했다(식자 정보에 적을 때·식자의 비율을 구할 때, 112ms씩) → 1차가 적어 둔 크기(<paramref name="srcW"/>·<paramref name="srcH"/>)를 쓴다. 0이면 전처럼 원본에서 읽는다.
+    /// · 작업 그림을 두 번 디코드했다(75ms) → 한 번 읽은 것으로 식자한다.
+    /// · 식자 전 원고를 디코드해 다시 인코딩했다(162ms) → 이 작업이 쓴 png면(<paramref name="workIsOurPng"/> — <see cref="IsOurWorkPng"/>) 파일을 복사한다(바이트까지 같다).
+    /// 작업 그림을 못 읽으면 전처럼 그 장의 실패다(식자 정보도 남기지 않는다).</summary>
+    internal static void LetterAndSave(string work, string file, IReadOnlyList<TextBlockInfo> blocks, string outPath, AppSettings settings, double commonSize,
+        int srcW, int srcH, bool workIsOurPng)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
+        using var baseImg = ImgIo.Read(work);
+        if (srcW <= 0 || srcH <= 0)
+        {
+            using var srcImg = ImgIo.Read(file);
+            (srcW, srcH) = srcImg.Empty() ? (0, 0) : (srcImg.Width, srcImg.Height);
+        }
+        if (!baseImg.Empty() && srcW > 0 && srcH > 0)
+        {
+            var basePath = LetterSidecar.BasePathFor(outPath);
+            if (workIsOurPng) ImgIo.CopyAtomic(work, basePath);
+            else ImgIo.Write(basePath, baseImg);
+            new LetterSidecar(file, srcW, srcH, basePath, [.. blocks], SrcLen: MaskSidecar.LengthOf(file), CommonSize: commonSize, Target: settings.TranslateTarget).Save(outPath);
+        }
+        TextRenderer.RenderBlocks(baseImg, Path.GetFileName(work), file, srcW, srcH, blocks, outPath, settings, commonSize);
     }
 
     /// <summary>ONNX 세션을 닫고 이 러너의 ComfyUI 사용을 놓는다. 결과 창 러너는 수동 작업([채색부터 다시]·Comfy 복원)마다 놓지 않고

@@ -30,10 +30,18 @@ public static class TextRenderer
     public static void RenderBlocks(string imagePath, string sourceSizeRefPath, int srcW, int srcH,
         IReadOnlyList<TextBlockInfo> blocks, string outPath, AppSettings? settings = null, double commonSize = 0)
     {
-        settings ??= new AppSettings();
         using var mat = ImgIo.Read(imagePath, ImreadModes.Color);
+        RenderBlocks(mat, Path.GetFileName(imagePath), sourceSizeRefPath, srcW, srcH, blocks, outPath, settings, commonSize);
+    }
+
+    /// <summary>이미 읽어 둔 그림(<paramref name="mat"/>, BGR)에 식자해 저장한다 — 러너의 2차가 식자 전 원고를 남기려고 읽은 작업 그림을 한 번 더 디코드하지 않는다(2026-11-28, 쪽마다 75ms).
+    /// <paramref name="imageName"/>은 못 읽은 그림(빈 Mat)일 때 알림에 넣을 이름이다. 그림은 건드리지 않는다.</summary>
+    public static void RenderBlocks(Mat mat, string imageName, string sourceSizeRefPath, int srcW, int srcH,
+        IReadOnlyList<TextBlockInfo> blocks, string outPath, AppSettings? settings = null, double commonSize = 0)
+    {
+        settings ??= new AppSettings();
         if (mat.Empty())
-            throw new InvalidDataException(Loc.F($"이미지를 읽지 못했다냥: {Path.GetFileName(imagePath)}"));
+            throw new InvalidDataException(Loc.F($"이미지를 읽지 못했다냥: {imageName}"));
 
         // 다시 식자(결과 창 [다시 식자], --reletter)는 박제한 원본 크기로 환산한다. 원본 파일에 기대면 원고 폴더를 옮기거나 원본을 지운 뒤에는
         // 비율 1이 되어, 채색으로 식자 전 원고의 크기가 원본과 달라진 쪽에서 글이 엉뚱한 자리에 그려지거나 이미지 밖으로 나가 아무 알림 없이 빠졌다
@@ -526,6 +534,8 @@ public static class TextRenderer
             static DetectedBlock Box(RectangleF r) => new((int)r.Left, (int)r.Top, (int)Math.Ceiling(r.Right), (int)Math.Ceiling(r.Bottom), 1f, false);
             bool Usable(int i) => !blocks[i].ManualRect && !blocks[i].Hidden && !blocks[i].Sfx && rects[i].Width >= 4 && rects[i].Height >= 4   // 효과음은 풍선이 아니다(검수 2026-11-26)
                 && rects[i].Left >= 0 && rects[i].Top >= 0 && rects[i].Right <= img.Cols && rects[i].Bottom <= img.Rows;
+            // 가까운 블록 짝을 먼저 모은다
+            var pairs = new List<(int I, int J)>();
             for (int i = 0; i < blocks.Count; i++)
             {
                 if (!Usable(i)) continue;
@@ -535,24 +545,32 @@ public static class TextRenderer
                     RectangleF a = rects[i], b = rects[j];
                     float gap = Math.Max(Math.Max(a.Left, b.Left) - Math.Min(a.Right, b.Right), Math.Max(a.Top, b.Top) - Math.Min(a.Bottom, b.Bottom));
                     if (gap > 2 * Math.Max(Math.Max(a.Width, a.Height), Math.Max(b.Width, b.Height))) continue;
-                    if (gray == null)
-                    {
-                        gray = new Mat();
-                        if (img.Channels() == 1) img.CopyTo(gray);
-                        else Cv2.CvtColor(img, gray, img.Channels() == 4 ? ColorConversionCodes.BGRA2GRAY : ColorConversionCodes.BGR2GRAY);
-                    }
-                    if (BubbleSplitter.NeckLobes(gray, Box(a), Box(b)) is not { } neck) continue;
-                    Lobe(i, neck.LobeA);
-                    Lobe(j, neck.LobeB);
-                    // 목의 법선 — 블록 j 쪽을 향하게
-                    float dx = neck.Q.X - neck.P.X, dy = neck.Q.Y - neck.P.Y, len = MathF.Sqrt(dx * dx + dy * dy);
-                    if (len < 1) continue;
-                    float nx = -dy / len, ny = dx / len;
-                    float toJ = (b.X + b.Width / 2 - neck.P.X) * nx + (b.Y + b.Height / 2 - neck.P.Y) * ny;
-                    if (toJ < 0) { nx = -nx; ny = -ny; }
-                    (walls[i] ??= new()).Add(new NeckWall(neck.P.X, neck.P.Y, nx, ny));
-                    (walls[j] ??= new()).Add(new NeckWall(neck.P.X, neck.P.Y, -nx, -ny));
+                    pairs.Add((i, j));
                 }
+            }
+            if (pairs.Count == 0) return walls;
+            gray = new Mat();
+            if (img.Channels() == 1) img.CopyTo(gray);
+            else Cv2.CvtColor(img, gray, img.Channels() == 4 ? ColorConversionCodes.BGRA2GRAY : ColorConversionCodes.BGR2GRAY);
+            // 목 판정은 흰 영역이 창에 다 들 때까지 창을 넓혀 가며 연결 성분을 센다 — 쪽마다 식자 시간의 대부분이 이것이었다(실제 38쪽: 그리기 246ms 가운데 자리 정하기 220ms, 2026-11-28).
+            // 짝끼리는 서로 기대지 않고 그림만 읽는다: 나란히 재고, 벽·풍선 안쪽은 전과 같은 차례로 쌓는다(결과는 같다 — 번역 단계의 BubbleSplitter.MergeSiblings와 같은 꼴)
+            var source = gray;
+            var necks = pairs.AsParallel().AsOrdered().Select(p => BubbleSplitter.NeckLobes(source, Box(rects[p.I]), Box(rects[p.J]))).ToArray();
+            for (int k = 0; k < pairs.Count; k++)
+            {
+                if (necks[k] is not { } neck) continue;
+                var (i, j) = pairs[k];
+                var b = rects[j];
+                Lobe(i, neck.LobeA);
+                Lobe(j, neck.LobeB);
+                // 목의 법선 — 블록 j 쪽을 향하게
+                float dx = neck.Q.X - neck.P.X, dy = neck.Q.Y - neck.P.Y, len = MathF.Sqrt(dx * dx + dy * dy);
+                if (len < 1) continue;
+                float nx = -dy / len, ny = dx / len;
+                float toJ = (b.X + b.Width / 2 - neck.P.X) * nx + (b.Y + b.Height / 2 - neck.P.Y) * ny;
+                if (toJ < 0) { nx = -nx; ny = -ny; }
+                (walls[i] ??= new()).Add(new NeckWall(neck.P.X, neck.P.Y, nx, ny));
+                (walls[j] ??= new()).Add(new NeckWall(neck.P.X, neck.P.Y, -nx, -ny));
             }
         }
         catch
