@@ -38,19 +38,27 @@ public class OcrEngineChoiceTests
         Assert.All(Nar.Concat(Hayai).Concat(Manga), c => Assert.False(c.ForComfy));
     }
 
-    [Theory]
-    [InlineData("NarSmall", "https://huggingface.co/muscgab/manga-ocr-nar-small/resolve/")]
-    [InlineData("Hayai", "https://huggingface.co/JustANormalTinkerer/hayai-ocr-v2.7-supernova-onnx/resolve/")]
-    public void Catalog_NewEngineFiles_ArePinnedToOneRevision_AndChecked(string engine, string repo)
+    [Fact]
+    public void Catalog_HayaiFiles_ArePinnedToOneRevision_AndChecked()
     {
-        // 저장소의 main이 바뀌어도 같은 파일을 받게 판(커밋)을 박아 두고, 받은 뒤 해시로 확인한다 — main을 가리키면 모델이 바뀐 날부터 해시가 어긋나 새 설치가 막힌다.
-        // (가중치를 우리 릴리스에 다시 올리지 않고 작성자의 저장소에서 받는다 — manga-ocr-nar-small은 CC BY-NC-SA라 더욱)
-        Assert.All(ModelsOf(engine), c =>
+        // 저장소의 main이 바뀌어도 같은 파일을 받게 판(커밋)을 박아 두고, 받은 뒤 해시로 확인한다 — main을 가리키면 모델이 바뀐 날부터 해시가 어긋나 새 설치가 막힌다
+        Assert.All(Hayai, c =>
         {
-            Assert.StartsWith(repo, c.Url);
+            Assert.StartsWith("https://huggingface.co/JustANormalTinkerer/hayai-ocr-v2.7-supernova-onnx/resolve/", c.Url);
             Assert.DoesNotContain("/resolve/main/", c.Url);
             Assert.Equal(64, c.Sha256?.Length);
         });
+    }
+
+    [Fact]
+    public void Catalog_NarSmallFiles_ComeFromOurModelsRelease_AndAreChecked()
+    {
+        // 기본 엔진의 모델은 우리 모델 릴리스(고정 태그 models)에서 받는다 — 사용자가 비영리 개인 프로젝트로 바꾸지 않고 다시 올렸다(2026-11-27, CC BY-NC-SA 4.0).
+        // 주소의 파일 이름은 올린 자산의 이름 그대로여야 하고(다르면 새 설치가 404), 받은 뒤 해시로 원본과 같은 파일인지 확인한다
+        Assert.Equal("https://github.com/TTOGEARII/NekoManga/releases/download/models/ocr_nar.onnx", ComponentCatalog.ModelNarOcr.Url);
+        Assert.Equal("https://github.com/TTOGEARII/NekoManga/releases/download/models/ocr_nar_vocab.json", ComponentCatalog.ModelNarVocab.Url);
+        Assert.Equal("5ee628dfd40c59c522022d87c31f8f903104198877b9ba4cf795603dc540dcf5", ComponentCatalog.ModelNarOcr.Sha256);
+        Assert.Equal("9f1059427b54216c869dbf1244157f86bef74b1a0061c46a6001402c6f0c1dbf", ComponentCatalog.ModelNarVocab.Sha256);
     }
 
     [Theory]

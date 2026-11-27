@@ -76,20 +76,20 @@ public static class ComponentCatalog
         Obsolete: new[] { "models/lama_fp32.onnx" });
 
     // ── 글자 읽기: manga-ocr-nar-small (기본, 2026-11-27 사용자 결정 — muscgab/manga-ocr-nar-small) ──
-    // **가중치의 라이선스는 CC BY-NC-SA 4.0(비영리·같은 조건)이다**(코드는 Apache-2.0). 그래서 우리 릴리스에 다시 올리지 않고 작성자의 저장소에서 그대로 받는다 —
-    // 앱(GPL-3.0)에 싣는 것이 아니라 사용자의 PC가 받는 것이다. 설정 창·README에 라이선스를 적어 두었고, 상업적으로 쓰는 사람은 다른 엔진을 고른다.
-    // 저장소의 main이 바뀌어도 같은 파일을 받게 판(커밋)을 박아 둔다. 해시는 그 저장소의 SHA256SUMS와 같다.
-    private const string NarRepo = "https://huggingface.co/muscgab/manga-ocr-nar-small/resolve/81ff4f3313263d1da349946a9dd20d14e0fb0e66";
+    // **가중치의 라이선스는 CC BY-NC-SA 4.0(비영리·같은 조건)이다**(코드는 Apache-2.0). 사용자 결정(2026-11-27 "우리 릴리즈에 올려줘 — 비영리 개인 프로젝트로 운영"):
+    // 그 저장소(판 81ff4f3)의 `onnx/mangaocr_nar_small_fp32.onnx`·`nar_vocabulary_6817.json`을 **바꾸지 않고** 이름만 바꿔 우리 `models` 사전 릴리스에 올렸다
+    // (`.claude/tools/gh_release_nar_ocr.py` — 사용자가 돌린다). 라이선스 전문 `ocr_nar_LICENSE_MODEL.txt`·고지 `ocr_nar_NOTICE.md`도 같이 올리고 릴리스 설명에 출처·라이선스를 적었다.
+    // 아래 해시는 원 저장소의 SHA256SUMS와 같다(올린 뒤 받아서 확인함). 설정 창·README에 라이선스를 적어 두었고, 상업적으로 쓰는 사람은 다른 엔진을 고른다.
 
     public static readonly Component ModelNarOcr = new(
         "model-nar-ocr", Loc.Key("글자 인식 모델 (manga-ocr-nar-small)"), ComponentKind.File,
-        NarRepo + "/onnx/mangaocr_nar_small_fp32.onnx",
+        ModelAssets + "/ocr_nar.onnx",
         "models/ocr_nar.onnx", "models/ocr_nar.onnx", 213_095_336,
         Sha256: "5ee628dfd40c59c522022d87c31f8f903104198877b9ba4cf795603dc540dcf5", Ocr: "NarSmall");
 
     public static readonly Component ModelNarVocab = new(
         "model-nar-vocab", Loc.Key("글자 인식 사전 (manga-ocr-nar-small)"), ComponentKind.File,
-        NarRepo + "/nar_vocabulary_6817.json",
+        ModelAssets + "/ocr_nar_vocab.json",
         "models/ocr_nar_vocab.json", "models/ocr_nar_vocab.json", 48_538,
         Sha256: "9f1059427b54216c869dbf1244157f86bef74b1a0061c46a6001402c6f0c1dbf", Ocr: "NarSmall");
 

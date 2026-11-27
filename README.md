@@ -97,7 +97,7 @@ PC를 바꿨다면 설정 → 엔진의 **[이 PC에 맞게 조정]**으로 해�
 
 ## 고마운 프로젝트
 
-- 글자 읽기: [manga-ocr-nar-small](https://huggingface.co/muscgab/manga-ocr-nar-small) — 일본어 만화 말풍선을 한 번에 읽는 빠른 OCR이에요(손글씨·효과음도 잘 읽어요). **모델 가중치는 CC BY-NC-SA 4.0(비영리)** 이라 앱에 싣지 않고 작성자의 저장소에서 받아요. 상업적으로 쓰신다면 설정 → 번역 → 글자 읽기 엔진에서 다른 엔진을 고르세요.
+- 글자 읽기: [manga-ocr-nar-small](https://huggingface.co/muscgab/manga-ocr-nar-small) — 일본어 만화 말풍선을 한 번에 읽는 빠른 OCR이에요(손글씨·효과음도 잘 읽어요). **모델 가중치는 CC BY-NC-SA 4.0(비영리)** 이에요 — NekoManga는 비영리 개인 프로젝트라 그 조건에 따라 모델 릴리스에 바꾸지 않고 다시 올려 두었어요(라이선스 전문·고지 포함). 상업적으로 쓰신다면 설정 → 번역 → 글자 읽기 엔진에서 다른 엔진을 고르세요.
   고를 수 있는 다른 엔진: [Hayai OCR v2.7 Supernova](https://huggingface.co/JustANormalTinkerer/hayai-ocr-v2.7-supernova) (Apache-2.0 — 느리지만 긴 글에 강해요) · manga-ocr(이전 엔진).
 - 검열 감지·기본 복원: [Aletheia Lens](https://github.com/Cec1c/Aletheia-Lens) (GPL-3.0) — 그 프로젝트의 감지(hent-AI Mask R-CNN)·복원(DeepCreamPy) 처리 과정을 C#으로 옮겨 쓰고, 모델은 그 프로젝트가 배포하는 파일을 그대로 받아 써요.
   바탕이 된 [hent-AI](https://github.com/natethegreate/hent-AI) · [DeepCreamPy](https://github.com/cookieY/DeepCreamPy) · [Mask R-CNN](https://github.com/matterport/Mask_RCNN)에도 감사드려요.
