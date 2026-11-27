@@ -54,7 +54,7 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
 {
     private readonly TextDetector _detector = new(env);
     private readonly MangaOcr _ocr = new(env);
-    private readonly LamaInpainter _lama = new(env);
+    private readonly LamaInpainter _lama = new(env, unfusedOnGpu: true);   // 글자 지우기의 LaMa — GPU에서는 그래프 융합 없이(융합하면 GPU가 멈춘다)
 
     public bool IsReady => _detector.IsReady && _ocr.IsReady && _lama.IsReady;
 

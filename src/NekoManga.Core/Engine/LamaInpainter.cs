@@ -11,7 +11,7 @@ namespace NekoManga.Core.Engine;
 /// 사진(Places) 학습 Carve lama_fp32.onnx와 입출력 계약이 같아(image 0–1, mask 1=구멍, 출력 0–255 합성) 코드는 그대로다.
 /// 이식: D:\NekoManga-train\lama_manga\lama_port.py (FFT를 DFT 행렬 곱으로 전개). **fp32 211MB** — 가중치 fp16 저장은 BN running_var가
 /// fp16 범위를 넘어(6.8e5 > 65504) 출력이 붕괴하므로 쓰지 않았다. git 100MiB 제한 때문에 모델은 `models` 사전 릴리스 자산(ComponentCatalog 참조).</summary>
-public class LamaInpainter(OnnxEnv env)
+public class LamaInpainter(OnnxEnv env, bool unfusedOnGpu = false)
 {
     public const string ModelFile = "lama_manga.onnx";
     private const int Size = 512;
@@ -90,11 +90,13 @@ public class LamaInpainter(OnnxEnv env)
         }
 
         // Guard: GPU에서 실행 오류가 나면 CPU로 내려 한 번 더 (OnnxEnv.Guard)
-        using var results = env.Guard(() => env.Get(ActiveModelFile).Run(new[]
+        // unfusedOnGpu(글자 지우기): GPU에서 그래프 융합 없이 — 융합한 LaMa는 GPU를 멈추게 한다(OnnxEnv.Unfused). 검열 제거 쪽이 만든 것은 전과 같은 세션을 쓴다
+        string name = unfusedOnGpu ? OnnxEnv.Unfused(ActiveModelFile) : ActiveModelFile;
+        using var results = env.Guard(() => env.Get(name).Run(new[]
         {
             NamedOnnxValue.CreateFromTensor("image", image),
             NamedOnnxValue.CreateFromTensor("mask", maskT),
-        }), ActiveModelFile);
+        }), name);
         // 평탄 버퍼로 읽는다 — ONNX가 돌려주는 Tensor는 DenseTensor가 아닐 수 있어
         // [0,c,y,x] 인덱서가 strided 접근을 보장하지 않는다 (실제로 틀린 값이 나왔다).
         var output = results.First().AsEnumerable<float>().ToArray(); // [1,3,512,512] RGB 0–255, row-major

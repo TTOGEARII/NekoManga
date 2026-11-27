@@ -27,6 +27,9 @@ public class TextDetector(OnnxEnv env)
     private static bool? _gpuVerified;
     private static readonly object VerifyLock = new();
 
+    /// <summary>GPU에서 돌 때의 세션 이름 — 그래프 융합을 끈다(융합한 감지기가 GPU를 멈추게 한다, <see cref="OnnxEnv.Unfused"/>). CPU 전용 대조 세션은 파일 이름 그대로.</summary>
+    private static readonly string GpuName = OnnxEnv.Unfused(ModelFile);
+
     /// <summary>img: BGR(Mat). 반환 마스크는 원본 크기의 8UC1 (255=텍스트 획).
     /// GPU로 돌 때는 프로세스마다 첫 장에서 CPU 결과와 한 번 대조하고, 맞을 때만 이후 GPU를 쓴다(첫 장은 CPU 결과를 쓴다).
     /// 실측(2026-11-16, RTX 2070 SUPER, ComfyUI가 VRAM 4GB를 쥔 상태): DirectML 세션이 **오류 없이 빈 결과**를 냈다 — 쪽마다 블록 0개라
@@ -35,21 +38,21 @@ public class TextDetector(OnnxEnv env)
     {
         // 진단: NEKO_CTD_CPU=1이면 감지기만 CPU로 돌린다(GPU를 아예 시도하지 않는다) — 감지기의 GPU 실행이 장치를 멈추게 하는지 가릴 때
         if (Environment.GetEnvironmentVariable("NEKO_CTD_CPU") == "1") return DetectOn(img, cpuOnly: true);   // loc:none
-        if (_gpuVerified == true || !env.UsesGpu(ModelFile)) return DetectOn(img, cpuOnly: false);
+        if (_gpuVerified == true || !env.UsesGpu(GpuName)) return DetectOn(img, cpuOnly: false);
         lock (VerifyLock)
         {
-            if (_gpuVerified == true || !env.UsesGpu(ModelFile)) return DetectOn(img, cpuOnly: false);
+            if (_gpuVerified == true || !env.UsesGpu(GpuName)) return DetectOn(img, cpuOnly: false);
             var cpu = DetectOn(img, cpuOnly: true);
             bool same = false;
             try
             {
                 var gpu = DetectOn(img, cpuOnly: false);
-                using (gpu.TextMask) same = env.UsesGpu(ModelFile) && SameResult(cpu, gpu);
+                using (gpu.TextMask) same = env.UsesGpu(GpuName) && SameResult(cpu, gpu);
             }
             catch { /* GPU 실행이 던졌다 — 아래에서 CPU로 내린다 */ }
             _gpuVerified = same;
             if (same) env.Release(ModelFile, cpuOnly: true);   // 대조에만 쓴 CPU 세션
-            else env.Demote(ModelFile);                        // 이후 Get(ModelFile)은 CPU 세션을 준다
+            else env.Demote(GpuName);                        // 이후 Get(ModelFile)은 CPU 세션을 준다
             if (Environment.GetEnvironmentVariable("NEKO_ONNX_DBG") == "1")
                 Console.Error.WriteLine($"[onnx] {ModelFile}: GPU 대조 {(same ? "일치 — 이후 GPU" : "불일치 — CPU로 내려요")}");   // loc:none
             return cpu;
@@ -102,10 +105,10 @@ public class TextDetector(OnnxEnv env)
         }
 
         // Guard: GPU에서 실행 오류가 나면 CPU로 내려 한 번 더 (OnnxEnv.Guard)
-        using var results = env.Guard(() => env.Get(ModelFile, cpuOnly).Run(new[]
+        using var results = env.Guard(() => env.Get(cpuOnly ? ModelFile : GpuName, cpuOnly).Run(new[]
         {
             Microsoft.ML.OnnxRuntime.NamedOnnxValue.CreateFromTensor("images", input),
-        }), cpuOnly ? [] : [ModelFile]);
+        }), cpuOnly ? [] : [GpuName]);
 
         var blk = results.First(v => v.Name == "blk").AsTensor<float>();   // [1, N, 7] cx cy w h obj c0 c1
         var seg = results.First(v => v.Name == "seg").AsTensor<float>();   // [1, 1, 1024, 1024]

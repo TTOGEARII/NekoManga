@@ -96,4 +96,47 @@ public class OnnxEnvTests
         Assert.Throws<FileNotFoundException>(() => env.Guard(() => ran = true, file));
         Assert.False(ran);
     }
+
+    [Fact]
+    public void Unfused_IsAnotherSessionNameOfTheSameModelFile()
+    {
+        // DirectML의 그래프 융합(모델을 한 덩어리로 묶어 실행)이 감지기·LaMa에서 GPU를 멈추게 한다(RTX 2070 SUPER, 2026-11-27 — 융합을 끄면 55ms·107ms로 돈다).
+        // 융합을 끈 세션은 같은 파일의 다른 이름으로 따로 둔다 — 이름을 바꾸지 않은 쪽(검열 제거가 쓰는 세션)은 그대로다
+        using var t = new TempDir();
+        using var env = new OnnxEnv(new AppSettings { RuntimeRoot = t.At("런타임") });
+        string name = OnnxEnv.Unfused("ctd.onnx");
+
+        Assert.NotEqual("ctd.onnx", name);
+        Assert.True(OnnxEnv.IsUnfused(name));
+        Assert.False(OnnxEnv.IsUnfused("ctd.onnx"));
+        Assert.Equal(env.ModelPath("ctd.onnx"), env.ModelPath(name));
+        Assert.Equal(name, OnnxEnv.Unfused(name));   // 두 번 붙이지 않는다
+    }
+
+    [Fact]
+    public void DmlSessionConfig_TurnsGraphFusionOff_OnlyForUnfusedNames()
+    {
+        Assert.Equal("1", OnnxEnv.DmlSessionConfig(OnnxEnv.Unfused("lama_manga.onnx"))["ep.dml.disable_graph_fusion"]);
+        Assert.Empty(OnnxEnv.DmlSessionConfig("lama_manga.onnx"));
+    }
+
+    [Fact]
+    public void Unfused_WhenTheGpuIsNotUsed_IsTheSameCpuSessionAsThePlainName()
+    {
+        // CPU로 도는 실행에서는 융합이 뜻이 없다 — 같은 모델을 이름만 달리해 두 번 올리지 않는다(모델이 없으면 원래 파일 이름으로 알린다)
+        using var t = new TempDir();
+        using var env = new OnnxEnv(new AppSettings { RuntimeRoot = t.At("런타임"), OnnxGpu = "Off" });
+
+        var ex = Assert.Throws<FileNotFoundException>(() => env.Get(OnnxEnv.Unfused("ctd.onnx")));
+
+        Assert.Equal(env.ModelPath("ctd.onnx"), ex.FileName);
+        string unfused = OnnxEnv.Unfused("ctd.onnx");
+        Assert.Equal(("ctd.onnx", false), OnnxEnv.ResolveSession(unfused, cpuOnly: false, gpuWanted: false, demoted: false));
+        Assert.Equal(("ctd.onnx", true), OnnxEnv.ResolveSession(unfused, cpuOnly: true, gpuWanted: true, demoted: false));
+        Assert.Equal((unfused, false), OnnxEnv.ResolveSession(unfused, cpuOnly: false, gpuWanted: true, demoted: false));
+        // GPU에서 실패해 내려간 뒤: 원래 이름의 CPU 전용 세션 — 원래 이름의 보통 세션(융합한 GPU 세션일 수 있다)으로 가지 않는다
+        Assert.Equal(("ctd.onnx", true), OnnxEnv.ResolveSession(unfused, cpuOnly: false, gpuWanted: true, demoted: true));
+        // 융합을 끄지 않은 이름(검열 제거가 쓰는 세션들)은 손대지 않는다
+        Assert.Equal(("lama_manga.onnx", false), OnnxEnv.ResolveSession("lama_manga.onnx", cpuOnly: false, gpuWanted: false, demoted: true));
+    }
 }

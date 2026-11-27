@@ -16,7 +16,32 @@ public sealed class OnnxEnv(AppSettings settings) : IDisposable
 
     public string ModelsDir => Path.Combine(settings.RuntimeRoot, "models");
 
-    public string ModelPath(string fileName) => Path.Combine(ModelsDir, fileName);
+    public string ModelPath(string fileName) => Path.Combine(ModelsDir, PlainName(fileName));
+
+    // ── 그래프 융합을 끈 세션 ──
+    // DirectML은 모델 전체를 한 덩어리(DmlFusedNode)로 묶어 돌린다(그래프 융합). 그 덩어리가 글자 감지기(ctd)와 LaMa에서 GPU를 멈추게 한다 —
+    // 실측(2026-11-27, RTX 2070 SUPER, 드라이버 32.0.15.9186, DirectML 1.15.4, 모델 하나만 올려 임의 입력으로): 첫 실행 2.2~2.5초(결과도 CPU와 어긋난다) 뒤
+    // 둘째 실행이 887A0006(DXGI 장치 멈춤)으로 죽고, 그 뒤로는 같은 프로세스의 다른 모델도 그 장치에 세션을 못 만든다(전부 CPU로 내려갔다 — 디스플레이 드라이버가 재시작되기도 했다).
+    // 융합을 끄면(세션 설정 ep.dml.disable_graph_fusion=1 — 노드마다 따로 돈다) 감지기 55ms(CPU 860ms) · LaMa 107ms(CPU 1,780ms)로 멀쩡히 돈다. 글자 읽기(manga-ocr)는 융합한 채로도 돈다(20ms).
+    // ComfyUI가 쥔 메모리·메타커맨드·메모리 아레나·어댑터 번호와는 상관없었다(하나씩 바꿔 봤다).
+    // 융합을 끈 세션은 **같은 파일의 다른 이름**(<see cref="Unfused"/>)으로 따로 둔다: 이름을 안 바꾼 호출(검열 제거가 쓰는 세션들)은 전과 똑같이 돈다.
+    private const string UnfusedMark = "?unfused";
+    /// <summary>그 모델을 GPU에서 그래프 융합 없이 돌릴 세션의 이름 — <see cref="Get"/>·<see cref="Guard{T}"/>·<see cref="UsesGpu"/>·<see cref="Demote"/>에 파일 이름 대신 넘긴다.</summary>
+    internal static string Unfused(string fileName) => IsUnfused(fileName) ? fileName : fileName + UnfusedMark;
+    internal static bool IsUnfused(string name) => name.EndsWith(UnfusedMark, StringComparison.Ordinal);
+    internal static string PlainName(string name) => IsUnfused(name) ? name[..^UnfusedMark.Length] : name;
+    /// <summary>DirectML 세션을 만들 때 걸 세션 설정 — 융합을 끈 이름이면 융합 끄기 하나.</summary>
+    internal static IReadOnlyDictionary<string, string> DmlSessionConfig(string name) =>
+        IsUnfused(name) ? new Dictionary<string, string> { ["ep.dml.disable_graph_fusion"] = "1" } : new Dictionary<string, string>();
+    /// <summary>융합을 끈 이름으로 온 요청이 실제로 쓸 세션: GPU를 쓰지 않는 실행(설정·강제 CPU·CPU 전용 요청)이면 원래 이름의 세션을 같이 쓴다 — CPU에서는 융합이 뜻이 없고,
+    /// 같은 모델을 이름만 달리해 두 번 올리지 않는다. GPU에서 실패해 내려간 뒤(<paramref name="demoted"/>)에는 원래 이름의 **CPU 전용** 세션으로 —
+    /// 원래 이름의 보통 세션은 융합한 GPU 세션일 수 있다(그리로 가면 안 된다). 융합을 끄지 않은 이름은 그대로 돌려준다.</summary>
+    internal static (string Name, bool CpuOnly) ResolveSession(string name, bool cpuOnly, bool gpuWanted, bool demoted)
+    {
+        if (!IsUnfused(name)) return (name, cpuOnly);
+        if (cpuOnly || !gpuWanted) return (PlainName(name), cpuOnly);
+        return demoted ? (PlainName(name), true) : (name, false);
+    }
 
     public bool ModelExists(string fileName) => File.Exists(ModelPath(fileName));
 
@@ -94,6 +119,8 @@ public sealed class OnnxEnv(AppSettings settings) : IDisposable
     {
         lock (_lock)
         {
+            if (IsUnfused(fileName))
+                (fileName, cpuOnly) = ResolveSession(fileName, cpuOnly, gpuWanted: Environment.GetEnvironmentVariable("NEKO_FORCE_CPU") != "1" && GpuAllowed, demoted: _demoted.Contains(fileName));
             if (_sessions.TryGetValue(Key(fileName, cpuOnly), out var s)) return s;
             var path = ModelPath(fileName);
             if (!File.Exists(path))
@@ -131,6 +158,7 @@ public sealed class OnnxEnv(AppSettings settings) : IDisposable
                     try
                     {
                         using var opt = new SessionOptions();
+                        foreach (var (key, value) in DmlSessionConfig(fileName)) opt.AddSessionConfigEntry(key, value);
                         opt.AppendExecutionProvider("DML", new Dictionary<string, string> { ["performance_preference"] = "high_performance", ["device_filter"] = "gpu" });
                         session = new InferenceSession(path, opt);
                         ep = "DirectML(high performance)";
@@ -146,6 +174,7 @@ public sealed class OnnxEnv(AppSettings settings) : IDisposable
                     try
                     {
                         using var opt = new SessionOptions();   // ORT가 세션 생성 때 복사하므로 바로 해제해도 된다
+                        foreach (var (key, value) in DmlSessionConfig(fileName)) opt.AddSessionConfigEntry(key, value);
                         opt.AppendExecutionProvider_DML(dev);
                         session = new InferenceSession(path, opt);
                         ep = $"DirectML(device {dev})";
