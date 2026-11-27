@@ -571,6 +571,12 @@ public partial class ResultWindow
             LetterItalic = App.Settings.LetterItalic,
             LetterLineSpacing = App.Settings.LetterLineSpacing,
             LetterWordSpacing = App.Settings.LetterWordSpacing,
+            LetterAutoContrast = App.Settings.LetterAutoContrast,   // 빠져 있었다(검토 2026-11-28): 설정에서 꺼도 편집 화면·다시 식자는 늘 켠 채로 그렸다
+            // 원문 글자 따라가기(크기·굵기·명조, 2026-11-27)도 설정 전역을 따른다 — 여기서 빠지면 편집 화면만 새 기본값으로 그려져 처음 식자한 결과와 달라진다
+            LetterSizeMode = App.Settings.LetterSizeMode,
+            LetterAutoWeight = App.Settings.LetterAutoWeight,
+            LetterAutoFamily = App.Settings.LetterAutoFamily,
+            LetterSerifFamily = App.Settings.LetterSerifFamily,
         };
     }
 
@@ -660,7 +666,9 @@ public partial class ResultWindow
                 // 글을 고치는 중인 풍선: 그림에서는 빠져 있고(Render의 skip) 이 텍스트박스가 글을 보여 준다. 줄 나눔은 최종 식자와 조금 다를 수 있다.
                 float px = i < _drawnSizes.Length && _drawnSizes[i] > 0 ? _drawnSizes[i] : layouts[i].Size > 0 ? layouts[i].Size : 16;
                 var style = LetterStyle();
-                bool bold = b.BoldOverride switch { 0 => false, 1 => true, _ => style.LetterBold };
+                // 굵기·글꼴은 식자와 같은 판정으로(원문의 굵기·명조를 따라가는 블록 — TextRenderer.WithSourceStyle이 블록의 속성으로 풀어 준다)
+                var shown = TextRenderer.WithSourceStyle(_letterBlocks, style)[i];
+                bool bold = shown.BoldOverride switch { 0 => false, 1 => true, _ => style.LetterBold };
                 // 식자(TextRenderer.Render)와 같은 규칙: 블록별 지정 > 쪽 설정(기본 검정, "auto"면 원문 색)
                 var fg = !string.IsNullOrWhiteSpace(b.ColorOverride) ? ToMedia(b.ColorOverride, "#000000")
                     : AppSettings.IsAutoColor(style.LetterColorHex) ? ToMedia(b.FontColorHex, "#000000")
@@ -679,7 +687,7 @@ public partial class ResultWindow
                     TextAlignment = alignName switch { "Left" => TextAlignment.Left, "Right" => TextAlignment.Right, _ => TextAlignment.Center },
                     VerticalContentAlignment = VerticalAlignment.Center,
                     AcceptsReturn = true,
-                    FontFamily = new FontFamily(string.IsNullOrWhiteSpace(b.FontFamily) ? style.LetterFontFamily : b.FontFamily),
+                    FontFamily = new FontFamily(string.IsNullOrWhiteSpace(shown.FontFamily) ? style.LetterFontFamily : shown.FontFamily),
                     FontWeight = bold ? FontWeights.Bold : FontWeights.Normal,
                     FontStyle = b.Italic || style.LetterItalic ? FontStyles.Italic : FontStyles.Normal,
                     FontSize = Math.Max(6, px * _scale),

@@ -33,7 +33,13 @@ public record TextBlockInfo(
     bool Added = false,            // 결과 창 [새 글 넣기]로 넣은 블록 — 원문이 없다. 지우면 숨기지 않고 목록에서 뺀다
     bool Sfx = false,              // 풍선 밖 효과음(2026-11-26 시험 기능, SfxMode=Replace): 원문을 지우고 그 자리에 굵게 덮는다 — 풍선을 재지 않고 자리에 맞춘 크기, 세로면 글자를 쌓는다(TextRenderer.SfxStyle). 옛 json에는 없다 → false
     string Machine = "",           // 번역기가 낸 글(식자한 그대로, 2026-11-27) — Translation이 이것과 다르면 사용자가 고친 글이다(IsEdited). 옛 json에는 없다 → ""(고쳤는지 알 수 없다)
-    string Review = "")            // 번역을 확인할 까닭(ReviewMark.Filled = 다른 번역기로 메움 · Failed = 못 옮김), 비면 없음. 글을 고치면 표시는 보이지 않는다(NeedsReview). 옛 json에는 없다 → ""
+    string Review = "",            // 번역을 확인할 까닭(ReviewMark.Filled = 다른 번역기로 메움 · Failed = 못 옮김), 비면 없음. 글을 고치면 표시는 보이지 않는다(NeedsReview). 옛 json에는 없다 → ""
+    // 아래 셋은 원문 글자를 픽셀에서 잰 값(SourceGlyph, 2026-11-27 — 식자가 원문의 크기·굵기·글꼴을 따라간다). 판정이 아니라 잰 값이다(굵게·명조의 문턱은 식자할 때 건다 — 고쳐도 다시 번역하지 않는다).
+    // 옛 json에는 없다 → 0 = 못 쟀다(그 블록은 전처럼 식자된다)
+    double SrcEm = 0,              // 글자 한 칸의 크기(원본 그림의 px)
+    double SrcStroke = 0,          // 고른 획 굵기 ÷ SrcEm(실측: 본문 0.05~0.085, 굵은 고딕 0.10, 아주 굵은 글 0.15)
+    double SrcThick = 0,           // 굵은 획의 굵기 ÷ SrcEm — 굵기 판정이 보는 값(실측: 가는 글꼴 0.08~0.10, 보통 본문·굵은 고딕 0.13~0.16, 아주 굵은 글 0.22)
+    double SrcContrast = 0)        // 세로 획 굵기 ÷ 가로 획 굵기(명조 2 이상, 고딕 1쯤). 0 = 곧은 획이 모자라 못 쟀다
 {
     /// <summary>결과 창 식자 탭이 번역 글 위에 보여 주는 원문(OCR 글) — 앞뒤 빈칸·줄 바꿈을 뗀다(2026-11-26 사용자 요청).
     /// 빈 글이면 창이 칸을 접는다: [새 글 넣기]로 만든 글은 원문이 ""이고, 옛 json에 칸이 없으면 null로 들어온다.</summary>
@@ -383,6 +389,11 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         var pageRects = detBlocks.Select(d => new Rect(d.X1, d.Y1, d.X2 - d.X1, d.Y2 - d.Y1)).ToList();
         bool needLama = false;
         int sfxSkipped = 0, regenBlocks = 0;
+        // 원문 글자의 크기·획을 잰다 — 지우기 전의 그림에서, 대사 블록만(효과음은 제 자리에 맞춘 크기·굵게라 쓰지 않는다). 못 재면 0(식자가 쪽의 다른 블록 값을 따른다).
+        // 실측 쪽마다 0.1~0.2초(서른 쪽 평균 0.10초) — 나란히 재도 0.09~0.15초라 차례로 잰다
+        var glyphs = await Task.Run(() => Enumerable.Range(0, blocks.Count).Select(i => roles[i] == BlockRole.Sfx || !WillErase(i) ? default
+            : SourceGlyph.Measure(img, textMask, new Rect(blocks[i].Box.X1, blocks[i].Box.Y1, blocks[i].Box.X2 - blocks[i].Box.X1, blocks[i].Box.Y2 - blocks[i].Box.Y1), blocks[i].Text)).ToArray(), ct);
+        Lap("원문 글자 재기");   // loc:none
 
         for (int i = 0; i < blocks.Count; i++)
         {
@@ -450,7 +461,8 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
                 EstimateFontSize(rect, tr.Length),
                 // 효과음은 Carrot처럼 높이가 폭의 1.5배를 넘으면 세로(글자를 쌓는다), 대사는 전처럼 1.3배(한국어는 어차피 가로로 그린다 — 풍선 재기에만 쓴다)
                 Vertical: rect.Height > rect.Width * (sfx ? 1.5 : 1.3),
-                color, Sfx: sfx, Machine: tr, Review: mark));
+                color, Sfx: sfx, Machine: tr, Review: mark,
+                SrcEm: Math.Round(glyphs[i].Em, 1), SrcStroke: Math.Round(glyphs[i].Stroke, 3), SrcThick: Math.Round(glyphs[i].Thick, 3), SrcContrast: Math.Round(glyphs[i].Contrast, 2)));
         }
         // 사용자가 전에 고친 글은 다시 번역한 글로 덮지 않는다(previous = 이 원고의 전 식자 정보 — 러너가 설정 TranslateKeepEdited일 때만 넘긴다).
         // 앞 쪽 문맥에 넣기 전에 옮긴다 — 다음 쪽의 번역도 고친 글을 따라가게

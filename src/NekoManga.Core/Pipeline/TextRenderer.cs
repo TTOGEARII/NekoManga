@@ -61,14 +61,18 @@ public static class TextRenderer
     public static Mat Render(Mat img, IReadOnlyList<TextBlockInfo> blocks, double scaleX, double scaleY, AppSettings settings,
         out float[] drawnSizes, out List<BlockLayout> layouts, int skip = -1, double commonSize = 0)
     {
+        blocks = WithSourceStyle(blocks, settings);   // 원문의 굵기·글꼴을 따라가는 판정을 블록의 속성으로 풀어 둔다(아래 코드는 전과 같다)
         using var bmp = ToBitmap(img);
         using var g = Graphics.FromImage(bmp);
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
 
         // 말풍선마다 글이 들어갈 자리와 글자 크기를 먼저 정한다 — 결과 보기 창의 상자도 같은 계산(PlanLayout)을 쓴다.
-        layouts = PlanLayout(img, blocks, scaleX, scaleY, settings, g, commonSize);
+        layouts = PlanCore(img, blocks, scaleX, scaleY, settings, g, commonSize, out _);
         drawnSizes = new float[blocks.Count];
+        // 외곽선을 전부 그린 뒤에 글자를 그린다(사용자의 Carrot 규칙 A10, 2026-11-27) — 블록마다 외곽선·글자 차례로 그리면 뒤 블록의 외곽선이 앞 블록의 글자를 덮는다
+        // (붙은 풍선의 두 글). 그래서 블록들을 두 번 훑는다: 먼저 외곽선만, 다음에 글자만. 글이 서로 안 겹치면 전과 같은 픽셀이다
+        foreach (var part in new[] { DrawPart.Outline, DrawPart.Ink })
         for (int bi = 0; bi < blocks.Count; bi++)
         {
             var b = blocks[bi];
@@ -84,7 +88,7 @@ public static class TextRenderer
             if (settings.LetterAutoContrast && string.IsNullOrWhiteSpace(b.ColorOverride) && string.IsNullOrWhiteSpace(b.OutlineColor)
                 && !AppSettings.IsAutoColor(settings.LetterColorHex) && DarkBehind(img, layouts[bi].Rect))
                 (color, outline) = (ParseColor(settings.LetterOutlineColorHex, Color.White), color);
-            drawnSizes[bi] = DrawBlock(g, b, layouts[bi], color, settings, draw: bi != skip, outlineColor: outline);
+            drawnSizes[bi] = DrawBlock(g, b, layouts[bi], color, settings, draw: bi != skip, outlineColor: outline, part: part);
         }
         return ToMat(bmp);
     }
@@ -239,6 +243,10 @@ public static class TextRenderer
     /// <summary>쪽 공통 크기의 상한 — 글자 높이로 쪽의 1.8%(서고의 90번째 백분위, 예시 원고의 보통 크기). 풍선이 다 널찍한 쪽에서 한없이 커지지 않게.</summary>
     private const float CommonSizeOfPage = 0.019f;
     private const float MinSize = 9;
+    /// <summary>원문 글자 크기를 따라 전의 방식보다 크게(쪽 공통 크기의 상한 너머로) 그릴 때 쓰는 자리의 몫 — 풍선에 맞춘 크기(들어가는 가장 큰 크기)의 8할까지. 그 아래는 전처럼 맞춘 크기 그대로.</summary>
+    internal const float BigFitShare = 0.8f;
+    /// <summary>원문이 크게 쓴 글을 맞춰 볼 때의 상한 — 쪽 상한(<see cref="MaxSizeOfPage"/>)의 2.5배(쪽 높이의 6.5%). 어절째로 충분한지의 기준(상한의 35%)이 쪽 상한에서 들어간 글을 꺾지 않는 범위다.</summary>
+    private const float BigCapOfPageCap = 2.5f;
     /// <summary>가로쓰기 블록을 풍선 쪽으로 넓히는 한도(배). 테두리 없는 해설문이 흰 바탕으로 번지지 않게 조금만.</summary>
     private const float HorizontalGrowth = 1.35f;
     /// <summary>WidenToBubble·HeightenToBubble이 측정 한도(한쪽 2.5배·1.8배)까지 가서야 멈췄다고 볼 배율 — 그 결과의 90%.</summary>
@@ -262,7 +270,7 @@ public static class TextRenderer
     /// <param name="commonSize">붙든 쪽 공통 글자 크기(<see cref="CommonSize"/>) — 0이면 블록들에서 구한다.</param>
     public static List<BlockLayout> PlanLayout(Mat img, IReadOnlyList<TextBlockInfo> blocks, double scaleX, double scaleY,
         AppSettings settings, Graphics? g = null, double commonSize = 0) =>
-        PlanCore(img, blocks, scaleX, scaleY, settings, g, commonSize, out _);
+        PlanCore(img, WithSourceStyle(blocks, settings), scaleX, scaleY, settings, g, commonSize, out _);
 
     /// <summary>이 블록들의 쪽 공통 글자 크기(px, 쪽 설정의 크기 배율을 곱하기 전) — 풍선별 맞춤 크기의 중앙값(쪽 높이의 일정 비율이 상한).
     /// 자동 식자는 이것을 식자할 때마다 구해서, 풍선 하나의 글·자리가 바뀌면 중앙값이 움직여 손대지 않은 풍선의 글자까지 커지거나 작아졌다
@@ -270,7 +278,7 @@ public static class TextRenderer
     /// (<see cref="LetterSidecar.CommonSize"/>) 그 뒤의 식자에 넘긴다 — 고친 풍선만 바뀐다.</summary>
     public static double CommonSize(Mat img, IReadOnlyList<TextBlockInfo> blocks, double scaleX, double scaleY, AppSettings settings)
     {
-        PlanCore(img, blocks, scaleX, scaleY, settings, null, 0, out float common);
+        PlanCore(img, WithSourceStyle(blocks, settings), scaleX, scaleY, settings, null, 0, out float common);
         return common;
     }
 
@@ -279,6 +287,7 @@ public static class TextRenderer
     public static string[] DrawnLines(Mat img, IReadOnlyList<TextBlockInfo> blocks, double scaleX, double scaleY, AppSettings settings,
         int index, double commonSize = 0)
     {
+        blocks = WithSourceStyle(blocks, settings);
         using var scratch = new Bitmap(8, 8, PixelFormat.Format24bppRgb);
         using var g = Graphics.FromImage(scratch);
         g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
@@ -314,6 +323,27 @@ public static class TextRenderer
             var partial = new bool[n];   // 이미지 밖으로 걸쳐 보이는 부분이 블록의 절반도 안 되는 블록 — 쪽 공통 크기를 구할 때 뺀다
             float cap = Math.Max(MinSize, img.Rows * MaxSizeOfPage);
             var neckWalls = NeckWalls(img, blocks, allRects, out var lobes);
+
+            // 원문 글자 크기(4단계, 2026-11-27 — 사용자의 Carrot 규칙 A8): 번역할 때 잰 값(SrcEm, 원본의 px)을 결과 그림의 px로 옮긴 것이 그 블록의 '바탕 크기'다.
+            // 못 잰 블록은 그 쪽에서 잰 값의 가운뎃값(짝수면 작은 쪽)을 따르되, 전의 방식이 쓰던 가장 큰 크기(쪽 높이의 1.9%)를 넘지 않는다 —
+            // 잰 것이 외치는 글 하나뿐이거나 본문 하나 + 외치는 글 하나인 쪽에서 못 잰 풍선이 그 큰 크기로 풍선을 가득 채웠다(검토 2026-11-28: 가운뎃값을 큰 쪽으로 골랐고 상한이 없었다).
+            // 가운뎃값은 잰 값이 있는 블록 전부로 센다(숨김·효과음 표시와 상관없이): 결과 창에서 풍선 하나를 숨기거나 효과음으로 바꿔도 다른 풍선의 크기가 안 바뀐다. 잰 값은 블록에 박혀 있다.
+            // 잰 블록이 하나도 없는 쪽(옛 식자 정보)과 LetterSizeMode=Fit은 wanted가 전부 0 — 아래가 전과 똑같이 돈다(쪽 공통 크기).
+            float sizeScale = (float)Math.Clamp(settings.LetterSizeScale, 0.3, 3.0);
+            var wanted = new float[n];
+            if (settings.LetterSizeMode != "Fit")
+            {
+                double toResult = Math.Sqrt(Math.Max(1e-9, scaleX * scaleY));
+                for (int i = 0; i < n; i++)
+                    if (!blocks[i].Sfx && blocks[i].SrcEm > 0) wanted[i] = (float)(blocks[i].SrcEm * toResult);
+                var measured = blocks.Where(b => b.SrcEm > 0).Select(b => (float)(b.SrcEm * toResult)).Order().ToList();
+                if (measured.Count > 0)
+                {
+                    float pageSource = Math.Min(measured[(measured.Count - 1) / 2], img.Rows * CommonSizeOfPage);
+                    for (int i = 0; i < n; i++)
+                        if (!blocks[i].Sfx && wanted[i] <= 0) wanted[i] = pageSource;
+                }
+            }
 
             for (int i = 0; i < n; i++)
             {
@@ -401,6 +431,14 @@ public static class TextRenderer
                 rects[i] = rect;
                 wraps[i] = maxWrap;
                 fits[i] = LargestFit(g, b, new BlockLayout(rect, cap, maxWrap, round[i]), settings);
+                // 원문이 쪽 상한보다 크게 쓴 글(외치는 글 — 실측 90~107px, 상한은 쪽 높이의 2.6%): 상한에서도 들어가는 블록만, 그 크기가 여유 있게(BigFitShare) 들어가는지 더 큰 데서부터 한 번 더 맞춰 본다.
+                // 상한에서 안 들어가는 블록(번역 글이 길다)은 전의 맞춤 그대로다 — 큰 데서 찾으면 크기 눈금과 '어절째로 충분한가'의 기준(WholeIsEnough)이 달라져 같은 글이 다르게 맞춰진다.
+                // 더 큰 상한은 쪽 상한의 2.5배까지: 그 안에서는 어절을 꺾는 길로 넘어가지 않는다(상한에서 들어간 글은 어절째로 상한의 0.95배 넘게 들어간다)
+                if (wanted[i] > 0 && fits[i] >= cap)
+                {
+                    float bigCap = Math.Min(cap * BigCapOfPageCap, wanted[i] * sizeScale * (float)Math.Max(1, Math.Clamp(b.StyleScale, 0.3, 3.0)) / BigFitShare);
+                    if (bigCap > cap) fits[i] = Math.Max(fits[i], LargestFit(g, b, new BlockLayout(rect, bigCap, maxWrap, round[i]), settings));
+                }
             }
 
             // 쪽 공통 크기: 풍선별 최대 크기의 중앙값 — 널찍한 풍선들은 같은 크기를 쓰고, 좁거나 글이 긴 풍선만 자기 크기로 줄어든다.
@@ -417,7 +455,7 @@ public static class TextRenderer
             common = Math.Min(common, img.Rows * CommonSizeOfPage);
             if (commonSize > 0) common = (float)commonSize;   // 붙든 값 — 블록이 바뀌어도 그대로(위 CommonSize)
             commonBase = common;
-            common *= (float)Math.Clamp(settings.LetterSizeScale, 0.3, 3.0);
+            common *= sizeScale;
 
             var result = new List<BlockLayout>(n);
             for (int i = 0; i < n; i++)
@@ -432,7 +470,12 @@ public static class TextRenderer
                 {
                     // 블록별 배율(이 풍선만 크게/작게)은 공통 크기에 곱한다. 크게 한 블록은 풍선에 맞춘 크기도 그만큼 넘게 둔다.
                     float scale = (float)Math.Clamp(blocks[i].StyleScale, 0.3, 3.0);
-                    size = Math.Max(MinSize, Math.Min(fits[i] * Math.Max(1, scale), common * scale));
+                    // 바탕 크기 = 원문 글자 크기(있으면) 또는 쪽 공통 크기 — 어느 쪽이든 풍선에 맞춘 크기를 넘지 않는다(번역 글이 길면 전처럼 줄어든다).
+                    // 원문 크기를 따를 때, 전의 방식이 쓰던 가장 큰 크기(쪽 공통 크기의 상한 — 쪽 높이의 1.9%)까지는 전처럼 맞춘 크기 그대로 쓰고, 그보다 크게는 맞춘 크기의 BigFitShare까지만 간다:
+                    // 맞춘 크기는 풍선을 타원으로 보고 잰 값이라, 뾰족한 풍선의 짧고 큰 글은 그 한도에서 테두리에 닿았다(실제 06쪽 한 줄짜리 170px, 04쪽 67px — 전에는 공통 크기의 상한이 가려 주던 자리)
+                    float basis = wanted[i] > 0 ? wanted[i] * sizeScale : common;
+                    float room = wanted[i] > 0 ? Math.Max(Math.Min(fits[i], img.Rows * CommonSizeOfPage * sizeScale), fits[i] * BigFitShare) : fits[i];
+                    size = Math.Max(MinSize, Math.Min(room * Math.Max(1, scale), basis * scale));
                 }
                 result.Add(new BlockLayout(rects[i], size, wraps[i], round[i], fixedSize));
             }
@@ -441,7 +484,7 @@ public static class TextRenderer
                 File.AppendAllLines(dbg, Enumerable.Range(0, n).Select(i =>
                     $"[{i}] v={blocks[i].Vertical} manual={blocks[i].ManualRect} chars={blocks[i].Translation?.Length ?? 0} " +
                     $"block={allRects[i].Width:0}x{allRects[i].Height:0} place={rects[i].Width:0}x{rects[i].Height:0} round={round[i]} " +
-                    $"fit={fits[i]:0.0} size={result[i].Size:0.0}").Append($"common={common:0.0} cap={cap:0.0} page={img.Cols}x{img.Rows}"));
+                    $"fit={fits[i]:0.0} src={wanted[i]:0.0} size={result[i].Size:0.0}").Append($"common={common:0.0} cap={cap:0.0} page={img.Cols}x{img.Rows}"));
             return result;
         }
         finally
@@ -701,6 +744,70 @@ public static class TextRenderer
         return totalH <= rect.Height * 1.08f + 2 && maxW <= wrapWidth * 1.05f + 2 ? lines : null;
     }
 
+    // ───────── 원문의 굵기·글꼴 따라가기 (4단계, 2026-11-27 — 사용자 "번역 역식은 carrot와 유사하게": 원문 굵기 + 글꼴 분위기. 규칙 A9) ─────────
+    //
+    // 번역할 때 블록마다 잰 값(SourceGlyph → TextBlockInfo.SrcThick·SrcContrast)으로 **식자할 때** 정한다. 문턱은 실제 다섯 쪽과, 같은 식으로 잰 PC 글꼴의 값이다:
+    //   굵은 획의 굵기 ÷ 글자 크기: 가는 둥근 고딕 0.082~0.104(7블록) · 보통 본문(앤티크) 0.126~0.152(7) · 굵은 고딕 0.139~0.159(6) · 아주 굵은 글 0.22(2)
+    //     맑은 고딕: 보통 0.08~0.095 · 굵게 0.125~0.155 → 가는 글꼴만 보통 굵기, 나머지는 굵게가 가장 가깝다(크롭으로도 그렇게 보였다 — 보통 본문을 보통 굵기로 그리면 원문보다 가늘다)
+    //   획 대비: 명조 셋 2.04·2.20·3.83, 나머지 ≤ 1.44 — 명조 표본이 셋뿐이라 문턱 1.75는 잠정값이다(다른 책에서 다시 잰다)
+    // 같은 책의 서른 쪽을 더 쟀다(242블록 가운데 잰 것 199): 굵은 획의 분포가 두 봉우리다(0.09~0.10 / 0.135~0.15, 골 0.107~0.112에 3블록) — 다만 0.107~0.118에는 가는 글과 보통 글이 섞여 있다(13블록, 쪽의 다수로 정한다).
+    //   명조: 대비 1.75 이상인 11블록이 전부 명조였고 1.6~1.75의 둘은 아니었다(손글씨·흰 글). 한두 글자뿐인 명조(대비 1.07~1.53)는 놓친다.
+    // 전부 한 책(서른다섯 쪽)의 값이다 — 다른 책·다른 해상도에서 다시 재야 한다(하네스 translate의 glyph 기록, lettercmp).
+
+    /// <summary>글자 크기(원본 px)가 이보다 작으면 획 굵기·대비를 믿지 않는다 — 획이 2~3px뿐이라 실제보다 굵게 재진다(실제 04쪽: 20px 글 0.12, 24px 글 0.10).</summary>
+    internal const double StrokeMinEm = 28;
+    /// <summary>굵은 획의 굵기 ÷ 글자 크기가 이 이하면 보통 굵기, <see cref="BoldMin"/> 이상이면 굵게. 그 사이는 뚜렷하지 않다 — 쪽의 다수를 따른다
+    /// (같은 글꼴의 풍선들이 문턱 앞뒤로 갈려 굵게·보통이 섞이지 않게).</summary>
+    internal const double RegularMax = 0.107, BoldMin = 0.118;
+    /// <summary>세로 획 ÷ 가로 획의 굵기가 이 이상이면 명조.</summary>
+    internal const double SerifMin = 1.75;
+
+    /// <summary>원문의 굵기·글꼴을 따라가는 판정을 블록의 속성(<see cref="TextBlockInfo.BoldOverride"/>·FontFamily)으로 풀어 넣은 목록 — 식자의 모든 들머리가 먼저 거친다.
+    /// 결과 창도 풍선이 어떤 굵기·글꼴로 그려지는지 볼 때 쓴다. 바뀌는 블록이 없으면 받은 목록 그대로 돌려준다.
+    ///  · 굵기(<see cref="AppSettings.LetterAutoWeight"/>, 블록에 굵기를 안 적었을 때): 원문의 굵은 획이 뚜렷이 가늘면 보통, 뚜렷이 굵으면 굵게. 뚜렷하지 않거나 못 잰 블록은 그 쪽의 뚜렷한 블록들의 다수,
+    ///    다수가 없으면(없다·동수) 그대로 둔다(쪽 설정 <see cref="AppSettings.LetterBold"/>). 다수는 잰 값으로만 센다(사용자가 굵기를 고쳐도, 숨겨도, 효과음으로 바꿔도 안 바뀐다).
+    ///  · 글꼴(<see cref="AppSettings.LetterAutoFamily"/>, 블록에 글꼴을 안 적었을 때): 명조로 읽힌 블록은 <see cref="AppSettings.LetterSerifFamily"/> — 그 글꼴이 PC에 있을 때만.
+    /// 효과음은 건드리지 않는다(제 규칙 — SfxStyle). 잰 값이 없는 쪽(옛 식자 정보)은 아무것도 바뀌지 않는다.</summary>
+    public static IReadOnlyList<TextBlockInfo> WithSourceStyle(IReadOnlyList<TextBlockInfo> blocks, AppSettings s)
+    {
+        if (!s.LetterAutoWeight && !s.LetterAutoFamily) return blocks;
+        // 다수는 잰 값이 있는 블록 전부로 센다 — 결과 창에서 효과음으로 바꾼 대사(잰 값이 남아 있다)도 그대로 든다(풍선 하나를 바꿨다고 다른 풍선의 굵기가 안 바뀌게).
+        // 번역 때부터 효과음인 블록은 재지 않아 끼지 않는다
+        static bool? ClearWeight(TextBlockInfo b) =>
+            b.SrcThick <= 0 || b.SrcEm < StrokeMinEm ? null : b.SrcThick <= RegularMax ? false : b.SrcThick >= BoldMin ? true : null;
+        bool? majority = null;
+        if (s.LetterAutoWeight)
+        {
+            int bold = blocks.Count(b => ClearWeight(b) == true), regular = blocks.Count(b => ClearWeight(b) == false);
+            majority = bold > regular ? true : regular > bold ? false : null;
+        }
+        bool serif = s.LetterAutoFamily && FamilyExists(s.LetterSerifFamily);
+        List<TextBlockInfo>? result = null;
+        for (int i = 0; i < blocks.Count; i++)
+        {
+            var b = blocks[i];
+            if (b.Sfx) continue;
+            var next = b;
+            if (s.LetterAutoWeight && b.BoldOverride is not (0 or 1) && (ClearWeight(b) ?? majority) is { } bold)
+                next = next with { BoldOverride = bold ? 1 : 0 };
+            if (serif && string.IsNullOrWhiteSpace(b.FontFamily) && b.SrcContrast >= SerifMin && b.SrcEm >= StrokeMinEm)
+                next = next with { FontFamily = s.LetterSerifFamily };
+            if (ReferenceEquals(next, b)) continue;
+            result ??= [.. blocks];
+            result[i] = next;
+        }
+        return result ?? blocks;
+    }
+
+    /// <summary>블록에서 그릴 것 — 외곽선과 글자를 한 번에 | 외곽선만 | 글자만.</summary>
+    private enum DrawPart { Both, Outline, Ink }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> KnownFamilies = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>그 이름의 글꼴이 이 PC에 있는가(한 번 알아보면 기억한다) — 없는 글꼴을 블록에 적으면 식자가 맑은 고딕으로 떨어져 쪽 글꼴과도 달라진다.</summary>
+    internal static bool FamilyExists(string? name) =>
+        !string.IsNullOrWhiteSpace(name) && KnownFamilies.GetOrAdd(name.Trim(), n => TryFamily(n) != null);
+
     private static (FontFamily Family, FontStyle Style) ResolveStyle(TextBlockInfo b, AppSettings s)
     {
         // 블록별 스타일: 굵기(페이지 설정/보통/굵게) + 기울임 (페이지 기본에 블록이 더한다)
@@ -945,8 +1052,10 @@ public static class TextRenderer
 
     /// <summary>블록 하나를 그리고 그린 글자 크기(px)를 돌려준다. draw가 false면 크기만 구한다.</summary>
     /// <param name="linesOut">그린(그릴) 줄들을 여기에 담는다 — 없으면 null.</param>
+    /// <param name="part">무엇을 그릴까 — 외곽선과 글자를 한 번에(기본), 외곽선만, 글자만. Render가 모든 블록의 외곽선을 먼저 그리려고 나눠 부른다(줄 나눔·크기는 어느 쪽이든 같다).</param>
     private static float DrawBlock(Graphics g, TextBlockInfo b, BlockLayout plan, Color color, AppSettings s, bool draw = true, List<string>? linesOut = null,
-        Color? outlineColor = null)   // outlineColor: 자동 반전이 넘기는 외곽선 색(글자 색이었던 것)
+        Color? outlineColor = null,   // outlineColor: 자동 반전이 넘기는 외곽선 색(글자 색이었던 것)
+        DrawPart part = DrawPart.Both)
     {
         b = SfxStyle(NormalizeNewlines(ClampText(b)));
         var (family, style) = ResolveStyle(b, s);
@@ -965,7 +1074,7 @@ public static class TextRenderer
             linesOut?.AddRange(lines);
             if (draw)
                 DrawLines(g, lines, family, style, size, size * LineAdvanceEm * spacing, words.SpaceAt(size), plan.Rect, align, color,
-                    OutlineOf(b, s, size, outlineColor), (float)b.RotationDeg, plan.Fixed);
+                    OutlineOf(b, s, size, outlineColor), (float)b.RotationDeg, plan.Fixed, part);
             return size;
         }
         float wrapWidth = Math.Min(plan.Rect.Width * WordOverflowAllow, Math.Max(plan.Rect.Width, plan.MaxWrap));
@@ -1004,7 +1113,7 @@ public static class TextRenderer
     /// 왼쪽·오른쪽 정렬은 글 덩어리를 자리 한가운데에 두고 그 안에서 줄을 맞춘다 (사람이 식자한 원고의 왼쪽 맞춤이 이 모양이다).</summary>
     private static void DrawLines(Graphics g, IReadOnlyList<string> lines, FontFamily family, FontStyle style, float size,
         float lineAdvance, float wordGap, RectangleF rect, StringAlignment align, Color color, (float Pen, Color Color) outline, float rotationDeg,
-        bool overflowBothWays = false)
+        bool overflowBothWays = false, DrawPart part = DrawPart.Both)
     {
         using var font = new Font(family, size, style, GraphicsUnit.Pixel);
         float lineH = font.GetHeight(g);
@@ -1052,11 +1161,12 @@ public static class TextRenderer
         }
 
         // 외곽선(halo)으로 어떤 배경에서도 읽히게 한다.
-        if (outline.Pen > 0)
+        if (outline.Pen > 0 && part != DrawPart.Ink)
         {
             using var halo = new Pen(outline.Color, outline.Pen) { LineJoin = LineJoin.Round };
             g.DrawPath(halo, path);
         }
+        if (part == DrawPart.Outline) return;   // 글자는 모든 블록의 외곽선 뒤에(Render)
         using var brush = new SolidBrush(color);
         g.FillPath(brush, path);
     }
@@ -1126,14 +1236,13 @@ public static class TextRenderer
     public const float WordOverflowAllow = 1.3f;
 
     /// <summary>설정의 글꼴 이름을 FontFamily로. 미설치 이름이면 Malgun Gothic → GenericSansSerif 순으로 대체.</summary>
-    private static FontFamily ResolveFamily(string name)
+    private static FontFamily ResolveFamily(string name) => TryFamily(name) ?? TryFamily("Malgun Gothic") ?? FontFamily.GenericSansSerif;
+
+    /// <summary>그 이름의 글꼴 — PC에 없으면 null(GDI+가 던진다).</summary>
+    private static FontFamily? TryFamily(string name)
     {
         try { return new FontFamily(name); }
-        catch
-        {
-            try { return new FontFamily("Malgun Gothic"); }
-            catch { return FontFamily.GenericSansSerif; }
-        }
+        catch { return null; }
     }
 
     private static Color ParseColor(string hex, Color fallback) =>

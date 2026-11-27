@@ -355,6 +355,17 @@ public class AppSettings
     public string LetterOutlineColorHex { get; set; } = "#FFFFFF";
     /// <summary>외곽선 두께 배율. 0이면 외곽선 없음 (1.0 = 글자 크기의 1/7 정도).</summary>
     public double LetterOutlineScale { get; set; } = 1.0;
+    /// <summary>글자 크기를 정하는 법(2026-11-27 — 사용자 "번역 역식은 carrot와 유사하게", 원문 글자 크기 맞추기): <c>Source</c> = 번역할 때 잰 원문 글자 크기에 맞춘다
+    /// (풍선에 안 들어가면 줄인다. 못 잰 블록은 그 쪽에서 잰 값의 가운뎃값) | <c>Fit</c> = 풍선에 들어가는 가장 큰 크기의 쪽 가운뎃값(v1.18까지의 방식).
+    /// 잰 값이 없는 옛 결과는 어느 쪽이든 전처럼 식자된다. 크기 배율(<see cref="LetterSizeScale"/>)은 둘 다에 곱한다.</summary>
+    public string LetterSizeMode { get; set; } = "Source";
+    /// <summary>원문의 굵기를 따라간다(2026-11-27): 원문의 획이 가늘면 보통, 굵으면 굵게 — 문턱 사이·못 잰 블록은 그 쪽의 다수, 다수가 없으면 <see cref="LetterBold"/>.
+    /// 블록에 굵기를 적었으면(결과 창) 그것이 이긴다. 끄면 전처럼 쪽 설정(<see cref="LetterBold"/>) 하나로.</summary>
+    public bool LetterAutoWeight { get; set; } = true;
+    /// <summary>원문이 명조(가로 획이 가는 글꼴)면 <see cref="LetterSerifFamily"/>로 쓴다(2026-11-27 — 가릴 수 있는 것은 명조·고딕 둘뿐이다). 블록에 글꼴을 적었으면 그것이 이긴다.</summary>
+    public bool LetterAutoFamily { get; set; } = true;
+    /// <summary>명조로 읽힌 글에 쓰는 글꼴 — PC에 없으면 쪽 글꼴(<see cref="LetterFontFamily"/>) 그대로.</summary>
+    public string LetterSerifFamily { get; set; } = "Batang";
     /// <summary>바탕이 어두우면 글자 색과 외곽선 색을 서로 바꿔 그린다(2026-11-26 사용자 "바탕 밝기에 따라 글자색·외곽선색 자동 반전") — 투명 풍선·검은 바탕의 글이
     /// 흰 테두리 검은 글로 튀지 않고 검은 테두리 흰 글이 된다. 글이 놓이는 자리 아래 그림의 평균 밝기가 128 미만일 때(TextRenderer.DarkBehind).
     /// 블록에 색을 직접 적었거나 글자 색이 auto면 바꾸지 않는다. 두께는 그대로다.</summary>
@@ -597,6 +608,8 @@ public class AppSettings
         ScribbleXdogThreshold = Math.Clamp(ScribbleXdogThreshold, 1, 128);
         IpaEndAt = Math.Clamp(IpaEndAt, 0, 1);
         if (LetterAlign is not ("Left" or "Center" or "Right")) LetterAlign = "Center";
+        if (LetterSizeMode is not ("Source" or "Fit")) LetterSizeMode = "Source";
+        if (string.IsNullOrWhiteSpace(LetterSerifFamily)) LetterSerifFamily = "Batang";
         // 글자 색 비움은 옛 기본값(원문 색 자동) — 기본이 검정이 된 뒤(2026-11-18)로는 검정으로 채운다. 자동은 "auto"로만.
         // 16진수(#RRGGBB)도 auto도 아닌 값("red"·"#12345"·알파 있는 #AARRGGBB)은 다른 설정처럼 유효값으로 — 렌더러는 어차피 검정으로 떨어졌다(검수 2026-11-19)
         if (string.IsNullOrWhiteSpace(LetterColorHex) || (!IsAutoColor(LetterColorHex) && !System.Text.RegularExpressions.Regex.IsMatch(LetterColorHex.Trim(), "^#[0-9A-Fa-f]{6}$")))

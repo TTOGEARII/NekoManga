@@ -115,8 +115,16 @@ public partial class SettingsWindow
 
         // 식자 글꼴: 설치된 글꼴 목록을 채우고 현재 값을 고른다 (편집 가능 — 직접 입력도 됨)
         foreach (var f in System.Drawing.FontFamily.Families.Select(f => f.Name).OrderBy(n => n))
+        {
             CmbLetterFont.Items.Add(f);
+            CmbLetterSerifFont.Items.Add(f);
+        }
         CmbLetterFont.Text = s.LetterFontFamily;
+        // 원문 글자 따라가기(2026-11-27): 크기 정하는 법·굵기·명조 글꼴
+        SelectComboByTag(CmbLetterSizeMode, s.LetterSizeMode);
+        ChkLetterAutoWeight.IsChecked = s.LetterAutoWeight;
+        ChkLetterAutoFamily.IsChecked = s.LetterAutoFamily;
+        CmbLetterSerifFont.Text = s.LetterSerifFamily;
         ChkLetterBold.IsChecked = s.LetterBold;
         TxtLetterSize.Text = s.LetterSizeScale.ToString(CultureInfo.InvariantCulture);
         TxtLetterColor.Text = s.LetterColorHex;
@@ -267,6 +275,10 @@ public partial class SettingsWindow
         s.LetterOutlineScale = ParseD(TxtLetterOutline.Text, s.LetterOutlineScale, 0, 4.0);
         s.LetterOutlineColorHex = NormalizeHex(TxtLetterOutlineColor.Text, "#FFFFFF");
         s.LetterAutoContrast = ChkLetterAutoContrast.IsChecked == true;
+        s.LetterSizeMode = ComboTag(CmbLetterSizeMode, s.LetterSizeMode);
+        s.LetterAutoWeight = ChkLetterAutoWeight.IsChecked == true;
+        s.LetterAutoFamily = ChkLetterAutoFamily.IsChecked == true;
+        if (!string.IsNullOrWhiteSpace(CmbLetterSerifFont.Text)) s.LetterSerifFamily = CmbLetterSerifFont.Text.Trim();
         s.LetterAlign = ComboTag(CmbLetterAlign, s.LetterAlign);
         s.LetterLineSpacing = ParseD(TxtLetterLineSp.Text, s.LetterLineSpacing, 0.6, 3.0);
         s.LetterWordSpacing = ParseD(TxtLetterWordSp.Text, s.LetterWordSpacing, 0.3, 2.0);

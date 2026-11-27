@@ -356,7 +356,7 @@
   "식자 — 말풍선 글자 모양": "Lettering — speech bubble text style",
   "외곽선 색": "Outline color",
   "띄어쓰기 폭이다냥. 1이면 글꼴 그대로, 작을수록 붙는다냥.": "The width of spaces. 1 keeps the font's own spacing; smaller values pull words closer.",
-  "크기 배율 1.0 = 말풍선에 맞춘 크기다냥.\n· 줄간격·어절 간격 1.0 = 기본. 글자 색은 #RRGGBB(기본 검정), auto면 원문 색이다냥.\n· 외곽선 0 = 없음.": "Size factor 1.0 = fitted to the speech bubble.\n· Line/word spacing 1.0 = default. Text color is #RRGGBB (black by default); auto follows the original color.\n· Outline 0 = none.",
+  "크기 배율 1.0 = 위에서 고른 크기 그대로다냥(원문 글자 크기 또는 말풍선에 맞춘 크기).\n· 줄간격·어절 간격 1.0 = 기본. 글자 색은 #RRGGBB(기본 검정), auto면 원문 색이다냥.\n· 외곽선 0 = 없음.": "Size factor 1.0 = the size chosen above as is (the source text size, or fitted to the speech bubble).\n· Line/word spacing 1.0 = default. Text color is #RRGGBB (black by default); auto follows the original color.\n· Outline 0 = none.",
   "⚙ 엔진": "⚙ Engine",
   "채색 엔진": "Colorization engine",
   "채색과 재생성·커스텀 검열 제거를 맡는 엔진이다냥.\n· 앱이 알아서 켜고 끈다냥.": "The engine for colorization and Regeneration/Custom censorship removal.\n· The app starts and stops it for you.",
@@ -1241,5 +1241,14 @@
   "⚠ 고른 번역기가 못 옮겨 다른 번역기(Google)로 메운 줄이다냥 — 글을 확인해 줘냥": "⚠ The chosen translator failed on this line, so another translator (Google) filled it in — please check the text",
   "⚠ 번역하지 못한 줄이다냥 — 글을 고쳐 줘냥": "⚠ This line could not be translated — please fix the text",
   "내가 고친 번역은 다시 돌려도 그대로 둔다냥": "Keep my edited translations when a page is run again",
-  "결과 창이나 번역 표로 고친 글은 같은 원고를 다시 돌려도 새 번역으로 덮지 않는다냥. 끄면 전부 새로 번역한다냥": "Text you fixed in the result window or through the translation review sheet (CSV) is not overwritten when the same page is run again. Turn this off to retranslate everything"
+  "결과 창이나 번역 표로 고친 글은 같은 원고를 다시 돌려도 새 번역으로 덮지 않는다냥. 끄면 전부 새로 번역한다냥": "Text you fixed in the result window or through the translation review sheet (CSV) is not overwritten when the same page is run again. Turn this off to retranslate everything",
+  "글자 크기": "Text size",
+  "원문 글자 크기에 맞추면 원문이 크게 쓴 글은 크게, 작게 쓴 글은 작게 식자한다냥. 풍선에 안 들어가면 줄인다냥. 크기 배율은 어느 쪽에도 곱한다냥": "Matching the source size letters loud lines large and quiet lines small, the way the original does. Text that does not fit its bubble is still shrunk. The size scale applies in both modes",
+  "원문 글자 크기에 맞춘다냥": "Match the source text size",
+  "풍선에 맞춘다냥 (예전 방식)": "Fit the bubble (previous behaviour)",
+  "원문의 굵기를 따라간다냥 (가는 글꼴은 보통, 나머지는 굵게)": "Follow the source weight (thin fonts regular, the rest bold)",
+  "원문 글자의 획 굵기를 재서 정한다냥. 잴 수 없는 글은 그 쪽의 다른 글을 따르고, 그것도 없으면 위의 '굵게'를 따른다냥": "Decided from the measured stroke width of the source text. Text that cannot be measured follows the rest of its page, and failing that the 'Bold' option above",
+  "원문이 명조면 명조 글꼴로 쓴다냥": "Use a serif font where the source is Mincho (serif)",
+  "명조 글꼴": "Serif font",
+  "크기·굵기·명조는 새로 번역한 쪽부터 적용된다냥(번역할 때 원문 글자를 잰다냥).\n· 결과 창에서 풍선에 직접 적은 크기·굵기·글꼴이 먼저다냥.": "Size, weight and serif matching apply to pages translated from now on (the source text is measured during translation).\n· A size, weight or font set on a bubble in the result window takes precedence."
 }
