@@ -138,6 +138,8 @@ public class ComponentCatalogTests
     [InlineData("model-ocr-enc", MangaOcr.EncoderFile)]
     [InlineData("model-ocr-dec", MangaOcr.DecoderFile)]
     [InlineData("model-ocr-vocab", MangaOcr.VocabFile)]
+    [InlineData("model-nar-ocr", NarOcr.ModelFile)]
+    [InlineData("model-nar-vocab", NarOcr.VocabFile)]
     [InlineData("model-hayai-prefill", HayaiOcr.PrefillFile)]
     [InlineData("model-hayai-decode", HayaiOcr.DecodeFile)]
     [InlineData("model-hayai-pos", HayaiOcr.PosFile)]

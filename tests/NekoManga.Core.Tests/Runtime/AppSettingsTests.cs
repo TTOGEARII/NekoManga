@@ -130,6 +130,7 @@ public class AppSettingsTests
     [InlineData(nameof(AppSettings.TranslateEngine), "DeepSeek")]
     [InlineData(nameof(AppSettings.TranslateEngine), "Grok")]
     [InlineData(nameof(AppSettings.OcrEngine), "MangaOcr")]
+    [InlineData(nameof(AppSettings.OcrEngine), "Hayai")]
     [InlineData(nameof(AppSettings.DecensorMode), "ComfyRegen")]
     [InlineData(nameof(AppSettings.DecensorMode), "ComfyCustom")]
     [InlineData(nameof(AppSettings.RegenInpaintControl), "Repaint")]

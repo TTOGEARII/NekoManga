@@ -38,7 +38,7 @@ public record Component(
     /// <summary>채색에만 쓰는 구성요소(태거·문자열 노드·IPAdapter) — 준비 창에서 채색을 빼면 받지 않는다(AppSettings.InstallColor).
     /// 재생성 검열 제거가 쓰는 것(ComfyUI·체크포인트·ControlNet·LayerStyle·전처리기 노드)은 여기 넣지 않는다 — 그것은 늘 받는다.</summary>
     bool ColorOnly = false,
-    /// <summary>글자 읽기 엔진("Hayai"·"MangaOcr")의 모델이면 그 이름 — 설정에서 그 엔진을 골랐을 때만 받는다(AppSettings.OcrEngine). 나머지는 null.</summary>
+    /// <summary>글자 읽기 엔진("NarSmall"·"Hayai"·"MangaOcr")의 모델이면 그 이름 — 설정에서 그 엔진을 골랐을 때만 받는다(AppSettings.OcrEngine). 나머지는 null.</summary>
     string? Ocr = null
 )
 {
@@ -51,7 +51,7 @@ public static class ComponentCatalog
 {
     public const string ComfyDirName = "ComfyUI_windows_portable";
 
-    // ── 내장 엔진 모델 (번역·검열 감지·기본 검열제거 — 필수, 총 ~1.0GB: 글자 읽기를 Hayai OCR로 받을 때. manga-ocr면 ~1.1GB) ──
+    // ── 내장 엔진 모델 (번역·검열 감지·기본 검열제거 — 필수, 총 ~0.8GB: 글자 읽기를 기본(manga-ocr-nar-small)으로 받을 때. Hayai OCR이면 ~1.0GB, manga-ocr면 ~1.1GB) ──
     public static readonly Component ModelCtd = new(
         "model-ctd", Loc.Key("텍스트 감지 모델 (comictextdetector)"), ComponentKind.File,
         "https://huggingface.co/dreMaz/mit_models/resolve/main/comictextdetector.pt.onnx",
@@ -75,7 +75,25 @@ public static class ComponentCatalog
         "models/lama_manga.onnx", "models/lama_manga.onnx", 210_935_000,
         Obsolete: new[] { "models/lama_fp32.onnx" });
 
-    // ── 글자 읽기: Hayai OCR v2.7 Supernova (기본, 2026-11-27 — 원 모델 JustANormalTinkerer/hayai-ocr-v2.7-supernova는 Apache-2.0, 같은 작성자의 ONNX 변환본을 받는다) ──
+    // ── 글자 읽기: manga-ocr-nar-small (기본, 2026-11-27 사용자 결정 — muscgab/manga-ocr-nar-small) ──
+    // **가중치의 라이선스는 CC BY-NC-SA 4.0(비영리·같은 조건)이다**(코드는 Apache-2.0). 그래서 우리 릴리스에 다시 올리지 않고 작성자의 저장소에서 그대로 받는다 —
+    // 앱(GPL-3.0)에 싣는 것이 아니라 사용자의 PC가 받는 것이다. 설정 창·README에 라이선스를 적어 두었고, 상업적으로 쓰는 사람은 다른 엔진을 고른다.
+    // 저장소의 main이 바뀌어도 같은 파일을 받게 판(커밋)을 박아 둔다. 해시는 그 저장소의 SHA256SUMS와 같다.
+    private const string NarRepo = "https://huggingface.co/muscgab/manga-ocr-nar-small/resolve/81ff4f3313263d1da349946a9dd20d14e0fb0e66";
+
+    public static readonly Component ModelNarOcr = new(
+        "model-nar-ocr", Loc.Key("글자 인식 모델 (manga-ocr-nar-small)"), ComponentKind.File,
+        NarRepo + "/onnx/mangaocr_nar_small_fp32.onnx",
+        "models/ocr_nar.onnx", "models/ocr_nar.onnx", 213_095_336,
+        Sha256: "5ee628dfd40c59c522022d87c31f8f903104198877b9ba4cf795603dc540dcf5", Ocr: "NarSmall");
+
+    public static readonly Component ModelNarVocab = new(
+        "model-nar-vocab", Loc.Key("글자 인식 사전 (manga-ocr-nar-small)"), ComponentKind.File,
+        NarRepo + "/nar_vocabulary_6817.json",
+        "models/ocr_nar_vocab.json", "models/ocr_nar_vocab.json", 48_538,
+        Sha256: "9f1059427b54216c869dbf1244157f86bef74b1a0061c46a6001402c6f0c1dbf", Ocr: "NarSmall");
+
+    // ── 글자 읽기: Hayai OCR v2.7 Supernova (설정에서 고르면 받는다 — 원 모델 JustANormalTinkerer/hayai-ocr-v2.7-supernova는 Apache-2.0, 같은 작성자의 ONNX 변환본을 받는다) ──
     // 반정밀도(fp16) 파일이다 — 이 엔진은 CPU에서만 돌고(HayaiOcr 주석), CPU에서는 전정밀도(fp32, 855MB)와 읽은 글이 같다(조각 83개 전부) · 속도도 같다. 크기는 절반(428MB).
     // int8(252MB)은 조금 빠르지만(조각마다 252 → 225ms) 묶음에 따라 글이 달라진 조각이 있었다(양자화 연산이 CPU 종류를 탄다) — 쓰지 않는다.
     // 저장소의 main이 바뀌어도 같은 파일을 받게 판(커밋)을 박아 둔다.
@@ -298,7 +316,7 @@ public static class ComponentCatalog
     /// <summary>설치 순서대로. 내장 엔진 모델 먼저, ComfyUI(선택)는 뒤에.</summary>
     public static IReadOnlyList<Component> All { get; } = new[]
     {
-        ModelCtd, ModelLama, ModelHayaiPrefill, ModelHayaiDecode, ModelHayaiPos, ModelHayaiTokenizer,
+        ModelCtd, ModelLama, ModelNarOcr, ModelNarVocab, ModelHayaiPrefill, ModelHayaiDecode, ModelHayaiPos, ModelHayaiTokenizer,
         ModelOcrEncoder, ModelOcrDecoder, ModelOcrVocab, ModelCensor,
         ModelAletheiaDetector, ModelAletheiaBar, ModelAletheiaMosaic,
         SevenZip, ComfyPortable,
@@ -310,5 +328,5 @@ public static class ComponentCatalog
     public static IEnumerable<Component> ComfyComponents => All.Where(c => c.ForComfy);
 
     public static string FirstRunNote =>
-        Loc.T("번역·기본 검열 제거 모델(1.0GB)과 재생성 엔진(ComfyUI, 약 12GB)을 받는다냥.\n· 채색까지 쓰려면 '채색도 설치'를 체크해 줘냥(약 5GB 더).");
+        Loc.T("번역·기본 검열 제거 모델(0.8GB)과 재생성 엔진(ComfyUI, 약 12GB)을 받는다냥.\n· 채색까지 쓰려면 '채색도 설치'를 체크해 줘냥(약 5GB 더).");
 }

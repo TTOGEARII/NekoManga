@@ -11,6 +11,45 @@ public interface ITextRecognizer
     string[] RecognizeBatch(IReadOnlyList<Mat> crops);
 }
 
+/// <summary>글자 읽기 엔진들이 같이 쓰는 조각 풀기 — 조각(BGR·회색·BGRA Mat, 쪽 그림의 일부일 수 있다)을 RGB 8비트 바이트(행 우선)로.</summary>
+internal static class OcrCrop
+{
+    public static (byte[] Rgb, int W, int H) ToRgb(Mat crop)
+    {
+        Mat? converted = null;
+        if (crop.Type() != MatType.CV_8UC3)
+        {
+            converted = new Mat();
+            Cv2.CvtColor(crop, converted, crop.Channels() == 4 ? ColorConversionCodes.BGRA2BGR : ColorConversionCodes.GRAY2BGR);
+        }
+        try
+        {
+            var bgr = converted ?? crop;
+            int w = bgr.Width, h = bgr.Height;
+            var rgb = new byte[w * h * 3];
+            unsafe
+            {
+                for (int y = 0; y < h; y++)
+                {
+                    byte* row = (byte*)bgr.Ptr(y);
+                    int o = y * w * 3;
+                    for (int x = 0; x < w; x++, o += 3)
+                    {
+                        rgb[o] = row[x * 3 + 2];
+                        rgb[o + 1] = row[x * 3 + 1];
+                        rgb[o + 2] = row[x * 3];
+                    }
+                }
+            }
+            return (rgb, w, h);
+        }
+        finally
+        {
+            converted?.Dispose();
+        }
+    }
+}
+
 /// <summary>Hayai OCR v2.7 Supernova(ONNX — 원 모델 JustANormalTinkerer/hayai-ocr-v2.7-supernova는 Apache-2.0, 같은 작성자의 변환본)로 말풍선 블록을 통째로 읽는다.
 /// SigLIP2 NaFlex 인코더(조각 모양 그대로 16px 패치 128~384개) + 12층 디코더, 일본어·중국어·한국어·영어. 줄 감지 없이 세로·가로·손글씨를 한 번에 읽는다.
 ///
@@ -183,42 +222,13 @@ public class HayaiOcr(OnnxEnv env) : ITextRecognizer
     /// <summary>조각(BGR) → 패치. 조각 모양에 맞는 패치 한도를 고르고 그 크기로 Pillow BILINEAR 리사이즈한다(<see cref="HayaiPrep"/>).</summary>
     private static Prepared Prepare(Mat crop)
     {
-        Mat? converted = null;
-        if (crop.Type() != MatType.CV_8UC3)
-        {
-            converted = new Mat();
-            Cv2.CvtColor(crop, converted, crop.Channels() == 4 ? ColorConversionCodes.BGRA2BGR : ColorConversionCodes.GRAY2BGR);
-        }
-        try
-        {
-            var bgr = converted ?? crop;
-            int w = bgr.Width, h = bgr.Height;
-            var rgb = new byte[w * h * 3];
-            unsafe
-            {
-                for (int y = 0; y < h; y++)
-                {
-                    byte* row = (byte*)bgr.Ptr(y);
-                    int o = y * w * 3;
-                    for (int x = 0; x < w; x++, o += 3)
-                    {
-                        rgb[o] = row[x * 3 + 2];
-                        rgb[o + 1] = row[x * 3 + 1];
-                        rgb[o + 2] = row[x * 3];
-                    }
-                }
-            }
-            int budget = FixedBudget ?? HayaiPrep.SelectBudget(h, w).Budget;
-            var (th, tw, nh, nw) = HayaiPrep.TargetSize(h, w, budget);
-            var scaled = (tw, th) == (w, h) ? rgb : HayaiPrep.Bilinear(rgb, w, h, tw, th);
-            var patches = new float[nh * nw * HayaiPrep.PatchDim];
-            HayaiPrep.WritePatches(scaled, tw, th, patches);
-            return new Prepared(patches, nh, nw);
-        }
-        finally
-        {
-            converted?.Dispose();
-        }
+        var (rgb, w, h) = OcrCrop.ToRgb(crop);
+        int budget = FixedBudget ?? HayaiPrep.SelectBudget(h, w).Budget;
+        var (th, tw, nh, nw) = HayaiPrep.TargetSize(h, w, budget);
+        var scaled = (tw, th) == (w, h) ? rgb : HayaiPrep.Bilinear(rgb, w, h, tw, th);
+        var patches = new float[nh * nw * HayaiPrep.PatchDim];
+        HayaiPrep.WritePatches(scaled, tw, th, patches);
+        return new Prepared(patches, nh, nw);
     }
 
     private string[] Run(Prepared[] part)

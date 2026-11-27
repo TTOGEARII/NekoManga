@@ -48,13 +48,13 @@ public enum BlockRole { Dialogue, Sfx, Drop }
 /// <summary><see cref="EmbeddedTranslator.EraseBlock"/>이 블록을 지우는 방식 — 단색으로 칠했다 / 둘레의 무늬로 메울 자리에 넣었다(TextureFill) / LaMa 마스크에 넣었다.</summary>
 internal enum EraseKind { Solid, Texture, Lama }
 
-/// <summary>내장 번역 파이프라인: 감지(CTD) → 블록 나누기·합치기·효과음 가르기 → OCR(Hayai OCR 또는 manga-ocr — 설정 OcrEngine) → 번역 → 글자 지우기(단색 풍선은 획만 칠하기 / 무늬 있는 바탕은 둘레의 무늬로 메우기 / 나머지는 LaMa).
+/// <summary>내장 번역 파이프라인: 감지(CTD) → 블록 나누기·합치기·효과음 가르기 → OCR(manga-ocr-nar-small · Hayai OCR · manga-ocr — 설정 OcrEngine) → 번역 → 글자 지우기(단색 풍선은 획만 칠하기 / 무늬 있는 바탕은 둘레의 무늬로 메우기 / 나머지는 LaMa).
 /// BallonsTranslator 없이 전부 프로세스 안(ONNX Runtime + OpenCV)에서 돈다. 켜 두면 그림 위의 글자 자리는 러너가 뒤에 SDXL로 다시 그린다(TextRegen — 이 클래스는 대상 마스크만 남긴다).</summary>
 public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
 {
     private readonly TextDetector _detector = new(env);
     // 글자 읽기 엔진은 설정에서 고른 것 하나만 쓴다 — 그 모델이 없으면 다른 엔진으로 넘어가지 않는다(IsReady가 false, 러너가 "모델이 없다"로 멈춘다)
-    private readonly ITextRecognizer _ocr = settings.OcrEngine == "MangaOcr" ? new MangaOcr(env) : new HayaiOcr(env);
+    private readonly ITextRecognizer _ocr = settings.OcrEngine switch { "MangaOcr" => new MangaOcr(env), "Hayai" => new HayaiOcr(env), _ => new NarOcr(env) };
     private readonly LamaInpainter _lama = new(env, unfusedOnGpu: true);   // 글자 지우기의 LaMa — GPU에서는 그래프 융합 없이(융합하면 GPU가 멈춘다)
 
     public bool IsReady => _detector.IsReady && _ocr.IsReady && _lama.IsReady;
@@ -96,7 +96,7 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         Lap("풍선 나누기·합치기");   // loc:none
 
         // ── OCR ──
-        // 한 쪽의 블록을 한 묶음으로 읽는다 — 블록마다 따로 읽으면 디코더 실행 횟수가 블록 수만큼 곱해진다 (MangaOcr·HayaiOcr 주석).
+        // 한 쪽의 블록을 한 묶음으로 읽는다 — 블록마다 따로 읽으면 디코더 실행 횟수가 블록 수만큼 곱해진다 (MangaOcr·HayaiOcr 주석. NarOcr는 조각마다 한 번에 다 읽는다).
         var blocks = new List<(DetectedBlock Box, string Text)>();
         var readable = new List<DetectedBlock>();
         var crops = new List<Mat>();
