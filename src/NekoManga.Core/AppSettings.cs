@@ -19,6 +19,16 @@ public class AppSettings
     public string SfxMode { get; set; } = "Keep";
     /// <summary>번역 용어집(2026-11-26) — 한 줄에 하나 "원문=번역"(탭으로 갈라도 된다, #은 주석). DeepSeek·Grok에는 지시문으로, Google·DeepL에는 원문의 용어를 번역어로 바꿔 보낸다. 효과음에도 먼저 쓴다.</summary>
     public string TranslateGlossary { get; set; } = "";
+    /// <summary>번역 지침(3단계, 2026-11-27 — Carrot의 번역 지침): 이름 뒤의 경칭(ちゃん·くん·さん…)을 "Keep"(그대로 — 기본, 전의 번역과 같다) | "Natural"(목표 언어에서 자연스럽게) | "Drop"(뺀다). DeepSeek·Grok에만 쓴다.</summary>
+    public string TranslateHonorifics { get; set; } = "Keep";
+    /// <summary>번역의 말투: "Natural"(자연스러운 입말 — 기본) | "Literal"(원문에 가깝게).</summary>
+    public string TranslateTone { get; set; } = "Natural";
+    /// <summary>인물과 말투 — 한 줄에 하나 "이름=말투"(#은 주석). 프롬프트에는 앞에서부터 60줄까지 들어간다(<see cref="Engine.TranslateGuide.MaxCharacters"/>).</summary>
+    public string TranslateCharacters { get; set; } = "";
+    /// <summary>작품 메모(자유 글 — 줄거리·분위기·지켜야 할 표현). 프롬프트에는 4,000자까지(<see cref="Engine.TranslateGuide.MaxNotesChars"/>).</summary>
+    public string TranslateNotes { get; set; } = "";
+    /// <summary>쪽 그림도 번역기에 같이 보낸다(**시험 중**, 기본 끔 — 사용자 결정 "선택 기능으로 넣는다, 기본 끔"): 그림을 읽는 모델만 받는다(못 받는 모델이면 그 쪽이 오류로 끝난다). 원고가 번역 서비스로 올라간다.</summary>
+    public bool TranslateSendImage { get; set; }
     /// <summary>앞 쪽의 대사(원문→번역, 최근 30줄)를 DeepSeek·Grok에 문맥으로 같이 보낸다(2026-11-26) — 인물의 말투·호칭이 쪽 사이에 흔들리지 않게. Google·DeepL은 쓰지 않는다.</summary>
     public bool TranslateCarryContext { get; set; } = true;
 
@@ -480,6 +490,8 @@ public class AppSettings
         TranslateTarget = TranslateTarget switch { "한국어" => "ko", "English" => "en", _ => TranslateTarget };   // loc:none
         // Papago 등 구 BT 엔진만 Google로 되돌린다 (DeepSeek·Grok은 유효).
         if (TranslateEngine is not ("Google" or "DeepL" or "DeepSeek" or "Grok")) TranslateEngine = "Google";
+        if (TranslateHonorifics is not ("Keep" or "Natural" or "Drop")) TranslateHonorifics = "Keep";   // 번역 지침 — 모르는 값은 전의 번역과 같은 쪽으로
+        if (TranslateTone is not ("Natural" or "Literal")) TranslateTone = "Natural";
         if (SfxMode is not ("Keep" or "Replace")) SfxMode = "Keep";   // 효과음(시험 중) — 모르는 값은 끔(전처럼 그대로 둔다)
         if (OcrEngine is not ("NarSmall" or "Hayai" or "MangaOcr")) OcrEngine = "NarSmall";
         // 옛 '강력'(SDXL+LoRA)·DeepCream 모드는 2026-10-19 폐기 — 둘 다 기본(내장 LaMa)으로 돌린다

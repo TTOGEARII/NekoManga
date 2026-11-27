@@ -104,6 +104,12 @@ public partial class SettingsWindow
         SelectComboByTag(CmbSfxMode, s.TranslateBubbleOnly ? s.SfxMode : "Dialogue");   // 풍선 밖 효과음: Keep/Replace(시험 중)/Dialogue(= 전부 대사로, TranslateBubbleOnly 끔)
         TxtGlossary.Text = s.TranslateGlossary.Replace("\n", Environment.NewLine);
         ChkCarryContext.IsChecked = s.TranslateCarryContext;
+        // 번역 지침(2026-11-27): 호칭·말투·인물 메모·작품 메모·쪽 그림 보내기(시험 중)
+        SelectComboByTag(CmbHonorifics, s.TranslateHonorifics);
+        SelectComboByTag(CmbTone, s.TranslateTone);
+        TxtCharacters.Text = s.TranslateCharacters.Replace("\n", Environment.NewLine);
+        TxtTranslateNotes.Text = s.TranslateNotes.Replace("\n", Environment.NewLine);
+        ChkSendImage.IsChecked = s.TranslateSendImage;
         LoadTextRegen(s);
 
         // 식자 글꼴: 설치된 글꼴 목록을 채우고 현재 값을 고른다 (편집 가능 — 직접 입력도 됨)
@@ -240,6 +246,11 @@ public partial class SettingsWindow
         if (sfx != "Dialogue") s.SfxMode = sfx;   // '대사처럼'을 골랐으면 SfxMode는 전 값 그대로(가르지 않으니 뜻이 없다)
         s.TranslateGlossary = TxtGlossary.Text.Replace("\r\n", "\n").Trim();
         s.TranslateCarryContext = ChkCarryContext.IsChecked == true;
+        s.TranslateHonorifics = ComboTag(CmbHonorifics, s.TranslateHonorifics);
+        s.TranslateTone = ComboTag(CmbTone, s.TranslateTone);
+        s.TranslateCharacters = TxtCharacters.Text.Replace("\r\n", "\n").Trim();
+        s.TranslateNotes = TxtTranslateNotes.Text.Replace("\r\n", "\n").Trim();
+        s.TranslateSendImage = ChkSendImage.IsChecked == true;
         SaveTextRegen(s);
         s.DeepLApiKey = TxtDeepLKey.Text.Trim();
         s.DeepSeekApiKey = TxtDeepSeekKey.Text.Trim();

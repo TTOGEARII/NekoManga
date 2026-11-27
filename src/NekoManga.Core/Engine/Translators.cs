@@ -12,6 +12,9 @@ public interface ITranslator
     /// <summary>용어집·앞 쪽 문맥·효과음 여부(<see cref="TranslateOptions"/>)를 같이 넘기는 꼴(2026-11-26) — 따로 받지 않는 번역기는 옵션 없는 쪽으로 간다.</summary>
     Task<IReadOnlyList<string>> TranslateAsync(IReadOnlyList<string> texts, string sourceLang, string targetLang, TranslateOptions options, CancellationToken ct)
         => TranslateAsync(texts, sourceLang, targetLang, ct);
+
+    /// <summary>같은 글을 다시 물으면 다른 답이 올 수 있는가(LLM) — 검증에 걸린 줄을 다시 묻는 것은 그런 번역기뿐이다(Google·DeepL은 같은 답이 온다).</summary>
+    bool AnswersVary => false;
 }
 
 /// <summary>구글 웹 번역 (무료 엔드포인트, 키 불필요). 기본 엔진.</summary>
@@ -113,6 +116,8 @@ public class LlmTranslator(string endpoint, string apiKey, string model, string 
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(150) };
 
+    public bool AnswersVary => true;
+
     public Task<IReadOnlyList<string>> TranslateAsync(IReadOnlyList<string> texts, string sourceLang, string targetLang, CancellationToken ct)
         => TranslateAsync(texts, sourceLang, targetLang, TranslateOptions.None, ct);
 
@@ -123,7 +128,10 @@ public class LlmTranslator(string endpoint, string apiKey, string model, string 
 
         var srcName = LangName(sourceLang);
         var tgtName = LangName(targetLang);
-        var numbered = string.Join("\n", nonEmpty.Select((x, k) => $"[{k + 1}] {x.t.Replace("\n", " ")}"));
+        // 풍선 자리는 줄과 같은 수로 왔을 때만 — 빈 줄을 뺀 차례에 맞춰 같이 고른다
+        var places = options.Places is { } all && all.Count == texts.Count ? nonEmpty.Select(x => all[x.i]).ToList() : null;
+        if (places == null && options.Places != null) options = options with { Places = null };   // 프롬프트의 자리 설명도 뺀다
+        var numbered = BuildUserText(nonEmpty.Select(x => x.t).ToList(), places);
         var sys = BuildSystemPrompt(srcName, tgtName, options);
 
         // 본문은 길어야 수백 토큰이지만 추론 모델은 추론 토큰까지 여기서 쓴다 — 넉넉히 잡고 모자라면 키워서 한 번 더
@@ -132,16 +140,7 @@ public class LlmTranslator(string endpoint, string apiKey, string model, string 
         string[] parsed = new string[nonEmpty.Count];
         for (int attempt = 0; attempt < 3; attempt++)
         {
-            var body = new JsonObject
-            {
-                ["model"] = model,
-                ["temperature"] = 0.3,
-                ["max_tokens"] = maxTokens,
-                ["messages"] = new JsonArray(
-                    new JsonObject { ["role"] = "system", ["content"] = sys },
-                    new JsonObject { ["role"] = "user", ["content"] = numbered }),
-            };
-            if (thinkingOff) body["thinking"] = new JsonObject { ["type"] = "disabled" };
+            var body = BuildRequestBody(model, sys, numbered, maxTokens, thinkingOff, options.PageImage);
 
             HttpResponseMessage resp;
             try
@@ -170,6 +169,9 @@ public class LlmTranslator(string endpoint, string apiKey, string model, string 
             {
                 // thinking 파라미터를 모르는 모델/엔드포인트면 그것 없이 한 번 더
                 if (thinkingOff && (int)resp.StatusCode == 400) { thinkingOff = false; continue; }
+                // 그림을 못 받는 모델에 그림을 보냈다 — 그림 없이 조용히 다시 보내지 않는다(고른 대로 안 된 것을 사용자가 알아야 한다)
+                if (options.PageImage != null && (int)resp.StatusCode == 400)
+                    throw new InvalidOperationException(Loc.F($"{engineName}가 쪽 그림을 받지 못했다냥 (HTTP 400) — 그림을 읽는 모델이 아니면 설정 → 번역 지침에서 '쪽 그림도 같이 보낸다'를 꺼 줘냥."));
                 throw new InvalidOperationException(Loc.F($"{engineName} 오류 (HTTP {(int)resp.StatusCode}) — 설정의 API 키를 확인해 줘냥."));
             }
 
@@ -177,6 +179,9 @@ public class LlmTranslator(string endpoint, string apiKey, string model, string 
             var content = choice?["message"]?["content"]?.GetValue<string>() ?? "";
             var finish = choice?["finish_reason"]?.GetValue<string>() ?? "";
             parsed = ParseNumbered(content, nonEmpty.Count);
+            // 진단: NEKO_TRANSLATE_DBG=<파일>이면 보낸 지시문·글과 받은 답을 그대로 적는다 — 프롬프트를 고칠 때 번역기가 무엇을 보고 무엇을 냈는지 본다
+            if (Environment.GetEnvironmentVariable("NEKO_TRANSLATE_DBG") is { Length: > 0 } dbg)
+                try { File.AppendAllText(dbg, $"=== {engineName} {model} (attempt {attempt}, finish {finish})\n--- system\n{sys}\n--- user\n{numbered}\n--- answer\n{content}\n\n"); } catch { }   // loc:none
             int got = parsed.Count(p => !string.IsNullOrWhiteSpace(p));
             if (got == nonEmpty.Count) break;
             // 추론만 하다 끊겼거나 본문이 모자라다 — 상한을 키워 한 번 더 (최대 32k, 모델이 거부하면 400 → 예외)
@@ -210,6 +215,35 @@ public class LlmTranslator(string endpoint, string apiKey, string model, string 
 
     private static readonly Regex ThinkTag = new(@"<think>[\s\S]*?</think>", RegexOptions.Compiled);
     private static readonly Regex NumberedLine = new(@"^(?:\[(\d+)\]|(\d+)[\.\):])\s*(.*)$", RegexOptions.Compiled);
+    private static readonly Regex PlaceTag = new(@"^\s*<\d{1,3}\s*,\s*\d{1,3}>\s*", RegexOptions.Compiled);
+
+    /// <summary>번역할 줄을 번호를 붙여 한 덩어리로 — "[n] 글". 풍선 자리(<paramref name="places"/>)가 줄 수만큼 있으면 "[n] &lt;x,y&gt; 글"(수가 다르면 붙이지 않는다 — 엉뚱한 줄에 엉뚱한 자리가 붙는 것보다 없는 것이 낫다).</summary>
+    internal static string BuildUserText(IReadOnlyList<string> lines, IReadOnlyList<(int X, int Y)>? places)
+    {
+        bool tagged = places != null && places.Count == lines.Count;
+        return string.Join("\n", lines.Select((t, k) => tagged ? $"[{k + 1}] <{places![k].X},{places[k].Y}> {t.Replace("\n", " ")}" : $"[{k + 1}] {t.Replace("\n", " ")}"));
+    }
+
+    /// <summary>요청 본문(OpenAI 호환 chat completions). 그림이 없으면 전과 같은 꼴(user의 content가 문자열), 있으면 [글, 그림(JPEG data URL)] 두 조각 — 그림을 읽는 모델만 받는다.</summary>
+    internal static JsonObject BuildRequestBody(string model, string system, string userText, int maxTokens, bool thinkingOff, byte[]? pageImage)
+    {
+        JsonNode user = pageImage == null
+            ? JsonValue.Create(userText)
+            : new JsonArray(
+                new JsonObject { ["type"] = "text", ["text"] = userText },
+                new JsonObject { ["type"] = "image_url", ["image_url"] = new JsonObject { ["url"] = "data:image/jpeg;base64," + Convert.ToBase64String(pageImage) } });
+        var body = new JsonObject
+        {
+            ["model"] = model,
+            ["temperature"] = 0.3,
+            ["max_tokens"] = maxTokens,
+            ["messages"] = new JsonArray(
+                new JsonObject { ["role"] = "system", ["content"] = system },
+                new JsonObject { ["role"] = "user", ["content"] = user }),
+        };
+        if (thinkingOff) body["thinking"] = new JsonObject { ["type"] = "disabled" };
+        return body;
+    }
 
     /// <summary>"[n] 번역" 줄을 번호대로 배열에. 일부 모델은 본문에 &lt;think&gt; 블록을 끼우거나 여러 줄을 한 줄에 이어
     /// 붙이므로(" [1] … [2] …") 그것도 받아 준다. 번호 없는 줄은 무시 — 숫자로 시작하는 번역문("3명이…")을 번호로 오인하지 않게
@@ -225,7 +259,7 @@ public class LlmTranslator(string endpoint, string apiKey, string model, string 
             if (!m.Success) continue;
             var num = m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value;
             if (int.TryParse(num, out int n) && n >= 1 && n <= count && string.IsNullOrEmpty(outp[n - 1]))
-                outp[n - 1] = m.Groups[3].Value.Trim();
+                outp[n - 1] = PlaceTag.Replace(m.Groups[3].Value, "").Trim();   // 줄 앞에 붙여 보낸 풍선 자리를 따라 적은 답도 받는다
         }
         return outp;
     }
@@ -236,13 +270,50 @@ public class LlmTranslator(string endpoint, string apiKey, string model, string 
     {
         var sb = new System.Text.StringBuilder();
         if (o.Sfx)
+        {
             sb.Append($"You are a professional manga translator. Each numbered line is a sound effect or onomatopoeia drawn on the artwork, in {srcName}. ")
-              .Append($"Translate each into the {tgtName} sound-effect expression a manga letterer would use: short (at most {TranslationCheck.SfxMaxChars} characters), no explanation, no quotation marks. ");
+              .Append($"Translate each into the {tgtName} sound-effect expression a manga letterer would use: short (at most {TranslationCheck.SfxMaxChars} characters), no explanation, no quotation marks. ")
+              .Append($"Write the output entirely in {tgtName}: never leave {srcName} characters such as kana, kanji or the prolonged-sound mark ー in it (render stretched sounds with ~ or {tgtName} letters). ")
+              .Append("Output ONLY the translations, each prefixed with its number in [n] form, one per line. Do not add notes.");
+        }
         else
-            sb.Append($"You are a professional manga/comic translator. Translate each numbered line from {srcName} to {tgtName}. ")
-              .Append("Keep the natural, casual tone of manga dialogue. Lines are consecutive speech bubbles of one page, so use the others as context. ");
-        sb.Append($"Write the output entirely in {tgtName}: never leave {srcName} characters such as kana, kanji or the prolonged-sound mark ー in it (render stretched sounds with ~ or {tgtName} letters). ")
-          .Append("Output ONLY the translations, each prefixed with its number in [n] form, one per line. Do not add notes.");
+        {
+            // 대사(3단계, 2026-11-27 — Carrot의 지침: 화 전체 문맥으로, 공손함·위계·인물 말투를 지킨다). 전의 프롬프트("Keep the natural, casual tone … use the others as context")로는
+            // 풍선을 넘어 이어지는 문장을 줄마다 따로 옮기고("몇 번인가"/"본 적"), 감탄사를 글자대로 옮기고("왓"·"엣"), OCR이 틀린 반 토막을 그대로 옮겼다(실제 다섯 쪽)
+            var g = o.Guide;
+            sb.Append($"You are a professional manga translator. Translate the numbered lines from {srcName} to {tgtName}. ")
+              .Append("They are the speech bubbles of one manga page, listed roughly in reading order.\n\nRules:\n")
+              .Append("- A sentence often runs across consecutive bubbles. Read the whole page first, then translate so the bubbles read as one continuous, natural conversation. ")
+              .Append("Keep every bubble on its own line: the same numbers and the same number of lines — never merge, split, drop or reorder lines.\n")
+              .Append($"- Write natural spoken {tgtName}, the way a published {tgtName} edition of a manga reads, not a word-for-word rendering. ")
+              .Append("Keep each speaker's tone, politeness level and personality consistent across the page and with the earlier pages. ")
+              .Append("Match the register of each line: never make it cruder, more explicit, more formal or more polite than the original — soft or cute wording stays soft or cute.\n")
+              .Append($"- Translate every word by its meaning. Never carry a {srcName} word into {tgtName} by its sound — slang, mimetic words and loanwords included; only the names of people and places, and glossary terms, keep their sound.\n")
+              .Append($"- Render interjections, gasps, cries and moans with the expressions a {tgtName} reader would actually use, not a letter-by-letter transliteration.{InterjectionExamples(tgtName)}\n")
+              .Append($"- Write the output entirely in {tgtName}: never leave {srcName} characters such as kana, kanji or the prolonged-sound mark ー in it (render stretched sounds with ~ or {tgtName} letters; drop a cut-off small っ, or show the cut-off with ! or …).\n")
+              .Append("- The source text was read by OCR, so a line may contain a misread character or be only a fragment. When the surrounding bubbles make the intended words clear, translate those; ")
+              .Append("otherwise translate what is written as plainly as you can. Never invent new content, and never spell out a line sound by sound: for an unreadable scrap, write the short natural reaction that fits the scene.\n")
+              .Append(g.Honorifics switch
+              {
+                  "Natural" => $"- Adapt name honorifics (-chan, -kun, -san, -sama, senpai …) to the way natural {tgtName} addresses the person: drop them where a {tgtName} speaker would just use the name, and use native terms of address where they fit.\n",
+                  "Drop" => "- Leave out name honorifics (-chan, -kun, -san, -sama …): use the bare name.\n",
+                  _ => $"- Keep name honorifics (-chan, -kun, -san, -sama, senpai …) in their customary {tgtName} form right after the name.\n",
+              });
+            if (g.Tone == "Literal") sb.Append("- Stay close to the wording of the original: do not embellish or localize beyond what the grammar needs.\n");
+            if (o.Places is { Count: > 0 })
+                sb.Append("- Each line starts with the bubble's position on the page as <x,y> in percent (0,0 is the top-left corner, 100,100 the bottom-right). ")
+                  .Append("Manga pages are read right to left, top to bottom: use the positions to tell which bubbles belong to the same exchange. Never output the positions.\n");
+            if (o.PageImage != null)
+                sb.Append("- The page image is attached: use it to see who is speaking, to whom, and in what mood. Translate only the numbered lines.\n");
+            sb.Append("\nOutput ONLY the translations, each prefixed with its number in [n] form, one per line. Do not add notes.");
+            if (g.Characters.Count > 0)
+            {
+                sb.Append("\n\nCharacters (who they are and how they speak — keep it consistent):");
+                foreach (var (name, voice) in g.Characters.Take(TranslateGuide.MaxCharacters)) sb.Append('\n').Append(name).Append(": ").Append(voice);
+            }
+            if (!string.IsNullOrWhiteSpace(g.Notes))
+                sb.Append("\n\nNotes for this work (follow them):\n").Append(g.Notes.Length > TranslateGuide.MaxNotesChars ? g.Notes[..TranslateGuide.MaxNotesChars] : g.Notes);
+        }
         if (o.Glossary.Count > 0)
         {
             sb.Append("\n\nGlossary (always translate these terms exactly as given):");
@@ -255,6 +326,15 @@ public class LlmTranslator(string endpoint, string apiKey, string model, string 
         }
         return sb.ToString();
     }
+
+    /// <summary>감탄사·신음을 목표 언어의 것으로 옮기라는 줄에 붙이는 보기 — 한국어·영어만(다른 언어는 보기 없이 지시만).
+    /// 보기가 없을 때는 "わっ" → "왓", "えっ" → "엣", "うあ" → "우아"처럼 소리를 글자대로 옮겼다.</summary>
+    private static string InterjectionExamples(string tgtName) => tgtName switch
+    {
+        "Korean" => " For example: えっ → 어?, わっ → 앗 or 우왓, うあ → 으앗, はぁはぁ → 하아 하아, んっ → 읏.",   // loc:none
+        "English" => " For example: えっ → Huh?, わっ → Whoa!, はぁはぁ → Hah... hah..., んっ → Nngh.",
+        _ => "",
+    };
 
     // 프롬프트에 넣을 이름일 뿐 언어 판정(LangCode)이 아니다 — zh-TW·zh-Hans 같은 꼴은 코드 그대로 넘어가 간체·번체 구분이 프롬프트에 남는다
     private static string LangName(string code) => code switch

@@ -700,6 +700,40 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- 번역 지침(3단계, 2026-11-27 — CarrotMangaTranslator의 번역 지침·인물 말투): LLM 번역기의 대사 요청에 같이 보낸다(AppSettings.TranslateHonorifics·TranslateTone·TranslateCharacters·TranslateNotes).
+                             쪽 그림 보내기(TranslateSendImage)는 사용자 결정 "선택 기능으로 넣는다, 기본 끔" — 그림을 읽는 모델만 받는다(못 받으면 그 쪽이 오류로 끝난다) -->
+                        <Border Style="{StaticResource SideCard}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SideCardHead}"><TextBlock Style="{StaticResource SideTitle}" Text="번역 지침 (DeepSeek·Grok)"/></Border>
+                                <StackPanel Style="{StaticResource SideBody}">
+                                    <DockPanel Style="{StaticResource SetRow}" Margin="0,3,12,3">
+                                        <TextBlock Text="이름 뒤 호칭" Style="{StaticResource SetLabel}"/>
+                                        <ComboBox x:Name="CmbHonorifics" MinWidth="260" HorizontalAlignment="Left" ToolTip="원문의 ~ちゃん·~くん·~さん 같은 호칭을 번역문에서 어떻게 할지다냥. DeepSeek·Grok에만 쓴다냥">
+                                            <ComboBoxItem Tag="Keep" Content="그대로 둔다냥 (~짱·~군)"/>
+                                            <ComboBoxItem Tag="Natural" Content="자연스럽게 바꾼다냥"/>
+                                            <ComboBoxItem Tag="Drop" Content="뺀다냥 (이름만)"/>
+                                        </ComboBox>
+                                    </DockPanel>
+                                    <DockPanel Style="{StaticResource SetRow}" Margin="0,3,12,3">
+                                        <TextBlock Text="말투" Style="{StaticResource SetLabel}"/>
+                                        <ComboBox x:Name="CmbTone" MinWidth="260" HorizontalAlignment="Left" ToolTip="'원문에 가깝게'는 의역을 줄인다냥. 보통은 '자연스러운 입말'이 읽기 좋다냥">
+                                            <ComboBoxItem Tag="Natural" Content="자연스러운 입말"/>
+                                            <ComboBoxItem Tag="Literal" Content="원문에 가깝게"/>
+                                        </ComboBox>
+                                    </DockPanel>
+                                    <TextBlock Style="{StaticResource SetHint}" Text="인물과 말투 — 한 줄에 하나, 이름=말투 (예: 미쿠=반말, 장난스럽다)"/>
+                                    <TextBox x:Name="TxtCharacters" AcceptsReturn="True" TextWrapping="NoWrap" MinHeight="56" MaxHeight="140" VerticalScrollBarVisibility="Auto"
+                                             ToolTip="누가 어떤 말투를 쓰는지 적어 두면 쪽이 바뀌어도 말투가 흔들리지 않는다냥. #으로 시작하면 설명 줄이다냥. 앞에서부터 60줄까지 쓴다냥"/>
+                                    <TextBlock Style="{StaticResource SetHint}" Text="작품 메모 — 줄거리·분위기·지켜야 할 표현을 자유롭게 적는다냥 (4,000자까지 쓴다냥)"/>
+                                    <TextBox x:Name="TxtTranslateNotes" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="56" MaxHeight="140" VerticalScrollBarVisibility="Auto"/>
+                                    <CheckBox x:Name="ChkSendImage" Margin="0,8,0,0" Foreground="{DynamicResource NekoText}"
+                                              Content="쪽 그림도 같이 보낸다냥 (시험 중 — 그림을 읽는 모델만)"
+                                              ToolTip="번역기가 그림을 보고 누가 말하는지·분위기를 알 수 있다냥. 원고 그림이 번역 서비스로 올라간다냥. 그림을 못 읽는 모델이면 그 쪽이 오류로 끝난다냥 — 그때는 꺼 달라냥"/>
+                                    <TextBlock Style="{StaticResource SetHint}" Text="같은 낱말이 자꾸 소리대로 옮겨지면 위 용어집에 원문=번역으로 적어 두라냥 — 지침보다 확실하다냥."/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
                         <!-- 글자 지운 자리 다시 그리기(TextRegen, 2026-11-26 사용자 "ComfyUI SDXL로 다시 그리는 방향으로" · "검열 제거와 별도로 특화된 모델을 따로" · "인페인팅과 컨트롤넷도 글자용으로 따로"):
                              LaMa가 뭉개는 그림 위의 글자 자리만 SDXL 인페인트 한 단계로 다시 그린다. 값은 전부 TextRegen* — 검열 재생성(Regen*)의 칸과 나누지 않는다. 불러오기·저장은 SettingsWindow.TextRegen.cs -->
                         <Border Style="{StaticResource SideCard}">

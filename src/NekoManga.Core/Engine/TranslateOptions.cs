@@ -8,6 +8,26 @@ public sealed record TranslateOptions(
     bool Sfx)
 {
     public static readonly TranslateOptions None = new([], [], false);
+
+    /// <summary>작품 지침(3단계, 2026-11-27 — Carrot의 번역 지침·인물 말투): 경칭·톤·작품 메모·인물 메모. LLM 번역기의 대사 요청에만 쓴다.</summary>
+    public TranslateGuide Guide { get; init; } = TranslateGuide.Default;
+    /// <summary>줄마다 그 풍선 한가운데의 쪽 안 자리(%, 왼쪽 위가 0,0) — 줄 수와 같을 때만 줄 앞에 붙여 보낸다. 감지기의 블록 차례가 읽는 차례와 어긋날 때 번역기가 어느 풍선끼리 이어지는지 알 수 있게.</summary>
+    public IReadOnlyList<(int X, int Y)>? Places { get; init; }
+    /// <summary>쪽 그림(JPEG) — 설정에서 켰을 때만(기본 끔). 그림을 읽는 모델에 글과 같이 보낸다.</summary>
+    public byte[]? PageImage { get; init; }
+}
+
+/// <summary>작품 지침 — 설정의 값 그대로. <paramref name="Honorifics"/>: "Keep"(경칭을 그대로 — 기본) | "Natural"(목표 언어에서 자연스럽게) | "Drop"(뺀다).
+/// <paramref name="Tone"/>: "Natural"(자연스러운 입말 — 기본) | "Literal"(원문에 가깝게). <paramref name="Notes"/>: 작품 메모(자유 글). <paramref name="Characters"/>: 인물과 말투.</summary>
+public sealed record TranslateGuide(string Honorifics, string Tone, string Notes, IReadOnlyList<(string Name, string Voice)> Characters)
+{
+    /// <summary>프롬프트에 넣는 상한 — 설정 칸에는 얼마든지 적을 수 있다. 인물은 앞에서부터 이만큼, 메모는 이 글자 수까지.</summary>
+    public const int MaxCharacters = 60, MaxNotesChars = 4000;
+
+    public static readonly TranslateGuide Default = new("Keep", "Natural", "", []);
+
+    /// <summary>인물 메모 읽기 — 한 줄에 하나 "이름=말투"(탭으로 갈라도 된다, #은 주석). 용어집과 같은 규칙이다.</summary>
+    public static List<(string Name, string Voice)> ParseCharacters(string? text) => Glossary.Parse(text);
 }
 
 /// <summary>설정의 용어집 글(한 줄에 하나 "원문=번역" — 탭으로 갈라도 된다, #으로 시작하면 주석) 읽기와, 지시문을 못 주는 번역기(Google·DeepL)를 위한 원문 치환.</summary>

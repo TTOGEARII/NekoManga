@@ -200,7 +200,9 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         {
             status?.Report(Loc.F($"번역 중이다냥 ({blocks.Count}개 말풍선 · {engine})"));
             var translator = TranslatorOverride ?? TranslatorFactory.Create(settings);
-            var request = TranslateBlocksAsync(translator, blocks, roles, Glossary.Parse(settings.TranslateGlossary), requestCts.Token);
+            // 쪽 그림(고르면 — 기본 끔)은 지우기 전의 원고로 만든다. 그림을 못 쓰는 번역기(Google·DeepL)에는 만들지 않는다
+            byte[]? pageImage = settings.TranslateSendImage && translator is LlmTranslator ? PageJpeg(img) : null;
+            var request = TranslateBlocksAsync(translator, blocks, roles, Glossary.Parse(settings.TranslateGlossary), new Size(img.Width, img.Height), pageImage, requestCts.Token);
             _ = request.ContinueWith(_ => requestClock.Stop(), TaskContinuationOptions.ExecuteSynchronously);
             if (OverlapsTranslation(roles))
             {
@@ -361,7 +363,7 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
     /// <summary>대사와 효과음을 따로 번역한다(2026-11-26). 대사: 용어집 + 앞 쪽 문맥. 효과음: 용어집(원문이 그대로 한 항목) → 내장 사전(SfxDictionary) → 번역기에 효과음 지시문으로.
     /// 돌려주는 목록은 blocks와 같은 순서·길이. 못 옮긴 줄은 ""(호출부가 원문으로 둔다).</summary>
     private async Task<IReadOnlyList<string>> TranslateBlocksAsync(ITranslator translator, IReadOnlyList<(DetectedBlock Box, string Text)> blocks,
-        IReadOnlyList<BlockRole> roles, IReadOnlyList<(string Source, string Target)> glossary, CancellationToken ct)
+        IReadOnlyList<BlockRole> roles, IReadOnlyList<(string Source, string Target)> glossary, Size page, byte[]? pageImage, CancellationToken ct)
     {
         var result = new string[blocks.Count];
         var dialogue = new List<int>();
@@ -375,8 +377,9 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         }
         if (dialogue.Count > 0)
         {
-            var opts = new TranslateOptions(glossary, settings.TranslateCarryContext ? _recent.ToArray() : [], Sfx: false);
-            var tr = await TranslateCheckedAsync(translator, dialogue.Select(i => blocks[i].Text).ToList(), opts, settings.TranslateSource, settings.TranslateTarget, ct);
+            var boxes = dialogue.Select(i => new Rect(blocks[i].Box.X1, blocks[i].Box.Y1, blocks[i].Box.X2 - blocks[i].Box.X1, blocks[i].Box.Y2 - blocks[i].Box.Y1)).ToList();
+            var opts = DialogueOptions(settings, glossary, _recent.ToArray(), boxes, page, pageImage);
+            var tr = await TranslateInReadingOrderAsync(translator, dialogue.Select(i => blocks[i].Text).ToList(), boxes, opts, settings.TranslateSource, settings.TranslateTarget, ct);
             for (int k = 0; k < dialogue.Count; k++) result[dialogue[k]] = tr[k];
         }
         if (pendingSfx.Count > 0)
@@ -385,6 +388,68 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
             for (int k = 0; k < pendingSfx.Count; k++) result[pendingSfx[k]] = tr[k];
         }
         return result;
+    }
+
+    /// <summary>풍선들을 읽는 차례로 늘어놓은 인덱스 — 줄(세로로 겹치는 풍선들)은 위에서 아래로, 줄 안에서는 오른쪽부터(일본 만화) 또는 왼쪽부터.
+    /// 줄 = 아직 안 고른 것 가운데 위쪽 끝이 가장 높은 풍선과 세로로 겹친 길이가 둘 중 낮은 쪽 높이의 절반을 넘는 풍선들.
+    /// 블록의 차례(위쪽 끝 → 오른쪽)는 같은 높이에 나란한 두 풍선을 위쪽 끝 몇 px 차이로 뒤집는다(실제 04쪽의 내레이션: 문장의 앞뒤가 바뀌어 번역기로 갔다).
+    /// 칸 나눔은 보지 않는 어림이다 — 칸이 좌우로 갈린 쪽에서는 어긋날 수 있다(그래서 번역기에는 풍선의 자리도 같이 준다).</summary>
+    internal static int[] ReadingOrder(IReadOnlyList<Rect> boxes, bool rightToLeft)
+    {
+        var left = Enumerable.Range(0, boxes.Count).OrderBy(i => boxes[i].Y).ThenBy(i => i).ToList();
+        var order = new List<int>(boxes.Count);
+        double Middle(int i) => boxes[i].X + boxes[i].Width / 2.0;
+        while (left.Count > 0)
+        {
+            int first = left[0];
+            var anchor = boxes[first];
+            var row = left.Where(i => i == first ||
+                (Math.Min(anchor.Bottom, boxes[i].Bottom) - Math.Max(anchor.Y, boxes[i].Y)) * 2 > Math.Min(anchor.Height, boxes[i].Height)).ToList();
+            order.AddRange(rightToLeft ? row.OrderByDescending(Middle).ThenBy(i => i) : row.OrderBy(Middle).ThenBy(i => i));
+            left.RemoveAll(row.Contains);
+        }
+        return order.ToArray();
+    }
+
+    /// <summary>대사를 **읽는 차례로** 번역기에 보내고(<see cref="ReadingOrder"/> — 풍선의 자리 <see cref="TranslateOptions.Places"/>도 그 차례로) 받은 답을 받은 차례(블록의 차례)로 되돌린다.
+    /// 식자·사이드카의 블록 차례는 바뀌지 않는다. <paramref name="opts"/>의 Places는 <paramref name="boxes"/>와 같은 차례여야 한다(수가 다르면 자리는 보내지 않는다).</summary>
+    internal static async Task<string[]> TranslateInReadingOrderAsync(ITranslator translator, IReadOnlyList<string> texts, IReadOnlyList<Rect> boxes, TranslateOptions opts,
+        string sourceLang, string targetLang, CancellationToken ct, ITranslator? fallback = null)
+    {
+        if (boxes.Count != texts.Count) return await TranslateCheckedAsync(translator, texts, opts, sourceLang, targetLang, ct, fallback);
+        var order = ReadingOrder(boxes, rightToLeft: LangCode.IsJapanese(sourceLang));
+        var places = opts.Places is { } p && p.Count == texts.Count ? order.Select(i => p[i]).ToList() : null;
+        var sent = await TranslateCheckedAsync(translator, order.Select(i => texts[i]).ToList(), opts with { Places = places }, sourceLang, targetLang, ct, fallback);
+        var result = new string[texts.Count];
+        for (int k = 0; k < order.Length; k++) result[order[k]] = sent[k];
+        return result;
+    }
+
+    /// <summary>번역기에 보내는 쪽 그림의 긴 변 상한(px) — 그림을 읽는 모델들이 받는 크기에 맞춘다. 더 큰 쪽은 줄여 보낸다(글자는 OCR이 따로 읽어 주므로 그림은 누가 말하는지·분위기를 볼 만큼이면 된다).</summary>
+    internal const int PageImageMaxSide = 1568;
+
+    /// <summary>쪽 그림을 번역기에 보낼 JPEG으로 — 긴 변이 <see cref="PageImageMaxSide"/>를 넘으면 줄인다(작은 쪽은 키우지 않는다). 품질 85.</summary>
+    internal static byte[] PageJpeg(Mat img)
+    {
+        double scale = Math.Min(1.0, PageImageMaxSide / (double)Math.Max(img.Width, img.Height));
+        if (scale >= 1.0) return img.ImEncode(".jpg", new ImageEncodingParam(ImwriteFlags.JpegQuality, 85));
+        using var small = new Mat();
+        Cv2.Resize(img, small, new Size((int)Math.Round(img.Width * scale), (int)Math.Round(img.Height * scale)), 0, 0, InterpolationFlags.Area);
+        return small.ImEncode(".jpg", new ImageEncodingParam(ImwriteFlags.JpegQuality, 85));
+    }
+
+    /// <summary>대사 요청에 같이 보낼 것(3단계, 2026-11-27): 설정의 번역 지침(경칭·톤·인물·작품 메모), 풍선마다의 자리(<paramref name="boxes"/> 한가운데의 쪽 안 % — 0~100),
+    /// 용어집, 앞 쪽 문맥(설정 TranslateCarryContext일 때만), 쪽 그림(설정 TranslateSendImage일 때만 — 기본 끔).</summary>
+    internal static TranslateOptions DialogueOptions(AppSettings s, IReadOnlyList<(string Source, string Target)> glossary, IReadOnlyList<(string Source, string Translation)> recent,
+        IReadOnlyList<Rect> boxes, Size page, byte[]? pageImage)
+    {
+        static int Percent(double at, int size) => size <= 0 ? 0 : Math.Clamp((int)Math.Round(at * 100 / size), 0, 100);
+        return new TranslateOptions(glossary, s.TranslateCarryContext ? recent : [], Sfx: false)
+        {
+            Guide = new TranslateGuide(s.TranslateHonorifics, s.TranslateTone, s.TranslateNotes.Trim(), TranslateGuide.ParseCharacters(s.TranslateCharacters)),
+            Places = boxes.Select(b => (Percent(b.X + b.Width / 2.0, page.Width), Percent(b.Y + b.Height / 2.0, page.Height))).ToList(),
+            PageImage = s.TranslateSendImage ? pageImage : null,
+        };
     }
 
     /// <summary>블록 하나의 글자 지우기 — 번역 쪽 루프(TranslatePageAsync)에서 블록마다의 판단만 떼어 낸 것(모델 없이 시험한다, 검수 2026-11-26).
@@ -553,11 +618,13 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         var result = texts.Select((_, i) => i < first.Count ? first[i] ?? "" : "").ToArray();
         bool Ok(int i, string tr) => TranslationCheck.IsAcceptable(PolishTranslation(tr, targetLang), targetLang, opts.Sfx, texts[i]);
         var bad = Enumerable.Range(0, texts.Count).Where(i => !Ok(i, result[i])).ToList();
-        if (bad.Count > 0 && translator is LlmTranslator)
+        if (bad.Count > 0 && translator.AnswersVary)
         {
-            var again = await translator.TranslateAsync(bad.Select(i => texts[i]).ToList(), sourceLang, targetLang, opts, ct);
-            for (int k = 0; k < bad.Count; k++)
-                if (k < again.Count && Ok(bad[k], again[k] ?? "")) result[bad[k]] = again[k];
+            // 걸린 줄만 떼어 다시 물으면 문맥이 없다 — 풍선을 넘어 이어지는 문장의 끝 조각을 전혀 다른 말로 옮겼다(실제 04쪽, 2026-11-27).
+            // 쪽 전체를 같은 옵션으로 다시 묻고, 걸린 줄의 답만 바꾼다(통과한 줄은 처음 답 그대로 — 다시 온 답이 더 나은지는 알 수 없다)
+            var again = await translator.TranslateAsync(texts, sourceLang, targetLang, opts, ct);
+            foreach (int i in bad)
+                if (i < again.Count && Ok(i, again[i] ?? "")) result[i] = again[i];
             bad = bad.Where(i => !Ok(i, result[i])).ToList();
         }
         if (bad.Count > 0 && translator is not GoogleTranslator)
@@ -651,6 +718,7 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         // 여기부터는 한국어·영어(와 그 밖의 언어) — 예전 그대로다
         tr = tr.Replace('ー', '~').Replace('〜', '~').Replace('～', '~');
         tr = tr.Replace('！', '!').Replace('？', '?');
+        tr = DropSmallTsu(tr);
         // 가운뎃점 말줄임은 가로 식자에서 점이 띄엄띄엄 그려진다 (실측 06p). 셋 이상 이어진 것은 남김없이 개수만큼 마침표로 바꾼다 —
         // 세 개씩만 바꾸던 때는 "・・・・"에서 하나가 남았다. "..."로 모으지 않는 것은 여섯 점이 예전부터 "......"(맞춤법의 아래 여섯 점 줄임표)로
         // 바뀌어 왔기 때문이다. 둘 이하는 예전처럼 그대로 둔다(하나는 '빨강・파랑' 같은 열거일 수 있다).
@@ -675,8 +743,14 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
     /// </list>
     /// 이 함수가 원래 손대지 않는 전각 부호(，。：；（）「」『』、 전각 공백)는 중국어에서 전부 맞는 표기이고, 여기서도 손대지 않는다.
     /// 식자(TextRenderer)는 목표 언어를 보지 않고 늘 가로로 그리므로 ～·……가 세로쓰기 꼴로 눕는 일은 없다.</summary>
+    /// <summary>끊는 소리 っ·ッ를 뗀다 — 일본어가 아닌 번역문에 남은 것은 LLM이 원문의 끝을 그대로 붙인 것이다("귀여워っ♡"). 맞는 글자가 없는 소리라 떼면 된다.
+    /// 떼지 않으면 '원문 글자가 남았다'(TranslationCheck)로 걸려 그 줄을 다시 묻는다(실제 다섯 쪽: 55줄 가운데 4줄). っ·ッ가 없는 글은 한 글자도 바뀌지 않는다.</summary>
+    private static string DropSmallTsu(string tr) => tr.IndexOfAny(SmallTsu) < 0 ? tr : tr.Replace("っ", "").Replace("ッ", "");   // loc:none
+    private static readonly char[] SmallTsu = ['っ', 'ッ'];
+
     private static string PolishChinese(string tr)
     {
+        tr = DropSmallTsu(tr);
         tr = tr.Replace('ー', '～').Replace('〜', '～');
         var text = tr;
         tr = HalfWidthTildeRun.Replace(tr, m => KeepsHalfWidthTilde(text, m.Index, m.Length) ? m.Value : new string('～', m.Length));

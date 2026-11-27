@@ -107,6 +107,9 @@ public class AppSettingsTests
     [InlineData(nameof(AppSettings.OnnxGpu), "\"Maybe\"")]
     [InlineData(nameof(AppSettings.OcrEngine), "\"Tesseract\"")]        // 모르는 글자 읽기 엔진
     [InlineData(nameof(AppSettings.OcrEngine), "null")]
+    [InlineData(nameof(AppSettings.TranslateHonorifics), "\"keep\"")]    // 번역 지침 — 대소문자가 다른 값·모르는 값
+    [InlineData(nameof(AppSettings.TranslateHonorifics), "null")]
+    [InlineData(nameof(AppSettings.TranslateTone), "\"직역\"")]
     [InlineData(nameof(AppSettings.GpuVendor), "\"intel\"")]
     [InlineData(nameof(AppSettings.DecensorReviewMode), "\"Batch\"")]
     [InlineData(nameof(AppSettings.LetterAlign), "\"Justify\"")]
@@ -131,6 +134,9 @@ public class AppSettingsTests
     [InlineData(nameof(AppSettings.TranslateEngine), "Grok")]
     [InlineData(nameof(AppSettings.OcrEngine), "MangaOcr")]
     [InlineData(nameof(AppSettings.OcrEngine), "Hayai")]
+    [InlineData(nameof(AppSettings.TranslateHonorifics), "Natural")]
+    [InlineData(nameof(AppSettings.TranslateHonorifics), "Drop")]
+    [InlineData(nameof(AppSettings.TranslateTone), "Literal")]
     [InlineData(nameof(AppSettings.DecensorMode), "ComfyRegen")]
     [InlineData(nameof(AppSettings.DecensorMode), "ComfyCustom")]
     [InlineData(nameof(AppSettings.RegenInpaintControl), "Repaint")]
