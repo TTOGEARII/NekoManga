@@ -704,10 +704,13 @@ public class AppSettingsTests
         var s = new AppSettings();
         Assert.False(s.TextRegen);
         Assert.Equal(("", ""), (s.TextRegenCheckpoint, s.TextRegenControlNet));
-        Assert.Equal("monochrome manga, clean lineart, consistent screentone, seamless background", s.TextRegenPrompt);
-        Assert.Equal("text, letters, sound effects, symbols, watermark, speech bubble, broken lines, blurry lineart, colorized, oversmoothed, residual artifacts", s.TextRegenNegative);
-        Assert.Equal((24, 5.0, "dpmpp_sde_gpu", "karras", -1L), (s.TextRegenSteps, s.TextRegenCfg, s.TextRegenSampler, s.TextRegenScheduler, s.TextRegenSeed));
-        Assert.Equal((8, "Lineart", 0.25, 0.85), (s.TextRegenInpaintGrow, s.TextRegenControl, s.TextRegenCnStrength, s.TextRegenCnEnd));
+        // 실제 쪽 셋으로 맞춘 값(2026-11-27): 흑백·무늬 태그를 앞에, 지어내는 물체(구름·상자·테)를 부정에
+        Assert.Equal("monochrome, greyscale, manga, screentone, halftone, hatching, speed lines, simple background, no humans, clean lineart, seamless background", s.TextRegenPrompt);
+        Assert.Equal("text, letters, speech bubble, sound effects, symbol, watermark, signature, object, cloud, box, frame, border, new outline, color, colorful, blurry, oversmoothed, artifacts", s.TextRegenNegative);
+        // 12스텝·euler_ancestral(2026-11-27, 이 PC의 2070 SUPER): 창 하나 62초 → 20초, 세 쪽 9블록에서 결과는 24스텝 dpmpp_sde_gpu와 비슷했다
+        Assert.Equal((12, 5.0, "euler_ancestral", "karras", -1L), (s.TextRegenSteps, s.TextRegenCfg, s.TextRegenSampler, s.TextRegenScheduler, s.TextRegenSeed));
+        Assert.Equal((8, "Lineart", 0.6, 1.0), (s.TextRegenInpaintGrow, s.TextRegenControl, s.TextRegenCnStrength, s.TextRegenCnEnd));
+        Assert.Equal(0.45, s.TextRegenDenoise);
         Assert.Equal((1472, 1024, 1), (s.TextRegenPreprocResolution, s.TextRegenCropSize, s.TextRegenWhiteRetries));
     }
 
@@ -728,6 +731,19 @@ public class AppSettingsTests
         Assert.Equal((1, 30.0, 64, "Lineart"), (s.TextRegenSteps, s.TextRegenCfg, s.TextRegenInpaintGrow, s.TextRegenControl));
         Assert.Equal((0.0, 1.0, 256, 512, 5), (s.TextRegenCnStrength, s.TextRegenCnEnd, s.TextRegenPreprocResolution, s.TextRegenCropSize, s.TextRegenWhiteRetries));
         Assert.Equal("Repaint", LoadJson(t, "{\"TextRegenControl\": \"Repaint\"}").TextRegenControl);
+    }
+
+    [Theory]
+    [InlineData("0", 0.05)]
+    [InlineData("-3", 0.05)]
+    [InlineData("7", 1.0)]
+    [InlineData("0.6", 0.6)]
+    public void Load_TextRegenDenoise_IsClampedToAUsableRange(string json, double expected)
+    {
+        // (아래 '맞춘 판' 시험들은 이 시험 뒤에 있다)
+        // 0이면 아무것도 그리지 않는다(KSampler가 한 스텝도 안 돈다) — 켰는데 아무 일도 없는 설정이 되지 않게 아래를 막는다
+        using var t = new TempDir();
+        Assert.Equal(expected, LoadJson(t, "{\"TextRegenDenoise\": " + json + "}").TextRegenDenoise);
     }
 
     [Fact]
@@ -822,5 +838,53 @@ public class AppSettingsTests
         var s = LoadJson(t, "{\"UiLanguage\": " + json + "}");
 
         Assert.Equal(expected, s.UiLanguage);
+    }
+
+    // ── 글자 자리 다시 그리기의 기본값을 실제 쪽으로 맞춘 판(SettingsVersion 2, 2026-11-27) ──
+
+    [Fact]
+    public void Load_FileFromBeforeTheTunedTextRegenDefaults_MovesTheOldDefaults()
+    {
+        // v1.18.1이 저장한 파일에는 결과를 보지 않고 정한 옛 기본값이 적혀 있다 — 손대지 않은 값(옛 기본값과 같은 것)만 새 기본값으로 옮긴다
+        using var t = new TempDir();
+        var old = new Dictionary<string, object>
+        {
+            ["SettingsVersion"] = 1, ["TextRegenPrompt"] = AppSettings.OldTextRegenPrompt, ["TextRegenNegative"] = AppSettings.OldTextRegenNegative,
+            ["TextRegenCnStrength"] = 0.25, ["TextRegenCnEnd"] = 0.85, ["TextRegenSampler"] = "dpmpp_sde_gpu", ["TextRegenSteps"] = 24,
+        };
+        var s = LoadJson(t, System.Text.Json.JsonSerializer.Serialize(old));
+        var fresh = new AppSettings();
+        Assert.Equal((fresh.TextRegenPrompt, fresh.TextRegenNegative), (s.TextRegenPrompt, s.TextRegenNegative));
+        Assert.Equal((0.6, 1.0, 0.45), (s.TextRegenCnStrength, s.TextRegenCnEnd, s.TextRegenDenoise));
+        Assert.Equal(("euler_ancestral", 12), (s.TextRegenSampler, s.TextRegenSteps));
+    }
+
+    [Fact]
+    public void Load_FileFromBeforeTheTunedTextRegenDefaults_KeepsChosenValues()
+    {
+        using var t = new TempDir();
+        var chosen = new Dictionary<string, object>
+        {
+            ["SettingsVersion"] = 1, ["TextRegenPrompt"] = "my tags", ["TextRegenNegative"] = "my negative", ["TextRegenCnStrength"] = 0.4, ["TextRegenCnEnd"] = 0.7,
+            ["TextRegenSampler"] = "dpmpp_2m", ["TextRegenSteps"] = 30,
+        };
+        var s = LoadJson(t, System.Text.Json.JsonSerializer.Serialize(chosen));
+        Assert.Equal(("my tags", "my negative", 0.4, 0.7), (s.TextRegenPrompt, s.TextRegenNegative, s.TextRegenCnStrength, s.TextRegenCnEnd));
+        Assert.Equal(("dpmpp_2m", 30), (s.TextRegenSampler, s.TextRegenSteps));
+    }
+
+    [Fact]
+    public void Load_FileWithTheCurrentSettingsVersion_KeepsTheOldTextRegenValuesChosenAgain()
+    {
+        // 새 판에서 일부러 옛 값으로 되돌린 사람의 값은 옮기지 않는다
+        using var t = new TempDir();
+        var again = new Dictionary<string, object>
+        {
+            ["SettingsVersion"] = AppSettings.CurrentSettingsVersion, ["TextRegenPrompt"] = AppSettings.OldTextRegenPrompt, ["TextRegenCnStrength"] = 0.25, ["TextRegenCnEnd"] = 0.85,
+            ["TextRegenSampler"] = "dpmpp_sde_gpu", ["TextRegenSteps"] = 24,
+        };
+        var s = LoadJson(t, System.Text.Json.JsonSerializer.Serialize(again));
+        Assert.Equal((AppSettings.OldTextRegenPrompt, 0.25, 0.85), (s.TextRegenPrompt, s.TextRegenCnStrength, s.TextRegenCnEnd));
+        Assert.Equal(("dpmpp_sde_gpu", 24), (s.TextRegenSampler, s.TextRegenSteps));
     }
 }

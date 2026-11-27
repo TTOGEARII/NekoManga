@@ -274,7 +274,9 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
             Cv2.BitwiseOr(textMask, eraseMask, avoid);
             status?.Report(Loc.F($"배경 무늬 메우는 중이다냥 ({textureJobs.Count}곳)"));
             string tag = stem ?? Path.GetFileNameWithoutExtension(imagePath);
-            if (await Task.Run(() => FillTextures(img, textureJobs, avoid, lamaMask, ct, tag), ct)) needLama = true;
+            var fill = await Task.Run(() => FillTextures(img, textureJobs, avoid, lamaMask, ct, tag, regenMask), ct);
+            if (fill.HandedOver) needLama = true;
+            regenBlocks = Math.Max(0, regenBlocks - fill.KeptOutOfRegen);
             Lap($"배경 무늬 메우기({textureJobs.Count})");   // loc:none
         }
         if (needLama)
@@ -474,19 +476,33 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
     }
 
     /// <summary>무늬 메우기를 돌리고(<see cref="TextureFill.FillAll"/>), 못 메운 일감(가져올 무늬가 모자람·구멍이 너무 큼·메우기 실패)의
-    /// **제 구멍만** LaMa 마스크에 넘긴다 — 창에 걸쳐 들어온 옆 블록의 획은 그 블록의 일감이 맡는다. 돌려주는 값 = LaMa로 넘긴 것이 있는가.</summary>
-    internal static bool FillTextures(Mat img, IReadOnlyList<(Rect Area, Mat Own)> jobs, Mat avoid, Mat lamaMask, CancellationToken ct = default, string? tag = null)
+    /// **제 구멍만** LaMa 마스크에 넘긴다 — 창에 걸쳐 들어온 옆 블록의 획은 그 블록의 일감이 맡는다. HandedOver = LaMa로 넘긴 것이 있는가.
+    /// <paramref name="regenMask"/>(SDXL로 다시 그릴 자리 — 설정 TextRegen)를 주면 **되풀이 무늬를 격자만큼 옮겨 그대로 이은 일감**의 제 구멍을 거기서 뺀다(KeptOutOfRegen = 뺀 일감 수):
+    /// 줄무늬·망점은 이미 둘레와 똑같이 이어졌고, SDXL은 거기에 점·얼룩을 얹거나 망점을 옅게 만들 뿐이었다(실제 26쪽 줄무늬 풍선 둘·13쪽 망점, 2026-11-27).
+    /// 베껴 메운 자리(shift-map — 어긋난 조각이 남는다)와 LaMa로 넘긴 자리는 그대로 다시 그린다.</summary>
+    internal static (bool HandedOver, int KeptOutOfRegen) FillTextures(Mat img, IReadOnlyList<(Rect Area, Mat Own)> jobs, Mat avoid, Mat lamaMask, CancellationToken ct = default, string? tag = null,
+        Mat? regenMask = null)
     {
-        var filled = TextureFill.FillAll(img, jobs, avoid, ct, tag);
+        var filled = TextureFill.FillAll(img, jobs, avoid, out var byLattice, ct, tag);
         bool handedOver = false;
+        int kept = 0;
         for (int k = 0; k < jobs.Count; k++)
         {
-            if (filled[k]) continue;
+            if (filled[k])
+            {
+                if (byLattice[k] && regenMask != null)
+                {
+                    using var regenDst = new Mat(regenMask, jobs[k].Area);
+                    regenDst.SetTo(Scalar.Black, jobs[k].Own);
+                    kept++;
+                }
+                continue;
+            }
             using var dst = new Mat(lamaMask, jobs[k].Area);
             Cv2.BitwiseOr(dst, jobs[k].Own, dst);
             handedOver = true;
         }
-        return handedOver;
+        return (handedOver, kept);
     }
 
     /// <summary>번역하고 검증한다(TranslationCheck — Carrot처럼 목표 언어 글자가 없거나 원문 글자가 남거나 효과음이 길면 거부). 걸린 줄만 LLM에 한 번 더 묻고(Google·DeepL은 같은 답이 오므로 묻지 않는다),

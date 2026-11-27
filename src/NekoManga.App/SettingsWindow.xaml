@@ -760,6 +760,11 @@
                                             <TextBlock Text="0 ~ 1" Style="{StaticResource SetRange}"/>
                                         </DockPanel>
                                         <DockPanel Style="{StaticResource SetRow}">
+                                            <TextBlock Text="디노이즈" Style="{StaticResource SetLabel}"/>
+                                            <TextBox DockPanel.Dock="Left" x:Name="TxtTextRegenDenoise" Width="70" HorizontalAlignment="Left" ToolTip="낮을수록 먼저 메운 그림을 살려 다듬고, 1이면 새로 그린다냥(없는 선을 지어내기 쉽다냥)"/>
+                                            <TextBlock Text="0.05 ~ 1" Style="{StaticResource SetRange}"/>
+                                        </DockPanel>
+                                        <DockPanel Style="{StaticResource SetRow}">
                                             <TextBlock Text="자를 크기" Style="{StaticResource SetLabel}"/>
                                             <TextBox DockPanel.Dock="Left" x:Name="TxtTextRegenCrop" Width="70" HorizontalAlignment="Left" ToolTip="가까운 글자 자리들을 이 크기의 창으로 묶어 SDXL에 보낸다냥 — 1024가 가장 맞는다냥"/>
                                             <TextBlock Text="512 ~ 2048" Style="{StaticResource SetRange}"/>

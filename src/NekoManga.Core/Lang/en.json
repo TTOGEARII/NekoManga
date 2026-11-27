@@ -1205,5 +1205,6 @@
   "글자 자리 선화 해상도": "Text-area line art resolution",
   "글자 자리 다시 그리기를 {0}/{1}창까지만 했다냥 — 나머지 자리는 LaMa 결과다냥: {2}": "Text-area redraw finished only {0} of {1} window(s) — the rest keeps the LaMa result: {2}",
   "글자 자리 다시 그리기가 이어서 {0}번 실패해 이 작업의 남은 쪽은 하지 않는다냥": "Text-area redraw failed {0} times in a row, so it is skipped for the rest of this job",
-  "엔진(ComfyUI)이 {0}초 동안 답하지 않는다냥.": "The engine (ComfyUI) has not answered for {0} seconds."
+  "엔진(ComfyUI)이 {0}초 동안 답하지 않는다냥.": "The engine (ComfyUI) has not answered for {0} seconds.",
+  "낮을수록 먼저 메운 그림을 살려 다듬고, 1이면 새로 그린다냥(없는 선을 지어내기 쉽다냥)": "Lower values refine the already-filled picture; 1 redraws from scratch (and tends to invent lines)"
 }

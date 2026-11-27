@@ -25,6 +25,7 @@ public partial class SettingsWindow
         TxtTextRegenGrow.Text = s.TextRegenInpaintGrow.ToString();
         TxtTextRegenCnStr.Text = s.TextRegenCnStrength.ToString(CultureInfo.InvariantCulture);
         TxtTextRegenCnEnd.Text = s.TextRegenCnEnd.ToString(CultureInfo.InvariantCulture);
+        TxtTextRegenDenoise.Text = s.TextRegenDenoise.ToString(CultureInfo.InvariantCulture);
         TxtTextRegenCrop.Text = s.TextRegenCropSize.ToString();
         TxtTextRegenRetries.Text = s.TextRegenWhiteRetries.ToString();
         SelectComboByTag(CmbTextRegenControl, s.TextRegenControl);
@@ -46,6 +47,7 @@ public partial class SettingsWindow
         s.TextRegenInpaintGrow = ParseI(TxtTextRegenGrow.Text, s.TextRegenInpaintGrow, 0, 64);
         s.TextRegenCnStrength = ParseD(TxtTextRegenCnStr.Text, s.TextRegenCnStrength, 0, 2);
         s.TextRegenCnEnd = ParseD(TxtTextRegenCnEnd.Text, s.TextRegenCnEnd, 0, 1);
+        s.TextRegenDenoise = ParseD(TxtTextRegenDenoise.Text, s.TextRegenDenoise, 0.05, 1);
         s.TextRegenCropSize = ParseI(TxtTextRegenCrop.Text, s.TextRegenCropSize, 512, 2048);
         s.TextRegenWhiteRetries = ParseI(TxtTextRegenRetries.Text, s.TextRegenWhiteRetries, 0, 5);
         s.TextRegenControl = ComboTag(CmbTextRegenControl, s.TextRegenControl);

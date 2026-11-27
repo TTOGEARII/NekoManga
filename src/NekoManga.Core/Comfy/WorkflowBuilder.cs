@@ -275,6 +275,8 @@ public static class WorkflowBuilder
         if (useCn)
         {
             bool union = controlNet.Contains("union", StringComparison.OrdinalIgnoreCase) || controlNet.Contains("promax", StringComparison.OrdinalIgnoreCase);
+            // 인페인트 전용 ControlNet(NoobAI Inpainting)은 두지 않는다: 디노이즈 1.0으로 구멍을 통째로 맡기면 글자·효과음 모양을 다시 그려 냈고(구멍이 글자 기둥 모양이다 — 마스크를 뭉개도 같다),
+            // 다듬는 쪽(0.45~0.6)에서도 선화보다 나은 블록이 없었다(실제 05·13쪽, 2026-11-27)
             bool repaint = union && s.TextRegenControl == "Repaint";
             p["12"] = Node("ControlNetLoader", new() { ["control_net_name"] = controlNet });
             p["24"] = Node("EmptyImage", new() { ["width"] = w, ["height"] = h, ["batch_size"] = 1, ["color"] = 0 });
@@ -310,7 +312,7 @@ public static class WorkflowBuilder
             ["positive"] = useCn ? Link("14", 0) : Link("10", 0), ["negative"] = useCn ? Link("14", 1) : Link("11", 0),
             ["latent_image"] = Link("26", 0),
             ["seed"] = sd, ["steps"] = s.TextRegenSteps, ["cfg"] = s.TextRegenCfg,
-            ["sampler_name"] = s.TextRegenSampler, ["scheduler"] = s.TextRegenScheduler, ["denoise"] = 1.0,
+            ["sampler_name"] = s.TextRegenSampler, ["scheduler"] = s.TextRegenScheduler, ["denoise"] = s.TextRegenDenoise,
         });
         p["17"] = Node("VAEDecode", new() { ["samples"] = Link("16", 0), ["vae"] = Link("2", 2) });
         // 원본 위에 그린 결과를 구멍(넓힌 마스크)만 — 러너도 붙일 때 같은 범위만 받는다

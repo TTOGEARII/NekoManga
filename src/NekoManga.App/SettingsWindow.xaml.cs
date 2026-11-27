@@ -292,7 +292,7 @@ public partial class SettingsWindow
         R(TxtRegenRegionConf, 0.01, 0.9, false); R(TxtRegenRegionPad, 0, 1, false); R(TxtRegenRegionGrow, 0, 3, false);
         // 번역 — 지운 자리 다시 그리기(SaveTextRegen의 범위와 같다)
         R(TxtTextRegenSteps, 1, 150, true); R(TxtTextRegenCfg, 0, 30, false); R(TxtTextRegenGrow, 0, 64, true);
-        R(TxtTextRegenCnStr, 0, 2, false); R(TxtTextRegenCnEnd, 0, 1, false); R(TxtTextRegenCrop, 512, 2048, true); R(TxtTextRegenRetries, 0, 5, true);
+        R(TxtTextRegenCnStr, 0, 2, false); R(TxtTextRegenCnEnd, 0, 1, false); R(TxtTextRegenDenoise, 0.05, 1, false); R(TxtTextRegenCrop, 512, 2048, true); R(TxtTextRegenRetries, 0, 5, true);
         // 엔진
         R(TxtAdvPort, 1024, 65535, true); R(TxtAdvCnLineStr, 0, 2, false); R(TxtAdvCnLineEnd, 0, 1, false);
         R(TxtAdvCnScrStr, 0, 2, false); R(TxtAdvCnScrStart, 0, 1, false); R(TxtAdvPreRes, 256, 4096, true);

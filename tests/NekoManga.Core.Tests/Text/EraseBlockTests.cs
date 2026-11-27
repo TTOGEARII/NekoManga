@@ -558,7 +558,7 @@ public class EraseBlockTests
         ownSmall.Rectangle(new Rect(small.X - areaSmall.X, small.Y - areaSmall.Y, small.Width, small.Height), Scalar.White, -1);
         using var lama = EmptyMask(page);
 
-        bool needLama = EmbeddedTranslator.FillTextures(page, [(areaBig, ownBig), (areaSmall, ownSmall)], avoid, lama);
+        bool needLama = EmbeddedTranslator.FillTextures(page, [(areaBig, ownBig), (areaSmall, ownSmall)], avoid, lama).HandedOver;
 
         Assert.True(needLama);
         using var expected = EmptyMask(page);
@@ -566,5 +566,59 @@ public class EraseBlockTests
         Assert.True(Same(lama, expected), "LaMa 마스크에는 못 메운 블록의 구멍만 든다");
         using var smallNow = new Mat(page, small); using var smallThen = new Mat(original, small);
         Assert.True(Same(smallNow, smallThen), "작은 블록은 줄무늬로 메워졌다");
+    }
+
+    /// <summary>창 <paramref name="area"/> 안의 구멍 <paramref name="hole"/>(쪽 좌표) 하나짜리 일감의 제 구멍.</summary>
+    private static Mat OwnOf(Rect area, Rect hole)
+    {
+        var own = new Mat(area.Height, area.Width, MatType.CV_8UC1, Scalar.Black);
+        own.Rectangle(new Rect(hole.X - area.X, hole.Y - area.Y, hole.Width, hole.Height), Scalar.White, -1);
+        return own;
+    }
+
+    [Fact]
+    public void FillTextures_PatternContinuedExactly_IsTakenOutOfTheRegenMask()
+    {
+        // 되풀이 무늬(줄무늬·망점)는 격자만큼 옮겨 그대로 이어진다 — SDXL로 다시 그리면 얻는 것 없이 점·얼룩만 얹는다(실제 26쪽 줄무늬 풍선, 2026-11-27). 다시 그릴 자리에서 뺀다
+        using var page = new Mat(400, 600, MatType.CV_8UC3, Scalar.White);
+        for (int y = 0; y < 400; y += 6) page.Line(0, y, 599, y, Scalar.Black, 1);
+        var hole = new Rect(260, 160, 60, 80);
+        page.Rectangle(hole, new Scalar(128, 128, 128), -1);
+        using var avoid = EmptyMask(page); avoid.Rectangle(hole, Scalar.White, -1);
+        var area = new Rect(240, 140, 100, 120);
+        using var own = OwnOf(area, hole);
+        using var lama = EmptyMask(page);
+        using var regen = EmptyMask(page); regen.Rectangle(hole, Scalar.White, -1);
+
+        var r = EmbeddedTranslator.FillTextures(page, [(area, own)], avoid, lama, regenMask: regen);
+
+        Assert.Equal((false, 1), (r.HandedOver, r.KeptOutOfRegen));
+        Assert.Equal(0, Cv2.CountNonZero(regen));
+    }
+
+    [Fact]
+    public void FillTextures_IrregularTextureFilledByCopying_StaysInTheRegenMask()
+    {
+        // 되풀이가 아닌 바탕(빗금·속도선·그림)은 둘레를 베껴 메운다 — 어긋난 조각이 남는 쪽이라 SDXL이 다듬을 자리다
+        using var page = new Mat(400, 600, MatType.CV_8UC3, Scalar.White);
+        var rng = new Random(11);
+        for (int i = 0; i < 700; i++)
+        {
+            var p = new Point(rng.Next(600), rng.Next(400));
+            page.Line(p, new Point(p.X + rng.Next(-6, 7), p.Y + rng.Next(8, 40)), Scalar.Black, 1 + rng.Next(2));
+        }
+        var hole = new Rect(260, 160, 60, 80);
+        page.Rectangle(hole, new Scalar(128, 128, 128), -1);
+        using var avoid = EmptyMask(page); avoid.Rectangle(hole, Scalar.White, -1);
+        var area = new Rect(220, 120, 140, 160);
+        using var own = OwnOf(area, hole);
+        using var lama = EmptyMask(page);
+        using var regen = EmptyMask(page); regen.Rectangle(hole, Scalar.White, -1);
+        using var regenBefore = regen.Clone();
+
+        var r = EmbeddedTranslator.FillTextures(page, [(area, own)], avoid, lama, regenMask: regen);
+
+        Assert.Equal((false, 0), (r.HandedOver, r.KeptOutOfRegen));   // 메우긴 했다(LaMa로 넘기지 않았다) — 격자로는 아니다
+        Assert.True(Same(regen, regenBefore), "베껴 메운 자리가 다시 그릴 자리에서 빠졌다");
     }
 }

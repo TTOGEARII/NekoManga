@@ -163,6 +163,25 @@ public class TextRegenRunTests
     }
 
     [Fact]
+    public async Task TextRegenAsync_MonochromePage_PastesTheResultInGray()
+    {
+        // 흑백 쪽인데 SDXL이 색을 얹는 일이 있다(실제 26쪽: 빗금 위 대사 자리에 연두색 얼룩, 2026-11-27) — 붙이기 전에 밝기만 남긴다
+        using var t = new TempDir();
+        var (s, fake, client) = Setup(t);
+        fake.Output = (_, up) => new Mat(up.Rows, up.Cols, MatType.CV_8UC3, new Scalar(40, 200, 90));   // 연두색
+        using var runner = new PipelineRunner(s);
+        using var img = Stripes(800, 600);
+        using var mask = RectMask(800, 600, new Rect(300, 200, 120, 60));
+
+        var r = await runner.TextRegenAsync(client, OutDir(s), img, mask, 0, CancellationToken.None);
+
+        Assert.Null(r.Error);
+        var px = img.At<Vec3b>(230, 360);
+        Assert.True(px.Item0 == px.Item1 && px.Item1 == px.Item2, $"구멍 안에 색이 남았다: {px.Item0},{px.Item1},{px.Item2}");
+        Assert.InRange(px.Item0, 100, 200);   // 그린 것(연두의 밝기)이 붙긴 했다 — 흰 종이도 검은 줄도 아니다
+    }
+
+    [Fact]
     public async Task TextRegenAsync_TwoGroupsWithOverlappingWindows_EachWindowDrawsOnlyItsOwnHole()
     {
         using var t = new TempDir();

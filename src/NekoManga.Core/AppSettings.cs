@@ -250,11 +250,16 @@ public class AppSettings
     /// <summary>글자용 ControlNet 파일 이름 — 비워 두면 재생성 ControlNet을 따른다(<see cref="TextRegenControlNetInUse"/>).</summary>
     public string TextRegenControlNet { get; set; } = "";
     /// <summary>글자 자리의 양성 프롬프트 — 부위 태그를 붙이지 않고 이것만 넣는다.</summary>
-    public string TextRegenPrompt { get; set; } = "monochrome manga, clean lineart, consistent screentone, seamless background";
-    public string TextRegenNegative { get; set; } = "text, letters, sound effects, symbols, watermark, speech bubble, broken lines, blurry lineart, colorized, oversmoothed, residual artifacts";
-    public int TextRegenSteps { get; set; } = 24;
+    public string TextRegenPrompt { get; set; } = "monochrome, greyscale, manga, screentone, halftone, hatching, speed lines, simple background, no humans, clean lineart, seamless background";
+    /// <summary>음성 프롬프트 — 글자·말풍선과, 실제 쪽에서 지어내던 것(구름·상자·테 모양의 새 윤곽, 색)을 막는다.</summary>
+    public string TextRegenNegative { get; set; } = "text, letters, speech bubble, sound effects, symbol, watermark, signature, object, cloud, box, frame, border, new outline, color, colorful, blurry, oversmoothed, artifacts";
+    /// <summary>v1.18.1의 기본 프롬프트 — 결과를 보지 않고 정한 값이었다. 그대로 저장된 파일은 새 기본값으로 옮긴다(<see cref="SettingsVersion"/> 2).</summary>
+    internal const string OldTextRegenPrompt = "monochrome manga, clean lineart, consistent screentone, seamless background";
+    internal const string OldTextRegenNegative = "text, letters, sound effects, symbols, watermark, speech bubble, broken lines, blurry lineart, colorized, oversmoothed, residual artifacts";
+    /// 12스텝·euler_ancestral(2026-11-27, RTX 2070 SUPER 8GB에서 잰 값): 창 하나가 62초(24스텝 dpmpp_sde_gpu — 스텝마다 두 번 계산한다) → 20초. 세 쪽 9블록의 결과는 비슷했다.
+    public int TextRegenSteps { get; set; } = 12;
     public double TextRegenCfg { get; set; } = 5.0;
-    public string TextRegenSampler { get; set; } = "dpmpp_sde_gpu";
+    public string TextRegenSampler { get; set; } = "euler_ancestral";
     public string TextRegenScheduler { get; set; } = "karras";
     /// <summary>-1이면 창마다 새로 뽑는다.</summary>
     public long TextRegenSeed { get; set; } = -1;
@@ -263,8 +268,13 @@ public class AppSettings
     /// <summary>ControlNet 종류: "Lineart"(구멍을 검게 비운 선화) | "Repaint"(union promax일 때만 — 구멍을 검게 비운 원고). 뜻은 <see cref="RegenInpaintControl"/>과 같다.</summary>
     public string TextRegenControl { get; set; } = "Lineart";
     /// <summary>ControlNet 강도 — 0이면 ControlNet 없이 프롬프트만으로 그린다(그래프에 체인을 만들지 않는다).</summary>
-    public double TextRegenCnStrength { get; set; } = 0.25;
-    public double TextRegenCnEnd { get; set; } = 0.85;
+    /// 0.6·끝 1.0(2026-11-27, 실제 세 쪽): 0.25·0.85일 때는 구멍에 구름·상자 같은 윤곽을 지어냈다 — 구멍을 "선 없음"으로 세게, 끝까지 안내하면 줄어든다.
+    public double TextRegenCnStrength { get; set; } = 0.6;
+    public double TextRegenCnEnd { get; set; } = 1.0;
+    /// <summary>디노이즈(0.05~1). 1이면 구멍을 노이즈에서 새로 그리고, 낮추면 먼저 메운 그림(무늬 메우기·LaMa 결과)을 밑그림 삼아 다듬는다.</summary>
+    /// 0.45(2026-11-27, 실제 세 쪽 13블록): 1.0은 블록마다 없는 선·물체·검은 덩어리를 지어냈고(ControlNet 종류·강도를 바꿔도), 0.65도 흰 선을 그었다.
+    /// 0.45는 속도선·빗금·짙은 톤 위의 자리에서 메운 자국을 다듬고, 0.35는 다듬는 것이 적다. 고른 망점은 SDXL이 조금 옅게 만든다(잠재 공간의 한계) — 그런 자리는 애초에 보내지 않는다.
+    public double TextRegenDenoise { get; set; } = 0.45;
     public int TextRegenPreprocResolution { get; set; } = 1472;
     /// <summary>창 하나의 크기(정사각, px) — 한 쪽의 대상 블록을 이 창으로 묶어 보낸다(TextRegenPlan.WindowsFor).</summary>
     public int TextRegenCropSize { get; set; } = 1024;
@@ -364,7 +374,7 @@ public class AppSettings
     public int SettingsVersion { get; set; } = 0;
 
     /// <summary>지금 앱의 설정 판. 기본값을 바꾸고 옛 파일의 값을 옮겨야 할 때 1 올리고 MigrateLegacy에 그 판의 규칙을 더한다. 1 = v1.15.1(1단계 CN 강도의 옛 기본값 0·0.5 → 0.25).</summary>
-    public const int CurrentSettingsVersion = 1;
+    public const int CurrentSettingsVersion = 2;   // 2 = v1.18.2(글자 자리 다시 그리기의 기본 프롬프트·ControlNet 강도·끝·샘플러·스텝 — 실제 쪽으로 맞춘 값)
 
     [JsonIgnore]
     public static string DataDir =>
@@ -538,6 +548,18 @@ public class AppSettings
         TextRegenInpaintGrow = Math.Clamp(TextRegenInpaintGrow, 0, 64);
         if (TextRegenControl is not ("Repaint" or "Lineart")) TextRegenControl = "Lineart";
         TextRegenCnStrength = Math.Clamp(TextRegenCnStrength, 0, 2); TextRegenCnEnd = Math.Clamp(TextRegenCnEnd, 0, 1);
+        TextRegenDenoise = Math.Clamp(TextRegenDenoise, 0.05, 1);   // 0이면 한 스텝도 안 돈다 — 켰는데 아무 일도 없는 설정이 된다
+        // 설정 판 2(2026-11-27): v1.18.1이 저장한 옛 기본값(손대지 않은 값)만 실제 쪽으로 맞춘 새 기본값으로 옮긴다. 디노이즈는 새 칸이라 옛 파일에 없다(기본값이 들어온다)
+        if (SettingsVersion < 2)
+        {
+            var tuned = new AppSettings();
+            if (TextRegenPrompt == OldTextRegenPrompt) TextRegenPrompt = tuned.TextRegenPrompt;
+            if (TextRegenNegative == OldTextRegenNegative) TextRegenNegative = tuned.TextRegenNegative;
+            if (TextRegenCnStrength == 0.25) TextRegenCnStrength = tuned.TextRegenCnStrength;
+            if (TextRegenCnEnd == 0.85) TextRegenCnEnd = tuned.TextRegenCnEnd;
+            if (TextRegenSampler == "dpmpp_sde_gpu") TextRegenSampler = tuned.TextRegenSampler;
+            if (TextRegenSteps == 24) TextRegenSteps = tuned.TextRegenSteps;
+        }
         TextRegenPreprocResolution = Math.Clamp(TextRegenPreprocResolution, 256, 4096);
         TextRegenCropSize = Math.Clamp(TextRegenCropSize, 512, 2048);
         TextRegenWhiteRetries = Math.Clamp(TextRegenWhiteRetries, 0, 5);

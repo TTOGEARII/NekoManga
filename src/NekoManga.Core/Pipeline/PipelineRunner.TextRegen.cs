@@ -27,6 +27,7 @@ public partial class PipelineRunner
         int blocks = 0)
     {
         var windows = TextRegenPlan.WindowsFor(regenMask, img.Size(), settings.TextRegenCropSize);
+        bool mono = !TextRegenPlan.IsColorPage(img);   // 붙이기 전에 잰다 — 붙인 조각의 색이 판정에 섞이지 않게
         try
         {
             int retries = settings.TextRegenWhiteRetries;
@@ -81,6 +82,12 @@ public partial class PipelineRunner
                 }
                 finally { WorkFolders.RemoveComfyFiles(settings.ComfyRoot, null, null, up, upName); }
                 using var bestOwner = best!;
+                // 흑백 쪽에 SDXL이 색을 얹는 일이 있다(실제 26쪽: 빗금 위 대사 자리에 연두색 얼룩, 2026-11-27) — 붙이기 전에 밝기만 남긴다
+                if (mono && bestOwner.Channels() == 3)
+                {
+                    using var gray = bestOwner.CvtColor(ColorConversionCodes.BGR2GRAY);
+                    Cv2.CvtColor(gray, bestOwner, ColorConversionCodes.GRAY2BGR);
+                }
                 using var take = Grown(hole, reach);
                 using var dst = new Mat(img, w.Window);
                 bestOwner.CopyTo(dst, take);

@@ -88,9 +88,15 @@ internal static class TextureFill
     /// 메울 자리가 없거나, 가져올 무늬가 모자라거나, 너무 크거나, 준비·메우기가 실패한 일감은 false — 그 자리의 그림은 그대로다(호출부가 LaMa로 넘긴다). 취소 말고는 던지지 않는다.
     /// 일감들은 **메우기 전의 그림**에서 따로 준비해 돌리고(<see cref="Parallelism"/> — 기본은 하나씩) 차례로 붙인다 — 몇 개씩, 어떤 순서로 돌든 같은 입력에는 같은 결과가 나온다.
     /// <paramref name="tag"/>: 진단 덤프(NEKO_TEXFILL_DBG)의 파일 이름 앞머리 — 쪽마다 다르게 주면 여러 쪽의 덤프가 서로 덮지 않는다.</summary>
-    internal static bool[] FillAll(Mat img, IReadOnlyList<(Rect Area, Mat Own)> holes, Mat avoid, CancellationToken ct = default, string? tag = null)
+    internal static bool[] FillAll(Mat img, IReadOnlyList<(Rect Area, Mat Own)> holes, Mat avoid, CancellationToken ct = default, string? tag = null) =>
+        FillAll(img, holes, avoid, out _, ct, tag);
+
+    /// <summary><see cref="FillAll(Mat, IReadOnlyList{ValueTuple{Rect, Mat}}, Mat, CancellationToken, string)"/>와 같되 일감마다 **되풀이 무늬를 격자만큼 옮겨 그대로 이었는가**도 알려 준다
+    /// (<paramref name="byLattice"/> — 둘레와 똑같은 무늬다. 베껴 메운 것(shift-map)·못 메운 것·메울 것이 없던 것은 false). 그대로 이은 자리는 SDXL로 다시 그릴 까닭이 없다.</summary>
+    internal static bool[] FillAll(Mat img, IReadOnlyList<(Rect Area, Mat Own)> holes, Mat avoid, out bool[] byLattice, CancellationToken ct = default, string? tag = null)
     {
         var done = new bool[holes.Count];
+        byLattice = new bool[holes.Count];
         var jobs = new Job?[holes.Count];
         try
         {
@@ -108,6 +114,7 @@ internal static class TextureFill
                 using var target = new Mat(img, job.Win);
                 filled.CopyTo(target, job.Own);
                 done[i] = true;
+                byLattice[i] = job.ByLattice;
             }
         }
         finally { foreach (var j in jobs) j?.Dispose(); }
@@ -124,6 +131,8 @@ internal static class TextureFill
         public bool Nothing { get; private init; }
         /// <summary>메운 방법(진단용): lattice | shiftmap.</summary>
         public string Method { get; private set; } = "";
+        /// <summary>격자만큼 옮겨 메웠다(되풀이 무늬를 그대로 이었다) — <see cref="Filled"/>가 있을 때만 뜻이 있다.</summary>
+        public bool ByLattice { get; private set; }
 
         /// <summary><paramref name="hole"/>: <paramref name="area"/> 크기의 마스크(이 블록의 구멍).</summary>
         public static Job? Prepare(Mat img, Mat hole, Mat avoid, Rect area, string? tag)
@@ -173,6 +182,7 @@ internal static class TextureFill
                 // 되풀이 무늬 위면 격자만큼 옮겨 메운다 — 아니면(null) shift-map
                 filled = LatticeFill.TryFill(patch, valid, own, out string note);
                 Method = "lattice: " + note;   // loc:none
+                ByLattice = filled != null;
                 if (filled == null)
                 {
                     Method = "shiftmap (" + note + ")";   // loc:none

@@ -526,7 +526,7 @@ public class WorkflowBuilderTests
         var load = Assert.Single(OfType(g, "LoadImage"));
         Assert.Equal("nm_textregen_0_0.png", Str(Inputs(load.Node)["image"]));
         var k = Assert.Single(OfType(g, "KSampler"));
-        Assert.Equal(1.0, Num(Inputs(k.Node)["denoise"]));
+        Assert.Equal(0.45, Num(Inputs(k.Node)["denoise"]));   // 기본은 먼저 메운 그림을 다듬는 쪽(1.0은 없는 선·물체를 지어냈다 — 실제 쪽, 2026-11-27)
         Assert.Equal(7, Num(Inputs(k.Node)["seed"]));
         Assert.Equal(18, Num(Inputs(k.Node)["steps"]));
         Assert.Equal(4.5, Num(Inputs(k.Node)["cfg"]));
@@ -544,6 +544,16 @@ public class WorkflowBuilderTests
         Assert.Equal((load.Id, 0), LinkOf(Inputs(comp)["destination"]));
         Assert.Equal("VAEDecode", ClassType(Source(g, Inputs(comp)["source"])));
         Assert.Same(grow, Source(g, Inputs(comp)["mask"]));
+    }
+
+    [Theory]
+    [InlineData(1.0)]
+    [InlineData(0.55)]
+    public void BuildTextRegen_Denoise_FollowsTheSetting(double denoise)
+    {
+        // 디노이즈 1.0은 구멍을 노이즈에서 새로 그린다 — 실제 쪽에서 없는 선·물체를 지어냈다(2026-11-27). 낮추면 먼저 메운 그림(무늬 메우기·LaMa)을 밑그림 삼아 다듬는다
+        var k = Assert.Single(OfType(Text(new AppSettings { TextRegenSeed = 1, TextRegenDenoise = denoise }), "KSampler"));
+        Assert.Equal(denoise, Num(Inputs(k.Node)["denoise"]));
     }
 
     [Fact]
