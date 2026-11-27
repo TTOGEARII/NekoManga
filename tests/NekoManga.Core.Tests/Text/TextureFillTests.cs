@@ -361,4 +361,64 @@ public class TextureFillDumpTests
         }
         finally { Environment.SetEnvironmentVariable("NEKO_TEXFILL_DBG", before); }
     }
+
+    /// <summary>되풀이 무늬가 아닌 바탕(잡음) 위의 구멍 — 격자로는 못 메워 shift-map 묶음으로 간다.</summary>
+    private static (Mat Page, Rect Area, Mat Own, Mat Avoid) NoisyPage()
+    {
+        var page = new Mat(240, 300, MatType.CV_8UC3);
+        var rng = new Random(11);
+        var bytes = new byte[240 * 300 * 3];
+        for (int p = 0; p < 240 * 300; p++) bytes[3 * p] = bytes[3 * p + 1] = bytes[3 * p + 2] = (byte)(rng.Next(3) == 0 ? 60 : 230);
+        for (int y = 0; y < 240; y++) System.Runtime.InteropServices.Marshal.Copy(bytes, y * 900, page.Ptr(y), 900);
+        var area = new Rect(120, 80, 40, 50);
+        page.Rectangle(area, new Scalar(128, 128, 128), -1);
+        var avoid = new Mat(240, 300, MatType.CV_8UC1, Scalar.Black);
+        avoid.Rectangle(area, Scalar.White, -1);
+        return (page, area, new Mat(area.Height, area.Width, MatType.CV_8UC1, Scalar.White), avoid);
+    }
+
+    [Fact]
+    public void FillAll_WithTheDumpFolderSet_LogsEachShiftMapPiece_WithItsTimings()
+    {
+        // 묶음마다 창 크기·구멍 넓이·걸린 시간(닮은 조각 찾기·절단)을 한 줄씩 — 어느 창이 왜 느린지 본다(2026-11-28: 구멍과 무관하게 창 크기가 시간을 정하던 것을 이것으로 찾았다)
+        using var dir = new TempDir();
+        string? before = Environment.GetEnvironmentVariable("NEKO_TEXFILL_DBG");
+        Environment.SetEnvironmentVariable("NEKO_TEXFILL_DBG", dir.Root);
+        try
+        {
+            var (page, area, own, avoid) = NoisyPage();
+            using (page) using (own) using (avoid)
+                Assert.Equal([true], TextureFill.FillAll(page, [(area, own)], avoid, tag: "p09"));
+
+            var line = Assert.Single(File.ReadAllLines(dir.At("pieces.txt")));
+            Assert.StartsWith("p09 ", line);
+            Assert.Contains(" own ok ", line);
+            Assert.Matches(@"win \d+x\d+ hole \d+ ", line);
+            Assert.Matches(@"search \d+ms .* rounds \d+ cuts \d+ cut \d+ms", line);
+        }
+        finally { Environment.SetEnvironmentVariable("NEKO_TEXFILL_DBG", before); }
+    }
+
+    [Fact]
+    public void FillAll_TheOldImplementation_CanBeSwitchedBackOn_ToCompare()
+    {
+        // NEKO_TEXFILL_OPENCV=1: 전의 xphoto 구현으로 메운다(전후의 시간·모양을 같은 빌드로 견줄 때). 기록에 어느 구현이 메웠는지 남는다
+        using var dir = new TempDir();
+        string? dump = Environment.GetEnvironmentVariable("NEKO_TEXFILL_DBG"), old = Environment.GetEnvironmentVariable("NEKO_TEXFILL_OPENCV");
+        Environment.SetEnvironmentVariable("NEKO_TEXFILL_DBG", dir.Root);
+        Environment.SetEnvironmentVariable("NEKO_TEXFILL_OPENCV", "1");
+        try
+        {
+            var (page, area, own, avoid) = NoisyPage();
+            using (page) using (own) using (avoid)
+                Assert.Equal([true], TextureFill.FillAll(page, [(area, own)], avoid, tag: "p10"));
+
+            Assert.Contains(" opencv ok ", Assert.Single(File.ReadAllLines(dir.At("pieces.txt"))));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("NEKO_TEXFILL_DBG", dump);
+            Environment.SetEnvironmentVariable("NEKO_TEXFILL_OPENCV", old);
+        }
+    }
 }

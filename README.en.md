@@ -101,6 +101,7 @@ In **Settings**, you can adjust colorization quality, censorship detection and r
   - Other engines you can choose: [Hayai OCR v2.7 Supernova](https://huggingface.co/JustANormalTinkerer/hayai-ocr-v2.7-supernova) (Apache-2.0; slower, but its licence allows commercial use) and manga-ocr (the previous engine).
 - Censorship detection and basic restoration are based on [Aletheia Lens](https://github.com/Cec1c/Aletheia-Lens) (GPL-3.0). NekoManga ports its detection pipeline (hent-AI Mask R-CNN) and restoration pipeline (DeepCreamPy) to C# and downloads the model files published by that project.
 - Thanks also to the projects it builds on: [hent-AI](https://github.com/natethegreate/hent-AI), [DeepCreamPy](https://github.com/cookieY/DeepCreamPy), and [Mask R-CNN](https://github.com/matterport/Mask_RCNN).
+- Erasing text that sits on patterns uses a C# port of the shift-map inpainting from the xphoto module of [OpenCV](https://github.com/opencv/opencv_contrib) (3-clause BSD).
 
 ## License
 

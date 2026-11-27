@@ -5,19 +5,19 @@ using OpenCvSharp.XPhoto;
 
 namespace NekoManga.Core.Engine;
 
-/// <summary>무늬 있는 바탕(스크린톤·줄무늬·속도선·빗금) 위의 글자 자리를 **둘레의 무늬를 옮겨** 메운다 — OpenCV xphoto의 shift-map 인페인팅.
+/// <summary>무늬 있는 바탕(스크린톤·줄무늬·속도선·빗금) 위의 글자 자리를 **둘레의 무늬를 옮겨** 메운다 — shift-map 인페인팅(<see cref="ShiftMap"/>: OpenCV xphoto의 것을 옮겨 와 헛도는 곳을 걷어 낸 것, 2026-11-28).
 /// 2026-11-26 사용자 "복구된 부분이 부자연스러워" · "여기도 뭉개졌어"(줄무늬 풍선, 망점·먹칠에 걸친 글): LaMa 만화판은 가는 선·망점을 잇지 못하고 회색으로 뭉갠다
 /// (조각을 원본 해상도로 줄여 넣어도 같았다). 같은 자리를 실제 쪽 열 군데에서 견주니 shift-map은 줄무늬·망점·먹칠 경계를 그대로 이었다(Telea·FSR은 번지거나 흐렸다).
 /// 무늬를 '그리는' 것이 아니라 가까운 자리의 픽셀을 그대로 가져오므로 톤의 주기·굵기가 유지된다. 쓰는 자리는 <see cref="EmbeddedTranslator.EraseBlock"/> —
 /// 구멍 둘레가 평평하지 않은 블록(<see cref="BubbleSolver.RegenStats"/>)만. 평평한 바탕은 단색 칠하기·LaMa가 맡는다.
-/// 알고 둔 것(실측): 같은 입력에는 늘 같은 결과지만(난수 씨앗 셋이 같은 결과) **입력이 조금만 달라도 결과가 크게 달라진다**. 구멍이 풍선 테두리나 그 밖의 그림에 닿으면
+/// 알고 둔 것(실측 — xphoto의 구현으로 잰 것이고 지금 구현도 같은 성질이다): 같은 입력에는 늘 같은 결과지만 **입력이 조금만 달라도 결과가 크게 달라진다**. 구멍이 풍선 테두리나 그 밖의 그림에 닿으면
 /// 밖의 그림 덩어리를 통째로 가져오고(그래서 흰 테는 정말 테일 때만 구멍에 넣는다 — <see cref="BubbleSolver.TextHalo"/>), 둘레 범위를 60px로 줄이면 재료가 모자라 더 자주 틀린다(90이 낫다).
 /// 셋 이상의 바탕이 만나는 자리(망점·흰 띠·먹칠)에서는 경계를 엉뚱한 데 긋기도 한다 — LaMa의 뭉개짐보다는 낫지만 완전하지 않다. 직접 짠 예시 기반 메우기(Criminisi)도 견줘 봤으나 실제 쪽에서 더 흔들렸다.
 /// **되풀이 무늬(줄무늬·망점) 위의 구멍은 shift-map보다 먼저 <see cref="LatticeFill"/>로 메운다**(2026-11-27): 무늬의 격자만큼 옮겨 가져와 한 픽셀도 안 틀리고, 풍선 밖의 그림을 가져오지 않는다. 격자가 안 되는 창만 shift-map.
 /// **둘레가 평평한 쪽은 무늬로 메우지 않고 그 색으로 칠한다**(<see cref="FlatPart"/>, 2026-11-27 속도): 격자가 안 되는 창에서, 선·무늬가 닿은 둘레 가까이와 구멍을 건너가는 선의 길만 shift-map으로 메운다 —
 /// 남은 자리는 가까운 것끼리 묶어 묶음마다 제 창으로(<see cref="Groups"/>). 칠할 자리가 구멍의 절반(<see cref="FlatMinShare"/>)이 안 되는 창은 전과 똑같이 통째로 메운다.
 /// 실측(앱 안, 2026-11-27): 실제 다섯 쪽의 무늬 메우기 68.1초 → 38.4초, 26쪽 121.1초 → 76.0초 — 달라진 창은 다섯(구멍의 71~96%를 칠함)뿐이고 나머지 38창의 결과는 전과 한 픽셀도 다르지 않다.
-/// 빗금·옆 칸의 그림이 평평한 자리로 딸려 들어오던 것도 그 다섯에서 없어졌다. 속도선·톤 위의 큰 글(구멍 10만 px, 20초)은 그대로다 — shift-map의 시간은 메울 넓이에 달렸고 나란히 돌려도 거의 줄지 않는다(안에서 이미 여러 코어를 쓴다).
+/// 빗금·옆 칸의 그림이 평평한 자리로 딸려 들어오던 것도 그 다섯에서 없어졌다. 속도선·톤 위의 큰 글(구멍 10만 px, 20초)은 그때 그대로였다 — 그 시간의 절반은 구멍과 무관한 xphoto의 헛일이었다(<see cref="ShiftMap"/>으로 바꿔 같은 창이 7초, 실제 한 화의 무늬 메우기 194초 → 73초).
 /// **구멍 밖으로 길게 이어지는 곧은 먹(칸 테두리·먹칠한 면)은 메우지 않는다**(<see cref="KeepLongLines"/>): 감지기 마스크는 획을 3px쯤 불린 것이라 칸 테두리에 붙은 글에서는 테두리까지 덮는다 — 그대로 메우면 테두리가 무늬에 파먹힌다.</summary>
 internal static class TextureFill
 {
@@ -25,7 +25,7 @@ internal static class TextureFill
     internal const int ContextPx = 90;
     /// <summary>메우는 범위 = 구멍을 이만큼 넓힌 것 — 획 가장자리의 안티에일리어싱까지.</summary>
     internal const int GrowPx = 2;
-    /// <summary>창 하나에서 메울 픽셀의 상한 — 넘으면 하지 않는다(호출부가 LaMa로 넘긴다). 쪽의 반을 덮는 구멍에 분 단위로 매달리지 않게(11만 px에 20초쯤).</summary>
+    /// <summary>창 하나에서 메울 픽셀의 상한 — 넘으면 하지 않는다(호출부가 LaMa로 넘긴다). 쪽의 반을 덮는 구멍에 분 단위로 매달리지 않게(11만 px에 7초쯤 — xphoto의 구현으로는 20초였다).</summary>
     internal const int MaxHolePx = 200_000;
     /// <summary><see cref="FlatPart"/>: 둘레를 재는 고리(구멍 밖 px — 안쪽 5px은 건너뛴다: 글자 가장자리의 번짐·흰 테의 끝자락이 거기 남는다. 실측: 먹칠 위 흰 테 글자는 3~9px 고리에서 번짐이 사방에 걸려
     /// 구멍의 44%가 무늬로 갔고, 5~11px로 재면 그림에 닿은 곳만 남아 4%였다) · 평평하다고 보는 밝기의 폭(고리의 가운뎃값 ± 이만큼 — 스캔 잡음은 ±6쯤, 옅은 선은 25 넘게 다르다) ·
@@ -134,7 +134,8 @@ internal static class TextureFill
             // 묶음은 큰 것부터, 하나씩 집어 간다(NoBuffering) — 범위로 나눠 주면 큰 묶음들이 한 일꾼에게 몰려 줄을 선다
             var pieces = jobs.Where(j => j != null).SelectMany(j => j!.Pieces).OrderByDescending(p => p.HolePx).ToList();
             if (pieces.Count > 0)
-                Parallel.ForEach(Partitioner.Create(pieces, EnumerablePartitionerOptions.NoBuffering), options, p => p.Run());
+                Parallel.ForEach(Partitioner.Create(pieces, EnumerablePartitionerOptions.NoBuffering), options, p => p.Run(ct, tag));
+            ct.ThrowIfCancellationRequested();   // 묶음은 멈춤을 던지지 않고 그만둔다(Piece.Run) — 여기서 한 번 본다
             for (int i = 0; i < jobs.Length; i++)
             {
                 if (jobs[i] is { Nothing: true }) { done[i] = true; continue; }   // 구멍이 전부 칸 테두리였다 — 메울 것이 없다(LaMa로 넘기지도 않는다)
@@ -493,23 +494,46 @@ internal static class TextureFill
         public int HolePx { get; } = Cv2.CountNonZero(hole);
         public Mat? Filled { get; private set; }
 
-        /// <summary>메운다 — 못 하면 <see cref="Filled"/>가 null로 남는다. **던지지 않는다**(<see cref="Job.Plan"/>과 같은 까닭).</summary>
-        public void Run()
+        /// <summary>메운다 — 못 하면 <see cref="Filled"/>가 null로 남는다. **던지지 않는다**(<see cref="Job.Plan"/>과 같은 까닭 — 멈춤도 던지지 않고 그만둔다. 호출부가 본다).
+        /// 메우는 것은 직접 옮겨 짠 <see cref="ShiftMap"/>이다(2026-11-28 — xphoto의 것은 구멍과 상관없이 창 넓이의 제곱만큼 느렸다). 진단: NEKO_TEXFILL_OPENCV=1이면 전의 xphoto 구현으로(전후를 견줄 때),
+        /// NEKO_TEXFILL_DBG=&lt;폴더&gt;면 묶음마다 창 크기·구멍 넓이·걸린 시간을 pieces.txt에 적는다.</summary>
+        public void Run(CancellationToken ct = default, string? tag = null)
         {
             Mat? filled = null;
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            bool opencv = Environment.GetEnvironmentVariable("NEKO_TEXFILL_OPENCV") == "1";
+            string detail = "";
             try
             {
                 // 마스크에 메울 자리(0)가 하나도 없으면 xphoto가 프로세스째 죽는다(변이 시험에서 봄 — 시험 프로세스가 통째로 내려갔다). 메울 것이 없으면 그림 그대로다
                 if (Cv2.CountNonZero(material) == material.Rows * material.Cols) { Filled = patch.Clone(); return; }
-                filled = new Mat();
-                CvXPhoto.Inpaint(patch, material, filled, OpenCvSharp.XPhoto.InpaintTypes.SHIFTMAP);
-                if (filled.Empty() || filled.Size() != patch.Size() || filled.Type() != patch.Type()) return;
+                if (opencv)
+                {
+                    filled = new Mat();
+                    CvXPhoto.Inpaint(patch, material, filled, OpenCvSharp.XPhoto.InpaintTypes.SHIFTMAP);
+                }
+                else filled = ShiftMap.Inpaint(patch, material, ct, note => detail = " | " + note);
+                if (filled == null || filled.Empty() || filled.Size() != patch.Size() || filled.Type() != patch.Type()) return;
                 Filled = filled;
                 filled = null;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException) { }
-            finally { filled?.Dispose(); }
+            catch { }   // 멈춤 포함 — 이 묶음은 못 메운 것으로 남는다
+            finally
+            {
+                filled?.Dispose();
+                if (Environment.GetEnvironmentVariable("NEKO_TEXFILL_DBG") is { Length: > 0 } dbg)
+                    try
+                    {
+                        Directory.CreateDirectory(dbg);
+                        lock (LogLock)
+                            File.AppendAllText(Path.Combine(dbg, "pieces.txt"),   // loc:none
+                                $"{tag} {window.X},{window.Y} win {patch.Cols}x{patch.Rows} hole {HolePx} {(opencv ? "opencv" : "own")} {(Filled != null ? "ok" : "fail")} {clock.ElapsedMilliseconds}ms{detail}\n");   // loc:none
+                    }
+                    catch { }
+            }
         }
+
+        private static readonly object LogLock = new();
 
         public void Dispose()
         {

@@ -101,6 +101,7 @@ PC를 바꿨다면 설정 → 엔진의 **[이 PC에 맞게 조정]**으로 해�
   고를 수 있는 다른 엔진: [Hayai OCR v2.7 Supernova](https://huggingface.co/JustANormalTinkerer/hayai-ocr-v2.7-supernova) (Apache-2.0 — 느리지만 상업적으로도 쓸 수 있어요) · manga-ocr(이전 엔진).
 - 검열 감지·기본 복원: [Aletheia Lens](https://github.com/Cec1c/Aletheia-Lens) (GPL-3.0) — 그 프로젝트의 감지(hent-AI Mask R-CNN)·복원(DeepCreamPy) 처리 과정을 C#으로 옮겨 쓰고, 모델은 그 프로젝트가 배포하는 파일을 그대로 받아 써요.
   바탕이 된 [hent-AI](https://github.com/natethegreate/hent-AI) · [DeepCreamPy](https://github.com/cookieY/DeepCreamPy) · [Mask R-CNN](https://github.com/matterport/Mask_RCNN)에도 감사드려요.
+- 무늬 위의 글자 지우기: [OpenCV](https://github.com/opencv/opencv_contrib)의 xphoto 모듈에 있는 shift-map 인페인팅을 C#으로 옮겨 써요 (3-clause BSD).
 
 ## 라이선스
 
