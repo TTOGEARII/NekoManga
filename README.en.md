@@ -98,7 +98,7 @@ In **Settings**, you can adjust colorization quality, censorship detection and r
 ## Acknowledgments
 
 - Text recognition uses [manga-ocr-nar-small](https://huggingface.co/muscgab/manga-ocr-nar-small), a fast OCR model that reads a Japanese speech bubble in a single pass and also handles handwriting and sound effects. **Its model weights are licensed under CC BY-NC-SA 4.0 (non-commercial).** NekoManga is a non-commercial personal project and redistributes them unmodified, under that licence, in its model release (with the licence text and notice). For commercial use, pick another engine under Settings → Translation → Text recognition engine.
-  - Other engines you can choose: [Hayai OCR v2.7 Supernova](https://huggingface.co/JustANormalTinkerer/hayai-ocr-v2.7-supernova) (Apache-2.0; slower, better on long text) and manga-ocr (the previous engine).
+  - Other engines you can choose: [Hayai OCR v2.7 Supernova](https://huggingface.co/JustANormalTinkerer/hayai-ocr-v2.7-supernova) (Apache-2.0; slower, but its licence allows commercial use) and manga-ocr (the previous engine).
 - Censorship detection and basic restoration are based on [Aletheia Lens](https://github.com/Cec1c/Aletheia-Lens) (GPL-3.0). NekoManga ports its detection pipeline (hent-AI Mask R-CNN) and restoration pipeline (DeepCreamPy) to C# and downloads the model files published by that project.
 - Thanks also to the projects it builds on: [hent-AI](https://github.com/natethegreate/hent-AI), [DeepCreamPy](https://github.com/cookieY/DeepCreamPy), and [Mask R-CNN](https://github.com/matterport/Mask_RCNN).
 

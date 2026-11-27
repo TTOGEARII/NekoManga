@@ -1214,7 +1214,7 @@
   "글자 인식 모델 (manga-ocr-nar-small)": "Text recognition model (manga-ocr-nar-small)",
   "글자 인식 사전 (manga-ocr-nar-small)": "Text recognition vocabulary (manga-ocr-nar-small)",
   "manga-ocr-nar-small (권장 — 빠르고 손글씨도 잘 읽는다냥)": "manga-ocr-nar-small (recommended — fast, also reads handwriting)",
-  "Hayai OCR (느리지만 긴 글에 강하다냥)": "Hayai OCR (slower, better on long text)",
+  "Hayai OCR (느리지만 상업적 이용도 된다냥)": "Hayai OCR (slower; licence allows commercial use)",
   "말풍선의 글자를 읽는 AI다냥. 바꾸면 그 엔진의 모델을 받아야 한다냥(설정 → 구성요소).\n· manga-ocr-nar-small의 모델은 비영리 라이선스(CC BY-NC-SA 4.0)다냥.": "The AI that reads the text in speech bubbles. After switching, download that engine's model (Settings → Components).\n· The manga-ocr-nar-small model is under a non-commercial licence (CC BY-NC-SA 4.0).",
   "• 글자 인식 — manga-ocr-nar-small(기본) · Hayai OCR · manga-ocr 가운데 고른다냥.": "• Text recognition — choose from manga-ocr-nar-small (default), Hayai OCR and manga-ocr.",
   "번역·기본 검열 제거 모델(0.8GB)과 재생성 엔진(ComfyUI, 약 12GB)을 받는다냥.\n· 채색까지 쓰려면 '채색도 설치'를 체크해 줘냥(약 5GB 더).": "Downloads the translation and basic censorship removal models (0.8 GB) and the regeneration engine (ComfyUI, about 12 GB).\n· To use colorization too, check 'Install colorization too' (about 5 GB more)."

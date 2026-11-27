@@ -144,7 +144,7 @@ internal sealed class NarVocab
 /// Hayai와 정확도가 같고 훨씬 빠르다 — 속도는 아래. 사용자 결정("1번 작업해주고 hayai는 선택할 수 있게").
 /// **가중치의 라이선스는 CC BY-NC-SA 4.0(비영리)이다** — 사용자가 비영리 개인 프로젝트로 우리 모델 릴리스에 바꾸지 않고 다시 올렸다(라이선스 전문·고지 포함, ComponentCatalog 주석).
 /// 상업적으로 쓰는 사람은 설정에서 Hayai OCR(Apache-2.0)이나 manga-ocr를 고른다.
-/// 한 번에 65자까지만 낸다 — 그보다 긴 글(줄이 많은 후기·안내문)은 글 전체가 깨지므로 줄 사이에서 갈라 따로 읽는다(<see cref="NarSplit"/>). 일본어만.
+/// 한 번에 65자까지만 낸다 — 그보다 긴 글(줄이 많은 후기·안내문)이나 조각에 견줘 글이 너무 많은 블록은 글 전체가 깨지므로, 그런 읽기만 줄 사이에서 갈라 따로 읽는다(<see cref="NarSplit"/>). 일본어만.
 ///
 /// 입력은 조각마다 크기가 고정이라(패치 324개 자리) GPU(DirectML)에서도 돈다. 그래프 융합은 끄고(<see cref="OnnxEnv.Unfused"/> — 융합한 모델이 이 PC의 GPU를 멈추게 한 일이 셋 있다),
 /// 프로세스마다 첫 조각 몇 개를 CPU로도 읽어 글이 같을 때만 이후 GPU를 쓴다. 한 쪽을 읽는 사이 GPU에서 내려가면 그 쪽을 CPU로 다시 읽는다(멈추기 직전의 GPU는 오류 없이 쓰레기를 낸다).</summary>
@@ -239,7 +239,7 @@ public class NarOcr(OnnxEnv env) : ITextRecognizer
         using var wV = OrtValue.CreateTensorValueFromMemory(gw, [1]);
         OrtValue[] values = [pV, vV, rV, cV, hV, wV];
 
-        // 조각 하나(또는 긴 글을 가른 토막 하나)를 한 번 돌린다 — 65자 안에 끝 표시가 없으면 넘친 것이다
+        // 조각 하나(또는 긴 글을 가른 토막 하나)를 한 번 돌린다 — 65자 안에 끝 표시가 없으면 넘친 것이다(깨진 읽기인지는 NarSplit이 글을 보고 가린다)
         (string Text, bool Overflow) ReadOne(byte[] rgb, int w, int h)
         {
             (gh[0], gw[0]) = NarPrep.Fill(rgb, w, h, p, v, r, c);
