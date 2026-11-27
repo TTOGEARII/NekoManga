@@ -83,17 +83,19 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
 
         // 맞닿은 말풍선 묶음이 한 블록으로 잡히면 풍선별로 나눈다 — 안 나누면
         // 여러 풍선의 대사가 한 번에 OCR·번역돼 풍선 경계를 무시한 식자가 된다.
-        var detBlocks = new List<DetectedBlock>();
-        foreach (var b in det.Blocks)
-            detBlocks.AddRange(await Task.Run(() => BubbleSplitter.Split(img, textMask, b), ct));
+        // 블록마다 따로 재는 일이라 나란히 돌린다(결과와 차례는 그대로 — 2026-11-27 속도: 한 쪽에 0.14~0.5초)
+        var detBlocks = await Task.Run(() => det.Blocks.AsParallel().AsOrdered().WithCancellation(ct)
+            .SelectMany(b => BubbleSplitter.Split(img, textMask, b)).ToList(), ct);
         if (detBlocks.Count > det.Blocks.Count) // 읽기 순서 복원 (위→아래, 오른→왼)
             detBlocks.Sort((a, b2) => a.Y1 != b2.Y1 ? a.Y1.CompareTo(b2.Y1) : b2.X1.CompareTo(a.X1));
+        Lap("풍선 나누기");   // loc:none
         // 반대로 한 풍선의 글 기둥이 기둥마다 따로 잡힌 것은 다시 하나로 — 따로 두면 반 토막 번역이
         // 좁은 띠에 억지로 들어가 옆 기둥의 번역과 겹친다 (실측 401ちゃん 05·11·12·22p).
         detBlocks = await Task.Run(() => BubbleSplitter.MergeSiblings(img, textMask, detBlocks), ct);
+        Lap("기둥 합치기");   // loc:none
         // 대사 블록에 붙어 잡힌 손글씨 효과음의 획은 따로 뗀다(2026-11-26 사용자 "이런 부분은 효과음이야") — 떼지 않으면 대사를 지울 때 같이 지워진다
         detBlocks = await Task.Run(() => BubbleSplitter.SplitOffGiants(img, textMask, detBlocks), ct);
-        Lap("풍선 나누기·합치기");   // loc:none
+        Lap("효과음 떼기");   // loc:none
 
         // ── OCR ──
         // 한 쪽의 블록을 한 묶음으로 읽는다 — 블록마다 따로 읽으면 디코더 실행 횟수가 블록 수만큼 곱해진다 (MangaOcr·HayaiOcr 주석. NarOcr는 조각마다 한 번에 다 읽는다).

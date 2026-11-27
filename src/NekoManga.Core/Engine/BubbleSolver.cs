@@ -302,7 +302,7 @@ public static class BubbleSolver
     }
 
     /// <summary>마스크 안 픽셀의 밝기 가운뎃값(0~255) — 마스크가 비었으면 -1.</summary>
-    private static int MedianOf(Mat gray, Mat mask) => LevelAt(gray, mask, 0.5);
+    internal static int MedianOf(Mat gray, Mat mask) => LevelAt(gray, mask, 0.5);
 
     /// <summary>마스크 안 픽셀을 어두운 것부터 줄 세웠을 때 <paramref name="rank"/>(0~1) 자리의 밝기(0~255) — 마스크가 비었으면 -1.</summary>
     private static int LevelAt(Mat gray, Mat mask, double rank)

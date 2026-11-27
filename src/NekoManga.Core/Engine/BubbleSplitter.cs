@@ -127,13 +127,20 @@ public static class BubbleSplitter
             using var gray = new Mat();
             Cv2.CvtColor(img, gray, ColorConversionCodes.BGR2GRAY);
 
-            var parent = Enumerable.Range(0, blocks.Count).ToArray();
-            int Find(int i) => parent[i] == i ? i : parent[i] = Find(parent[i]);
+            // 붙어 있는 짝마다의 판정(같은 흰 영역인가·목이 가르는가)은 서로 상관없이 그림만 읽는다 — 나란히 재고, 합치기는 전과 같은 차례로 한다(결과는 같다).
+            // 목 판정은 흰 영역이 창에 다 들어올 때까지 창을 넓혀 가며 쪽 전체를 여러 번 훑기도 한다(실측 2026-11-27: 한 쪽에 0.24~0.57초, 그 대부분이 이 판정)
+            var pairs = new List<(int A, int B)>();
             for (int a = 0; a < blocks.Count; a++)
                 for (int b = a + 1; b < blocks.Count; b++)
-                    if (Adjacent(blocks[a], blocks[b]) && SameWhiteRegion(gray, textMask, blocks[a], blocks[b])
-                        && !NeckBetween(gray, blocks[a], blocks[b]))
-                        parent[Find(a)] = Find(b);
+                    if (Adjacent(blocks[a], blocks[b])) pairs.Add((a, b));
+            var same = pairs.AsParallel().AsOrdered()
+                .Select(p => SameWhiteRegion(gray, textMask, blocks[p.A], blocks[p.B]) && !NeckBetween(gray, blocks[p.A], blocks[p.B]))
+                .ToArray();
+
+            var parent = Enumerable.Range(0, blocks.Count).ToArray();
+            int Find(int i) => parent[i] == i ? i : parent[i] = Find(parent[i]);
+            for (int k = 0; k < pairs.Count; k++)
+                if (same[k]) parent[Find(pairs[k].A)] = Find(pairs[k].B);
 
             var merged = blocks
                 .Select((blk, i) => (Blk: blk, Root: Find(i)))
