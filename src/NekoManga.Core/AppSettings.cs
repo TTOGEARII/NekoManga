@@ -31,6 +31,9 @@ public class AppSettings
     public bool TranslateSendImage { get; set; }
     /// <summary>앞 쪽의 대사(원문→번역, 최근 30줄)를 DeepSeek·Grok에 문맥으로 같이 보낸다(2026-11-26) — 인물의 말투·호칭이 쪽 사이에 흔들리지 않게. Google·DeepL은 쓰지 않는다.</summary>
     public bool TranslateCarryContext { get; set; } = true;
+    /// <summary>결과 창·검수 표로 고친 번역은 같은 원고를 다시 돌려도 그대로 둔다(2026-11-27 — 사용자의 Carrot 규칙 "사용자가 확정한 문자열은 다시 번역하지 않는다"). 끄면 전처럼 전부 새 번역으로 바뀐다.
+    /// 고친 글 = 식자 정보에 남은 번역기의 글(<see cref="Engine.TextBlockInfo.Machine"/>)과 다른 글 — 이 기능이 생기기 전의 결과는 알 수 없어 지키지 못한다.</summary>
+    public bool TranslateKeepEdited { get; set; } = true;
 
     // ── 경로 ──────────────────────────────────────────────────
     /// <summary>ComfyUI·BallonsTranslator·모델이 설치되는 루트. 용량이 커서(약 15GB) 여유 있는 드라이브 권장.</summary>

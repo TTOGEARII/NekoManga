@@ -263,7 +263,8 @@ public partial class ResultWindow
             // 글자 수로 자르지 않는다 — 항목은 폭에서 잘리면 XAML(ItemTemplate의 TextTrimming)이 "…"을 붙이고, 온 글은 툴팁에(2026-11-26, 전에는 22자에서 잘랐다).
             // 줄바꿈(직접 나눈 줄의 \n, 번역기가 준 \r\n)과 겹친 빈칸은 빈칸 하나로 — CR이 남으면 TextBlock이 줄을 바꿔 "…"이 둘째 줄에만 붙는다
             var t = string.Join(" ", _letterBlocks[i].Translation.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-            CmbBlocks.Items.Add($"{i + 1}. {(_letterBlocks[i].Hidden ? Loc.T("(숨김) ") : "")}{(_letterBlocks[i].Sfx ? Loc.T("[효과음] ") : "")}{t}");
+            // ⚠ = 번역을 확인할 줄(다른 번역기로 메움·못 옮김 — 2026-11-27). 목록은 쪽을 열 때 만든다 — 글을 고쳐도 다음에 열 때까지 머리표는 남는다(까닭 줄은 바로 사라진다)
+            CmbBlocks.Items.Add($"{i + 1}. {(_letterBlocks[i].NeedsReview() ? "⚠ " : "")}{(_letterBlocks[i].Hidden ? Loc.T("(숨김) ") : "")}{(_letterBlocks[i].Sfx ? Loc.T("[효과음] ") : "")}{t}");
         }
         if (_letterBlocks.Count > 0) CmbBlocks.SelectedIndex = 0;
         TxtBlockText.Text = _letterBlocks.Count > 0 ? _letterBlocks[0].Translation : "";
@@ -344,6 +345,18 @@ public partial class ResultWindow
         var src = b?.ShownSource() ?? "";
         TxtBlockSource.Text = src;
         PnlBlockSource.Visibility = src.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        ShowBlockReview(b);
+    }
+
+    /// <summary>번역을 확인할 줄이면 그 까닭을 글 칸 위에 보여 준다(2026-11-27 — 고른 번역기가 못 옮겨 다른 번역기로 메운 줄, 끝내 못 옮긴 줄). 전에는 그런 줄도 아무 표시 없이 식자됐다.
+    /// 글이 번역기가 낸 그대로일 때만 보인다(TextBlockInfo.NeedsReview) — 고치면 사라지고, 되돌리면 다시 나온다.</summary>
+    private void ShowBlockReview(TextBlockInfo? b)
+    {
+        bool show = b != null && b.NeedsReview();
+        TxtBlockReview.Text = !show ? ""
+            : b!.Review == ReviewMark.Filled ? Loc.T("⚠ 고른 번역기가 못 옮겨 다른 번역기(Google)로 메운 줄이다냥 — 글을 확인해 줘냥")
+            : Loc.T("⚠ 번역하지 못한 줄이다냥 — 글을 고쳐 줘냥");
+        TxtBlockReview.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>자동인 크기·외곽선 칸에 지금 그려진 값(px)을 적는다 — 그 숫자에서 고쳐 나갈 수 있게. 치는 중인 칸은 건드리지 않는다(force가 아니면).</summary>
@@ -463,6 +476,7 @@ public partial class ResultWindow
         if (_syncingBlockUi || CmbBlocks.SelectedIndex < 0) return;
         int i = CmbBlocks.SelectedIndex;
         SetBlock(i, _letterBlocks[i] with { Translation = TxtBlockText.Text.Replace("\r\n", "\n") }, "text:" + i);
+        ShowBlockReview(_letterBlocks[i]);   // 글을 고치면 '확인할 줄' 까닭이 사라진다
         // 칸은 높이 상한 없이 늘어나므로(2026-11-26) 치는 자리가 패널 아래로 내려가면 바깥 ScrollViewer가 따라오게 — TextBox는 제 안의 스크롤만 맞춘다
         if (TxtBlockText.IsKeyboardFocusWithin)
             try { TxtBlockText.BringIntoView(TxtBlockText.GetRectFromCharacterIndex(TxtBlockText.CaretIndex)); } catch { }

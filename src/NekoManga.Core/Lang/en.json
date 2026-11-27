@@ -1234,5 +1234,12 @@
   "Hayai OCR (느리지만 상업적 이용도 된다냥)": "Hayai OCR (slower; licence allows commercial use)",
   "말풍선의 글자를 읽는 AI다냥. 바꾸면 그 엔진의 모델을 받아야 한다냥(설정 → 구성요소).\n· manga-ocr-nar-small의 모델은 비영리 라이선스(CC BY-NC-SA 4.0)다냥.": "The AI that reads the text in speech bubbles. After switching, download that engine's model (Settings → Components).\n· The manga-ocr-nar-small model is under a non-commercial licence (CC BY-NC-SA 4.0).",
   "• 글자 인식 — manga-ocr-nar-small(기본) · Hayai OCR · manga-ocr 가운데 고른다냥.": "• Text recognition — choose from manga-ocr-nar-small (default), Hayai OCR and manga-ocr.",
-  "번역·기본 검열 제거 모델(0.8GB)과 재생성 엔진(ComfyUI, 약 12GB)을 받는다냥.\n· 채색까지 쓰려면 '채색도 설치'를 체크해 줘냥(약 5GB 더).": "Downloads the translation and basic censorship removal models (0.8 GB) and the regeneration engine (ComfyUI, about 12 GB).\n· To use colorization too, check 'Install colorization too' (about 5 GB more)."
+  "번역·기본 검열 제거 모델(0.8GB)과 재생성 엔진(ComfyUI, 약 12GB)을 받는다냥.\n· 채색까지 쓰려면 '채색도 설치'를 체크해 줘냥(약 5GB 더).": "Downloads the translation and basic censorship removal models (0.8 GB) and the regeneration engine (ComfyUI, about 12 GB).\n· To use colorization too, check 'Install colorization too' (about 5 GB more).",
+  "번역을 확인할 줄 {0}개다냥 (다른 번역기로 메움 {1} · 못 옮김 {2}) — 결과 창 식자 탭의 ⚠ 표시를 보라냥": "{0} translated line(s) need review (filled by another translator: {1}, not translated: {2}) — look for the ⚠ marks in the result window's lettering tab",
+  "전에 고친 번역을 읽지 못했다냥(식자 정보가 깨졌다냥) — 이 장은 새 번역으로 간다냥": "Could not read your earlier edits (the lettering data is damaged) — this page uses the new translation",
+  "고친 번역 {0}줄은 그대로 둔다냥": "Keeping {0} line(s) you edited",
+  "⚠ 고른 번역기가 못 옮겨 다른 번역기(Google)로 메운 줄이다냥 — 글을 확인해 줘냥": "⚠ The chosen translator failed on this line, so another translator (Google) filled it in — please check the text",
+  "⚠ 번역하지 못한 줄이다냥 — 글을 고쳐 줘냥": "⚠ This line could not be translated — please fix the text",
+  "내가 고친 번역은 다시 돌려도 그대로 둔다냥": "Keep my edited translations when a page is run again",
+  "결과 창이나 번역 표로 고친 글은 같은 원고를 다시 돌려도 새 번역으로 덮지 않는다냥. 끄면 전부 새로 번역한다냥": "Text you fixed in the result window or through the translation review sheet (CSV) is not overwritten when the same page is run again. Turn this off to retranslate everything"
 }

@@ -14,8 +14,10 @@ public record LetterSidecar(
     string BasePath,        // 식자 전 원고 (번역 글자 지움 + 검열제거 + 채색까지 끝난 상태)
     List<TextBlockInfo> Blocks,
     long SrcLen = 0,        // 원본 바이트 길이 — 폴더를 옮겨 경로가 달라져도 같은 원고인지 가리는 근거 (옛 사이드카는 0)
-    double CommonSize = 0)  // 쪽 공통 글자 크기(px, 식자 전 원고 기준 — TextRenderer.CommonSize). 결과 창에서 고치기 시작한 쪽에만 적힌다:
+    double CommonSize = 0,  // 쪽 공통 글자 크기(px, 식자 전 원고 기준 — TextRenderer.CommonSize). 결과 창에서 고치기 시작한 쪽에만 적힌다:
                             // 풍선 하나의 글·자리를 고쳐도 다른 풍선의 자동 크기가 따라 바뀌지 않게 붙든 값. 0 = 식자할 때마다 구한다(옛 사이드카·자동 식자)
+    string Target = "")     // 번역한 목표 언어(설정 TranslateTarget, 2026-11-27) — 다시 돌릴 때 고친 번역을 지킬지 가린다: 목표 언어를 바꿔 돌리면 옛 언어의 글을 남기지 않는다.
+                            // 옛 사이드카는 ""(모른다 → 지키지 않는다)
 {
     /// <summary>이 사이드카가 그 원고의 것인가 — 경로가 같거나, 이름이 같고 길이(옛 사이드카는 원고 크기)가 같으면(폴더를 옮김) 같은 원고.</summary>
     public bool BelongsTo(string file, (int w, int h)? dims = null)

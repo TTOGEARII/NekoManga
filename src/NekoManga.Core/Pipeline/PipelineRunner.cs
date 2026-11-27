@@ -100,6 +100,8 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         public bool Review;
         /// <summary>페이지별 검토 흐름 (검토 대기 알림은 RunPerPageAsync가 한다).</summary>
         public bool PerPage;
+        /// <summary>이번 실행의 장 전부(차례대로) — 1차가 다음 장을 번역 쪽에 미리 알려 줄 때 본다. 다시 렌더링(번역 없음)에는 없다.</summary>
+        public IReadOnlyList<ReviewPage>? Pages;
     }
 
     public async Task RunAsync(IReadOnlyList<string> files, IProgress<PageProgress> progress, CancellationToken ct)
@@ -134,6 +136,7 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         bool perPage = settings.EnableDecensor && settings.DecensorReview && settings.DecensorReviewMode == "PerPage" && PageWaiting != null;
         cx.Review = windowReview || perPage;
         cx.PerPage = perPage;
+        cx.Pages = pages;
         try
         {
             if (windowReview) await RunWindowReviewAsync(cx, pages, ct);
@@ -151,6 +154,8 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         }
         finally
         {
+            // 미리 읽던 다음 쪽이 남았으면(멈춤·실패) 끝나기를 기다려 치운다 — 이 뒤에 모델(OnnxEnv)이 내려간다
+            if (cx.Translator != null) await cx.Translator.DropPrefetchedAsync();
             foreach (var pg in pages) pg.DisposeMats();
             lock (_waiting) _waiting.Clear();
             WorkFolders.Remove(cx.WorkDir);   // 중간 그림은 여기까지 — 결과물·사이드카는 출력 폴더에 있다. 멈추거나 실패해도 지운다(2차는 위에서 다 끝났다)
@@ -274,9 +279,22 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
         if (cx.Translator != null)
         {
             var status = new Progress<string>(m => progress.Report(new(name, m, 25)));
-            var tr = await cx.Translator.TranslatePageAsync(pg.WorkPath, cx.WorkDir, status, cx.Ct, pg.WorkKey);
+            // 이 원고를 전에 돌려 사용자가 번역을 고쳐 두었으면 그 글은 다시 번역한 글로 덮지 않는다(TranslateKeepEdited). 못 읽으면 알리고 새 번역으로 간다(번역을 막을 일은 아니다)
+            IReadOnlyList<TextBlockInfo>? previous = null;
+            if (settings.TranslateKeepEdited)
+            {
+                // 식자 정보가 잠겨 있으면(백신·동기화가 잠깐 쥠) 여기서 던져 그 장을 멈춘다 — 새 번역으로 가면 2차가 그 json을 새 블록으로 덮어 고친 글이 사라진다(검토 2026-11-27).
+                // 깨진 것은 읽을 것이 없다: 알리고 새 번역으로 간다(멈추면 그 장은 영영 다시 못 돌린다)
+                previous = PreviousBlocks(pg.OutPath, pg.File, settings.TranslateTarget, out bool unreadable);
+                if (unreadable) Warn(cx, pg, Loc.T("전에 고친 번역을 읽지 못했다냥(식자 정보가 깨졌다냥) — 이 장은 새 번역으로 간다냥"));
+            }
+            // 다음 쪽(아직 1차를 돌지 않아 작업 그림이 원고다)을 알려 준다 — 번역 응답을 기다리는 동안 그 쪽의 감지·글자 읽기를 미리 돌린다
+            string? next = cx.Pages is { } all && i + 1 < all.Count ? all[i + 1].WorkPath : null;
+            var tr = await cx.Translator.TranslatePageAsync(pg.WorkPath, cx.WorkDir, status, cx.Ct, pg.WorkKey, next, previous);
             pg.WorkPath = tr.InpaintedPath;
             pg.Blocks = tr.Blocks;
+            // 다른 번역기로 메웠거나 못 옮긴 줄이 있으면 그 장의 경고로 남긴다 — 전에는 흔적 없이 '완료'였다(원문이 그대로 식자된 줄도)
+            if (ReviewWarning(tr.Blocks) is { } check) Warn(cx, pg, check);
             // 글자 지운 자리 다시 그리기(TextRegen): LaMa가 뭉갠 자리(그림 위의 글)만 SDXL로 — 실패해도 이 장은 LaMa 결과로 간다(경고만)
             if (settings.UsesTextRegen && tr.RegenMaskPath != null && cx.Client != null
                 && await TextRegenFileAsync(cx.Client, cx.ComfyOutputDir, tr.InpaintedPath, tr.RegenMaskPath, i, cx.Ct, status, tr.RegenBlocks) is { } regenWarn)
@@ -456,7 +474,7 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
                 {
                     ImgIo.Write(LetterSidecar.BasePathFor(outPath), baseImg);
                     new LetterSidecar(file, srcImg.Width, srcImg.Height,
-                        LetterSidecar.BasePathFor(outPath), [.. blocks], SrcLen: MaskSidecar.LengthOf(file), CommonSize: pg.LetterCommon).Save(outPath);
+                        LetterSidecar.BasePathFor(outPath), [.. blocks], SrcLen: MaskSidecar.LengthOf(file), CommonSize: pg.LetterCommon, Target: settings.TranslateTarget).Save(outPath);
                 }
 
             TextRenderer.RenderBlocks(work, file, 0, 0, blocks, outPath, settings, pg.LetterCommon);
@@ -500,6 +518,31 @@ public partial class PipelineRunner(AppSettings settings) : IDisposable
 
         pg.FinalStage = Loc.T("완료");
         progress.Report(new(name, pg.FinalStage + WarnSuffix(pg), 100, Done: true));
+    }
+
+    /// <summary>번역을 확인할 줄(<see cref="TextBlockInfo.NeedsReview"/>)이 있으면 그 장에 붙일 경고 — 없으면 null(2026-11-27, 사용자의 Carrot 규칙 A4).</summary>
+    /// <summary>이 원고(<paramref name="file"/>)를 전에 **같은 목표 언어로** 돌린 결과의 식자 블록 — 고친 번역을 지킬 때 본다(<see cref="TextBlockInfo.CarryEdits"/>).
+    /// 그 결과 자리(<paramref name="outPath"/>)에 식자 정보가 없거나, 다른 원고의 것이거나, 같은 이름의 원고가 다른 그림으로 바뀌었거나(길이가 다르다), 목표 언어가 다르면 null
+    /// (한국어로 고친 글을 영어 결과에 남기지 않는다). 식자 전 원고(base)는 필요 없다(글만 본다).
+    /// json이 잠겨 있으면 기다렸다 다시 읽고 끝내 못 읽으면 **던진다**(그 장의 실패 — 없는 것으로 삼키면 2차가 새 블록으로 덮어 고친 글이 사라진다).
+    /// 깨진 json은 <paramref name="unreadable"/>로 알리고 null(읽을 것이 없다).</summary>
+    internal static IReadOnlyList<TextBlockInfo>? PreviousBlocks(string outPath, string file, string target, out bool unreadable)
+    {
+        unreadable = false;
+        LetterSidecar? record;
+        try { record = LoadLetterRecordWaitingOutLock(outPath); }
+        catch (InvalidDataException) { unreadable = true; return null; }
+        if (record == null || !record.BelongsTo(file)) return null;
+        if (record.SrcLen > 0 && record.SrcLen != MaskSidecar.LengthOf(file)) return null;
+        return string.Equals(record.Target, target, StringComparison.OrdinalIgnoreCase) ? record.Blocks : null;
+    }
+
+    internal static string? ReviewWarning(IReadOnlyList<TextBlockInfo> blocks)
+    {
+        int filled = blocks.Count(b => b.NeedsReview() && b.Review == ReviewMark.Filled);
+        int failed = blocks.Count(b => b.NeedsReview() && b.Review != ReviewMark.Filled);
+        if (filled + failed == 0) return null;
+        return Loc.F($"번역을 확인할 줄 {filled + failed}개다냥 (다른 번역기로 메움 {filled} · 못 옮김 {failed}) — 결과 창 식자 탭의 ⚠ 표시를 보라냥");
     }
 
     private static string WarnSuffix(ReviewPage pg) => pg.Warning == null ? "" : " · ⚠ " + pg.Warning;

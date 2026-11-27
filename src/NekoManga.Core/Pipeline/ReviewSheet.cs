@@ -10,8 +10,9 @@ public static class ReviewSheet
 {
     public sealed record Row(string OutPath, int Index, string Source, string Translation);
 
-    /// <summary>머리 줄 — 파일 안의 글이라 화면 언어와 상관없이 한국어다(엑셀에서 보는 사람이 고칠 칸은 '번역').</summary>
-    public const string Header = "결과 파일,번호,원문,번역";   // loc:none
+    /// <summary>머리 줄 — 파일 안의 글이라 화면 언어와 상관없이 한국어다(엑셀에서 보는 사람이 고칠 칸은 '번역').
+    /// 다섯째 칸 '확인'은 읽기만 하는 칸이다(2026-11-27): 다른 번역기로 메운 줄('메움')과 못 옮긴 줄('못 옮김')을 엑셀에서 걸러 보게. 들여올 때는 넷째 칸까지만 읽는다.</summary>
+    public const string Header = "결과 파일,번호,원문,번역,확인";   // loc:none
 
     public static string Write(IEnumerable<(string OutPath, IReadOnlyList<TextBlockInfo> Blocks)> pages)
     {
@@ -20,9 +21,13 @@ public static class ReviewSheet
         foreach (var (outPath, blocks) in pages)
             for (int i = 0; i < blocks.Count; i++)
                 sb.Append(Quote(outPath)).Append(',').Append(i + 1).Append(',')
-                  .Append(Quote(blocks[i].SourceText ?? "")).Append(',').Append(Quote(blocks[i].Translation ?? "")).Append("\r\n");
+                  .Append(Quote(blocks[i].SourceText ?? "")).Append(',').Append(Quote(blocks[i].Translation ?? "")).Append(',').Append(Quote(CheckWord(blocks[i]))).Append("\r\n");
         return sb.ToString();
     }
+
+    /// <summary>'확인' 칸의 글 — 아직 번역기의 글 그대로인 확인할 줄만(<see cref="TextBlockInfo.NeedsReview"/>). 파일 안의 글이라 머리 줄처럼 한국어다.</summary>
+    private static string CheckWord(TextBlockInfo b) =>
+        !b.NeedsReview() ? "" : b.Review == ReviewMark.Filled ? "메움" : "못 옮김";   // loc:none
 
     /// <summary>칸 하나를 따옴표로 감싼다 — 안의 "는 ""로, 줄바꿈은 LF로(엑셀은 칸 안의 줄바꿈을 따옴표 안에서 받는다).</summary>
     private static string Quote(string field) => "\"" + field.Replace("\r\n", "\n").Replace("\"", "\"\"") + "\"";

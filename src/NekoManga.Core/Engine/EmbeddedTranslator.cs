@@ -31,11 +31,90 @@ public record TextBlockInfo(
     bool Hidden = false,           // 결과 창 [이 블록 숨기기] — 지우지 않고 그리지만 않는다(되살릴 수 있게). 옛 json에는 없다 → false
     bool ManualLines = false,      // 줄을 직접 나눴다 — Translation의 줄바꿈 그대로 그리고 자동 줄 나눔을 하지 않는다(결과 창에서 제자리 글 고치기·[줄 직접 나누기])
     bool Added = false,            // 결과 창 [새 글 넣기]로 넣은 블록 — 원문이 없다. 지우면 숨기지 않고 목록에서 뺀다
-    bool Sfx = false)              // 풍선 밖 효과음(2026-11-26 시험 기능, SfxMode=Replace): 원문을 지우고 그 자리에 굵게 덮는다 — 풍선을 재지 않고 자리에 맞춘 크기, 세로면 글자를 쌓는다(TextRenderer.SfxStyle). 옛 json에는 없다 → false
+    bool Sfx = false,              // 풍선 밖 효과음(2026-11-26 시험 기능, SfxMode=Replace): 원문을 지우고 그 자리에 굵게 덮는다 — 풍선을 재지 않고 자리에 맞춘 크기, 세로면 글자를 쌓는다(TextRenderer.SfxStyle). 옛 json에는 없다 → false
+    string Machine = "",           // 번역기가 낸 글(식자한 그대로, 2026-11-27) — Translation이 이것과 다르면 사용자가 고친 글이다(IsEdited). 옛 json에는 없다 → ""(고쳤는지 알 수 없다)
+    string Review = "")            // 번역을 확인할 까닭(ReviewMark.Filled = 다른 번역기로 메움 · Failed = 못 옮김), 비면 없음. 글을 고치면 표시는 보이지 않는다(NeedsReview). 옛 json에는 없다 → ""
 {
     /// <summary>결과 창 식자 탭이 번역 글 위에 보여 주는 원문(OCR 글) — 앞뒤 빈칸·줄 바꿈을 뗀다(2026-11-26 사용자 요청).
     /// 빈 글이면 창이 칸을 접는다: [새 글 넣기]로 만든 글은 원문이 ""이고, 옛 json에 칸이 없으면 null로 들어온다.</summary>
     public string ShownSource() => SourceText?.Trim() ?? "";
+
+    /// <summary>번역을 확인해야 하는 줄인가 — 표시(<see cref="Review"/>)가 있고 글이 아직 번역기가 낸 그대로일 때. 사용자가 글을 고치면 확인한 것으로 본다
+    /// (고치는 자리마다 표시를 끄지 않는다 — 결과 창·검수 표·제자리 고치기 어디서 고쳐도 같다). 속성이 아니라 메서드다: 속성이면 사이드카 json에 섞여 나간다.</summary>
+    public bool NeedsReview() => !string.IsNullOrEmpty(Review) && Translation == Machine;
+
+    /// <summary>사용자가 번역 글을 고쳤는가 — 번역기가 낸 글을 알고(옛 json은 모른다) 지금 글이 그것과 다를 때. 다시 돌릴 때 이 글을 지킨다(LetterSidecar.CarryEdits).</summary>
+    public bool IsEdited() => !string.IsNullOrEmpty(Machine) && Translation != Machine;
+
+    /// <summary>같은 원문이 한 쪽에 여럿일 때·원문이 같을 때 '같은 풍선'으로 보는 자리 겹침(IoU)의 하한.</summary>
+    internal const double CarrySamePlace = 0.5;
+    /// <summary>글자 읽기가 달라졌어도(엔진을 바꿨다) '같은 풍선'으로 보는 자리 겹침의 하한 — 거의 같은 상자일 때만.</summary>
+    internal const double CarrySameBox = 0.8;
+    /// <summary>그때도 두 원문이 비슷해야 한다 — 같은 글자가 긴 쪽의 이만큼(조금 다르게 읽은 것). 같은 자리의 전혀 다른 글(원고가 다른 그림으로 바뀌었다)에는 옮기지 않는다.</summary>
+    internal const double CarryAlike = 0.6;
+
+    /// <summary>다시 번역한 블록(<paramref name="fresh"/>)에 전의 식자 정보(<paramref name="old"/>)에서 **사용자가 고친 글**을 옮긴다
+    /// (2026-11-27 — 사용자의 Carrot 규칙 B1 "사용자가 확정한 문자열은 다시 번역하지 않는다". 전에는 같은 원고를 다시 돌리면 고친 글이 새 번역으로 덮였다).
+    /// 같은 풍선 = 원문이 같고 자리가 겹치거나(<see cref="CarrySamePlace"/>) 그 원문이 양쪽에 하나뿐(상자를 옮겨 놓은 블록), 또는 원문이 조금 다르게 읽혔고(<see cref="CarryAlike"/>) 상자가 거의 같다(<see cref="CarrySameBox"/>).
+    /// 옮기는 것은 글과 직접 나눈 줄뿐이다(자리·크기·색은 새로 잡은 대로). <see cref="Machine"/>은 이번 번역기의 글로 둔다 — 다음에 돌려도 '고친 글'로 남는다.
+    /// 옛 블록 하나는 한 번만 쓴다. 효과음과 대사는 섞지 않는다.</summary>
+    public static List<TextBlockInfo> CarryEdits(IReadOnlyList<TextBlockInfo> fresh, IReadOnlyList<TextBlockInfo> old, out int kept)
+    {
+        var result = fresh.ToList();
+        kept = 0;
+        static string Key(TextBlockInfo b) => string.Concat((b.SourceText ?? "").Where(c => !char.IsWhiteSpace(c)));
+        static double Iou(TextBlockInfo a, TextBlockInfo b)
+        {
+            double w = Math.Min(a.X2, b.X2) - Math.Max(a.X1, b.X1), h = Math.Min(a.Y2, b.Y2) - Math.Max(a.Y1, b.Y1);
+            if (w <= 0 || h <= 0) return 0;
+            double inter = w * h, union = (double)(a.X2 - a.X1) * (a.Y2 - a.Y1) + (double)(b.X2 - b.X1) * (b.Y2 - b.Y1) - inter;
+            return union <= 0 ? 0 : inter / union;
+        }
+        static bool Alike(string a, string b)
+        {
+            // 두 글에 같이 든 글자 수(여러 번 나오면 그만큼) ÷ 긴 쪽의 길이
+            if (a.Length == 0 || b.Length == 0) return false;
+            var left = b.GroupBy(c => c).ToDictionary(g => g.Key, g => g.Count());
+            int common = 0;
+            foreach (char c in a)
+                if (left.TryGetValue(c, out int n) && n > 0) { left[c] = n - 1; common++; }
+            return common >= CarryAlike * Math.Max(a.Length, b.Length);
+        }
+        var used = new bool[old.Count];
+        for (int i = 0; i < result.Count; i++)
+        {
+            var f = result[i];
+            string key = Key(f);
+            int best = -1;
+            double bestScore = -1;
+            for (int j = 0; j < old.Count; j++)
+            {
+                var o = old[j];
+                if (used[j] || !o.IsEdited() || o.Sfx != f.Sfx) continue;   // [새 글 넣기]로 넣은 글은 번역기의 글이 없어 IsEdited가 아니다
+                double iou = Iou(f, o);
+                bool same = key.Length > 0 && Key(o) == key;
+                bool only = same && fresh.Count(x => Key(x) == key) == 1 && old.Count(x => Key(x) == key) == 1;
+                if (!(same ? iou >= CarrySamePlace || only : iou >= CarrySameBox && Alike(key, Key(o)))) continue;
+                double score = iou + (same ? 1 : 0);   // 원문이 같은 것이 먼저, 그 안에서는 더 겹치는 것
+                if (score > bestScore) { best = j; bestScore = score; }
+            }
+            if (best < 0) continue;
+            used[best] = true;
+            result[i] = f with { Translation = old[best].Translation, ManualLines = old[best].ManualLines };
+            kept++;
+        }
+        return result;
+    }
+}
+
+/// <summary>번역을 확인할 까닭(<see cref="TextBlockInfo.Review"/>, 2026-11-27 — 사용자의 Carrot 규칙 A4 "실패는 검사 가능한 실패로 남긴다").
+/// 검증에 걸린 줄을 다시 묻고 다른 번역기로 메우는 것은 그대로 두되, 그렇게 된 줄을 흔적 없이 '완료'로 두지 않는다. 화면 글이 아니라 표시다 — 창과 검수 표가 제 말로 옮긴다.</summary>
+public static class ReviewMark
+{
+    /// <summary>검증에 걸린 줄을 다른 번역기(Google)의 답으로 메웠다.</summary>
+    public const string Filled = "Filled";
+    /// <summary>끝까지 검증에 걸렸거나 답이 없었다 — 걸린 답이나 원문이 그대로 식자된다.</summary>
+    public const string Failed = "Failed";
 }
 
 /// <param name="RegenMaskPath">글자 지운 자리 가운데 SDXL로 다시 그릴 곳의 마스크(쪽 크기 PNG, 255 = 대상) — 설정(TextRegen)이 꺼져 있거나 대상이 없으면 null. 러너(PipelineRunner.TextRegenFileAsync)가 읽는다.</param>
@@ -59,80 +138,134 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
 
     public bool IsReady => _detector.IsReady && _ocr.IsReady && _lama.IsReady;
 
+    /// <summary>한 쪽의 읽기 단계(감지 → 풍선 나누기·기둥 합치기·효과음 떼기 → 글자 읽기)의 결과. 번역·지우기와 갈라 둔 것은 다음 쪽의 것을 미리 만들어 두려는 것이다
+    /// (<see cref="Prefetched{T}"/>). 쪽 그림과 글자 마스크(Mat)를 든다 — 다 쓴 쪽이 치운다.</summary>
+    private sealed class PageReading(Mat img, Mat textMask) : IDisposable
+    {
+        public Mat Img => img;
+        public Mat TextMask => textMask;
+        /// <summary>감지기가 낸 상자 그대로(나누고 합치기 전) — 지울 블록의 '제 글' 상자를 가릴 때 쓴다(OwnBoxes).</summary>
+        public IReadOnlyList<DetectedBlock> Detected = [];
+        /// <summary>나누고 합친 블록 전부(못 읽은 것·갈라낸 손글씨 획 포함).</summary>
+        public List<DetectedBlock> DetBlocks = [];
+        /// <summary>읽힌 블록과 그 글.</summary>
+        public List<(DetectedBlock Box, string Text)> Blocks = [];
+        /// <summary>단계별로 걸린 시간(NEKO_TIMING) — 미리 읽었으면 그때 잰 값이다.</summary>
+        public readonly List<string> Laps = [];
+        public void Dispose() { textMask.Dispose(); img.Dispose(); }
+    }
+
+    /// <summary>다음 쪽의 읽기 단계를 미리 돌려 두는 자리 — 한 쪽만 앞선다.</summary>
+    private readonly Prefetched<PageReading> _ahead = new();
+
+    /// <summary>미리 읽어 둔 다음 쪽을 버린다 — 작업이 끝나거나 멈출 때 부른다. 읽는 중이면 끝나기를 기다린다(모델을 내리기 전에 읽기가 끝나 있어야 한다).</summary>
+    public Task DropPrefetchedAsync() => _ahead.DropAsync();
+
+    /// <summary>읽기 단계 — 그림을 읽고 글 블록을 찾아 읽는다. 번역기도 설정의 번역 칸도 쓰지 않는다(원문 언어만 본다). 실패하면 든 Mat을 놓고 던진다.</summary>
+    /// <param name="ahead">앞 쪽을 번역하는 동안 미리 읽는 것이다 — 진행 줄을 쓰지 않고(status는 null), 시간 기록에 표시만 남긴다.</param>
+    private async Task<PageReading> ReadPageAsync(string imagePath, IProgress<string>? status, CancellationToken ct, bool ahead = false)
+    {
+        var img = ImgIo.Read(imagePath, ImreadModes.Color);
+        try
+        {
+            if (img.Empty())
+                throw new InvalidDataException(Loc.F($"이미지를 읽지 못했다냥: {Path.GetFileName(imagePath)}"));
+
+            // 진단: NEKO_TIMING=<파일>이면 단계별로 걸린 시간을 적는다 (어디가 느린지 볼 때)
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var laps = new List<string>();
+            if (ahead) laps.Add("미리 읽음");   // loc:none
+            void Lap(string name) { laps.Add($"{name}={clock.ElapsedMilliseconds}ms"); clock.Restart(); }
+
+            status?.Report(Loc.T("말풍선 찾는 중이다냥"));
+            var det = await Task.Run(() => _detector.Detect(img), ct);
+            Lap("감지");   // loc:none
+            var textMask = det.TextMask;
+            try
+            {
+                // 맞닿은 말풍선 묶음이 한 블록으로 잡히면 풍선별로 나눈다 — 안 나누면
+                // 여러 풍선의 대사가 한 번에 OCR·번역돼 풍선 경계를 무시한 식자가 된다.
+                // 블록마다 따로 재는 일이라 나란히 돌린다(결과와 차례는 그대로 — 2026-11-27 속도: 한 쪽에 0.14~0.5초)
+                var detBlocks = await Task.Run(() => det.Blocks.AsParallel().AsOrdered().WithCancellation(ct)
+                    .SelectMany(b => BubbleSplitter.Split(img, textMask, b)).ToList(), ct);
+                if (detBlocks.Count > det.Blocks.Count) // 읽기 순서 복원 (위→아래, 오른→왼)
+                    detBlocks.Sort((a, b2) => a.Y1 != b2.Y1 ? a.Y1.CompareTo(b2.Y1) : b2.X1.CompareTo(a.X1));
+                Lap("풍선 나누기");   // loc:none
+                // 반대로 한 풍선의 글 기둥이 기둥마다 따로 잡힌 것은 다시 하나로 — 따로 두면 반 토막 번역이
+                // 좁은 띠에 억지로 들어가 옆 기둥의 번역과 겹친다 (실측 401ちゃん 05·11·12·22p).
+                detBlocks = await Task.Run(() => BubbleSplitter.MergeSiblings(img, textMask, detBlocks), ct);
+                Lap("기둥 합치기");   // loc:none
+                // 대사 블록에 붙어 잡힌 손글씨 효과음의 획은 따로 뗀다(2026-11-26 사용자 "이런 부분은 효과음이야") — 떼지 않으면 대사를 지울 때 같이 지워진다
+                detBlocks = await Task.Run(() => BubbleSplitter.SplitOffGiants(img, textMask, detBlocks), ct);
+                Lap("효과음 떼기");   // loc:none
+
+                // ── OCR ──
+                // 한 쪽의 블록을 한 묶음으로 읽는다 — 블록마다 따로 읽으면 디코더 실행 횟수가 블록 수만큼 곱해진다 (MangaOcr·HayaiOcr 주석. NarOcr는 조각마다 한 번에 다 읽는다).
+                var blocks = new List<(DetectedBlock Box, string Text)>();
+                var readable = new List<DetectedBlock>();
+                var crops = new List<Mat>();
+                try
+                {
+                    foreach (var b in detBlocks)
+                    {
+                        var pad = BubbleSolver.Enlarge(new Rect(b.X1, b.Y1, b.X2 - b.X1, b.Y2 - b.Y1), 1.1, img.Width, img.Height);
+                        var crop = new Mat(img, pad);
+                        // 거의 단색(새까만 페이지의 노이즈, 흰 여백)인 블록은 글자가 있을 수 없다 — OCR·번역을 건너뛴다.
+                        // 실사고: 검은 페이지에서 CTD가 노이즈 두 덩어리를 말풍선으로 잡아 쓰레기 글자를 DeepSeek에 보내 몇 분씩 기다렸다.
+                        if (IsFlatCrop(crop)) { crop.Dispose(); continue; }
+                        readable.Add(b);
+                        crops.Add(crop);
+                    }
+                    ct.ThrowIfCancellationRequested();
+                    if (crops.Count > 0)
+                    {
+                        status?.Report(Loc.F($"글자 읽는 중이다냥 ({crops.Count}개 말풍선)"));
+                        var texts = await Task.Run(() => _ocr.RecognizeBatch(crops), ct);
+                        for (int i = 0; i < texts.Length; i++)
+                        {
+                            if (string.IsNullOrWhiteSpace(texts[i])) continue;
+                            // OCR 결과에 원문 언어의 글자가 하나도 없으면(기호·숫자·알파벳 잡음) 번역할 것이 없다
+                            if (!LooksLikeSource(texts[i], settings.TranslateSource)) continue;
+                            blocks.Add((readable[i], texts[i]));
+                        }
+                    }
+                }
+                finally
+                {
+                    foreach (var crop in crops) crop.Dispose();
+                }
+                Lap($"글자 읽기({detBlocks.Count}블록)");   // loc:none
+
+                var page = new PageReading(img, textMask) { Detected = det.Blocks, DetBlocks = detBlocks, Blocks = blocks };
+                page.Laps.AddRange(laps);
+                return page;
+            }
+            catch { textMask.Dispose(); throw; }
+        }
+        catch { img.Dispose(); throw; }
+    }
+
     /// <summary>한 페이지를 처리한다. 글자 지운 이미지를 workDir에 저장하고 블록·번역을 돌려준다.</summary>
     /// <param name="stem">작업 폴더에 남길 중간 파일 이름(확장자 없이). 비우면 원고 이름 — 러너는 결과물 이름을 넘겨 01.jpg·01.png가 서로 덮어쓰지 않게 한다.</param>
+    /// <param name="nextImagePath">다음에 번역할 쪽(있으면) — 이 쪽의 지우기가 끝나면 그 쪽의 읽기 단계를 미리 돌려 둔다(번역 응답을 기다리는 시간을 쓴다, 2026-11-27 속도).</param>
+    /// <param name="previous">이 원고를 전에 돌린 결과의 블록(있으면) — 사용자가 고친 글은 다시 번역한 글로 덮지 않는다(<see cref="TextBlockInfo.CarryEdits"/>).</param>
     public async Task<PageTranslation> TranslatePageAsync(
-        string imagePath, string workDir, IProgress<string>? status, CancellationToken ct, string? stem = null)
+        string imagePath, string workDir, IProgress<string>? status, CancellationToken ct, string? stem = null,
+        string? nextImagePath = null, IReadOnlyList<TextBlockInfo>? previous = null)
     {
         if (!IsReady)
             throw new FileNotFoundException(Loc.T("내장 엔진 모델이 없다냥. 설정 → 구성요소에서 설치해 줘냥."));
 
-        using var img = ImgIo.Read(imagePath, ImreadModes.Color);
-        if (img.Empty())
-            throw new InvalidDataException(Loc.F($"이미지를 읽지 못했다냥: {Path.GetFileName(imagePath)}"));
+        // 읽기 단계: 앞 쪽을 번역하는 동안 미리 읽어 둔 것이 있으면 그것을 쓰고, 없으면 지금 읽는다
+        using var page = await _ahead.TakeOrReadAsync(Path.GetFullPath(imagePath), () => ReadPageAsync(imagePath, status, ct));
+        var img = page.Img;
+        var textMask = page.TextMask;
+        var detBlocks = page.DetBlocks;
+        var blocks = page.Blocks;
 
-        // 진단: NEKO_TIMING=<파일>이면 단계별로 걸린 시간을 적는다 (어디가 느린지 볼 때)
         var clock = System.Diagnostics.Stopwatch.StartNew();
-        var laps = new List<string>();
+        var laps = new List<string>(page.Laps);
         void Lap(string name) { laps.Add($"{name}={clock.ElapsedMilliseconds}ms"); clock.Restart(); }
-
-        status?.Report(Loc.T("말풍선 찾는 중이다냥"));
-        var det = await Task.Run(() => _detector.Detect(img), ct);
-        Lap("감지");   // loc:none
-        using var textMask = det.TextMask;
-
-        // 맞닿은 말풍선 묶음이 한 블록으로 잡히면 풍선별로 나눈다 — 안 나누면
-        // 여러 풍선의 대사가 한 번에 OCR·번역돼 풍선 경계를 무시한 식자가 된다.
-        // 블록마다 따로 재는 일이라 나란히 돌린다(결과와 차례는 그대로 — 2026-11-27 속도: 한 쪽에 0.14~0.5초)
-        var detBlocks = await Task.Run(() => det.Blocks.AsParallel().AsOrdered().WithCancellation(ct)
-            .SelectMany(b => BubbleSplitter.Split(img, textMask, b)).ToList(), ct);
-        if (detBlocks.Count > det.Blocks.Count) // 읽기 순서 복원 (위→아래, 오른→왼)
-            detBlocks.Sort((a, b2) => a.Y1 != b2.Y1 ? a.Y1.CompareTo(b2.Y1) : b2.X1.CompareTo(a.X1));
-        Lap("풍선 나누기");   // loc:none
-        // 반대로 한 풍선의 글 기둥이 기둥마다 따로 잡힌 것은 다시 하나로 — 따로 두면 반 토막 번역이
-        // 좁은 띠에 억지로 들어가 옆 기둥의 번역과 겹친다 (실측 401ちゃん 05·11·12·22p).
-        detBlocks = await Task.Run(() => BubbleSplitter.MergeSiblings(img, textMask, detBlocks), ct);
-        Lap("기둥 합치기");   // loc:none
-        // 대사 블록에 붙어 잡힌 손글씨 효과음의 획은 따로 뗀다(2026-11-26 사용자 "이런 부분은 효과음이야") — 떼지 않으면 대사를 지울 때 같이 지워진다
-        detBlocks = await Task.Run(() => BubbleSplitter.SplitOffGiants(img, textMask, detBlocks), ct);
-        Lap("효과음 떼기");   // loc:none
-
-        // ── OCR ──
-        // 한 쪽의 블록을 한 묶음으로 읽는다 — 블록마다 따로 읽으면 디코더 실행 횟수가 블록 수만큼 곱해진다 (MangaOcr·HayaiOcr 주석. NarOcr는 조각마다 한 번에 다 읽는다).
-        var blocks = new List<(DetectedBlock Box, string Text)>();
-        var readable = new List<DetectedBlock>();
-        var crops = new List<Mat>();
-        try
-        {
-            foreach (var b in detBlocks)
-            {
-                var pad = BubbleSolver.Enlarge(new Rect(b.X1, b.Y1, b.X2 - b.X1, b.Y2 - b.Y1), 1.1, img.Width, img.Height);
-                var crop = new Mat(img, pad);
-                // 거의 단색(새까만 페이지의 노이즈, 흰 여백)인 블록은 글자가 있을 수 없다 — OCR·번역을 건너뛴다.
-                // 실사고: 검은 페이지에서 CTD가 노이즈 두 덩어리를 말풍선으로 잡아 쓰레기 글자를 DeepSeek에 보내 몇 분씩 기다렸다.
-                if (IsFlatCrop(crop)) { crop.Dispose(); continue; }
-                readable.Add(b);
-                crops.Add(crop);
-            }
-            ct.ThrowIfCancellationRequested();
-            if (crops.Count > 0)
-            {
-                status?.Report(Loc.F($"글자 읽는 중이다냥 ({crops.Count}개 말풍선)"));
-                var texts = await Task.Run(() => _ocr.RecognizeBatch(crops), ct);
-                for (int i = 0; i < texts.Length; i++)
-                {
-                    if (string.IsNullOrWhiteSpace(texts[i])) continue;
-                    // OCR 결과에 원문 언어의 글자가 하나도 없으면(기호·숫자·알파벳 잡음) 번역할 것이 없다
-                    if (!LooksLikeSource(texts[i], settings.TranslateSource)) continue;
-                    blocks.Add((readable[i], texts[i]));
-                }
-            }
-        }
-        finally
-        {
-            foreach (var crop in crops) crop.Dispose();
-        }
-        Lap($"글자 읽기({detBlocks.Count}블록)");   // loc:none
 
         // ── 풍선 밖 효과음 가르기 (TranslateBubbleOnly, 2026-11-18 사용자 "번역은 말풍선 안에 있는 것만" / SfxMode, 2026-11-26 시험 기능 — CarrotMangaTranslator 참고) ──
         // 풍선 밖으로 보이고(BubbleSolver.IsInBubble — 닫힌 테두리도 단색 바탕도 없다) 글이 효과음처럼 생긴(LooksLikeSfx) 블록은 대사가 아니다(Decide):
@@ -192,6 +325,7 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
             finally { tick.Cancel(); await ticker; }
         }
         Task<IReadOnlyList<string>>? pending = null;
+        var marks = new string[blocks.Count];   // 블록마다 번역을 확인할 까닭(ReviewMark) — 요청이 끝난 뒤에 읽는다
         var requested = DateTime.UtcNow;
         var requestClock = System.Diagnostics.Stopwatch.StartNew();
         using var requestCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -202,7 +336,7 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
             var translator = TranslatorOverride ?? TranslatorFactory.Create(settings);
             // 쪽 그림(고르면 — 기본 끔)은 지우기 전의 원고로 만든다. 그림을 못 쓰는 번역기(Google·DeepL)에는 만들지 않는다
             byte[]? pageImage = settings.TranslateSendImage && translator is LlmTranslator ? PageJpeg(img) : null;
-            var request = TranslateBlocksAsync(translator, blocks, roles, Glossary.Parse(settings.TranslateGlossary), new Size(img.Width, img.Height), pageImage, requestCts.Token);
+            var request = TranslateBlocksAsync(translator, blocks, roles, Glossary.Parse(settings.TranslateGlossary), new Size(img.Width, img.Height), pageImage, marks, requestCts.Token);
             _ = request.ContinueWith(_ => requestClock.Stop(), TaskContinuationOptions.ExecuteSynchronously);
             if (OverlapsTranslation(roles))
             {
@@ -228,7 +362,7 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
             if (WillErase(i)) erasedRects.Add(r); else keptAsIs.Add(r);
         }
         // 지울 블록마다 '제 글'의 상자 — 감지기 상자 둘 이상을 합친 블록은 감싼 상자가 아니라 그 상자들이다(엇갈린 기둥을 합치면 감싼 상자에 빈 모서리가 생긴다)
-        var detected = det.Blocks.Select(d => new Rect(d.X1, d.Y1, d.X2 - d.X1, d.Y2 - d.Y1)).ToList();
+        var detected = page.Detected.Select(d => new Rect(d.X1, d.Y1, d.X2 - d.X1, d.Y2 - d.Y1)).ToList();
         var erasedParts = erasedRects.Select(r => OwnBoxes(r, detected)).ToList();
         // 지울 글의 획 = 감지기 마스크에서 그대로 둘 블록(풍선 밖 효과음·못 옮긴 효과음·갈라낸 손글씨 획)의 획과 어느 지울 블록의 것도 아닌 획(상자로 안 잡힌 효과음)을 빼고,
         // 지울 블록에서 감지기가 놓친 획을 더한 것(PrepareStrokes) —
@@ -288,6 +422,14 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
             Lap("배경 복원(LaMa)");   // loc:none
         }
 
+        // 다음 쪽의 읽기 단계를 미리 띄운다 — 이 쪽의 지우기·LaMa가 끝난 지금부터(번역 응답을 기다리는 시간, 이어지는 저장·식자와 겹친다).
+        // 지우기와는 겹치지 않게 여기서 띄운다(무늬 메우기가 코어를 다 쓴다). 실패는 그 쪽의 차례에 그 쪽의 실패로 나온다
+        if (nextImagePath != null)
+        {
+            string next = nextImagePath;
+            _ahead.Start(Path.GetFullPath(next), () => ReadPageAsync(next, null, ct, ahead: true));
+        }
+
         // 띄워 둔 번역을 받는다 — 지우는 동안 왔으면 바로, 아직이면 기다린다(경과 초를 띄운다)
         if (pending != null)
         {
@@ -300,14 +442,26 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         {
             var (b, text) = blocks[i];
             var tr = i < translations.Count ? translations[i] : "";
-            if (string.IsNullOrWhiteSpace(tr)) tr = text;
+            string mark = marks[i] ?? "";
+            if (string.IsNullOrWhiteSpace(tr)) { tr = text; mark = ReviewMark.Failed; }   // 답이 없어 원문이 그대로 식자된다 — 확인할 줄
             tr = TameRunaway(PolishTranslation(tr, settings.TranslateTarget), text);
             result.Add(new TextBlockInfo(
                 b.X1, b.Y1, b.X2, b.Y2, text, tr,
                 EstimateFontSize(rect, tr.Length),
                 // 효과음은 Carrot처럼 높이가 폭의 1.5배를 넘으면 세로(글자를 쌓는다), 대사는 전처럼 1.3배(한국어는 어차피 가로로 그린다 — 풍선 재기에만 쓴다)
                 Vertical: rect.Height > rect.Width * (sfx ? 1.5 : 1.3),
-                color, Sfx: sfx));
+                color, Sfx: sfx, Machine: tr, Review: mark));
+        }
+        // 사용자가 전에 고친 글은 다시 번역한 글로 덮지 않는다(previous = 이 원고의 전 식자 정보 — 러너가 설정 TranslateKeepEdited일 때만 넘긴다).
+        // 앞 쪽 문맥에 넣기 전에 옮긴다 — 다음 쪽의 번역도 고친 글을 따라가게
+        if (previous is { Count: > 0 })
+        {
+            var carried = TextBlockInfo.CarryEdits(result, previous, out int kept);
+            if (kept > 0)
+            {
+                result = carried;
+                status?.Report(Loc.F($"고친 번역 {kept}줄은 그대로 둔다냥"));
+            }
         }
         // 앞 쪽 문맥(TranslateCarryContext): 이 쪽의 대사(원문→번역)를 다음 쪽의 LLM 번역에 참고로 넘긴다 — 최근 ContextLines줄만. 효과음은 넣지 않는다
         if (settings.TranslateCarryContext)
@@ -363,7 +517,7 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
     /// <summary>대사와 효과음을 따로 번역한다(2026-11-26). 대사: 용어집 + 앞 쪽 문맥. 효과음: 용어집(원문이 그대로 한 항목) → 내장 사전(SfxDictionary) → 번역기에 효과음 지시문으로.
     /// 돌려주는 목록은 blocks와 같은 순서·길이. 못 옮긴 줄은 ""(호출부가 원문으로 둔다).</summary>
     private async Task<IReadOnlyList<string>> TranslateBlocksAsync(ITranslator translator, IReadOnlyList<(DetectedBlock Box, string Text)> blocks,
-        IReadOnlyList<BlockRole> roles, IReadOnlyList<(string Source, string Target)> glossary, Size page, byte[]? pageImage, CancellationToken ct)
+        IReadOnlyList<BlockRole> roles, IReadOnlyList<(string Source, string Target)> glossary, Size page, byte[]? pageImage, string[] marks, CancellationToken ct)
     {
         var result = new string[blocks.Count];
         var dialogue = new List<int>();
@@ -379,11 +533,13 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         {
             var boxes = dialogue.Select(i => new Rect(blocks[i].Box.X1, blocks[i].Box.Y1, blocks[i].Box.X2 - blocks[i].Box.X1, blocks[i].Box.Y2 - blocks[i].Box.Y1)).ToList();
             var opts = DialogueOptions(settings, glossary, _recent.ToArray(), boxes, page, pageImage);
-            var tr = await TranslateInReadingOrderAsync(translator, dialogue.Select(i => blocks[i].Text).ToList(), boxes, opts, settings.TranslateSource, settings.TranslateTarget, ct);
-            for (int k = 0; k < dialogue.Count; k++) result[dialogue[k]] = tr[k];
+            var dialogueMarks = new string[dialogue.Count];
+            var tr = await TranslateInReadingOrderAsync(translator, dialogue.Select(i => blocks[i].Text).ToList(), boxes, opts, settings.TranslateSource, settings.TranslateTarget, ct, marks: dialogueMarks);
+            for (int k = 0; k < dialogue.Count; k++) { result[dialogue[k]] = tr[k]; marks[dialogue[k]] = dialogueMarks[k]; }
         }
         if (pendingSfx.Count > 0)
         {
+            // 효과음에는 확인 표시를 달지 않는다 — 못 옮긴 효과음은 지우지도 덮지도 않고 원문 그대로 둔다(식자되는 글이 없다)
             var tr = await TranslateCheckedAsync(translator, pendingSfx.Select(i => blocks[i].Text).ToList(), new TranslateOptions(glossary, [], Sfx: true), settings.TranslateSource, settings.TranslateTarget, ct);
             for (int k = 0; k < pendingSfx.Count; k++) result[pendingSfx[k]] = tr[k];
         }
@@ -414,14 +570,19 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
     /// <summary>대사를 **읽는 차례로** 번역기에 보내고(<see cref="ReadingOrder"/> — 풍선의 자리 <see cref="TranslateOptions.Places"/>도 그 차례로) 받은 답을 받은 차례(블록의 차례)로 되돌린다.
     /// 식자·사이드카의 블록 차례는 바뀌지 않는다. <paramref name="opts"/>의 Places는 <paramref name="boxes"/>와 같은 차례여야 한다(수가 다르면 자리는 보내지 않는다).</summary>
     internal static async Task<string[]> TranslateInReadingOrderAsync(ITranslator translator, IReadOnlyList<string> texts, IReadOnlyList<Rect> boxes, TranslateOptions opts,
-        string sourceLang, string targetLang, CancellationToken ct, ITranslator? fallback = null)
+        string sourceLang, string targetLang, CancellationToken ct, ITranslator? fallback = null, string[]? marks = null)
     {
-        if (boxes.Count != texts.Count) return await TranslateCheckedAsync(translator, texts, opts, sourceLang, targetLang, ct, fallback);
+        if (boxes.Count != texts.Count) return await TranslateCheckedAsync(translator, texts, opts, sourceLang, targetLang, ct, fallback, marks);
         var order = ReadingOrder(boxes, rightToLeft: LangCode.IsJapanese(sourceLang));
         var places = opts.Places is { } p && p.Count == texts.Count ? order.Select(i => p[i]).ToList() : null;
-        var sent = await TranslateCheckedAsync(translator, order.Select(i => texts[i]).ToList(), opts with { Places = places }, sourceLang, targetLang, ct, fallback);
+        var sentMarks = marks != null ? new string[texts.Count] : null;
+        var sent = await TranslateCheckedAsync(translator, order.Select(i => texts[i]).ToList(), opts with { Places = places }, sourceLang, targetLang, ct, fallback, sentMarks);
         var result = new string[texts.Count];
-        for (int k = 0; k < order.Length; k++) result[order[k]] = sent[k];
+        for (int k = 0; k < order.Length; k++)
+        {
+            result[order[k]] = sent[k];
+            if (marks != null && order[k] < marks.Length) marks[order[k]] = sentMarks![k];   // 확인 표시도 답과 같이 블록의 차례로
+        }
         return result;
     }
 
@@ -612,11 +773,12 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
     /// <summary>번역하고 검증한다(TranslationCheck — Carrot처럼 목표 언어 글자가 없거나 원문 글자가 남거나 효과음이 길면 거부). 걸린 줄만 LLM에 한 번 더 묻고(Google·DeepL은 같은 답이 오므로 묻지 않는다),
     /// 그래도 걸리면 Google(<paramref name="fallback"/> — 시험은 가짜를 넣는다)로 메운다. 끝내 못 옮긴 줄: 대사는 처음 답 그대로(비면 "" — 호출부가 원문으로 둔다), 효과음은 ""(호출부가 지우지도 덮지도 않는다 — 검수 2026-11-26).</summary>
     internal static async Task<string[]> TranslateCheckedAsync(ITranslator translator, IReadOnlyList<string> texts, TranslateOptions opts, string sourceLang, string targetLang,
-        CancellationToken ct, ITranslator? fallback = null)
+        CancellationToken ct, ITranslator? fallback = null, string[]? marks = null)
     {
         var first = await translator.TranslateAsync(texts, sourceLang, targetLang, opts, ct);
         var result = texts.Select((_, i) => i < first.Count ? first[i] ?? "" : "").ToArray();
         bool Ok(int i, string tr) => TranslationCheck.IsAcceptable(PolishTranslation(tr, targetLang), targetLang, opts.Sfx, texts[i]);
+        void Mark(int i, string mark) { if (marks != null && i < marks.Length) marks[i] = mark; }
         var bad = Enumerable.Range(0, texts.Count).Where(i => !Ok(i, result[i])).ToList();
         if (bad.Count > 0 && translator.AnswersVary)
         {
@@ -633,12 +795,13 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
             {
                 var fb = await (fallback ?? new GoogleTranslator()).TranslateAsync(bad.Select(i => texts[i]).ToList(), sourceLang, targetLang, opts, ct);
                 for (int k = 0; k < bad.Count; k++)
-                    if (k < fb.Count && Ok(bad[k], fb[k] ?? "")) result[bad[k]] = fb[k];
+                    if (k < fb.Count && Ok(bad[k], fb[k] ?? "")) { result[bad[k]] = fb[k]; Mark(bad[k], ReviewMark.Filled); }   // 고른 번역기의 글이 아니다 — 확인할 줄로 남긴다
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-            catch { }   // Google 오류 — 처음 답으로 둔다
+            catch { }   // Google 오류 — 처음 답으로 둔다(아래에서 '못 옮김'으로 표시된다)
             bad = bad.Where(i => !Ok(i, result[i])).ToList();
         }
+        foreach (var i in bad) Mark(i, ReviewMark.Failed);   // 끝까지 걸린 줄 — 걸린 답(원문 글자가 남았다·비었다)이 그대로 간다
         if (opts.Sfx) foreach (var i in bad) result[i] = "";
         return result;
     }

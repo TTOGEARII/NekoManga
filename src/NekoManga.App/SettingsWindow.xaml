@@ -695,6 +695,10 @@
                                     <CheckBox x:Name="ChkCarryContext" Margin="0,8,0,0" Foreground="{DynamicResource NekoText}"
                                               Content="앞 페이지 대사를 문맥으로 같이 보낸다냥 (DeepSeek·Grok)"
                                               ToolTip="최근 30줄의 원문→번역을 참고용으로 같이 보낸다냥. 인물의 말투·호칭이 페이지 사이에 흔들리지 않는다냥. Google·DeepL은 쓰지 않는다냥"/>
+                                    <!-- 고친 번역 지키기(2026-11-27, 사용자의 Carrot 규칙 "확정한 문자열은 다시 번역하지 않는다"): 번역기와 상관없다 -->
+                                    <CheckBox x:Name="ChkKeepEdited" Margin="0,8,0,0" Foreground="{DynamicResource NekoText}"
+                                              Content="내가 고친 번역은 다시 돌려도 그대로 둔다냥"
+                                              ToolTip="결과 창이나 번역 표로 고친 글은 같은 원고를 다시 돌려도 새 번역으로 덮지 않는다냥. 끄면 전부 새로 번역한다냥"/>
                                     <TextBlock Style="{StaticResource SetHint}" Text="인물 이름·고정 표현을 용어집에 적으면 번역이 흔들리지 않는다냥. 한 줄에 하나, 원문=번역."/>
                                 </StackPanel>
                             </StackPanel>
