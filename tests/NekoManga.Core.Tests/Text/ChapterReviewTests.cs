@@ -66,6 +66,25 @@ public class ChapterReviewTests
         Assert.Equal([false, true, true, true], ChapterReview.LinesOf([blocks], rightToLeft: true).Select(l => l.Locked));
     }
 
+    [Fact]
+    public void LinesOf_ALineWhoseMachineTextIsUnknown_IsLockedButNotAReference()
+    {
+        // 옛 결과의 줄은 '사람이 고친 줄'이 아니다 — 못 바꾸게만 하고 기준으로 내세우지 않는다(그 줄이 흔들린 표기일 수 있다).
+        // 직접 나눈 줄은 번역기의 글을 몰라도 사용자가 손댄 줄이다
+        var blocks = new List<TextBlockInfo>
+        {
+            B(0, 0, "一", "하나"),
+            B(0, 200, "二", "둘이야", machine: "둘"),
+            B(0, 400, "三", "셋", machine: ""),
+            B(0, 600, "四", "넷", machine: "") with { ManualLines = true },
+        };
+
+        var lines = ChapterReview.LinesOf([blocks], rightToLeft: true);
+
+        Assert.Equal([false, true, true, true], lines.Select(l => l.Locked));
+        Assert.Equal([false, false, true, false], lines.Select(l => l.Unknown));
+    }
+
     // ───────── 물음 ─────────
 
     [Fact]
@@ -92,6 +111,52 @@ public class ChapterReviewTests
         Assert.Contains("학원물이다", p);
         Assert.Contains("bare name", p);            // 경칭 지침(Drop)이 번역 때와 같다
         Assert.DoesNotContain("bare name", ChapterReview.BuildSystemPrompt("Japanese", "Korean", TranslateGuide.Default, []));
+    }
+
+    [Fact]
+    public void BuildUserText_MarksALineItCannotVouchFor_WithTwoStars()
+    {
+        var text = ChapterReview.BuildUserText([L(0, 0, "左", "왼쪽", locked: true), L(0, 1, "右", "오른쪽", locked: true) with { Unknown = true }, L(0, 2, "下", "아래")]);
+
+        Assert.Equal("# page 1\n[1]* 左 ⇒ 왼쪽\n[2]** 右 ⇒ 오른쪽\n[3] 下 ⇒ 아래", text);
+    }
+
+    [Fact]
+    public void BuildSystemPrompt_SaysWhatTwoStarsMean_OnlyWhenSuchLinesAreSent()
+    {
+        // 그런 줄이 없는 화(보통의 경우)의 지시문은 재 본 그 지시문 그대로여야 한다 — 한 줄이 끼어도 답이 달라질 수 있다
+        string plain = ChapterReview.BuildSystemPrompt("Japanese", "Korean", TranslateGuide.Default, []);
+        string mixed = ChapterReview.BuildSystemPrompt("Japanese", "Korean", TranslateGuide.Default, [], unknownLines: true);
+
+        Assert.DoesNotContain("followed by **", plain);
+        Assert.Contains("followed by **", mixed);
+        Assert.Contains("not a reference", mixed);
+        var extra = mixed.Split('\n').Single(l => l.Contains("followed by **"));
+        Assert.Equal(plain, mixed.Replace(extra + "\n", ""));
+    }
+
+    [Fact]
+    public async Task RunAsync_TellsTheModelAboutUnknownLines_OnlyWhenThereAreSome()
+    {
+        var plain = new Model("NONE");
+        var mixed = new Model("NONE");
+
+        await ChapterReview.RunAsync(plain, [L(0, 0, "一", "하나"), L(0, 1, "二", "둘", locked: true)], Settings(), CancellationToken.None);
+        await ChapterReview.RunAsync(mixed, [L(0, 0, "一", "하나"), L(0, 1, "二", "둘", locked: true) with { Unknown = true }], Settings(), CancellationToken.None);
+
+        Assert.DoesNotContain("followed by **", plain.Asked[0].System);
+        Assert.Contains("followed by **", mixed.Asked[0].System);
+    }
+
+    [Fact]
+    public void Pick_AnAnswerForALineItCannotVouchFor_IsRejected()
+    {
+        var lines = new[] { L(0, 0, "田中くん", "타나카 군"), L(0, 1, "田中さん", "다나카 씨", locked: true) with { Unknown = true } };
+
+        var picked = ChapterReview.Pick("[1] 다나카 군\n[2]** 타나카 씨", lines, "ko", out int rejected);
+
+        Assert.Equal("다나카 군", Assert.Single(picked).After);
+        Assert.Equal(1, rejected);   // 표시를 따라 적은 답도 그 줄의 답으로 읽고 버린다
     }
 
     // ───────── 답 고르기 ─────────
@@ -180,6 +245,79 @@ public class ChapterReviewTests
         // 한 번 더 고쳐도 '전의 글'은 맨 처음 번역기의 글이다
         var twice = ChapterReview.Apply(once, [new(0, 0, "다나카 군", "다나카")], out _);
         Assert.Equal(("다나카", "타나카 군"), (twice[0].Translation, twice[0].Prior));
+    }
+
+    [Fact]
+    public void Apply_KeepsTheMarkItReplaces()
+    {
+        // 다른 번역기로 메운 줄(⚠)을 검수가 고치면 표시는 '검수'가 되지만, 덮은 표시는 남겨 둔다 — 되돌릴 때 ⚠가 돌아와야 한다
+        var blocks = new List<TextBlockInfo> { B(0, 0, "田中くん", "타나카 군") with { Review = ReviewMark.Filled } };
+
+        var once = ChapterReview.Apply(blocks, [new(0, 0, "타나카 군", "다나카 군")], out _);
+        var twice = ChapterReview.Apply(once, [new(0, 0, "다나카 군", "다나카")], out _);
+
+        Assert.Equal((ReviewMark.Revised, ReviewMark.Filled), (once[0].Review, once[0].PriorReview));
+        Assert.Equal((ReviewMark.Revised, ReviewMark.Filled, "타나카 군"), (twice[0].Review, twice[0].PriorReview, twice[0].Prior));   // 두 번 고쳐도 맨 처음 것
+    }
+
+    [Fact]
+    public void Restore_ALineThatNeededChecking_NeedsCheckingAgain()
+    {
+        // 못 옮긴 줄(원문이 그대로 든 줄)을 검수가 옮겼는데 사용자가 되돌렸다: 그 글이 ⚠ 없이 '내가 고친 글'로 남으면 다시 돌려도 못 옮긴 글이 지켜진다
+        var failed = B(0, 0, "行こう", "行こう") with { Review = ReviewMark.Failed };
+        var revised = ChapterReview.Apply([failed], [new(0, 0, "行こう", "가자")], out _)[0];
+
+        var back = ChapterReview.Restore(revised);
+
+        Assert.Equal(failed, back with { Declined = "" });
+        Assert.True(back.NeedsReview());
+        Assert.False(back.IsEdited());
+        Assert.Equal("가자", back.Declined);   // 무엇을 거절했는지는 남는다 — 다음 검수가 같은 고침을 다시 내지 않게
+    }
+
+    [Fact]
+    public void ADeclinedChange_IsNotMadeAgain_ButADifferentOneIs()
+    {
+        // 되돌린 ⚠ 줄은 잠기지 않는다(확인이 필요한 줄이다) — 그래서 다음 검수가 방금 거절한 그 글을 말없이 다시 넣을 수 있었다(검토 2026-11-28).
+        // 거절한 글과 같은 고침은 받지 않는다(버린 답으로 세지도 않는다 — 번역기의 잘못이 아니다). 다른 글로 고쳐 오면 받는다
+        var failed = B(0, 0, "行こう", "行こう") with { Review = ReviewMark.Failed };
+        var back = ChapterReview.Restore(ChapterReview.Apply([failed], [new(0, 0, "行こう", "가자")], out _)[0]);
+
+        var lines = ChapterReview.LinesOf([[back]], rightToLeft: true);
+        Assert.Equal(("가자", false), (lines[0].Declined, lines[0].Locked));
+
+        Assert.Empty(ChapterReview.Pick("[1] 가자", lines, "ko", out int rejected));
+        Assert.Equal(0, rejected);
+        Assert.Empty(ChapterReview.Pick("[1]  가자 ", lines, "ko", out _));           // 빈칸만 다른 것도 같은 글이다
+        Assert.Equal("갑시다", Assert.Single(ChapterReview.Pick("[1] 갑시다", lines, "ko", out _)).After);
+
+        // 다른 글로 고친 뒤 그것마저 되돌리면 나중 것을 기억한다
+        var again = ChapterReview.Restore(ChapterReview.Apply([back], [new(0, 0, "行こう", "갑시다")], out _)[0]);
+        Assert.Equal(("行こう", "갑시다", ReviewMark.Failed), (again.Translation, again.Declined, again.Review));
+    }
+
+    [Fact]
+    public void Restore_AnOrdinaryLine_BecomesTheUsersEdit()
+    {
+        // 표시가 없던 줄은 전처럼: 되돌린 글이 '내가 고친 글'이 되어 다음 검수·다시 번역이 건드리지 않는다
+        var revised = ChapterReview.Apply([B(0, 0, "田中くん", "타나카 군")], [new(0, 0, "타나카 군", "다나카 군")], out _)[0];
+
+        var back = ChapterReview.Restore(revised);
+
+        Assert.Equal(("타나카 군", "다나카 군", ""), (back.Translation, back.Machine, back.Declined));   // 잠기는 줄이라 거절한 글을 따로 적을 것이 없다
+        Assert.True(back.IsEdited());
+        Assert.False(back.NeedsReview());
+        Assert.True(ChapterReview.Locked(back));
+    }
+
+    [Fact]
+    public void Restore_ALineTheReviewDidNotChange_IsLeftAlone()
+    {
+        var plain = B(0, 0, "田中くん", "타나카 군");
+        var filled = plain with { Review = ReviewMark.Filled, Prior = "남은 글" };   // 검수가 고친 줄이 아니다
+
+        Assert.Equal(plain, ChapterReview.Restore(plain));
+        Assert.Equal(filled, ChapterReview.Restore(filled));
     }
 
     [Fact]
@@ -400,8 +538,61 @@ public class ChapterReviewTests
         Assert.Equal((1, 1), (report.Pages, report.Lines));
     }
 
+    [Fact]
+    public async Task RunOnResults_APageWhoseSidecarCannotBeRead_IsCounted()
+    {
+        // 식자 정보가 깨진 장은 검수에서 빠진다 — 말없이 빠지면 그 장만 표기가 다른 채 남은 까닭을 알 수 없다. 식자 정보가 아예 없는 장(글이 없던 쪽)은 세지 않는다
+        using var t = new TempDir();
+        var s = Settings();
+        var one = MakePage(t, "p1", s, "ko", B(100, 100, "田中くん", "타나카 군"));
+        var broken = MakePage(t, "p2", s, "ko", B(100, 100, "田中さん", "다나카 씨"));
+        File.WriteAllText(LetterSidecar.JsonPathFor(broken), "{ 깨진 json");
+
+        var report = await ChapterReview.RunOnResultsAsync(new Model("NONE"), [one, broken, t.At("글 없는 쪽.png")], s, null, CancellationToken.None);
+
+        Assert.Equal((1, 1, 1), (report.Pages, report.Lines, report.Unreadable));
+
+        // 고칠 수 있는 줄이 없어 묻지 않고 끝나는 길에서도 알린다
+        var locked = MakePage(t, "p3", s, "ko", B(100, 100, "田中", "다나카", machine: ""));
+        var quiet = await ChapterReview.RunOnResultsAsync(new Model("NONE"), [locked, broken], s, null, CancellationToken.None);
+        Assert.Equal((0, 1), (quiet.Open, quiet.Unreadable));
+    }
+
+    [Fact]
+    public async Task RunOnResults_StoppedWhileRelettering_KeepsWhatWasDone_AndSaysSo()
+    {
+        // 답을 받은 뒤의 다시 식자도 장마다 멈춤을 본다(전에는 끝까지 갔다 — 창을 닫아도 15초를 기다렸다). 끝낸 장은 그대로 두고 몇 줄을 고쳤는지 알린다
+        using var t = new TempDir();
+        var s = Settings();
+        var pages = Enumerable.Range(1, 3).Select(k => MakePage(t, "p" + k, s, "ko", B(100, 100, "田中くん", "타나카 군"))).ToList();
+        using var cts = new CancellationTokenSource();
+        var said = new List<string>();
+        int reletter = 0;
+        var status = new Progress(said) { OnReport = text => { if (text.Contains('/') && ++reletter == 2) cts.Cancel(); } };   // 둘째 장을 시작할 때 멈춘다
+
+        var report = await ChapterReview.RunOnResultsAsync(new Model("[1] 다나카 군\n[2] 다나카 군\n[3] 다나카 군"), pages, s, status, cts.Token);
+
+        Assert.True(report.Stopped);
+        Assert.Equal(2, report.Changed);
+        Assert.Equal(["다나카 군", "다나카 군", "타나카 군"], pages.Select(p => LetterSidecar.Load(p)!.Blocks[0].Translation));
+    }
+
+    [Fact]
+    public async Task RunOnResults_NotStopped_SaysSo()
+    {
+        using var t = new TempDir();
+        var s = Settings();
+        var one = MakePage(t, "p1", s, "ko", B(100, 100, "田中くん", "타나카 군"));
+
+        var report = await ChapterReview.RunOnResultsAsync(new Model("[1] 다나카 군"), [one], s, null, CancellationToken.None);
+
+        Assert.False(report.Stopped);
+        Assert.Equal((1, 0), (report.Changed, report.Unreadable));
+    }
+
     private sealed class Progress(List<string> said) : IProgress<string>
     {
-        public void Report(string value) => said.Add(value);
+        public Action<string>? OnReport;
+        public void Report(string value) { said.Add(value); OnReport?.Invoke(value); }
     }
 }

@@ -18,8 +18,9 @@ namespace NekoManga.Core.Pipeline;
 public static class ChapterReview
 {
     /// <summary>번역기에 보내는 줄 하나 — <paramref name="Page"/>는 넘긴 쪽 목록의 차례(0부터), <paramref name="Index"/>는 그 쪽 식자 정보의 블록 번호(0부터).
-    /// <paramref name="Locked"/>면 기준으로만 보낸다(고쳐 와도 버린다).</summary>
-    public sealed record Line(int Page, int Index, string Source, string Translation, bool Locked);
+    /// <paramref name="Locked"/>면 고쳐 와도 버린다. 잠근 까닭은 둘이다: 사용자가 손댄 줄(이름·말투의 기준으로 보낸다)과, 번역기의 글을 몰라 잠근 줄(<paramref name="Unknown"/> —
+    /// 이 기능 전에 만든 결과. 기준이 아니다: 그 줄이 흔들린 표기일 수 있다). <paramref name="Declined"/> = 사용자가 되돌리기로 거절한 검수의 글(같은 글로 다시 고쳐 오면 받지 않는다).</summary>
+    public sealed record Line(int Page, int Index, string Source, string Translation, bool Locked, bool Unknown = false, string Declined = "");
 
     /// <summary>고칠 줄 하나 — <paramref name="Before"/>는 물었을 때의 번역이다(적용할 때 그 줄이 아직 그 글인지 본다).</summary>
     public sealed record Change(int Page, int Index, string Before, string After);
@@ -29,8 +30,10 @@ public static class ChapterReview
     public sealed record Outcome(IReadOnlyList<Change> Changes, int Asked, int Rejected, bool TooMany, bool Unread);
 
     /// <summary>결과물에 적용한 결과. <paramref name="Pages"/>·<paramref name="Lines"/> = 본 장과 줄, <paramref name="Open"/> = 그 가운데 고쳐도 되는 줄, <paramref name="Changed"/> = 고쳐서 다시 식자한 줄,
-    /// <paramref name="Skipped"/> = 다른 언어로 번역돼 있어 뺀 장, <paramref name="Failures"/> = 다시 식자하지 못한 장(파일 이름: 까닭).</summary>
-    public sealed record Report(int Pages, int Lines, int Open, int Changed, int Rejected, bool TooMany, bool Unread, int Skipped, IReadOnlyList<string> Failures);
+    /// <paramref name="Skipped"/> = 다른 언어로 번역돼 있어 뺀 장, <paramref name="Failures"/> = 다시 식자하지 못한 장(파일 이름: 까닭),
+    /// <paramref name="Stopped"/> = 다시 식자하는 도중에 멈췄다(<paramref name="Changed"/>는 그 전에 끝낸 줄), <paramref name="Unreadable"/> = 식자 정보가 있는데 쓰지 못해 뺀 장(json이 잠겼거나 깨졌다 · 식자 전 원고가 없다).</summary>
+    public sealed record Report(int Pages, int Lines, int Open, int Changed, int Rejected, bool TooMany, bool Unread, int Skipped, IReadOnlyList<string> Failures,
+        bool Stopped = false, int Unreadable = 0);
 
     /// <summary>한 번에 묻는 줄 수의 상한 — 넘으면 쪽 경계에서 묶음으로 나눠 묻는다(묶음 사이의 일관성은 보지 못한다).
     /// 실제 한 화(서른다섯 쪽 안팎)는 이백~삼백 줄이라 한 번에 간다. 줄 하나가 원문·번역 합쳐 60토큰쯤이다.</summary>
@@ -56,7 +59,7 @@ public static class ChapterReview
             foreach (int k in EmbeddedTranslator.ReadingOrder(boxes, rightToLeft))
             {
                 var b = blocks[sent[k]];
-                lines.Add(new Line(p, sent[k], b.SourceText, b.Translation, Locked(b)));
+                lines.Add(new Line(p, sent[k], b.SourceText, b.Translation, Locked(b), Unknown(b), b.Declined ?? ""));
             }
         }
         return lines;
@@ -65,9 +68,16 @@ public static class ChapterReview
     /// <summary>고치지 않는 줄인가 — 사용자가 고친 글·직접 나눈 줄·번역기의 글을 모르는 줄(이 기능 전의 결과: 고친 글인지 알 수 없다).</summary>
     internal static bool Locked(TextBlockInfo b) => b.ManualLines || string.IsNullOrEmpty(b.Machine) || b.IsEdited();
 
+    /// <summary>잠갔지만 사용자가 손댄 줄은 아닌가 — 번역기의 글을 모를 뿐인 줄(옛 결과). 직접 나눈 줄은 손댄 줄이다.
+    /// 전에는 잠근 줄을 전부 "사람이 고친 줄 — 이름과 말투의 기준"으로 보내, 옛 결과와 새 결과가 섞인 화에서 옛 결과의 흔들린 표기가 기준이 됐다(검토 2026-11-28).</summary>
+    internal static bool Unknown(TextBlockInfo b) => !b.ManualLines && string.IsNullOrEmpty(b.Machine);
+
     /// <summary>검수 지시문. 번역 때의 지침(경칭·인물·작품 메모·용어집)을 그대로 붙인다 — 검수가 번역 때와 다른 기준으로 고치면 안 된다.
-    /// 낱말별 보기는 넣지 않는다(사용자의 규칙 B3). 답은 **고친 줄만** 받는다: 전부 다시 받으면 안 고친 줄도 조금씩 달라져 온다.</summary>
-    internal static string BuildSystemPrompt(string srcName, string tgtName, TranslateGuide guide, IReadOnlyList<(string Source, string Target)> glossary)
+    /// 낱말별 보기는 넣지 않는다(사용자의 규칙 B3). 답은 **고친 줄만** 받는다: 전부 다시 받으면 안 고친 줄도 조금씩 달라져 온다.
+    /// <paramref name="unknownLines"/>: 번역기의 글을 몰라 잠근 줄(<c>[n]**</c>)이 섞여 있다 — 그때만 그 표시의 뜻을 한 줄 덧붙인다. 그런 줄이 없는 화의 지시문은 실제 한 화로 재 본 그대로다.
+    /// 표시를 별 둘로 한 까닭(실측 2026-11-28, DeepSeek·실제 한 화의 앞 열 쪽 75줄을 그런 줄로): 처음에 <c>[n]=</c>로 보냈더니 모델이 그것을 답의 꼴로 읽어 고친 줄을 <c>[n]= 글</c>로 적었고,
+    /// 한 번은 고칠 수 있는 235줄을 전부 따라 적었다(답 14초). 별 하나(<c>[n]*</c>)는 두 번 다 따라 적지 않고 고친 줄만 왔다(9·13줄, 1~2초).</summary>
+    internal static string BuildSystemPrompt(string srcName, string tgtName, TranslateGuide guide, IReadOnlyList<(string Source, string Target)> glossary, bool unknownLines = false)
     {
         var sb = new StringBuilder();
         sb.Append($"You are the editor checking a finished {tgtName} translation of one manga chapter. It was translated from {srcName} one page at a time, so the pages may disagree with each other. ")
@@ -81,6 +91,7 @@ public static class ChapterReview
           .Append("Rules:\n")
           .Append("- This is a consistency check, not a rewrite. Leave every other line exactly as it is: do not polish style, swap synonyms or change punctuation on a line that is already correct. Most lines need no change.\n")
           .Append("- A line whose number is followed by * was corrected by a human. Never change it, and take it as the reference for names and tone.\n")
+          .Append(unknownLines ? "- A line whose number is followed by ** cannot be changed either, but it is not a reference: nobody checked it, and it may itself be the inconsistent one.\n" : "")
           .Append("- A corrected line translates its own source line only: never move words between lines, and never merge, split, add or drop lines.\n")
           .Append($"- Write each corrected line entirely in natural spoken {tgtName}, with no {srcName} characters, and keep its register: never make it cruder, more explicit, more formal or more polite than the source.\n")
           .Append(LlmTranslator.HonorificRule(guide.Honorifics, tgtName))
@@ -101,7 +112,7 @@ public static class ChapterReview
         return sb.ToString();
     }
 
-    /// <summary>보내는 글 — 쪽마다 머리(<c># page k</c>, 넘긴 쪽 목록의 차례)를 두고 줄마다 <c>[n] 원문 ⇒ 번역</c>. 번호는 이 묶음 안에서 1부터다. 잠긴 줄은 <c>[n]*</c>.</summary>
+    /// <summary>보내는 글 — 쪽마다 머리(<c># page k</c>, 넘긴 쪽 목록의 차례)를 두고 줄마다 <c>[n] 원문 ⇒ 번역</c>. 번호는 이 묶음 안에서 1부터다. 사용자가 손댄 줄은 <c>[n]*</c>, 번역기의 글을 몰라 잠근 줄은 <c>[n]**</c>.</summary>
     internal static string BuildUserText(IReadOnlyList<Line> lines)
     {
         var sb = new StringBuilder();
@@ -111,7 +122,7 @@ public static class ChapterReview
             var l = lines[k];
             if (sb.Length > 0) sb.Append('\n');
             if (l.Page != page) { page = l.Page; sb.Append("# page ").Append(page + 1).Append('\n'); }
-            sb.Append('[').Append(k + 1).Append(']').Append(l.Locked ? "* " : " ").Append(OneLine(l.Source)).Append(" ⇒ ").Append(OneLine(l.Translation));
+            sb.Append('[').Append(k + 1).Append(']').Append(!l.Locked ? " " : l.Unknown ? "** " : "* ").Append(OneLine(l.Source)).Append(" ⇒ ").Append(OneLine(l.Translation));
         }
         return sb.ToString();
     }
@@ -122,7 +133,7 @@ public static class ChapterReview
     private static readonly Regex Think = new(@"<think>[\s\S]*?</think>", RegexOptions.Compiled);
     /// <summary>답의 줄 — <c>[n] 글</c> 꼴만 받는다(번호 뒤에 빈칸이나 쌍점). 번역 요청은 <c>1. 글</c>도 받지만 여기서는 받지 않는다: "1. 고칠 곳이 없습니다" 같은 말이 첫 줄의 번역으로 들어간다.
     /// "[3]과 [7]의 이름이 다릅니다"처럼 번호에 말이 바로 붙은 줄도 아니다.</summary>
-    private static readonly Regex Answered = new(@"^\s*(?:[-•]\s*)?\[(\d+)\]\*?(?:\s*[:：]\s*|\s+)(.*)$", RegexOptions.Compiled);
+    private static readonly Regex Answered = new(@"^\s*(?:[-•]\s*)?\[(\d+)\]\*{0,2}(?:\s*[:：]\s*|\s+)(.*)$", RegexOptions.Compiled);
     private static readonly Regex NumberTag = new(@"\[\d+\]", RegexOptions.Compiled);
     /// <summary>전의 글에 견준 새 글의 길이가 이 범위를 벗어나면 고침이 아니라 딴 글이다("변경"·덧붙인 설명) — 전의 글이 <see cref="LengthCheckFrom"/>자 이상일 때만 본다(짧은 글은 한두 자로 배가 된다).
     /// 실제 한 화에서 받은 맞는 고침 11가지는 0.8~1.3배였다.</summary>
@@ -164,6 +175,8 @@ public static class ChapterReview
             text = Undress(text.Trim());
             text = EmbeddedTranslator.TameRunaway(EmbeddedTranslator.PolishTranslation(text, targetLang), line.Source).Trim();
             if (OneLine(text) == OneLine(line.Translation)) continue;
+            // 사용자가 되돌리기로 거절한 바로 그 글 — 다시 넣지 않는다(버린 답으로 세지도 않는다: 번역기의 잘못이 아니다). 다른 글로 고쳐 오면 새 제안이다
+            if (line.Declined.Length > 0 && OneLine(text) == OneLine(line.Declined)) continue;
             if (line.Locked || Dubious(text, line) || !TranslationCheck.IsAcceptable(text, targetLang, sfx: false, line.Source)) { rejected++; continue; }
             changes.Add(new Change(line.Page, line.Index, line.Translation, text));
         }
@@ -201,10 +214,30 @@ public static class ChapterReview
             if (c.Index < 0 || c.Index >= list.Count) continue;
             var b = list[c.Index];
             if (b.Translation != c.Before) continue;
-            list[c.Index] = b with { Translation = c.After, Machine = c.After, Review = ReviewMark.Revised, Prior = string.IsNullOrEmpty(b.Prior) ? c.Before : b.Prior };
+            // 처음 고칠 때만 전의 글과 그때의 확인 표시(메움·못 옮김)를 담는다 — 두 번 검수해도 맨 처음 것이 남는다
+            bool first = string.IsNullOrEmpty(b.Prior);
+            list[c.Index] = b with
+            {
+                Translation = c.After, Machine = c.After, Review = ReviewMark.Revised,
+                Prior = first ? c.Before : b.Prior,
+                PriorReview = first ? (b.Review == ReviewMark.Revised ? "" : b.Review) : b.PriorReview,
+            };
             changed++;
         }
         return list;
+    }
+
+    /// <summary>검수가 고친 줄을 전의 글로 되돌린다(결과 창 [전의 글로 되돌리기]). 검수가 고친 줄이 아니면 그대로 돌려준다.
+    /// 전에 '확인할 줄'이었으면(다른 번역기로 메움·못 옮김) 글·번역기의 글·표시를 전부 전으로 — ⚠가 다시 보인다. 전에는 되돌린 글이 ⚠ 없이 '내가 고친 글'이 되어,
+    /// 못 옮긴 글이 다시 번역해도 지켜졌다(검토 2026-11-28). 그 줄은 다음 검수가 다시 고칠 수 있다(확인이 필요한 줄이다) —
+    /// 다만 방금 거절한 그 글은 <see cref="TextBlockInfo.Declined"/>에 적어 두어 같은 고침이 말없이 되돌아오지 않게 한다(다른 글로 고쳐 오면 받는다).
+    /// 표시가 없던 줄은 전처럼 글만 되돌린다: 번역기의 글(<see cref="TextBlockInfo.Machine"/>)과 달라 '내가 고친 글'이 되고, 다음 검수·다시 번역이 건드리지 않는다.</summary>
+    public static TextBlockInfo Restore(TextBlockInfo b)
+    {
+        if (b.Review != ReviewMark.Revised || string.IsNullOrEmpty(b.Prior)) return b;
+        return string.IsNullOrEmpty(b.PriorReview)
+            ? b with { Translation = b.Prior }
+            : b with { Translation = b.Prior, Machine = b.Prior, Review = b.PriorReview, Prior = "", PriorReview = "", Declined = b.Translation };
     }
 
     /// <summary>줄들을 한 번에 묻는 묶음으로 나눈다 — 쪽을 가르지 않는다(한 쪽이 상한보다 길면 그 쪽만으로 한 묶음).</summary>
@@ -226,7 +259,8 @@ public static class ChapterReview
     public static async Task<Outcome> RunAsync(IChatModel model, IReadOnlyList<Line> lines, AppSettings s, CancellationToken ct)
     {
         var guide = new TranslateGuide(s.TranslateHonorifics, s.TranslateTone, s.TranslateNotes.Trim(), TranslateGuide.ParseCharacters(s.TranslateCharacters));
-        var system = BuildSystemPrompt(LlmTranslator.LangName(s.TranslateSource), LlmTranslator.LangName(s.TranslateTarget), guide, Glossary.Parse(s.TranslateGlossary));
+        var system = BuildSystemPrompt(LlmTranslator.LangName(s.TranslateSource), LlmTranslator.LangName(s.TranslateTarget), guide, Glossary.Parse(s.TranslateGlossary),
+            unknownLines: lines.Any(l => l.Unknown));
         var changes = new List<Change>();
         int asked = 0, rejected = 0;
         bool tooMany = false, unread = false;
@@ -252,33 +286,39 @@ public static class ChapterReview
 
     /// <summary>식자까지 끝난 결과물들(<paramref name="outPaths"/> — 화의 쪽 차례)을 한 화로 보고 검수한 뒤, 고친 장만 지금 설정으로 다시 식자한다.
     /// 식자 정보가 없는 장(번역하지 않았다)은 건너뛰고, 지금 목표 언어와 다른 언어로 번역된 장은 섞어 보내지 않는다(<see cref="Report.Skipped"/>).
-    /// 한 장의 다시 식자가 실패해도 나머지는 적용한다(<see cref="Report.Failures"/>). 모델의 오류는 던진다 — 그때는 아무 장도 바뀌지 않았다.</summary>
+    /// 한 장의 다시 식자가 실패해도 나머지는 적용한다(<see cref="Report.Failures"/>). 모델의 오류는 던진다 — 그때는 아무 장도 바뀌지 않았다.
+    /// 멈춤(<paramref name="ct"/>): 답을 기다리는 중이면 던지고(아무 장도 안 바뀌었다), 다시 식자하는 중이면 하던 장까지 끝내고 돌려준다(<see cref="Report.Stopped"/> — 끝낸 장은 그대로 둔다).</summary>
     public static async Task<Report> RunOnResultsAsync(IChatModel model, IReadOnlyList<string> outPaths, AppSettings s, IProgress<string>? status, CancellationToken ct)
     {
         var pages = new List<(string OutPath, LetterSidecar Sidecar)>();
-        int skipped = 0;
+        int skipped = 0, unreadable = 0;
         // 목록의 두 행이 같은 결과 자리로 떨어질 수 있다(출력 폴더 고정 + 같은 이름) — 두 번 읽으면 줄이 두 번 가고 둘째 저장이 첫째의 고침을 덮는다
         foreach (var outPath in outPaths.Select(FullPath).Distinct(StringComparer.OrdinalIgnoreCase))
         {
             LetterSidecar? sc = null;
-            try { sc = LetterSidecar.Load(outPath); } catch { }   // 잠긴·깨진 식자 정보 — 그 장은 빠진다(번역 표 내보내기와 같다)
-            if (sc == null || sc.Blocks.Count == 0) continue;
+            try { sc = LetterSidecar.Load(outPath); } catch { }
+            // 식자 정보가 없는 장은 번역할 글이 없던 쪽이다. 있는데 못 쓰는 장(json이 잠김·깨짐, 식자 전 원고가 없다 — Load는 셋 다 null이다)은 센다 — 말없이 빠지면 그 장만 표기가 다른 채 남은 까닭을 알 수 없다
+            if (sc == null) { try { if (File.Exists(LetterSidecar.JsonPathFor(outPath))) unreadable++; } catch { } continue; }
+            if (sc.Blocks.Count == 0) continue;
             if (sc.Target.Length > 0 && !string.Equals(sc.Target, s.TranslateTarget, StringComparison.OrdinalIgnoreCase)) { skipped++; continue; }
             pages.Add((outPath, sc));
         }
         var lines = LinesOf(pages.Select(p => (IReadOnlyList<TextBlockInfo>)p.Sidecar.Blocks).ToList(), LangCode.IsJapanese(s.TranslateSource));
         int open = lines.Count(l => !l.Locked);
-        if (open == 0) return new Report(pages.Count, lines.Count, 0, 0, 0, false, false, skipped, []);
+        if (open == 0) return new Report(pages.Count, lines.Count, 0, 0, 0, false, false, skipped, [], Unreadable: unreadable);
 
         status?.Report(Loc.F($"화 전체 검수: {pages.Count}장 {lines.Count}줄을 번역기에 보냈다냥 — 답을 기다리는 중이다냥…"));
         var outcome = await RunAsync(model, lines, s, ct);
 
-        int changed = 0;
+        int changed = 0, at = 0;
+        bool stopped = false;
         var failures = new List<string>();
         var byPage = outcome.Changes.GroupBy(c => c.Page).ToList();
-        if (byPage.Count > 0) status?.Report(Loc.F($"화 전체 검수: 고친 {byPage.Count}장을 다시 식자하는 중이다냥…"));
         foreach (var group in byPage)
         {
+            // 장마다 멈춤을 본다(전에는 답을 받으면 끝까지 갔다 — 장마다 0.3초쯤, 창을 닫아도 다 끝나야 닫혔다). 하던 장은 끝낸다: 식자 정보와 결과물이 어긋난 채 남지 않게
+            if (ct.IsCancellationRequested) { stopped = true; break; }
+            status?.Report(Loc.F($"화 전체 검수: 고친 장을 다시 식자하는 중이다냥 ({++at}/{byPage.Count})"));
             var (outPath, asked) = pages[group.Key];
             try
             {
@@ -294,6 +334,6 @@ public static class ChapterReview
             }
             catch (Exception ex) { failures.Add(Path.GetFileName(outPath) + ": " + ex.Message); }
         }
-        return new Report(pages.Count, lines.Count, open, changed, outcome.Rejected, outcome.TooMany, outcome.Unread, skipped, failures);
+        return new Report(pages.Count, lines.Count, open, changed, outcome.Rejected, outcome.TooMany, outcome.Unread, skipped, failures, stopped, unreadable);
     }
 }

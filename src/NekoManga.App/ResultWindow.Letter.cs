@@ -363,12 +363,17 @@ public partial class ResultWindow
     }
 
     /// <summary>[전의 글로 되돌리기] — 화 전체 검수가 고치기 전의 글을 번역 칸에 다시 넣는다(칸의 글이 바뀌면 블록에 담기고 다시 식자된다 — 손으로 친 것과 같은 길).
-    /// 되돌린 글은 번역기의 글(Machine)과 달라 '내가 고친 글'이 된다: 표시가 꺼지고, 다음 검수·다시 번역이 건드리지 않는다.</summary>
+    /// 되돌린 글은 번역기의 글(Machine)과 달라 '내가 고친 글'이 된다: 표시가 꺼지고, 다음 검수·다시 번역이 건드리지 않는다.
+    /// 다만 검수 전에 '확인할 줄'(다른 번역기로 메움·못 옮김)이었으면 그 표시와 번역기의 글까지 전으로 되돌린다(ChapterReview.Restore) — ⚠가 다시 보인다.
+    /// 전에는 그런 줄도 '내가 고친 글'이 되어, 못 옮긴 글이 표시 없이 남고 다시 번역해도 지켜졌다.</summary>
     private void BtnRestorePrior_Click(object sender, RoutedEventArgs e)
     {
         int i = CmbBlocks.SelectedIndex;
         if (i < 0 || i >= _letterBlocks.Count || string.IsNullOrEmpty(_letterBlocks[i].Prior)) return;
-        TxtBlockText.Text = _letterBlocks[i].Prior;
+        var restored = ChapterReview.Restore(_letterBlocks[i]);
+        // 표시·번역기의 글부터 되돌려 두고(글은 아직 그대로) 글은 칸으로 넣는다 — 칸의 글이 바뀌는 길이 다시 식자와 제자리 글 상자 맞추기를 맡는다
+        if (restored.Machine != _letterBlocks[i].Machine) SetBlock(i, restored with { Translation = _letterBlocks[i].Translation }, "text:" + i);
+        TxtBlockText.Text = restored.Translation;
     }
 
     /// <summary>자동인 크기·외곽선 칸에 지금 그려진 값(px)을 적는다 — 그 숫자에서 고쳐 나갈 수 있게. 치는 중인 칸은 건드리지 않는다(force가 아니면).</summary>

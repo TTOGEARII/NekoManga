@@ -40,7 +40,9 @@ public record TextBlockInfo(
     double SrcStroke = 0,          // 고른 획 굵기 ÷ SrcEm(실측: 본문 0.05~0.085, 굵은 고딕 0.10, 아주 굵은 글 0.15)
     double SrcThick = 0,           // 굵은 획의 굵기 ÷ SrcEm — 굵기 판정이 보는 값(실측: 가는 글꼴 0.08~0.10, 보통 본문·굵은 고딕 0.13~0.16, 아주 굵은 글 0.22)
     double SrcContrast = 0,        // 세로 획 굵기 ÷ 가로 획 굵기(명조 2 이상, 고딕 1쯤). 0 = 곧은 획이 모자라 못 쟀다
-    string Prior = "")             // 화 전체 검수(ChapterReview)가 고치기 전의 글 — Review가 Revised일 때 결과 창이 보여 주고 되돌릴 수 있다. 두 번 검수해도 맨 처음 번역기의 글이 남는다. 옛 json에는 없다 → ""
+    string Prior = "",             // 화 전체 검수(ChapterReview)가 고치기 전의 글 — Review가 Revised일 때 결과 창이 보여 주고 되돌릴 수 있다. 두 번 검수해도 맨 처음 번역기의 글이 남는다. 옛 json에는 없다 → ""
+    string PriorReview = "",       // 화 전체 검수가 덮은 확인 표시(ReviewMark.Filled·Failed) — 되돌릴 때 그 표시가 돌아온다(ChapterReview.Restore). 표시가 없던 줄은 "". 옛 json에는 없다 → ""
+    string Declined = "")          // 사용자가 [전의 글로 되돌리기]로 거절한 검수의 글 — 확인 표시가 있던 줄을 되돌릴 때 적는다(그 줄은 잠기지 않는다). 다음 검수가 같은 글을 다시 내면 받지 않는다(ChapterReview.Pick). 옛 json에는 없다 → ""
 {
     /// <summary>결과 창 식자 탭이 번역 글 위에 보여 주는 원문(OCR 글) — 앞뒤 빈칸·줄 바꿈을 뗀다(2026-11-26 사용자 요청).
     /// 빈 글이면 창이 칸을 접는다: [새 글 넣기]로 만든 글은 원문이 ""이고, 옛 json에 칸이 없으면 null로 들어온다.</summary>

@@ -504,6 +504,9 @@ public partial class MainWindow
             // 화 전체 검수(설정에서 켰을 때만, 2026-11-28): 목록의 끝난 장 전부를 한 화로 본다 — [멈추기]로 그만둘 수 있다(그때는 아래의 '멈췄다냥'으로 간다. 장들은 이미 끝나 있다)
             if (s.EnableTranslate && s.TranslateChapterReview)
             {
+                // 검수는 번역기의 답을 기다린다(길면 몇 분) — 그 전에 러너를 놓는다: 내장 모델(메모리·VRAM)이 내려가고 이 작업의 ComfyUI 사용도 풀린다. 끝의 using이 한 번 더 놓아도 된다
+                runner.Dispose();
+                _runner = null;
                 string note;
                 try { note = await ChapterReviewAsync(_rows.Where(r => r.Done && !r.Failed).Select(OutPathOf).ToList(), s, _cts.Token); }
                 catch (OperationCanceledException) { note = Loc.T("화 전체 검수를 멈췄다냥 — 결과는 그대로다냥"); }   // 작업은 이미 끝났다 — '멈췄다냥'으로 덮지 않는다

@@ -125,6 +125,10 @@ public class LlmTranslator(string endpoint, string apiKey, string model, string 
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(150) };
     /// <summary>화 전체 검수용 — 한 화(수백 줄)를 한 번에 보내고 고친 줄을 받는다. 쪽 하나의 번역보다 답이 늦다(추론 모델은 더).</summary>
     private static readonly HttpClient LongHttp = new() { Timeout = TimeSpan.FromSeconds(300) };
+    /// <summary>보내는 자리를 바꿔 끼우는 이음새(시험용) — <see cref="AskAsync"/>의 오류 길(네트워크 오류·제한 시간·400·끊긴 답)을 서버 없이 본다. 비면 실제로 보낸다.</summary>
+    internal Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>>? SendOverride { get; init; }
+    /// <summary><see cref="AskAsync"/>가 네트워크 오류 뒤 다시 보내기 전에 쉬는 시간(시험에서는 0).</summary>
+    internal TimeSpan ResendWait { get; init; } = TimeSpan.FromSeconds(2);
 
     public bool AnswersVary => true;
 
@@ -238,12 +242,12 @@ public class LlmTranslator(string endpoint, string apiKey, string model, string 
                 using var req = new HttpRequestMessage(HttpMethod.Post, endpoint);
                 req.Headers.Add("Authorization", $"Bearer {apiKey}");
                 req.Content = new StringContent(body.ToJsonString(), System.Text.Encoding.UTF8, "application/json");
-                resp = await LongHttp.SendAsync(req, ct);
+                resp = SendOverride != null ? await SendOverride(req, ct) : await LongHttp.SendAsync(req, ct);
             }
             catch (HttpRequestException) when (!resent)
             {
                 resent = true;
-                await Task.Delay(2000, ct);
+                await Task.Delay(ResendWait, ct);
                 continue;
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)

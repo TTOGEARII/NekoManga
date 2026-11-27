@@ -89,7 +89,7 @@ public partial class MainWindow
     }
 
     /// <summary>[📑 번역 표] → 화 전체 검수 — 목록의 장 전부를 한 화로 본다. 도는 동안은 작업처럼 [시작]·결과 창을 막고 [멈추기]로 그만둘 수 있다
-    /// (번역기의 답을 기다리는 동안만 멈춰진다 — 답을 받은 뒤의 다시 식자는 장마다 끝까지 간다).</summary>
+    /// (답을 기다리는 중이면 아무 장도 바뀌지 않고, 다시 식자하는 중이면 하던 장까지 끝내고 멈춘다 — 그때는 몇 줄을 고쳤는지 상태 줄에 나온다).</summary>
     private async void ChapterReview_Click(object sender, RoutedEventArgs e)
     {
         if (_cts != null) { TxtStatus.Text = Loc.T("작업이 도는 중이다냥 — 끝난 뒤에 해 줘냥"); return; }
@@ -133,14 +133,19 @@ public partial class MainWindow
         catch (Exception ex) { return Loc.T("화 전체 검수를 못 했다냥 — 결과는 그대로다냥: ") + ex.Message; }
         finally { _chapterReviewing = false; }
 
-        if (r.Lines == 0) return Loc.T("화 전체 검수: 검수할 번역이 없다냥 — 식자까지 끝난 장이 없다냥");
-        if (r.Open == 0) return Loc.T("화 전체 검수: 고칠 수 있는 줄이 없다냥 — 내가 고친 글이거나, 이 기능 전에 번역한 결과다냥(다시 번역하면 된다냥)");
-        string text = r.Changed > 0
+        // 식자 정보가 있는데 쓰지 못해 뺀 장(json을 못 읽었거나 식자 전 원고가 없다) — 어느 길로 끝나든 알린다(말없이 빠지면 그 장만 표기가 다른 까닭을 알 수 없다)
+        string unreadable = r.Unreadable > 0 ? Loc.F($" · 식자 정보나 식자 전 원고를 못 읽은 {r.Unreadable}장은 뺐다냥") : "";
+        if (r.Lines == 0) return Loc.T("화 전체 검수: 검수할 번역이 없다냥 — 식자까지 끝난 장이 없다냥") + unreadable;
+        if (r.Open == 0) return Loc.T("화 전체 검수: 고칠 수 있는 줄이 없다냥 — 내가 고친 글이거나, 이 기능 전에 번역한 결과다냥(다시 번역하면 된다냥)") + unreadable;
+        string text = r.Stopped
+            ? (r.Changed > 0 ? Loc.F($"화 전체 검수를 멈췄다냥 — 그 전에 {r.Changed}줄은 고쳐 다시 식자했다냥(결과 창 식자 탭의 ↻ 표시)") : Loc.T("화 전체 검수를 멈췄다냥 — 결과는 그대로다냥"))
+            : r.Changed > 0
             ? Loc.F($"화 전체 검수: {r.Pages}장 {r.Lines}줄 가운데 {r.Changed}줄을 고쳐 다시 식자했다냥 — 결과 창 식자 탭의 ↻ 표시에서 전의 글을 보고 되돌릴 수 있다냥")
             : r.TooMany ? Loc.T("화 전체 검수: 번역기가 줄을 너무 많이 고치려 해서 쓰지 않았다냥 — 결과는 그대로다냥")
             : r.Unread ? Loc.T("화 전체 검수: 번역기의 답을 읽지 못했다냥 — 결과는 그대로다냥. 다시 해 보라냥")
             : r.Failures.Count > 0 ? Loc.T("화 전체 검수: 고친 장을 다시 식자하지 못했다냥 — 결과는 그대로다냥")
             : Loc.F($"화 전체 검수: {r.Pages}장 {r.Lines}줄을 봤다냥 — 고칠 줄이 없다냥");
+        text += unreadable;
         if (r.Changed > 0 && r.TooMany) text += Loc.T(" · 일부는 너무 많이 고치려 해서 쓰지 않았다냥");
         if (r.Changed > 0 && r.Unread) text += Loc.T(" · 일부 답은 읽지 못했다냥");
         if (r.Rejected > 0) text += Loc.F($" · 못 쓰는 답 {r.Rejected}줄은 버렸다냥");

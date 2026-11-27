@@ -58,4 +58,14 @@ public class ComfyUseTests
 
         Assert.True(runner.Onnx.JobUsesComfy);
     }
+
+    [Fact]
+    public void Dispose_Twice_IsSafe()
+    {
+        // 작업 끝의 화 전체 검수는 답을 기다리기 전에 러너를 먼저 놓는다(모델을 메모리에서 내린다) — 그 뒤 using이 한 번 더 놓는다
+        var runner = new PipelineRunner(new AppSettings());
+
+        runner.Dispose();
+        runner.Dispose();
+    }
 }
