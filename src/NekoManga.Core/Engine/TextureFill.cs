@@ -21,12 +21,15 @@ internal static class TextureFill
     internal const int GrowPx = 2;
     /// <summary>창 하나에서 메울 픽셀의 상한 — 넘으면 하지 않는다(호출부가 LaMa로 넘긴다). 쪽의 반을 덮는 구멍에 분 단위로 매달리지 않게(11만 px에 20초쯤).</summary>
     internal const int MaxHolePx = 200_000;
-    /// <summary>한 번에 돌리는 창의 수 — 기본 1(차례로). shift-map은 안에서 이미 여러 코어를 쓴다. 실측(2026-11-27, 6코어 12스레드, 실제 26쪽의 여덟 창):
-    /// 앱 안에서(내장 모델이 올라간 채, 여유 메모리 3.7GB) 53초(1) · 71초(2) · 77초(4) — 나란히 돌리면 오히려 느려졌다. 모델 없는 시험 프로세스에서는 50초(1) · 43초(2) · 36초(4)로
-    /// 조금 빨라지지만 그 이득보다 앱에서의 손해가 크다(처음에는 코어 수의 절반(최대 4)으로 돌렸다 — 여유 메모리가 넉넉하던 때 33초, 줄어든 뒤 77초로 들쭉날쭉했다). 결과는 몇 개씩 돌리든 같다.
+    /// <summary>한 번에 돌리는 창의 수 — 코어 수에 맞춘다(<see cref="DefaultParallelism"/>). 실측(2026-11-27 낮, 6코어 12스레드, 여유 메모리 20GB대, 실제 26쪽의 여덟 창 — 앱 안에서):
+    /// 48.0초(1) · 36.0초(2) · 34.8초(4). 창이 둘뿐인 05쪽은 23.2 → 21.9초(창 하나가 4~11초라 창 수가 적으면 안 준다). 결과는 몇 창씩 돌리든 같다.
+    /// 같은 날 아침에는 '나란히가 더 느리다'(53초(1) · 71초(2) · 77초(4))고 재서 1로 뒀었다 — 그때는 여유 메모리가 1.5~4GB였다(다른 프로그램의 누수). 메모리가 바닥난 PC에서는 지금도 그럴 수 있다.
     /// 진단: NEKO_TEXFILL_PAR=&lt;n&gt;으로 바꿔 잰다.</summary>
     internal static int Parallelism =>
-        int.TryParse(Environment.GetEnvironmentVariable("NEKO_TEXFILL_PAR"), out int forced) && forced > 0 ? Math.Min(forced, 8) : 1;
+        int.TryParse(Environment.GetEnvironmentVariable("NEKO_TEXFILL_PAR"), out int forced) && forced > 0 ? Math.Min(forced, 8) : DefaultParallelism(Environment.ProcessorCount);
+
+    /// <summary>논리 코어 수에서 한 번에 돌릴 창의 수: 셋에 하나, 1~4(넷과 둘의 차이가 이미 작다 — 34.8초 ↔ 36.0초).</summary>
+    internal static int DefaultParallelism(int cores) => Math.Clamp(cores / 3, 1, 4);
     /// <summary><see cref="KeepLongLines"/>: 먹으로 보는 밝기(미만 — 번진 가장자리는 빼려고 낮게) · 곧게 이어진 길이가 이만큼(px)은 돼야 '긴 선' · 그 줄(곧게 이어진 한 구간)의 이 비율 넘게 구멍 밖에 있어야 남의 것(글자의 긴 획은 통째로 구멍 안이다).</summary>
     internal const int LineDark = 16, LineRunPx = 61;
     internal const double LineOutsideShare = 0.5;
@@ -86,7 +89,7 @@ internal static class TextureFill
     /// 창 안에 다른 블록의 획이 걸쳐 있어도 메우지 않는다(그 블록의 일감이 맡는다 — 쪽 마스크를 창으로 자르면 섞인다, 검토 2026-11-27).
     /// <paramref name="avoid"/>(쪽 크기, 255 = 재료로 쓰면 안 되는 자리 — 쪽의 모든 글자 획과 지울 자리): 아직 지우지 않은 다른 블록의 글자를 무늬로 가져오지 않게 재료에서 뺀다(그 자리를 메우지는 않는다).
     /// 메울 자리가 없거나, 가져올 무늬가 모자라거나, 너무 크거나, 준비·메우기가 실패한 일감은 false — 그 자리의 그림은 그대로다(호출부가 LaMa로 넘긴다). 취소 말고는 던지지 않는다.
-    /// 일감들은 **메우기 전의 그림**에서 따로 준비해 돌리고(<see cref="Parallelism"/> — 기본은 하나씩) 차례로 붙인다 — 몇 개씩, 어떤 순서로 돌든 같은 입력에는 같은 결과가 나온다.
+    /// 일감들은 **메우기 전의 그림**에서 따로 준비해 돌리고(<see cref="Parallelism"/> — 코어 수에 맞춰 나란히) 차례로 붙인다 — 몇 개씩, 어떤 순서로 돌든 같은 입력에는 같은 결과가 나온다.
     /// <paramref name="tag"/>: 진단 덤프(NEKO_TEXFILL_DBG)의 파일 이름 앞머리 — 쪽마다 다르게 주면 여러 쪽의 덤프가 서로 덮지 않는다.</summary>
     internal static bool[] FillAll(Mat img, IReadOnlyList<(Rect Area, Mat Own)> holes, Mat avoid, CancellationToken ct = default, string? tag = null) =>
         FillAll(img, holes, avoid, out _, ct, tag);

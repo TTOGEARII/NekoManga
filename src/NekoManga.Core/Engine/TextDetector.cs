@@ -33,6 +33,8 @@ public class TextDetector(OnnxEnv env)
     /// 번역·글자 지움 없이 원본이 그대로 나왔다(같은 쪽이 CPU로는 9블록). 실행 오류만 잡는 OnnxEnv.Guard로는 못 막는다.</summary>
     public DetectionResult Detect(Mat img)
     {
+        // 진단: NEKO_CTD_CPU=1이면 감지기만 CPU로 돌린다(GPU를 아예 시도하지 않는다) — 감지기의 GPU 실행이 장치를 멈추게 하는지 가릴 때
+        if (Environment.GetEnvironmentVariable("NEKO_CTD_CPU") == "1") return DetectOn(img, cpuOnly: true);   // loc:none
         if (_gpuVerified == true || !env.UsesGpu(ModelFile)) return DetectOn(img, cpuOnly: false);
         lock (VerifyLock)
         {

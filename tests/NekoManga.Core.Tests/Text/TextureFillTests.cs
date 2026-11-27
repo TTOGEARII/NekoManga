@@ -317,6 +317,19 @@ public class TextureFillTests
         Assert.ThrowsAny<OperationCanceledException>(() => FillAll(page, mask, mask, [a], cts.Token));
         Assert.Equal(0, ChangedOutside(page, before, new Rect(0, 0, 0, 0)));
     }
+
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(4, 1)]
+    [InlineData(6, 2)]
+    [InlineData(8, 2)]
+    [InlineData(12, 4)]
+    [InlineData(32, 4)]
+    public void DefaultParallelism_FollowsTheCoreCount_UpToFour(int cores, int expected)
+    {
+        // 창을 나란히 메운다(실제 26쪽 여덟 창: 48초 → 35초, 12스레드에서 4창씩 — 2026-11-27). 코어가 적으면 하나씩, 많아도 넷까지(넷과 둘의 차이가 이미 작다)
+        Assert.Equal(expected, TextureFill.DefaultParallelism(cores));
+    }
 }
 
 /// <summary>진단 덤프(NEKO_TEXFILL_DBG) — 환경변수를 바꾸므로 따로 묶는다.</summary>

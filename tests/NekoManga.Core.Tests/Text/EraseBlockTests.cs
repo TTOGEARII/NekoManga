@@ -621,4 +621,13 @@ public class EraseBlockTests
         Assert.Equal((false, 0), (r.HandedOver, r.KeptOutOfRegen));   // 메우긴 했다(LaMa로 넘기지 않았다) — 격자로는 아니다
         Assert.True(Same(regen, regenBefore), "베껴 메운 자리가 다시 그릴 자리에서 빠졌다");
     }
+
+    [Fact]
+    public void OverlapsTranslation_OnlyWhenEveryBlockIsDialogue()
+    {
+        // 번역 요청은 글자 지우기와 나란히 보낸다(지우기는 번역문이 필요 없다) — 효과음(시험 중)이 섞인 쪽만 빼고: 못 옮긴 효과음은 지우지 않으므로 번역을 먼저 받아야 지울 블록이 정해진다
+        Assert.True(EmbeddedTranslator.OverlapsTranslation([BlockRole.Dialogue, BlockRole.Dialogue]));
+        Assert.False(EmbeddedTranslator.OverlapsTranslation([BlockRole.Dialogue, BlockRole.Sfx]));
+        Assert.False(EmbeddedTranslator.OverlapsTranslation([]));
+    }
 }

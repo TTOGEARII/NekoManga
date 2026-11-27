@@ -167,15 +167,14 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
         Lap($"풍선 밖 글 거르기({outsideBubble}블록 제외, 효과음 {sfxCount})");   // loc:none
 
         // ── 번역 (배치) ──
+        // 번역 요청은 띄워 두고 글자 지우기를 바로 시작한다 — 지우기는 번역문이 필요 없는데, 전에는 쪽마다 번역을 기다린 뒤에야 지웠다(실측 2026-11-27: DeepSeek 1.6~5.8초).
+        // 받는 것은 지우기·메우기·LaMa가 끝난 뒤다. 효과음(시험 중)이 섞인 쪽만 전처럼 먼저 받는다(OverlapsTranslation). 번역이 실패하면 전처럼 그 쪽이 실패한다(저장 전에 받는다).
         IReadOnlyList<string> translations = Array.Empty<string>();
-        if (blocks.Count > 0)
+        string engine = TranslatorFactory.EngineLabel(settings);
+        async Task<IReadOnlyList<string>> WaitShowingSeconds(Task<IReadOnlyList<string>> request, DateTime started)
         {
-            var engine = TranslatorFactory.EngineLabel(settings);
-            status?.Report(Loc.F($"번역 중이다냥 ({blocks.Count}개 말풍선 · {engine})"));
-            var translator = TranslatorOverride ?? TranslatorFactory.Create(settings);
             // 느린 LLM 엔진은 한 페이지에 1~2분씩 걸린다 — 멈춘 게 아니라는 걸 알 수 있게 경과 초를 띄운다
             using var tick = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            var started = DateTime.UtcNow;
             var ticker = Task.Run(async () =>
             {
                 try
@@ -189,18 +188,34 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
                 }
                 catch (OperationCanceledException) { }
             });
-            try
-            {
-                translations = await TranslateBlocksAsync(translator, blocks, roles, Glossary.Parse(settings.TranslateGlossary), ct);
-            }
+            try { return await request; }
             finally { tick.Cancel(); await ticker; }
         }
-
-        Lap($"번역({blocks.Count}개·{TranslatorFactory.EngineLabel(settings)})");   // loc:none
+        Task<IReadOnlyList<string>>? pending = null;
+        var requested = DateTime.UtcNow;
+        var requestClock = System.Diagnostics.Stopwatch.StartNew();
+        using var requestCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var stopRequest = new CancelOnExit(requestCts);   // 지우다 예외·취소로 나가면 떠 있는 요청도 거둔다(끝난 요청에는 아무 일도 없다)
+        if (blocks.Count > 0)
+        {
+            status?.Report(Loc.F($"번역 중이다냥 ({blocks.Count}개 말풍선 · {engine})"));
+            var translator = TranslatorOverride ?? TranslatorFactory.Create(settings);
+            var request = TranslateBlocksAsync(translator, blocks, roles, Glossary.Parse(settings.TranslateGlossary), requestCts.Token);
+            _ = request.ContinueWith(_ => requestClock.Stop(), TaskContinuationOptions.ExecuteSynchronously);
+            if (OverlapsTranslation(roles))
+            {
+                pending = request;
+                // 지우다 실패해 이 요청을 기다리지 않고 나가면, 요청의 예외는 아무도 받지 않는다 — '관찰되지 않은 예외'로 남지 않게 본 것으로만 해 둔다(나가는 것은 먼저 난 예외다)
+                _ = request.ContinueWith(done => _ = done.Exception, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+            }
+            else translations = await WaitShowingSeconds(request, requested);
+        }
+        if (pending == null) Lap($"번역({blocks.Count}개·{engine})");   // loc:none
 
         // ── 글자 색 추출 + 글자 지우기 ──
         status?.Report(Loc.T("글자 지우는 중이다냥"));
         var result = new List<TextBlockInfo>();
+        var lettered = new List<(int Index, Rect Rect, string Color, bool Sfx)>();   // 지운 블록 — 번역을 받은 뒤 식자 정보로 만든다
         using var lamaMask = new Mat(img.Rows, img.Cols, MatType.CV_8UC1, Scalar.Black);
         // 지울 블록 = 번역해 식자할 블록. 검증에 걸려 못 옮긴 효과음("")은 지우지도 덮지도 않는다 — 설명문이나 원문 글자가 굵게 덮이는 것보다 원문 그대로가 낫다(검수 2026-11-26)
         bool WillErase(int i) => !(roles[i] == BlockRole.Sfx && (i >= translations.Count || string.IsNullOrWhiteSpace(translations[i])));
@@ -247,22 +262,7 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
             if (erased.Kind != EraseKind.Solid && regenDbg != null)
                 try { File.AppendAllText(regenDbg, $"{Path.GetFileName(imagePath)}: [{b.X1},{b.Y1},{b.X2},{b.Y2}] white={erased.White:0.00} black={erased.Black:0.00} wanted={erased.RegenWanted} kind={erased.Kind}{Environment.NewLine}"); } catch { }   // loc:none
 
-            var tr = i < translations.Count ? translations[i] : "";
-            if (string.IsNullOrWhiteSpace(tr)) tr = text;
-            tr = TameRunaway(PolishTranslation(tr, settings.TranslateTarget), text);
-            result.Add(new TextBlockInfo(
-                b.X1, b.Y1, b.X2, b.Y2, text, tr,
-                EstimateFontSize(rect, tr.Length),
-                // 효과음은 Carrot처럼 높이가 폭의 1.5배를 넘으면 세로(글자를 쌓는다), 대사는 전처럼 1.3배(한국어는 어차피 가로로 그린다 — 풍선 재기에만 쓴다)
-                Vertical: rect.Height > rect.Width * (sfx ? 1.5 : 1.3),
-                color, Sfx: sfx));
-        }
-        // 앞 쪽 문맥(TranslateCarryContext): 이 쪽의 대사(원문→번역)를 다음 쪽의 LLM 번역에 참고로 넘긴다 — 최근 ContextLines줄만. 효과음은 넣지 않는다
-        if (settings.TranslateCarryContext)
-        {
-            foreach (var r in result)
-                if (!r.Sfx && r.Translation != r.SourceText) _recent.Add((r.SourceText, r.Translation));   // 못 옮겨 원문으로 둔 줄은 문맥에 넣지 않는다(LLM이 원문을 두라고 배운다 — 검수 2026-11-26)
-            if (_recent.Count > ContextLines) _recent.RemoveRange(0, _recent.Count - ContextLines);
+            lettered.Add((i, rect, color, sfx));
         }
 
         if (sfxSkipped > 0) status?.Report(Loc.F($"효과음 {sfxSkipped}개는 옮기지 못해 그대로 둔다냥"));
@@ -286,6 +286,36 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
             Lap("배경 복원(LaMa)");   // loc:none
         }
 
+        // 띄워 둔 번역을 받는다 — 지우는 동안 왔으면 바로, 아직이면 기다린다(경과 초를 띄운다)
+        if (pending != null)
+        {
+            if (!pending.IsCompleted) status?.Report(Loc.F($"번역 중이다냥 ({blocks.Count}개 말풍선 · {engine})"));
+            translations = await WaitShowingSeconds(pending, requested);
+            laps.Add($"번역({blocks.Count}개·{engine}, 지우기와 나란히)={requestClock.ElapsedMilliseconds}ms");   // loc:none
+            Lap("번역 기다림");   // loc:none
+        }
+        foreach (var (i, rect, color, sfx) in lettered)
+        {
+            var (b, text) = blocks[i];
+            var tr = i < translations.Count ? translations[i] : "";
+            if (string.IsNullOrWhiteSpace(tr)) tr = text;
+            tr = TameRunaway(PolishTranslation(tr, settings.TranslateTarget), text);
+            result.Add(new TextBlockInfo(
+                b.X1, b.Y1, b.X2, b.Y2, text, tr,
+                EstimateFontSize(rect, tr.Length),
+                // 효과음은 Carrot처럼 높이가 폭의 1.5배를 넘으면 세로(글자를 쌓는다), 대사는 전처럼 1.3배(한국어는 어차피 가로로 그린다 — 풍선 재기에만 쓴다)
+                Vertical: rect.Height > rect.Width * (sfx ? 1.5 : 1.3),
+                color, Sfx: sfx));
+        }
+        // 앞 쪽 문맥(TranslateCarryContext): 이 쪽의 대사(원문→번역)를 다음 쪽의 LLM 번역에 참고로 넘긴다 — 최근 ContextLines줄만. 효과음은 넣지 않는다
+        if (settings.TranslateCarryContext)
+        {
+            foreach (var r in result)
+                if (!r.Sfx && r.Translation != r.SourceText) _recent.Add((r.SourceText, r.Translation));   // 못 옮겨 원문으로 둔 줄은 문맥에 넣지 않는다(LLM이 원문을 두라고 배운다 — 검수 2026-11-26)
+            if (_recent.Count > ContextLines) _recent.RemoveRange(0, _recent.Count - ContextLines);
+        }
+
+
         Directory.CreateDirectory(workDir);
         var outPath = Path.Combine(workDir, (stem ?? Path.GetFileNameWithoutExtension(imagePath)) + ".inpainted.png");
         ImgIo.Write(outPath, img);
@@ -308,6 +338,15 @@ public class EmbeddedTranslator(AppSettings settings, OnnxEnv env)
     /// <summary>번역기를 바꿔 끼우는 이음새(확인용, <see cref="Pipeline.PipelineRunner.DetectorOverride"/>와 같은 꼴) — 글자 지우기만 실제 원고로 확인할 때 가짜 번역기를 꽂는다
     /// (Google 비공식 끝점은 몇 장만 돌려도 429가 나 지우기 확인이 막혔다, 2026-11-26). null이면 설정대로 <see cref="TranslatorFactory.Create"/>.</summary>
     internal ITranslator? TranslatorOverride { get; set; }
+
+    /// <summary>번역 요청을 글자 지우기와 나란히 보내도 되는가 — 블록이 전부 대사일 때만. 효과음(시험 중, SfxMode=Replace)은 번역이 비면 지우지 않으므로 번역을 먼저 받아야 지울 블록이 정해진다.</summary>
+    internal static bool OverlapsTranslation(IReadOnlyList<BlockRole> roles) => roles.Count > 0 && !roles.Contains(BlockRole.Sfx);
+
+    /// <summary>나갈 때 취소한다 — using으로 걸어 둔다(이미 치운 것은 건드리지 않는다).</summary>
+    private sealed class CancelOnExit(CancellationTokenSource cts) : IDisposable
+    {
+        public void Dispose() { try { cts.Cancel(); } catch (ObjectDisposedException) { } }   // 순서가 바뀌어 먼저 치워졌으면 취소할 것도 없다
+    }
     /// <summary>문맥으로 넘기는 최근 대사 줄 수 — 한두 쪽 분량. 더 길면 프롬프트만 커지고 LLM이 옛 줄을 번역해 버리는 일이 는다.</summary>
     internal const int ContextLines = 30;
 
