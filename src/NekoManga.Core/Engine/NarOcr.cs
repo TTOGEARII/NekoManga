@@ -143,7 +143,7 @@ internal sealed class NarVocab
 /// **왜 기본 엔진인가(2026-11-27, 이 앱의 조각 72개·정답 710자, 글자만 견준 오류율)**: manga-ocr 4.93% · Hayai v2.7 2.25% · 이 모델 2.11%(손글씨·효과음 54자: 11 · 1 · 2자).
 /// Hayai와 정확도가 같고 훨씬 빠르다 — 속도는 아래. 사용자 결정("1번 작업해주고 hayai는 선택할 수 있게").
 /// **가중치의 라이선스는 CC BY-NC-SA 4.0(비영리)이다** — 앱에 싣지 않고 작성자의 저장소에서 받는다. 상업적으로 쓰는 사람은 설정에서 Hayai OCR(Apache-2.0)이나 manga-ocr를 고른다.
-/// 한계: 65자를 넘는 글은 잘린다(말풍선 하나에서는 드물다 — 294조각 가운데 33자 넘는 것이 8개, 대부분 기사·프로필 글), 일본어만.
+/// 한 번에 65자까지만 낸다 — 그보다 긴 글(줄이 많은 후기·안내문)은 글 전체가 깨지므로 줄 사이에서 갈라 따로 읽는다(<see cref="NarSplit"/>). 일본어만.
 ///
 /// 입력은 조각마다 크기가 고정이라(패치 324개 자리) GPU(DirectML)에서도 돈다. 그래프 융합은 끄고(<see cref="OnnxEnv.Unfused"/> — 융합한 모델이 이 PC의 GPU를 멈추게 한 일이 셋 있다),
 /// 프로세스마다 첫 조각 몇 개를 CPU로도 읽어 글이 같을 때만 이후 GPU를 쓴다. 한 쪽을 읽는 사이 GPU에서 내려가면 그 쪽을 CPU로 다시 읽는다(멈추기 직전의 GPU는 오류 없이 쓰레기를 낸다).</summary>
@@ -238,16 +238,21 @@ public class NarOcr(OnnxEnv env) : ITextRecognizer
         using var wV = OrtValue.CreateTensorValueFromMemory(gw, [1]);
         OrtValue[] values = [pV, vV, rV, cV, hV, wV];
 
-        var texts = new string[items.Length];
-        for (int i = 0; i < items.Length; i++)
+        // 조각 하나(또는 긴 글을 가른 토막 하나)를 한 번 돌린다 — 65자 안에 끝 표시가 없으면 넘친 것이다
+        (string Text, bool Overflow) ReadOne(byte[] rgb, int w, int h)
         {
-            (gh[0], gw[0]) = NarPrep.Fill(items[i].Rgb, items[i].W, items[i].H, p, v, r, c);
+            (gh[0], gw[0]) = NarPrep.Fill(rgb, w, h, p, v, r, c);
             // Guard: GPU에서 실행 오류가 나면 CPU로 내려 한 번 더 (OnnxEnv.Guard). cpuOnly(GPU 대조용)는 CPU에 고정한 세션으로 돈다
             using var outs = cpuOnly
                 ? env.Get(ModelFile, cpuOnly: true).Run(runOptions, Inputs, values, Outputs)
                 : env.Guard(() => env.Get(GpuName).Run(runOptions, Inputs, values, Outputs), GpuName);
-            texts[i] = _vocab!.Decode(outs[0].GetTensorDataAsSpan<int>()).Trim();
+            var ids = outs[0].GetTensorDataAsSpan<int>();
+            return (_vocab!.Decode(ids), ids.IndexOf(_vocab.Eos) < 0);
         }
+
+        var texts = new string[items.Length];
+        for (int i = 0; i < items.Length; i++)
+            texts[i] = NarSplit.Read(items[i].Rgb, items[i].W, items[i].H, ReadOne).Trim();
         return texts;
     }
 }
